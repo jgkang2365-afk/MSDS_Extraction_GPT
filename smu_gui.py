@@ -2629,37 +2629,6 @@ class SMUGUI(QMainWindow):
             QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
 
     def process_review_queue(self):
-        """[Task 4] 주님 지시: 사후 순차적 팝업 검수 (Hybrid Review Engine)"""
-        if not self.need_review:
-            self.log("[*] 모든 검수가 완료되었습니다.")
-            QMessageBox.information(self, "완료", "모든 중복 항목검수가 완료되었습니다.")
-            return
-
-        item = self.need_review.pop(0) # 큐에서 하나 추출
-        row = item["row"]
-        prod = item["product_name"]
-        records = item["records"]
-
-        # 선택지 생성 (용도 + 업데이트 일시)
-        options = []
-        for r in records:
-            usage = r[4] if len(r) > 4 else "미지정"
-            time = r[5] if len(r) > 5 else "N/A" # last_updated 는 SELECT 결과에 따라 인덱스 확인 필요
-            # DB 조회 쿼리 확인: SELECT cas_content, work_subjects, reg_1st, reg_2nd, usage FROM msds_info
-            # 아, SELECT 문에 last_updated 가 빠져있었군요. 마이그레이션된 get_db_knowledge 확인 필요
-            options.append(f"용도: [{usage}] / 기록일: {time if time != 'N/A' else '최근'}")
-
-        # [V10.5] 전문가용 리스트 선택 팝업
-        choice, ok = QInputDialog.getItem(self, "중복 기록 검수", 
-                                        f"주님, '{prod}'에 대해 과거 기록이 여러 개 발견되었습니다.\n적용할 사례를 선택해 주세요.",
-                                        options, 0, False)
-        
-        if ok and choice:
-            idx = options.index(choice)
-            selected = records[idx]
-            
-            # 선택된 데이터로 테이블 갱신
-    def process_review_queue(self):
         """[Master 지시서] 사후 정밀 검수 엔진 (Post-Batch Review)"""
         if not self.need_review:
             # self.log("[*] 모든 검수 대상이 처리되었습니다.")
