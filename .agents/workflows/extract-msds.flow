@@ -1,0 +1,3 @@
+input: file
+agent: msds-extractor.md
+input -> agent
