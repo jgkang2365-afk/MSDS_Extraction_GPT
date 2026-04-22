@@ -373,11 +373,16 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, log_func=None, retry_in
         if response.status_code == 200:
             result = response.json()
             text_response = result["candidates"][0]["content"]["parts"][0]["text"]
-            if "```json" in text_response:
-                text_response = text_response.split("```json")[1].split("```")[0].strip()
-            elif "```" in text_response:
-                text_response = text_response.split("```")[1].split("```")[0].strip()
-            return json.loads(text_response)
+            # --- [V7.0 JSON 방탄 파싱 로직] ---
+            # 마크다운 찌꺼기나 인사말이 섞여 있어도 무조건 { } 내부만 적출
+            import re
+            match = re.search(r'\{.*\}', text_response, re.DOTALL)
+            if match:
+                clean_json_str = match.group(0)
+                return json.loads(clean_json_str)
+            else:
+                raise ValueError("AI 응답에서 JSON 구조를 찾을 수 없습니다.")
+            # ------------------------------------
         return None
     except Exception:
         return None
