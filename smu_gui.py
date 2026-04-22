@@ -483,8 +483,29 @@ class ValidationWorker(QThread):
                 pure_cas_list = list(cas_to_content.keys())
                 pure_cas_str = "; ".join(pure_cas_list) if pure_cas_list else cas_content
 
-                # 3. 2단계 검증 (CSV + API 연동)
-                raw_val_res = self.core.validate_with_kosha(pure_cas_str, log_func=self.log_signal.emit, full=False)
+                # [수정] 코어 호출 시 f_hash 파라미터 전달
+                raw_val_res = self.core.validate_with_kosha(pure_cas_str, log_func=self.log_signal.emit, full=False, f_hash=f_hash)
+                
+                # [V7.0 추가] 캐시 적중 시 하위 파싱(components 루프 등) 전면 우회
+                if raw_val_res.get("status") == "Cache-Hit":
+                    manual = raw_val_res.get("manual_data", {})
+                    val_res = {
+                        "res_1st": manual.get("reg1", "").split(";\n") if manual.get("reg1") else [""],
+                        "res_2nd": manual.get("reg2", "").split(";\n") if manual.get("reg2") else [""],
+                        "work_subjects": manual.get("measure", ""),
+                        "cas_with_content": manual.get("raw_content", "").split(";\n") if manual.get("raw_content") else []
+                    }
+                    res_data = {
+                        "row_idx": row_idx,
+                        "f_hash": f_hash,
+                        "filename": fn,
+                        "product_name": manual.get("product_name", prod),
+                        "validation": val_res,
+                        "status": "검증 완료 (캐시)"
+                    }
+                    self.result_signal.emit(res_data)
+                    self.progress_signal.emit(int((i + 1) / total * 100))
+                    continue # API 파싱 로직을 스킵하고 다음 파일로 즉시 이동
                 
                 # [V8.5] MSDS Core(components) -> GUI Format(res_1st, res_2nd) 브리지 변환기
                 res_1st_list = []

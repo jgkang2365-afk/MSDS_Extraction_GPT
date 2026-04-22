@@ -18,6 +18,16 @@ class MSDSCore:
     def __init__(self):
         self.api_client = KoshaAPIClient()
         self.exposure_lookup = ExposureLookup()
+        self.cache_path = "smu_cache.json" # [V7.0 추가]
+
+    # [V7.0 추가] 캐시에서 주님의 교정 데이터(manual_data) 추출
+    def _get_cached_manual_data(self, f_hash):
+        if not f_hash or not os.path.exists(self.cache_path): return None
+        try:
+            with open(self.cache_path, "r", encoding="utf-8") as f:
+                cache = json.load(f)
+                return cache.get(f_hash, {}).get("manual_data")
+        except: return None
 
     def calculate_file_hash(self, file_path):
         """파일의 SHA-256 해시 계산"""
@@ -67,7 +77,14 @@ class MSDSCore:
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {pdf_path}")
         return msds_engine_v5.process_pdf(pdf_path, log_func=log_func)
 
-    def validate_with_kosha(self, cas_content, log_func=None, full=False):
+    # [수정] 인자에 f_hash=None 추가
+    def validate_with_kosha(self, cas_content, log_func=None, full=False, f_hash=None):
+        # [V7.0 캐시 선제 타격] 주님의 교정 데이터가 있다면 API 통신 전면 차단
+        manual_data = self._get_cached_manual_data(f_hash)
+        if manual_data:
+            if log_func: log_func(f"[*] 🛡️ 캐시 방어막 가동: 교정 데이터 발견 (API 통신 스킵)")
+            return {"status": "Cache-Hit", "manual_data": manual_data}
+
         """2단계: CSV 및 KOSHA API를 통한 성분 검증 및 상세 규제 정보 조회"""
         if not cas_content or "미기재" in cas_content or "오류" in cas_content:
             return {"status": "검증 불가", "components": []}
