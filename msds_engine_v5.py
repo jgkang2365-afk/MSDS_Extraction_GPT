@@ -1,4 +1,6 @@
 import os
+import base64
+
 import sys
 import re
 import time
@@ -318,7 +320,40 @@ def extract_context_for_ai(pdf_path):
     except Exception:
         return ""
 
-def analyze_with_gemini_ensemble(v24_result, text_chunk, log_func=None, retry_instruction=None):
+def extract_section3_images(pdf_path):
+    """[V7.0 Multi-Vision] 3번 항목 시작부터 4번 항목 전까지의 모든 페이지 캡처"""
+    try:
+        doc = fitz.open(pdf_path)
+        start_page = -1
+        end_page = -1
+        
+        # 1. 구간 탐색 (최대 7페이지까지 스캔)
+        for i in range(min(7, len(doc))):
+            text = doc[i].get_text("text")
+            if start_page == -1 and re.search(r'3\.\s*구성|SECTION\s*3', text, re.I):
+                start_page = i
+            if start_page != -1 and re.search(r'4\.\s*응급|SECTION\s*4', text, re.I):
+                end_page = i
+                break
+        
+        if start_page == -1: return [] # 시작점 못 찾으면 빈 리스트
+        if end_page == -1: end_page = min(start_page + 1, len(doc)-1) # 4번 못 찾으면 다음 장까지만
+        
+        # 2. 범위 내 모든 페이지 캡처
+        images = []
+        for p_idx in range(start_page, end_page + 1):
+            page = doc[p_idx]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+            images.append({"mimeType": "image/png", "data": b64_img})
+            if len(images) >= 3: break # 최대 3장으로 제한 (성능 방어)
+            
+        doc.close()
+        return images
+    except Exception:
+        return []
+
+def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
     if not text_chunk.strip(): return None
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_API_KEY}"
@@ -362,29 +397,39 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, log_func=None, retry_in
 
     full_prompt = system_prompt + f"\n\n[원본 정보: 텍스트]\n{text_chunk}"
         
+    parts = [{"text": full_prompt}]
+    for img in image_list:
+        parts.append({"inlineData": img}) # [수정] inlineData (CamelCase)
+
     payload = {
-        "contents": [{"parts": [{"text": full_prompt}]}],
+        "contents": [{"parts": parts}],
         "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
     }
     
     try:
-        # [유지] 15초 철벽 방어 및 이미지 전송 원천 차단
-        response = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=15)
+        # [수정] 비전 분석 시간을 위해 timeout 40초로 연장
+        response = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=40)
+        
         if response.status_code == 200:
             result = response.json()
             text_response = result["candidates"][0]["content"]["parts"][0]["text"]
-            # --- [V7.0 JSON 방탄 파싱 로직] ---
-            # 마크다운 찌꺼기나 인사말이 섞여 있어도 무조건 { } 내부만 적출
+            
             import re
             match = re.search(r'\{.*\}', text_response, re.DOTALL)
             if match:
                 clean_json_str = match.group(0)
                 return json.loads(clean_json_str)
             else:
+                if log_func: log_func(f" ❌ JSON 파싱 실패 원문: {text_response[:200]}...")
                 raise ValueError("AI 응답에서 JSON 구조를 찾을 수 없습니다.")
-            # ------------------------------------
-        return None
-    except Exception:
+        else:
+            # [신규] 200 OK가 아닐 경우 구글 서버의 에러 메시지 강제 출력
+            if log_func: log_func(f" ❌ API 통신 에러 ({response.status_code}): {response.text}")
+            return None
+            
+    except Exception as e:
+        # [신규] 숨어있던 파이썬 내부 에러를 강제로 밖으로 끄집어냄
+        if log_func: log_func(f" ❌ 시스템 오류 발생: {str(e)}")
         return None
 
 
@@ -406,9 +451,22 @@ def process_pdf(pdf_path, log_func=None):
         final_ai_result = None
         curr_retry_instruction = None
         
+        # --- [V7.0 하이브리드 비전 발동 조건 방어막] ---
+        v24_content = str(v24_baseline.get("함유량", ""))
+        needs_vision = False
+        # 100% 도배, 미기재, 1차 정규식 리뷰 필요 시에만 비전 가동
+        if "100%" in v24_content or "미기재" in v24_content or v24_baseline.get("tag") == "[REVIEW]":
+            needs_vision = True
+            
+        image_list = []
+        if needs_vision:
+            if log_func: log_func(" ├─ 👁️ [Vision 가동] 표 구조 파괴 의심. 3번 항목 이미지 캡처 중...")
+            image_list = extract_section3_images(pdf_path)
+        # ----------------------------------------------
+        
         while retry_count <= max_ai_retries:
             try:
-                ai_result = analyze_with_gemini_ensemble(v24_baseline, text_chunk, log_func, retry_instruction=curr_retry_instruction)
+                ai_result = analyze_with_gemini_ensemble(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
                 
                 if not ai_result:
                     if retry_count == 0: 

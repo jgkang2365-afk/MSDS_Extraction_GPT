@@ -1,0 +1,39 @@
+{
+    "mapping": {
+        "제품명": "D",
+        "파일명": "P",
+        "2차 결과(규제)": "L",
+        "1차 결과(전체)": "M",
+        "측정대상1": "N",
+        "측정대상2": "",
+        "CAS 원본": "O",
+        "공정명": "B",
+        "제조/사용": "C",
+        "사용용도": "E",
+        "월취급량": "S",
+        "단위": "T"
+    },
+    "excel_path": "",
+    "sheet_name": "",
+    "start_row": "3",
+    "start_num": "1",
+    "pdf_paths": [
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\Grease(XHP 222).PDF",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\WD-40.pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\경유.pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(녹색).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(백무광).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(백색).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(적색).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(황색).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(흑색).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(2T ST).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(5w-30).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(10W-30).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진크리너.pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접봉(CR-13).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접재료(CSF-71T).pdf",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\유압유(AW46).PDF",
+        "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\휘발유.pdf"
+    ]
+}

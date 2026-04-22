@@ -2,7 +2,7 @@
     "f5e58ec0bdbdc9896fa80adb31715c10a7bf4d21248aca4a5b673ba96bdc68ad": {
         "f_hash": "f5e58ec0bdbdc9896fa80adb31715c10a7bf4d21248aca4a5b673ba96bdc68ad",
         "product_name": "MOBILGREASE XHP 2",
-        "reliability": "[AUTO-PASS]",
+        "reliability": "[REVIEW]",
         "신호등": "🟡 확인",
         "raw_content": "함유량미기재%",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\Grease(XHP 222).PDF",
@@ -78,78 +78,6 @@
         "신호등": "🟢 통과",
         "raw_content": "115-10-6(30~40%); 1333-86-4(10~15%); 68526-21-6(10~15%); 67-64-1(10~15%); 74-98-6(1~5%); 79-20-9(1~5%); 108-88-3(1~5%); 9004-70-0(1~5%); 123-86-4(1~3%); 111-76-2(1~2%)",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(흑색).pdf",
-        "page": 1
-    },
-    "8098d1231fbd57fd86de9275a514e6799c400b19160f1f81fddee9d0f5fa2e9d": {
-        "f_hash": "8098d1231fbd57fd86de9275a514e6799c400b19160f1f81fddee9d0f5fa2e9d",
-        "product_name": "HI-PERF 2T ST",
-        "reliability": "[PASS]",
-        "신호등": "🟢 통과",
-        "raw_content": "64742-54-7(100%); 64742-47-8(100%); 121158-58-5(80~100%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(2T ST).pdf",
-        "page": 1
-    },
-    "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b": {
-        "f_hash": "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b",
-        "product_name": "ZIC TOP 5W-30 (RZIC TOP 5W-30)",
-        "reliability": "[PASS]",
-        "신호등": "🟢 통과",
-        "raw_content": "36878-20-3(0.1~100%); 64742-54-7(70~100%); 64742-56-9(0.1~100%); 68037-01-4(5~100%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(5w-30).pdf",
-        "page": 1
-    },
-    "afe916cbefbc5d92a44a969cb202216eb52feac0efbf37f4bda0ee0b2aeb0370": {
-        "f_hash": "afe916cbefbc5d92a44a969cb202216eb52feac0efbf37f4bda0ee0b2aeb0370",
-        "product_name": "RUBIA FLET HD 70 10W-30",
-        "reliability": "[PASS]",
-        "신호등": "🟢 통과",
-        "raw_content": "64742-54-7(100%); 68649-42-3(80~100%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(10W-30).pdf",
-        "page": 1
-    },
-    "fc370a4d2a33577e7a8f05d72897c8609080da09515f11d5d71409ff378a56b8": {
-        "f_hash": "fc370a4d2a33577e7a8f05d72897c8609080da09515f11d5d71409ff378a56b8",
-        "product_name": "일신 엔진크리너",
-        "reliability": "[PASS]",
-        "신호등": "🟢 통과",
-        "raw_content": "115-10-6(5~10%); 74-98-6(20~25%); 64742-47-8(60~65%); 6846-50-0(1~5%); 9002-92-0(1~3%); 9004-98-2(1~3%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진크리너.pdf",
-        "page": 1
-    },
-    "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a": {
-        "f_hash": "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a",
-        "product_name": "용접재료(연강용 피복아크 용접봉)",
-        "reliability": "[REVIEW]",
-        "신호등": "🟡 확인",
-        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(함유량미기재); 65996-61-4(5~10%); 12604-53-4(1~5%); 7789-75-5(5~10%); 7440-21-3(1~5%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접봉(CR-13).pdf",
-        "page": 1
-    },
-    "73a65546238f1d7f753ffb9a4b405fa64c0d9e6623b5d7b5237294815a64897b": {
-        "f_hash": "73a65546238f1d7f753ffb9a4b405fa64c0d9e6623b5d7b5237294815a64897b",
-        "product_name": "용접재료(연강 및 고장력강용 플럭스 코어드 와이어)",
-        "reliability": "[REVIEW]",
-        "신호등": "🟡 확인",
-        "raw_content": "7439-89-6(함유량미기재); 7439-96-5(1~3%); 13463-67-7(5~10%); 7439-95-4(0.5~0.5%); 7429-90-5(0.5~0.5%); 1309-48-4(0.2~0.5%); 7789-75-5(0.1~1%); 1317-65-3(0.5~4%); 7440-02-0(≤0.5%); 7787-32-8(1~7%); 471-34-1(0.1~3%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접재료(CSF-71T).pdf",
-        "page": 1
-    },
-    "876009e7a2984dd5a564b475993419342e3301a0256c57a74e3a3c553bc10a70": {
-        "f_hash": "876009e7a2984dd5a564b475993419342e3301a0256c57a74e3a3c553bc10a70",
-        "product_name": "MOBIL HYDRAULIC AW 46",
-        "reliability": "[REVIEW]",
-        "신호등": "🟡 확인",
-        "raw_content": "함유량미기재%",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\유압유(AW46).PDF",
-        "page": 1
-    },
-    "ff29f4f823caa31a0a1acd63b40d28076559bc1ba270301d038093190fb5939f": {
-        "f_hash": "ff29f4f823caa31a0a1acd63b40d28076559bc1ba270301d038093190fb5939f",
-        "product_name": "제품명 확인 필요",
-        "reliability": "[PASS]",
-        "신호등": "🟡 확인",
-        "raw_content": "86290-81-5(≤86%); 71-43-2(0.1~0.7%); 1634-04-4(11%); 108-88-3(1~10%); 1330-20-7(2~4%); 98-82-8(≤0.2%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\휘발유.pdf",
         "page": 1
     }
 }
