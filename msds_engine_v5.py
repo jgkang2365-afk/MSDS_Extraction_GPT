@@ -407,7 +407,9 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
     }
     
     try:
-        # [수정] 비전 분석 시간을 위해 timeout 40초로 연장
+        # [V7.0 과속 방지턱] API RPM 제한을 피하기 위해 호출 전 무조건 3초 대기
+        time.sleep(3) 
+        
         response = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=40)
         
         if response.status_code == 200:
@@ -422,13 +424,18 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
             else:
                 if log_func: log_func(f" ❌ JSON 파싱 실패 원문: {text_response[:200]}...")
                 raise ValueError("AI 응답에서 JSON 구조를 찾을 수 없습니다.")
+                
+        # [신규] 429 에러(할당량 초과) 발생 시 특별 처리: 15초 대기 후 바깥 루프에서 재시도 유도
+        elif response.status_code == 429:
+            if log_func: log_func(" ⏳ API 호출 한도 초과(429). 15초간 숨을 고른 후 재시도합니다...")
+            time.sleep(15)
+            return None
+            
         else:
-            # [신규] 200 OK가 아닐 경우 구글 서버의 에러 메시지 강제 출력
             if log_func: log_func(f" ❌ API 통신 에러 ({response.status_code}): {response.text}")
             return None
             
     except Exception as e:
-        # [신규] 숨어있던 파이썬 내부 에러를 강제로 밖으로 끄집어냄
         if log_func: log_func(f" ❌ 시스템 오류 발생: {str(e)}")
         return None
 
