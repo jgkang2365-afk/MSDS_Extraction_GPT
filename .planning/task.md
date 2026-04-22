@@ -2,11 +2,14 @@
     - [x] `MES_MASTER_MAP` 로드부 추가
     - [x] `process_pdf` 내 AI 결과 처리 루프 고도화 (명칭 표준화/미등록 플래그)
     - [x] `run_v24_baseline` 출력 포맷 일원화
-- [x] `smu_gui.py` 수술 (우뇌 각성)
+- [x] `smu_gui.py` 수술 (우뇌 각성 + UX 개선)
     - [x] `GraphifyIndexerThread` 클래스 정의 추가
     - [x] `__init__` 내 `active_graph_threads` 초기화
     - [x] `add_result_to_table` 내 인덱싱 트리거 삽입
     - [x] `closeEvent` 안전장치 구현
+    - [x] **[NEW]** 빈 화면 워터마크 안내 문구 추가
+    - [x] **[NEW]** 핵심 버튼 및 CAS 열 툴팁 적용
+    - [x] **[NEW]** [?] 도움말 팝업 기능 이식
 - [x] 사후 검증 (FTF Protocol)
     - [x] 파이썬 구문 검사 (`py_compile`)
     - [x] 통합 동작 확인

@@ -53,6 +53,8 @@ class GraphifyIndexerThread(QThread):
         try:
             self.progress_signal.emit(f"🧠 지식 그래프 학습 중... ({filename})")
             import graphify
+            import time
+            time.sleep(0.5) # [추가] 디스크 I/O 병목 방지를 위한 0.5초 숨돌리기
             # graphify 모듈의 증분 업데이트 함수 호출
             if hasattr(graphify, 'update_graph_incremental'):
                 graphify.update_graph_incremental(file_path=self.pdf_path, context=self.extracted_data)
@@ -1661,6 +1663,28 @@ class SMUGUI(QMainWindow):
         self.lbl_page_title.setStyleSheet(f"color: {PRIMARY_BLUE}; margin-bottom: 5px;")
         self.page_header.addWidget(self.lbl_page_title)
         self.page_header.addStretch()
+
+        # [NEW] UX/UI 온보딩: 도움말 버튼 추가
+        self.btn_help = QToolButton()
+        self.btn_help.setText(" ? ")
+        self.btn_help.setToolTip("핵심 사용법 가이드를 확인합니다.")
+        self.btn_help.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {PRIMARY_BLUE};
+                color: white;
+                border-radius: 12px;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 2px;
+            }}
+            QToolButton:hover {{
+                background-color: #004d80;
+            }}
+        """)
+        self.btn_help.setFixedSize(25, 25)
+        self.btn_help.clicked.connect(self.show_help_dialog)
+        self.page_header.addWidget(self.btn_help)
+
         self.content_layout.addLayout(self.page_header)
         
         self.main_splitter = QSplitter(Qt.Vertical)
@@ -1785,11 +1809,13 @@ class SMUGUI(QMainWindow):
         header.addSpacing(20)
         self.btn_step1 = QPushButton("1단계 추출")
         self.btn_step1.setFixedHeight(35); self.btn_step1.setStyleSheet("font-weight: bold;")
+        self.btn_step1.setToolTip("목록에 있는 PDF 파일들에서 MSDS 데이터를 AI로 자동 추출합니다.")
         self.btn_step1.clicked.connect(self.run_extraction)
         header.addWidget(self.btn_step1)
 
         self.btn_step2 = QPushButton("2단계 검증")
         self.btn_step2.setFixedHeight(35); self.btn_step2.setStyleSheet("background-color: #f39c12; font-weight: bold;")
+        self.btn_step2.setToolTip("추출된 데이터를 바탕으로 공단 DB 및 마스터 DB와 대조하여 규제 여부를 검증합니다.")
         self.btn_step2.clicked.connect(self.run_validation)
         header.addWidget(self.btn_step2)
         main_layout.addLayout(header)
@@ -1820,6 +1846,7 @@ class SMUGUI(QMainWindow):
         btn_save_h = QPushButton("📁 엑셀에 저장")
         btn_save_h.setFixedWidth(130); btn_save_h.setFixedHeight(35)
         btn_save_h.setStyleSheet("background-color: #28a745; font-weight: bold;")
+        btn_save_h.setToolTip("현재 화면에 표시된 데이터를 엑셀(Excel) 파일로 저장합니다.")
         btn_save_h.clicked.connect(self.perform_standard_save)
         excel_bar.addWidget(btn_save_h)
         
@@ -1838,6 +1865,7 @@ class SMUGUI(QMainWindow):
             "순번", "No", "원본 제품명", "CAS 원본(수정)", 
             "측정대상", "2차 결과(규제)", "1차 결과(전체)", "파일명", "Hash", "Full Path", "Page"
         ])
+        self.table.horizontalHeaderItem(3).setToolTip("CAS 번호를 클릭하면 KOSHA 화학물질정보 페이지로 이동합니다.")
         self.table.verticalHeader().setVisible(False)
 
         header_table = self.table.horizontalHeader()
@@ -1871,6 +1899,16 @@ class SMUGUI(QMainWindow):
         self.table.cellClicked.connect(self.on_row_clicked)
         
         self.table.itemChanged.connect(self.on_table_item_changed)
+        
+        # [NEW] 빈 화면 워터마크 (Empty State Label)
+        self.lbl_watermark = QLabel("① 여기에 PDF 파일을 끌어다 놓으세요  →  ② [추출 시작] 버튼을 누르세요", self.table)
+        self.lbl_watermark.setAlignment(Qt.AlignCenter)
+        self.lbl_watermark.setStyleSheet("color: #b0b0b0; font-size: 16px; font-weight: bold; background: transparent;")
+        # 테이블 중앙에 위치시키기 위해 레이아웃 트릭 사용
+        watermark_layout = QVBoxLayout(self.table)
+        watermark_layout.addWidget(self.lbl_watermark)
+        self.lbl_watermark.show() # 초기 상태는 노출
+
         self.left_vbox.addWidget(self.table)
         
         self.content_splitter.addWidget(self.left_container)
@@ -1886,35 +1924,45 @@ class SMUGUI(QMainWindow):
 
     def on_row_clicked(self, row, column):
         """
-        [V7.0 핵심 루틴] 테이블 행 클릭 시 즉각적으로 PDF 미리보기를 띄우는 브릿지
+        [V7.0 & V11.0 통합] 테이블 행 클릭 시 미리보기 연동 및 KOSHA 원클릭 검증
         """
         try:
-            # 1. 숨겨진 열에서 해당 행의 원본 PDF 경로와 페이지 번호 확보
+            # 1. [V11.0] KOSHA 하이퍼링크 브릿지 (3열 CAS원본, 4~6열 결과 클릭 시)
+            if column in [3, 4, 5, 6]:
+                item = self.table.item(row, column)
+                if item:
+                    text = item.text()
+                    # 정규식으로 CAS 번호 추출
+                    cas_matches = re.findall(r'\d{2,7}-\d{2}-\d', text)
+                    if cas_matches:
+                        target_cas = cas_matches[0] # 첫 번째 CAS 기준
+                        kosha_url = f"https://msds.kosha.or.kr/MSDSInfo/kcic/msds/msds.do?page=all&searchSearchName={target_cas}"
+                        
+                        # 로컬에 임포트하여 즉시 브라우저 실행
+                        from PyQt5.QtGui import QDesktopServices
+                        QDesktopServices.openUrl(QUrl(kosha_url))
+                        self.statusBar().showMessage(f"🌐 KOSHA 연결 중: {target_cas}", 3000)
+
+            # 2. [V7.0] 기존 PDF 미리보기 위치 이동 로직
             target_pdf_path_item = self.table.item(row, COL_IDX_FILEPATH)
             target_page_item = self.table.item(row, COL_IDX_PAGE)
             
-            if not target_pdf_path_item:
-                return
+            if not target_pdf_path_item: return
                 
             target_pdf_path = target_pdf_path_item.text()
             target_page_str = target_page_item.text() if target_page_item else "1"
 
-            # 2. 예외 방어: 경로가 없거나 파일이 존재하지 않으면 무시
-            if not target_pdf_path or not os.path.exists(target_pdf_path):
-                return
+            if not target_pdf_path or not os.path.exists(target_pdf_path): return
 
-            # 3. [Lazy Loading] 이미 로드된 PDF가 아니라면 새로 로드
             if self.preview_pane.current_pdf_path != target_pdf_path:
                 self.preview_pane.load_pdf(target_pdf_path)
 
-            # 4. [V6 좌표 유산 이식] 해당 물질이 있는 페이지로 즉시 자동 스크롤
             if target_page_str and target_page_str.isdigit():
                 page_num = int(target_page_str)
                 self.preview_pane.navigate_to_page(page_num)
 
         except Exception as e:
-            # GUI 안정성을 위해 에러는 콘솔에만 출력
-            print(f"Row Click Preview Error: {e}")
+            print(f"Row Click Error: {e}")
 
     def sync_pdf_preview(self):
         """[수정] 선택한 행의 제품명과 일치하는 정확한 PDF 경로 추적"""
@@ -2305,6 +2353,13 @@ class SMUGUI(QMainWindow):
         else:
             self.lbl_file_count.setStyleSheet("background-color: #909399; color: white; border-radius: 10px; padding: 2px 5px; font-weight: bold; font-size: 11px; margin-left: -15px;")
 
+        # [NEW] 워터마크 상태 연동
+        if hasattr(self, 'lbl_watermark'):
+            if count > 0 or (hasattr(self, 'table') and self.table.rowCount() > 0):
+                self.lbl_watermark.hide()
+            else:
+                self.lbl_watermark.show()
+
     def batch_rename_files(self):
         """[NEW] PDF 파일명 일괄 변경 (기존 번호 제거 후 새 번호 부여)"""
         if not hasattr(self, 'pdf_paths') or not self.pdf_paths:
@@ -2683,6 +2738,20 @@ class SMUGUI(QMainWindow):
                 return
         event.accept()
 
+    def show_help_dialog(self):
+        """[Page UX] 핵심 사용법 1분 가이드 팝업"""
+        help_text = (
+            "<h2>💡 AI 화학물질 브레인 사용 가이드</h2>"
+            "<ol>"
+            "<li><b>파일 넣기:</b> 바탕화면의 MSDS PDF를 표 안으로 드래그 앤 드롭하세요.</li>"
+            "<li><b>추출 하기:</b> [추출 시작]을 누르면 AI가 성분을 분석합니다.</li>"
+            "<li><b>교차 검증:</b> 파란색 CAS 번호를 클릭하면 <b>안전보건공단(KOSHA)</b> 창이 열려 즉시 확인 가능합니다.</li>"
+            "<li><b>마스터 DB 연동:</b> 마스터에 없는 물질은 [미등록]으로 표시됩니다.</li>"
+            "</ol>"
+            "<p><i>* 추출 중에도 백그라운드에서 지식 그래프가 자동 학습되니 창을 강제로 끄지 마세요!</i></p>"
+        )
+        QMessageBox.information(self, "사용 설명서", help_text)
+
     def process_review_queue(self):
         """[Master 지시서] 사후 정밀 검수 엔진 (Post-Batch Review)"""
         if not self.need_review:
@@ -2777,6 +2846,9 @@ class SMUGUI(QMainWindow):
 
     def add_result_to_table(self, data):
         """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""
+        # [NEW] 워터마크 즉시 숨김
+        if hasattr(self, 'lbl_watermark'):
+            self.lbl_watermark.hide()
         try:
             self.results.append(data)
             self.table.blockSignals(True) # [V7.3] 캐시 오염 차단
@@ -2879,7 +2951,8 @@ class SMUGUI(QMainWindow):
                 graph_thread.finished_signal.connect(lambda _: self.active_graph_threads.remove(graph_thread) if graph_thread in self.active_graph_threads else None)
                 
                 self.active_graph_threads.append(graph_thread)
-                graph_thread.start()
+                # [수정] 메인 GUI와 마우스 커서가 끊기지 않도록 백그라운드 최하위 우선순위 강제 부여
+                graph_thread.start(QThread.LowPriority)
         except Exception as e:
             self.table.blockSignals(False)
             self.log(f"[에러] 테이블 추가 실패: {e}")
