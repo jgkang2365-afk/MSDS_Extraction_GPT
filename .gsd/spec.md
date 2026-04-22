@@ -1,27 +1,40 @@
-# [Spec] HTML 델리게이트 다중 행 편집기(QTextEdit) 기능 이식
+# [Spec] Graphify 백그라운드 워커 및 CAS 명칭 표준화 정밀 이식
 
 ## 1. 개요
-`smu_gui.py`의 `HTMLDelegate` 클래스를 고도화하여, 셀 편집 시 단일 행이 아닌 다중 행(`QTextEdit`) 편집기를 사용하도록 하고, 화면 표시 시에도 강제 줄바꿈(`<br>`)을 적용하여 가독성을 극대화합니다.
+지능형 MSDS 추출 시스템의 완성도를 높이기 위해, 지식 그래프(Graphify)의 비동기 업데이트와 마스터 데이터 기반의 성분명 표준화 및 미등록 플래그 기능을 이식합니다.
 
-## 2. 변경 목표
-- `QTextEdit` 기반의 `createEditor`, `setEditorData`, `setModelData` 메서드 추가.
-- `_get_doc` 메서드에서 `;` 구분자 뒤에 `<br>` 태그를 삽입하여 시각적 줄바꿈 강제.
-- `HTMLDelegate` 클래스 전체 교체.
+## 2. 변경 사항
+
+### [Task 1] smu_gui.py: 우뇌 각성 및 GUI 안전장치
+- **GraphifyIndexerThread 추가**: 비동기 지식 학습을 위한 QThread 클래스 구현. `graphify.update_graph_incremental` 호출.
+- **스레드 관리**: `__init__`에서 `self.active_graph_threads` 리스트 초기화 및 스레드 생명주기 관리.
+- **백그라운드 트리거**: `add_result_to_table`에서 UI 업데이트 직후 학습 스레드 발사. 상태바(StatusBar)에 진행 상태 연동.
+- **Graceful Shutdown**: `closeEvent` 오버라이드를 통해 활성 학습 스레드 존재 시 종료 경고 메시지 출력 (DB 손상 방지).
+
+### [Task 2] msds_engine_v5.py: 좌뇌 정제 및 미등록 플래그
+- **마스터 DB 로드**: `MES_MASTER_LOOKUP.json` 기반 `MES_MASTER_MAP` 구축.
+- **AI 결과 처리 고도화**:
+    - CAS 번호 형식 검증 및 `영업비밀` 예외 처리.
+    - 함유량 자동 정제 (단위 `%` 보정 및 미기재 처리).
+    - **명칭 표준화**: 마스터 DB 존재 시 표준명 사용, 부재 시 `[미등록]` 태그 부착.
+- **포맷 통일**: `성분명[CAS(함유량)]` 형식으로 AI 추출 및 Baseline(1차) 결과 포맷 일원화.
 
 ## 3. 상세 수정 계획
 
-### smu_gui.py - HTMLDelegate 클래스 (라인 206-268)
-- **변경 사항**: 사용자 제공 코드로 클래스 본문 완전 교체.
-- **주요 로직**:
-    - `createEditor`: `QTextEdit` 생성 및 스타일 설정.
-    - `setEditorData`: 모델 데이터를 플레인 텍스트로 에디터에 로드.
-    - `setModelData`: 에디터의 텍스트를 모델에 저장.
-    - `_get_doc`: `';<br>'.join(html_parts)`를 사용하여 줄바꿈 시각화.
+### msds_engine_v5.py
+- **위치 1**: 상단 마스터 데이터 로드부 (라인 34 부근).
+- **위치 2**: `process_pdf` 내 AI 결과 파싱 루프 (라인 545 부근).
+- **위치 3**: `run_v24_baseline` 내 결과 조합부 (라인 296 부근).
+
+### smu_gui.py
+- **위치 1**: 상단 임포트 영역 아래 `GraphifyIndexerThread` 정의.
+- **위치 2**: `SMUGUI.__init__` 내 스레드 리스트 초기화.
+- **위치 3**: `add_result_to_table` 하단 (라인 2832 부근) 스레드 발사 로직.
+- **위치 4**: `SMUGUI` 클래스 내 `closeEvent` 추가.
 
 ## 4. 검증 계획 (FTF Protocol)
-1. **Forest (사전 분석)**: `smu_gui.py` 내 `HTMLDelegate` 위치 및 상속 관계 확인. (이미 확인 완료)
-2. **Tree (정밀 수정)**: 클래스 전체를 오타 없이 정확히 교체.
+1. **Forest (사전 분석)**: `statusBar` 및 `closeEvent` 등 PyQt5 API 활용 가능성 확인.
+2. **Tree (정밀 수정)**: 지시서의 코드를 기반으로 정밀 이식.
 3. **Forest (사후 검증)**:
-    - 파이썬 구문 오류 확인.
-    - `smu_gui.py` 실행 시 테이블 셀 더블클릭 시 다중 행 편집기가 뜨는지 확인.
-    - 셀 내 데이터가 `;` 기준 줄바꿈되어 표시되는지 확인.
+    - `py_compile`을 통한 문법 오류 체크.
+    - `msds_engine_v5.py` 단독 실행 테스트 (가상) - 포맷 확인.

@@ -33,6 +33,19 @@ def load_v5_patterns():
 
 P = load_v5_patterns()
 
+# [V8.0] MES 마스터 데이터 기반 명칭 표준화 맵
+MES_MASTER_MAP = {}
+try:
+    master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
+    if os.path.exists(master_path):
+        with open(master_path, 'r', encoding='utf-8') as f:
+            for cas, info in json.load(f).items():
+                if cas and isinstance(info, dict):
+                    std_name = info.get("상용명") or info.get("물질명")
+                    if std_name: MES_MASTER_MAP[cas.strip()] = std_name.strip()
+except Exception as e:
+    print(f"마스터 데이터 로드 실패: {e}")
+
 # =====================================================================
 # [1단계] V24 정규식 코어 (안전망 복구 완료)
 # =====================================================================
@@ -293,7 +306,16 @@ def run_v24_baseline(pdf_path):
             if "%" not in orig and orig != "함유량미기재": comp['content'] = f"{orig}%"
             else: comp['content'] = orig
 
-    comp_parts = [f"{c['cas_no']}({c['content']})" for c in all_components]
+    comp_parts = []
+    for c in all_components:
+        cas = c['cas_no']
+        content = c['content']
+        if cas in MES_MASTER_MAP:
+            name = MES_MASTER_MAP[cas]
+            comp_parts.append(f"{name}[{cas}({content})]")
+        else:
+            comp_parts.append(f"[미등록]물질명확인불가[{cas}({content})]")
+            
     comp_str = "; ".join(comp_parts) if comp_parts else ""
     tag = "[PASS]" if all_components and comp_str else "[REVIEW]"
 
@@ -564,12 +586,22 @@ def process_pdf(pdf_path, log_func=None):
                 content = re.sub(r'([0-9.]+)\s*≤\s*(%?)$', r'≥\1\2', content)
                 content = re.sub(r'([0-9.]+)\s*≥\s*(%?)$', r'≤\1\2', content)
 
+            # [신규] 함유량 정제
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
             elif "%" not in content:
                 content += "%"
 
-            if cas: comp_parts.append(f"{cas}({content})")
+            # [신규] 명칭 표준화 및 미등록 플래그 처리
+            if cas == "영업비밀":
+                comp_parts.append(f"영업비밀[{cas}({content})]")
+            elif cas in MES_MASTER_MAP:
+                std_name = MES_MASTER_MAP[cas]
+                comp_parts.append(f"{std_name}[{cas}({content})]") # 완벽한 정합성
+            else:
+                raw_name = comp.get("chemical_name", "명칭확인불가")
+                # 마스터에 없는 CAS는 엑셀에서 필터링하기 쉽도록 [미등록] 태그 부착
+                comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]") 
 
         comp_str = "; ".join(comp_parts) if comp_parts else ""
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")

@@ -38,6 +38,28 @@ COL_IDX_PAGE = 10
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
+# [V9.0 우뇌 각성] Graphify 백그라운드 인덱싱 워커
+class GraphifyIndexerThread(QThread):
+    progress_signal = pyqtSignal(str)
+    finished_signal = pyqtSignal(str)
+
+    def __init__(self, pdf_path, extracted_data):
+        super().__init__()
+        self.pdf_path = pdf_path
+        self.extracted_data = extracted_data
+
+    def run(self):
+        filename = os.path.basename(self.pdf_path)
+        try:
+            self.progress_signal.emit(f"🧠 지식 그래프 학습 중... ({filename})")
+            import graphify
+            # graphify 모듈의 증분 업데이트 함수 호출
+            if hasattr(graphify, 'update_graph_incremental'):
+                graphify.update_graph_incremental(file_path=self.pdf_path, context=self.extracted_data)
+            self.finished_signal.emit(f"✅ 지식 그래프 업데이트 완료 ({filename})")
+        except Exception as e:
+            self.finished_signal.emit(f"❌ 지식 그래프 학습 실패 ({filename}): {e}")
+
 # [Part 2] Seamless PDF Preview 패널 (바이너리 강제 로드 버전)
 class PDFPreviewPanel(QScrollArea):
     def __init__(self, parent=None):
@@ -1011,6 +1033,7 @@ class SMUGUI(QMainWindow):
         self.cache = {} 
         self.sidebar_slim = False
         self.need_review = []  # 검수 대기열 초기화
+        self.active_graph_threads = [] # [V9.0] 활성 스레드 관리 리스트 추가
         self.init_db()         # 지능형 엔진 가동
         self.init_ui()
         
@@ -2644,6 +2667,22 @@ class SMUGUI(QMainWindow):
         else:
             QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
 
+    def closeEvent(self, event):
+        # [안전장치] 백그라운드 학습 중 종료 방지
+        if hasattr(self, 'active_graph_threads') and self.active_graph_threads:
+            active_count = len(self.active_graph_threads)
+            reply = QMessageBox.warning(self, '종료 경고', 
+                f"현재 {active_count}개의 지식 그래프 업데이트가 백그라운드에서 진행 중입니다.\n"
+                "강제 종료 시 우뇌 DB(지식망)가 손상될 수 있습니다. 정말 종료하시겠습니까?", 
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            
+            if reply == QMessageBox.Yes:
+                event.accept()
+            else:
+                event.ignore()
+                return
+        event.accept()
+
     def process_review_queue(self):
         """[Master 지시서] 사후 정밀 검수 엔진 (Post-Batch Review)"""
         if not self.need_review:
@@ -2830,6 +2869,17 @@ class SMUGUI(QMainWindow):
             
             self._safe_resize_rows()
             self.table.blockSignals(False) # [NEW] 시그널 재개
+
+            # [V9.0 우뇌 가동] UI 업데이트 직후 백그라운드 학습 트리거
+            pdf_path = data.get("full_path", "")
+            if pdf_path:
+                graph_thread = GraphifyIndexerThread(pdf_path, data)
+                graph_thread.progress_signal.connect(lambda msg: self.statusBar().showMessage(msg))
+                graph_thread.finished_signal.connect(lambda msg: self.statusBar().showMessage(msg, 5000))
+                graph_thread.finished_signal.connect(lambda _: self.active_graph_threads.remove(graph_thread) if graph_thread in self.active_graph_threads else None)
+                
+                self.active_graph_threads.append(graph_thread)
+                graph_thread.start()
         except Exception as e:
             self.table.blockSignals(False)
             self.log(f"[에러] 테이블 추가 실패: {e}")

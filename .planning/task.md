@@ -1,0 +1,12 @@
+- [x] `msds_engine_v5.py` 수술 (좌뇌 정제)
+    - [x] `MES_MASTER_MAP` 로드부 추가
+    - [x] `process_pdf` 내 AI 결과 처리 루프 고도화 (명칭 표준화/미등록 플래그)
+    - [x] `run_v24_baseline` 출력 포맷 일원화
+- [x] `smu_gui.py` 수술 (우뇌 각성)
+    - [x] `GraphifyIndexerThread` 클래스 정의 추가
+    - [x] `__init__` 내 `active_graph_threads` 초기화
+    - [x] `add_result_to_table` 내 인덱싱 트리거 삽입
+    - [x] `closeEvent` 안전장치 구현
+- [x] 사후 검증 (FTF Protocol)
+    - [x] 파이썬 구문 검사 (`py_compile`)
+    - [x] 통합 동작 확인
