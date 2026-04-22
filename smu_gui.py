@@ -204,7 +204,23 @@ class MultiLineDelegate(QStyledItemDelegate):
             super().setModelData(editor, model, index)
 
 class HTMLDelegate(QStyledItemDelegate):
-    """[Part 15-B] 고도화된 델리게이트. 배경과 텍스트 드로잉을 분리하여 겹침(Ghosting) 현상을 원천 차단함."""
+    """[Part 15-B] 고도화된 델리게이트. 배경과 텍스트 드로잉 분리 및 다중행 편집 지원"""
+    
+    # --- [V11.0] 다중 행 편집기(QTextEdit) 지원 로직 이식 ---
+    def createEditor(self, parent, option, index):
+        editor = QTextEdit(parent)
+        editor.setAcceptRichText(False)
+        editor.setStyleSheet("QTextEdit { padding: 3px; font-family: 'Malgun Gothic'; font-size: 9pt; }")
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.model().data(index, Qt.EditRole)
+        editor.setPlainText(str(value) if value is not None else "")
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.EditRole)
+    # ---------------------------------------------------------
+
     def _get_doc(self, option, index):
         """[Part 15-C] HTML 문서를 생성하고 폰트 및 너비를 설정함."""
         text = index.data()
@@ -216,7 +232,6 @@ class HTMLDelegate(QStyledItemDelegate):
             p = p.strip()
             if not p: continue
             
-            # 텍스트 내용을 이스케이프 처리
             escaped_p = escape(p)
             
             if p.startswith("[특별]") or p.startswith("[허가]"):
@@ -226,7 +241,8 @@ class HTMLDelegate(QStyledItemDelegate):
             else:
                 html_parts.append(escaped_p)
         
-        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{'; '.join(html_parts)}</body></html>"
+        # [수정점] 줄바꿈 시 ; 뒤에 HTML 개행 태그(<br>)를 강제 삽입하여 표시 화면도 완벽하게 줄바꿈
+        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{';<br>'.join(html_parts)}</body></html>"
         
         doc = QTextDocument()
         doc.setDefaultFont(option.font)

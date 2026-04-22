@@ -1,33 +1,27 @@
-# [V5 엔진 통합 및 정규화]
+# [Spec] HTML 델리게이트 다중 행 편집기(QTextEdit) 기능 이식
 
-두 개의 폴더(v24 코어 + GUI 통합본)를 합치는 과정에서 발생한 엔진 버전 혼선을 정리하고, 주님의 지시대로 **V5 버전을 메인**으로 확정합니다.
+## 1. 개요
+`smu_gui.py`의 `HTMLDelegate` 클래스를 고도화하여, 셀 편집 시 단일 행이 아닌 다중 행(`QTextEdit`) 편집기를 사용하도록 하고, 화면 표시 시에도 강제 줄바꿈(`<br>`)을 적용하여 가독성을 극대화합니다.
 
-## User Review Required
+## 2. 변경 목표
+- `QTextEdit` 기반의 `createEditor`, `setEditorData`, `setModelData` 메서드 추가.
+- `_get_doc` 메서드에서 `;` 구분자 뒤에 `<br>` 태그를 삽입하여 시각적 줄바꿈 강제.
+- `HTMLDelegate` 클래스 전체 교체.
 
-> [!IMPORTANT]
-> - `msds_engine_v6.py`, `msds_engine_v7.py` 및 관련 v7 수정 스크립트들을 삭제합니다.
-> - `smu_gui.py`와 `msds_core.py`가 모두 `msds_engine_v5.py`를 바라보도록 강제합니다.
+## 3. 상세 수정 계획
 
-## Proposed Changes
+### smu_gui.py - HTMLDelegate 클래스 (라인 206-268)
+- **변경 사항**: 사용자 제공 코드로 클래스 본문 완전 교체.
+- **주요 로직**:
+    - `createEditor`: `QTextEdit` 생성 및 스타일 설정.
+    - `setEditorData`: 모델 데이터를 플레인 텍스트로 에디터에 로드.
+    - `setModelData`: 에디터의 텍스트를 모델에 저장.
+    - `_get_doc`: `';<br>'.join(html_parts)`를 사용하여 줄바꿈 시각화.
 
-### [MODIFY] [msds_core.py](file:///c:/Users/USER/Desktop/%EC%95%88%ED%8B%B0%EA%B7%B8%EB%9E%98%ED%8B%B0%EB%B9%84/MSDS_EXtaction_V3%28v24+GUI%ED%86%B5%ED%95%A9%29/msds_core.py)
-- `import msds_engine_v6` -> `import msds_engine_v5` 수정
-- `extract_from_pdf` 함수 내 호출부를 `msds_engine_v5.process_pdf`로 변경
-
-### [MODIFY] [smu_gui.py](file:///c:/Users/USER/Desktop/%EC%95%88%ED%8B%B0%EA%B7%B8%EB%9E%98%ED%8B%B0%EB%B9%84/MSDS_EXtaction_V3%28v24+GUI%ED%86%B5%ED%95%A9%29/smu_gui.py)
-- `import msds_engine_v7 as engine` -> `import msds_engine_v5 as engine` 수정
-- `engine.analyze_msds` 호출부를 `engine.process_pdf`로 변경
-
-### [MODIFY] [msds_engine_v5.py](file:///c:/Users/USER/Desktop/%EC%95%88%ED%8B%B0%EA%B7%B8%EB%9E%98%ED%8B%B0%EB%B9%84/MSDS_EXtaction_V3%28v24+GUI%ED%86%B5%ED%95%A9%29/msds_engine_v5.py)
-- GUI와의 호환성을 위해 파일 끝에 `analyze_msds = process_pdf` 별칭 추가
-
-### [DELETE] 불필요한 쓰레기 파일
-- `msds_engine_v6.py`, `msds_engine_v7.py` 등 v6/v7 관련 파일 삭제
-
-## Verification Plan
-
-### Automated Tests
-- `python test_v5.py` 실행하여 엔진 기본 동작 확인
-
-### Manual Verification
-- `python smu_gui.py` 실행하여 GUI에서 PDF 드랍 후 추출 기능이 V5 엔진으로 정상 작동하는지 확인
+## 4. 검증 계획 (FTF Protocol)
+1. **Forest (사전 분석)**: `smu_gui.py` 내 `HTMLDelegate` 위치 및 상속 관계 확인. (이미 확인 완료)
+2. **Tree (정밀 수정)**: 클래스 전체를 오타 없이 정확히 교체.
+3. **Forest (사후 검증)**:
+    - 파이썬 구문 오류 확인.
+    - `smu_gui.py` 실행 시 테이블 셀 더블클릭 시 다중 행 편집기가 뜨는지 확인.
+    - 셀 내 데이터가 `;` 기준 줄바꿈되어 표시되는지 확인.

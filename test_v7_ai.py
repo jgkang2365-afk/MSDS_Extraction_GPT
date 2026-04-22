@@ -20,28 +20,22 @@ def test_bulletproof_parser():
     dummy_v24 = {"제품명": "더미 제품", "함유량": "13463-67-7(100%)"}
     dummy_text = "표 구조가 깨진 원본 텍스트... CAS 13463-67-7 ... 함유량 70 ~ 75 ..."
     
-    # 2. AI가 보낼 수 있는 '지저분한' 응답 시뮬레이션
-    messy_response = """
-    주님, 요청하신 데이터를 분석했습니다. 결과는 아래와 같습니다.
-    
-    ```json
-    {
+    # 2. AI 응답 시뮬레이션 (OpenAI JSON 모드 규격)
+    pure_json_response = {
       "교정_사유": "표 구조 파괴 대응 규칙(Rule 8)을 적용하여 CAS 주변의 70~75% 범위를 적출함",
       "제품명": "Titanium Dioxide Mixture",
       "구성성분": [ {"cas_no": "13463-67-7", "content": "70~75%"} ]
     }
-    ```
     
-    추가 문의사항이 있으면 말씀해 주세요.
-    """
+    messy_response = json.dumps(pure_json_response)
 
     # 3. requests.post를 모킹하여 네트워크 통신 없이 로직 검증
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {
-        "candidates": [{
-            "content": {
-                "parts": [{"text": messy_response}]
+        "choices": [{
+            "message": {
+                "content": messy_response
             }
         }]
     }

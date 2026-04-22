@@ -15,8 +15,10 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv()
 
-# [필수 세팅] 구글 제미나이 API 키 (필요 시 requests에서 활용)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+# [필수 세팅] OpenAI API 키
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. AI 비전 검수가 작동하지 않습니다.")
 
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
 
@@ -292,8 +294,8 @@ def run_v24_baseline(pdf_path):
             else: comp['content'] = orig
 
     comp_parts = [f"{c['cas_no']}({c['content']})" for c in all_components]
-    comp_str = "; ".join(comp_parts) if comp_parts else "함유량미기재%"
-    tag = "[PASS]" if all_components and "함유량미기재" not in comp_str else "[REVIEW]"
+    comp_str = "; ".join(comp_parts) if comp_parts else ""
+    tag = "[PASS]" if all_components and comp_str else "[REVIEW]"
 
     return {"제품명": product_name, "함유량": comp_str, "tag": tag}
 
@@ -301,10 +303,11 @@ def run_v24_baseline(pdf_path):
 # [2단계] 제미나이 AI 앙상블 (팀장 검수 엔진)
 # =====================================================================
 def extract_context_for_ai(pdf_path):
-    # [복구] ODL이 장님이 될 때를 대비하여 확실한 fitz로 텍스트 5000자 발췌
+    """[V7.8 AI Context] 5페이지 최적화 스캔 + 5000자 절삭 로직 철거"""
     try:
         doc = fitz.open(pdf_path)
         full_text = ""
+        # 속도와 비용 방어를 위해 5페이지만 스캔 (충분함)
         for i in range(min(5, len(doc))):
             full_text += doc[i].get_text("text", sort=True) + "\n"
         doc.close()
@@ -312,11 +315,16 @@ def extract_context_for_ai(pdf_path):
         sec1 = re.search(r'(?:^|\n|\b)\s*(?:1[\.\s\)]+|항\s*1|1\s*항|SECTION\s*1)[^0-9\n]*(?:화학|Product)', full_text, re.I)
         sec4 = re.search(r'(?:^|\n|\b)\s*(?:4[\.\s\)]+|항\s*4|4\s*항|SECTION\s*4)[^0-9\n]*(?:응급|First)', full_text, re.I)
 
-        if sec1 and sec4 and sec1.start() < sec4.start(): target_text = full_text[sec1.start():sec4.start() + 1000]
-        elif sec1: target_text = full_text[sec1.start():sec1.start() + 5000]
-        else: target_text = full_text[:5000]
+        if sec1 and sec4 and sec1.start() < sec4.start(): 
+            # 4항 시작점까지만 깔끔하게 발췌
+            target_text = full_text[sec1.start() : sec4.start() + 500]
+        elif sec1: 
+            target_text = full_text[sec1.start() : ]
+        else: 
+            target_text = full_text
         
-        return target_text[:5000]
+        # [핵심] 기존의 return target_text[:5000] 삭제. 잘라먹지 말고 그대로 반환.
+        return target_text
     except Exception:
         return ""
 
@@ -356,7 +364,6 @@ def extract_section3_images(pdf_path):
 def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
     if not text_chunk.strip(): return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key={GEMINI_API_KEY}"
     prod_name_baseline = v24_result.get('제품명', '')
     
     system_prompt = f"""
@@ -383,6 +390,7 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
     6. [혼합물 CAS 삭제] 혼합물 전체를 지칭하는 CAS 번호가 하위 성분과 중복될 경우 혼합물 CAS는 삭제하세요.
     7. [특수 단위 배제] 단위가 '%'가 아닌 'ppm', 'mg' 등인 경우 무조건 '미기재%'로 처리하세요.
     8. [🚨 표 구조 파괴 대응 (Chaos-Proof)] PDF 텍스트 추출의 한계로 표의 행과 열이 뒤섞여(Chaos) 글자와 숫자가 난잡하게 흩어져 있을 수 있습니다. CAS 번호를 기준으로 주변의 텍스트가 오염되어 있더라도, 가장 가까운 논리적인 함유량 수치나 범위(예: 40 ~ 50, 10 ~ 25)를 문맥상으로 유추하여 정확히 짝지으세요. 1차 추출 결과가 100%로 도배되어 있다면 이는 파싱 오류일 확률이 높으므로, 원본 텍스트를 정밀 분석하여 진짜 함유량을 발굴해내야 합니다.
+    9. [무효 CAS 삭제 절대 규칙] CAS 번호란에 번호가 아예 없거나, '자료없음', '비공개', '-' 등으로 적혀있다면 해당 성분은 추출 대상에서 완전히 제외(삭제)하세요. 함유량이 있더라도 CAS 번호가 없으면 무의미합니다. (단, 명시적으로 '영업비밀'이라고 표기된 경우만 예외로 살려둡니다.)
 
     [JSON 포맷]
     {{
@@ -396,43 +404,52 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
         system_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
     full_prompt = system_prompt + f"\n\n[원본 정보: 텍스트]\n{text_chunk}"
-        
-    parts = [{"text": full_prompt}]
-    for img in image_list:
-        parts.append({"inlineData": img}) # [수정] inlineData (CamelCase)
+    
+    # OpenAI 규격의 Content 리스트 구성
+    content_list = [{"type": "text", "text": full_prompt}]
+    
+    if image_list:
+        for img in image_list:
+            # extract_section3_images에서 만든 base64 데이터 추출
+            b64_data = img.get("data", "")
+            content_list.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{b64_data}"
+                }
+            })
 
     payload = {
-        "contents": [{"parts": parts}],
-        "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
+        "model": "gpt-4o-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": content_list
+            }
+        ],
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"} # JSON 응답 강제 (OpenAI 전용)
+    }
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
     }
     
+    url = "https://api.openai.com/v1/chat/completions"
+
     try:
-        # [V7.0 과속 방지턱] API RPM 제한을 피하기 위해 호출 전 무조건 3초 대기
-        time.sleep(3) 
-        
-        response = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(payload), timeout=40)
+        # OpenAI는 속도 제한이 넉넉하므로 time.sleep 제거, 딜레이 없이 즉시 타격
+        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=40)
         
         if response.status_code == 200:
             result = response.json()
-            text_response = result["candidates"][0]["content"]["parts"][0]["text"]
-            
-            import re
-            match = re.search(r'\{.*\}', text_response, re.DOTALL)
-            if match:
-                clean_json_str = match.group(0)
-                return json.loads(clean_json_str)
-            else:
-                if log_func: log_func(f" ❌ JSON 파싱 실패 원문: {text_response[:200]}...")
-                raise ValueError("AI 응답에서 JSON 구조를 찾을 수 없습니다.")
-                
-        # [신규] 429 에러(할당량 초과) 발생 시 특별 처리: 15초 대기 후 바깥 루프에서 재시도 유도
-        elif response.status_code == 429:
-            if log_func: log_func(" ⏳ API 호출 한도 초과(429). 15초간 숨을 고른 후 재시도합니다...")
-            time.sleep(15)
-            return None
+            # OpenAI의 json_object 모드는 텍스트 마크다운(```json) 없이 순수 JSON 텍스트만 반환함
+            text_response = result["choices"][0]["message"]["content"]
+            return json.loads(text_response)
             
         else:
-            if log_func: log_func(f" ❌ API 통신 에러 ({response.status_code}): {response.text}")
+            if log_func: log_func(f" ❌ OpenAI API 통신 에러 ({response.status_code}): {response.text}")
             return None
             
     except Exception as e:
@@ -445,12 +462,12 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
 # =====================================================================
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
-    if log_func: log_func(f" 🚀 [앙상블 기동] V24 코어 + Gemini 2.0 Flash-lite 초고속 검증 시작")
+    if log_func: log_func(f" 🚀 [앙상블 기동] V24 코어 + OpenAI gpt-4o-mini 초고속 검증 시작")
 
     v24_baseline = run_v24_baseline(pdf_path)
     text_chunk = extract_context_for_ai(pdf_path)
     
-    if not GEMINI_API_KEY or GEMINI_API_KEY == "여기에_발급받은_API_키를_입력하세요":
+    if not OPENAI_API_KEY or OPENAI_API_KEY == "여기에_발급받은_API_키를_입력하세요":
         final_ai_result = None
     else:
         max_ai_retries = 2
@@ -514,7 +531,7 @@ def process_pdf(pdf_path, log_func=None):
     if not final_ai_result:
         # [수정] AI 실패 시 조기 리턴하지 않고 1차 결과를 변수에 매핑
         product_name = v24_baseline.get("제품명", "제품명 확인 필요")
-        comp_str = v24_baseline.get("함유량", "함유량미기재%")
+        comp_str = v24_baseline.get("함유량", "")
         tag = v24_baseline.get("tag", "[REVIEW]")
         reason = "AI 응답 실패 (1차 코어 결과로 대체)"
         comp_parts = [c for c in comp_str.split("; ") if c]
@@ -532,7 +549,8 @@ def process_pdf(pdf_path, log_func=None):
             content = re.sub(r'[～∼〜]', '~', content).replace(" ", "")
             
             is_valid_cas_fmt = re.match(r'^\d{1,7}-\d{2}-\d$', cas)
-            if not (is_valid_cas_fmt or cas in ["영업비밀", "미기재"]): continue
+            # '미기재', '-' 등은 가차 없이 버림. 법적 효력이 있는 '영업비밀'만 허용.
+            if not (is_valid_cas_fmt or cas == "영업비밀"): continue
                 
             if any(u in content.lower() for u in ['g/l', 'mg', 'ppm', 'ug', 'ml']):
                 content = "미기재%"
@@ -553,7 +571,7 @@ def process_pdf(pdf_path, log_func=None):
 
             if cas: comp_parts.append(f"{cas}({content})")
 
-        comp_str = "; ".join(comp_parts) if comp_parts else "함유량미기재%"
+        comp_str = "; ".join(comp_parts) if comp_parts else ""
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
         tag = "[AUTO-PASS]" if v24_str_clean == ai_str_clean else "[AI-FIXED]"
@@ -568,7 +586,7 @@ def process_pdf(pdf_path, log_func=None):
         "구성성분 및 함유량": comp_str, 
         "tag": tag, 
         "신뢰도": tag, 
-        "추론근거": f"Gemini 2.0 Flash-lite Ensemble ({reason})"
+        "추론근거": f"OpenAI gpt-4o-mini Ensemble ({reason})"
     }
 
     # [🚀추가] 제품명에 '확인 필요'가 들어있어도 무조건 노란불 켜기!
@@ -582,8 +600,24 @@ def process_pdf(pdf_path, log_func=None):
                 break
 
     result_data["신호등"] = traffic_light
-    # [V7.0] GUI 연동을 위한 페이지 정보 추가 (V5는 주로 1페이지에서 제품명 추출)
-    result_data["page"] = 1
+    
+    # --- [V7.5 지능형 미리보기 추적 로직] ---
+    target_page = 1
+    try:
+        doc = fitz.open(pdf_path)
+        # 최대 7페이지까지만 스캔하여 3번 항목 찾기
+        for i in range(min(7, len(doc))):
+            text = doc[i].get_text("text")
+            if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
+                target_page = i + 1 # GUI는 1-based index 사용
+                break
+        doc.close()
+    except:
+        pass
+        
+    result_data["page"] = target_page
+    # -----------------------------------------
+    
     return result_data
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
