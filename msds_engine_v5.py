@@ -635,9 +635,12 @@ def process_pdf(pdf_path, log_func=None):
                 content = content.replace("이하", "≤").replace("미만", "＜").replace("이상", "≥").replace("초과", "＞")
                 content = content.replace("<=", "≤").replace(">=", "≥").replace("<", "＜").replace(">", "＞")
 
-                # 3. 부등호 위치 보정 (숫자 뒤에 붙은 경우 앞으로 이동)
-                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥＜＞])\s*(?:%)?', r'\2\1%', content)
+                # 3. 부등호 위치 보정 (뒤에 숫자가 또 오지 않을 때만, 즉 진짜 꼬리표일 때만 앞으로 이동)
+                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥＜＞])(?!\s*[\d])', r'\2\1%', content)
                 content = re.sub(r'([≤≥＜＞])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
+
+                # [V5.9 긴급 방어망] 범위값에 부등호가 지저분하게 꼬인 경우 (예: ≥1≤5% 또는 ≥≤1%5%) 강제로 1~5% 형태로 분쇄 통일
+                content = re.sub(r'[≤≥＜＞]*\s*([\d\.]+)\s*(?:%|~|-)?\s*[≤≥＜＞]+\s*([\d\.]+)\s*(?:%)?', r'\1~\2%', content)
 
                 # 4. 소수점 후행 영(0) 컷오프 (수학 계산 및 기호 정리가 다 끝난 후 마지막에 실행)
                 content = re.sub(r'\.0+(\D|$)', r'\1', content)
@@ -690,21 +693,8 @@ def process_pdf(pdf_path, log_func=None):
 
     result_data["신호등"] = traffic_light
     
-    # --- [V7.5 지능형 미리보기 추적 로직] ---
-    target_page = 1
-    try:
-        doc = fitz.open(pdf_path)
-        # 전체 페이지 스캔하여 3번 항목 찾기
-        for i in range(len(doc)):
-            text = doc[i].get_text("text")
-            if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
-                target_page = i + 1 # GUI는 1-based index 사용
-                break
-        doc.close()
-    except:
-        pass
-        
-    result_data["page"] = target_page
+    # [V5.9] 미리보기 추적 단순화 (제품명 확인을 위해 무조건 1페이지 고정)
+    result_data["page"] = 1
     # -----------------------------------------
     
     return result_data
