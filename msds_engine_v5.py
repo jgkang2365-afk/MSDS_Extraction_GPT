@@ -33,6 +33,20 @@ def load_v5_patterns():
 
 P = load_v5_patterns()
 
+# [V5.1 Step 3] AI 시스템 프롬프트 외부 로드
+def load_system_prompt():
+    prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_system_v5.txt')
+    try:
+        if not os.path.exists(prompt_path):
+            raise FileNotFoundError(f"프롬프트 파일 누락: {prompt_path}")
+        with open(prompt_path, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except Exception as e:
+        raise RuntimeError(f"[시스템 치명적 오류] AI 프롬프트 로드 실패. prompt_system_v5.txt 파일을 확인하세요!\n상세: {e}")
+
+# 전역 프롬프트 로드
+SYSTEM_PROMPT_TEXT = load_system_prompt()
+
 # [V8.2] MES 마스터 데이터 로드 (Silent Failure 방어 및 Fail-Safe 적용)
 MES_MASTER_MAP = {}
 try:
@@ -418,48 +432,21 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
 
     prod_name_baseline = v24_result.get('제품명', '')
     
-    system_prompt = f"""
-    당신은 최고 수준의 화학물질 MSDS 검수자입니다.
-    아래 [1차 룰베이스 추출 결과]를 검토하고, 제공된 [원본 정보: 텍스트]를 바탕으로 교정하여 JSON으로 출력하세요.
+    user_prompt = f"""
+[1차 추출 결과]
+- 제품명: {prod_name_baseline}
+- 구성성분: {v24_result.get('함유량')}
 
-    [1차 추출 결과]
-    - 제품명: {prod_name_baseline}
-    - 구성성분: {v24_result.get('함유량')}
-
-    [🔥 V5 핵심 데이터 정제 규칙 최종본]
-    1. 1차 결과가 문서와 일치하면 그대로 유지하고, 오타만 교정하세요.
-    2. [상한선] 101% 등 100%를 초과하는 수치는 '100%'로 보정하세요.
-    3. [부등호 및 범위 통일] 함유량 기호는 아래 규칙을 절대적으로 따르세요.
-       - [절대 금지] 범위 기호('~')가 쓰일 때는 부등호('≥', '≤', '<', '>')를 절대 함께 쓰지 마세요.
-       - [일반 범위 단순화] 2개 이상의 숫자로 이루어진 범위값은 지저분한 부등호를 모두 제거하고 '~'로만 깔끔하게 연결하세요.
-       - [민감한 한계농도 보존] 숫자가 1개뿐인 단일 부등호(<, ≤, >, ≥)는 법적 규제 기준이므로 지우지 말고 그대로 유지하세요.
-       - [특수 기호 절대 규칙] 숫자 뒤에 꼬리처럼 붙은 기호는 단일 부등호로 변환하세요. '+'는 '이상(≥)', '-'는 '이하(≤)'로 바꿉니다.
-       - [시약 등급(GR/EP) 통합 절대 규칙] 여러 CAS 번호가 나열된 경우 가장 낮은(보수적인) 농도 하나로 통일하세요.
-       - 오차범위(±): 직접 계산하여 '최소~최대%'로 변환하세요.
-       - 'About', '약' 등은 제거하고 숫자와 기호만 남기세요.
-    4. [기호 없는 숫자 주의] 표에 '%' 기호 없이 단순 숫자만 적혀 있다면 퍼센트로 간주하되, 문맥상 다른 숫자(항목 번호 등)와 혼동하지 마세요.
-    5. [미기재 및 잔여량] 수치가 없거나 '잔량' 등으로 표기된 경우 임의 계산 없이 무조건 '미기재%'로 표기하세요.
-    6. [혼합물 CAS 삭제] 혼합물 전체를 지칭하는 CAS 번호가 하위 성분과 중복될 경우 혼합물 CAS는 삭제하세요.
-    7. [특수 단위 배제] 단위가 '%'가 아닌 'ppm', 'mg' 등인 경우 무조건 '미기재%'로 처리하세요.
-    8. [🚨 표 구조 파괴 대응 (Chaos-Proof)] PDF 텍스트 추출의 한계로 표의 행과 열이 뒤섞여(Chaos) 글자와 숫자가 난잡하게 흩어져 있을 수 있습니다. CAS 번호를 기준으로 주변의 텍스트가 오염되어 있더라도, 가장 가까운 논리적인 함유량 수치나 범위(예: 40 ~ 50, 10 ~ 25)를 문맥상으로 유추하여 정확히 짝지으세요. 1차 추출 결과가 100%로 도배되어 있다면 이는 파싱 오류일 확률이 높으므로, 원본 텍스트를 정밀 분석하여 진짜 함유량을 발굴해내야 합니다.
-    9. [무효 CAS 삭제 절대 규칙] CAS 번호란에 번호가 아예 없거나, '자료없음', '비공개', '-' 등으로 적혀있다면 해당 성분은 추출 대상에서 완전히 제외(삭제)하세요. 함유량이 있더라도 CAS 번호가 없으면 무의미합니다. (단, 명시적으로 '영업비밀'이라고 표기된 경우만 예외로 살려둡니다.)
-
-    [JSON 포맷]
-    {{
-      "교정_사유": "사유 요약",
-      "제품명": "최종 제품명",
-      "구성성분": [ {{"cas_no": "13463-67-7", "content": "70~75%"}} ]
-    }}
-    """
-    
+[원본 정보: 텍스트]
+{text_chunk}
+"""
     if retry_instruction:
-        system_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
+        user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
-    full_prompt = system_prompt + f"\n\n[원본 정보: 텍스트]\n{text_chunk}"
-    
     # OpenAI 규격의 Content 리스트 구성
-    content_list = [{"type": "text", "text": full_prompt}]
+    content_list = [{"type": "text", "text": user_prompt}]
     
+
     if image_list:
         for img in image_list:
             # extract_section3_images에서 만든 base64 데이터 추출
@@ -474,6 +461,10 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
     payload = {
         "model": "gpt-4o-mini",
         "messages": [
+            {
+                "role": "system",
+                "content": SYSTEM_PROMPT_TEXT
+            },
             {
                 "role": "user",
                 "content": content_list
