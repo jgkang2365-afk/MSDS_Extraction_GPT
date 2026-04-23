@@ -359,7 +359,7 @@ def run_v24_baseline(pdf_path):
             name = MES_MASTER_MAP[cas]
             comp_parts.append(f"{name}[{cas}({content})]")
         else:
-            comp_parts.append(f"[미등록]물질명확인불가[{cas}({content})]")
+            comp_parts.append(f"[미등록]원문명칭없음[{cas}({content})]")
             
     comp_str = "; ".join(comp_parts) if comp_parts else ""
     tag = "[PASS]" if all_components and comp_str else "[REVIEW]"
