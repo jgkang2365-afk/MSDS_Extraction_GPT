@@ -33,18 +33,39 @@ def load_v5_patterns():
 
 P = load_v5_patterns()
 
-# [V8.0] MES 마스터 데이터 기반 명칭 표준화 맵
+# [V8.1] MES 마스터 데이터 기반 명칭 표준화 맵 (구조 호환성 강화)
 MES_MASTER_MAP = {}
 try:
     master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
     if os.path.exists(master_path):
         with open(master_path, 'r', encoding='utf-8') as f:
-            for cas, info in json.load(f).items():
-                if cas and isinstance(info, dict):
-                    std_name = info.get("상용명") or info.get("물질명")
-                    if std_name: MES_MASTER_MAP[cas.strip()] = std_name.strip()
+            data = json.load(f)
+            # master_list 배열 구조인지 확인
+            items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+            
+            # 배열 구조 처리
+            for info in items_list:
+                cas = str(info.get("CAS번호", "")).strip()
+                std_name = info.get("상용명") or info.get("물질명")
+                if cas and std_name:
+                    MES_MASTER_MAP[cas] = std_name.strip()
 except Exception as e:
     print(f"마스터 데이터 로드 실패: {e}")
+
+# [V5.1 성능 최적화] 정규식 사전 컴파일 및 전역 헬퍼 함수 분리
+REGEX_LE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*이하')
+REGEX_LT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*미만')
+REGEX_GE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*이상')
+REGEX_GT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*초과')
+REGEX_PM = re.compile(r'(\d+(?:\.\d+)?)\s*(?:±|\+-)\s*(\d+(?:\.\d+)?)')
+
+def _calc_pm_range(m):
+    """정규식 매치 객체를 받아 ± 범위를 계산하는 전역 헬퍼 함수"""
+    try:
+        val, pm = float(m.group(1)), float(m.group(2))
+        return f"{val-pm:g}~{val+pm:g}"
+    except:
+        return m.group(0)
 
 # =====================================================================
 # [1단계] V24 정규식 코어 (안전망 복구 완료)
@@ -586,21 +607,33 @@ def process_pdf(pdf_path, log_func=None):
                 content = re.sub(r'([0-9.]+)\s*≤\s*(%?)$', r'≥\1\2', content)
                 content = re.sub(r'([0-9.]+)\s*≥\s*(%?)$', r'≤\1\2', content)
 
-            # [신규] 함유량 정제
+            # [신규] 함유량 정제 및 부등호/범위(±) 물리적 교정
+            content = str(content).strip()
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
-            elif "%" not in content:
-                content += "%"
+            else:
+                # 1. 부등호 교정 (사전 컴파일된 정규식 사용)
+                content = REGEX_LE.sub(r'<=\1', content)
+                content = REGEX_LT.sub(r'<\1', content)
+                content = REGEX_GE.sub(r'>=\1', content)
+                content = REGEX_GT.sub(r'>\1', content)
+                
+                # 2. +- 범위 교정 (전역 헬퍼 함수 사용)
+                content = REGEX_PM.sub(_calc_pm_range, content)
+                
+                # 3. % 기호 보장 및 공백 제거
+                if "%" not in content:
+                    content += "%"
+                content = content.replace(" ", "")
 
             # [신규] 명칭 표준화 및 미등록 플래그 처리
             if cas == "영업비밀":
                 comp_parts.append(f"영업비밀[{cas}({content})]")
             elif cas in MES_MASTER_MAP:
                 std_name = MES_MASTER_MAP[cas]
-                comp_parts.append(f"{std_name}[{cas}({content})]") # 완벽한 정합성
+                comp_parts.append(f"{std_name}[{cas}({content})]") # 완벽한 정합성 확보
             else:
-                raw_name = comp.get("chemical_name", "명칭확인불가")
-                # 마스터에 없는 CAS는 엑셀에서 필터링하기 쉽도록 [미등록] 태그 부착
+                raw_name = comp.get("chemical_name") or "명칭확인불가"
                 comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]") 
 
         comp_str = "; ".join(comp_parts) if comp_parts else ""

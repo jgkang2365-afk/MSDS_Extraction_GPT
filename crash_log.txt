@@ -4,3 +4,11 @@ Traceback (most recent call last):
   File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 260, in paint
 KeyboardInterrupt
 
+
+[2026-04-23 02:02:29.988651]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1987, in show_cas_copy_menu
+    menu = QMenu()
+           ^^^^^
+NameError: name 'QMenu' is not defined
+

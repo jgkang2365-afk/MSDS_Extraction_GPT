@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QGroupBox, QGridLayout, 
     QScrollArea, QMessageBox, QComboBox, QProgressBar, QFrame,
     QSplitter, QTabWidget, QTextEdit, QStyledItemDelegate, QStyle,
-    QStackedWidget, QToolButton, QSizePolicy
+    QStackedWidget, QToolButton, QSizePolicy, QMenu
 )
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
