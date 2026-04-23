@@ -66,7 +66,8 @@ try:
             
         for info in items_list:
             cas = str(info.get("CAS번호", "")).strip()
-            std_name = info.get("상용명") or info.get("물질명")
+            # [수정] 초산메틸 대신 메틸 아세테이트를 잡도록 '물질명' 최우선 적용
+            std_name = info.get("물질명") or info.get("상용명")
             if cas and std_name:
                 MES_MASTER_MAP[cas] = std_name.strip()
                 
@@ -612,16 +613,16 @@ def process_pdf(pdf_path, log_func=None):
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
             else:
-                # 1. 부등호 교정 (사전 컴파일된 정규식 사용)
+                # 1. 부등호 교정 (정규식 + 방탄 문자열 치환 병행)
                 content = REGEX_LE.sub(r'<=\1', content)
                 content = REGEX_LT.sub(r'<\1', content)
                 content = REGEX_GE.sub(r'>=\1', content)
                 content = REGEX_GT.sub(r'>\1', content)
+                content = content.replace("이하", "<=").replace("미만", "<").replace("이상", ">=").replace("초과", ">")
                 
-                # 2. +- 범위 교정 (전역 헬퍼 함수 사용)
+                # 2. +- 범위 교정
                 content = REGEX_PM.sub(_calc_pm_range, content)
                 
-                # 3. % 기호 보장 및 공백 제거
                 if "%" not in content:
                     content += "%"
                 content = content.replace(" ", "")
@@ -631,9 +632,10 @@ def process_pdf(pdf_path, log_func=None):
                 comp_parts.append(f"영업비밀[{cas}({content})]")
             elif cas in MES_MASTER_MAP:
                 std_name = MES_MASTER_MAP[cas]
-                comp_parts.append(f"{std_name}[{cas}({content})]") # 완벽한 정합성 확보
+                comp_parts.append(f"{std_name}[{cas}({content})]") 
             else:
-                raw_name = comp.get("chemical_name") or "명칭확인불가"
+                # [수정] AI가 추출한 name을 받아서 '명칭확인불가' 대신 원문 명칭 출력
+                raw_name = comp.get("name") or comp.get("chemical_name") or "원문명칭없음"
                 comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]") 
 
         comp_str = "; ".join(comp_parts) if comp_parts else ""

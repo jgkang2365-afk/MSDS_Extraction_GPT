@@ -12,3 +12,11 @@ Traceback (most recent call last):
            ^^^^^
 NameError: name 'QMenu' is not defined
 
+
+[2026-04-23 20:10:19.692831]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 284, in paint
+    def paint(self, painter, option, index):
+    
+KeyboardInterrupt
+
