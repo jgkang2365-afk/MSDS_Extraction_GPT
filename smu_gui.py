@@ -1927,23 +1927,7 @@ class SMUGUI(QMainWindow):
         [V7.0 & V11.0 통합] 테이블 행 클릭 시 미리보기 연동 및 KOSHA 원클릭 검증
         """
         try:
-            # 1. [V11.0] KOSHA 하이퍼링크 브릿지 (3열 CAS원본, 4~6열 결과 클릭 시)
-            if column in [3, 4, 5, 6]:
-                item = self.table.item(row, column)
-                if item:
-                    text = item.text()
-                    # 정규식으로 CAS 번호 추출
-                    cas_matches = re.findall(r'\d{2,7}-\d{2}-\d', text)
-                    if cas_matches:
-                        target_cas = cas_matches[0] # 첫 번째 CAS 기준
-                        kosha_url = f"https://msds.kosha.or.kr/MSDSInfo/kcic/msds/msds.do?page=all&searchSearchName={target_cas}"
-                        
-                        # 로컬에 임포트하여 즉시 브라우저 실행
-                        from PyQt5.QtGui import QDesktopServices
-                        QDesktopServices.openUrl(QUrl(kosha_url))
-                        self.statusBar().showMessage(f"🌐 KOSHA 연결 중: {target_cas}", 3000)
-
-            # 2. [V7.0] 기존 PDF 미리보기 위치 이동 로직
+            # 1. [V7.0] 기존 PDF 미리보기 위치 이동 로직
             target_pdf_path_item = self.table.item(row, COL_IDX_FILEPATH)
             target_page_item = self.table.item(row, COL_IDX_PAGE)
             
