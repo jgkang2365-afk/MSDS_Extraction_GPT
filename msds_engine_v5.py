@@ -207,6 +207,10 @@ def format_content_v3(content_str):
     c = str(content_str).upper()
     if any(kw in c for kw in ["영업비밀", "SECRET", "TRADE", "PROPRIETARY"]): return "영업비밀"
     
+    # [V5.8] 숫자 추출 전 오차범위(±) 선제 계산 (예: 10±2 -> 8~12)
+    if re.search(r'±|\+-', content_str):
+        content_str = REGEX_PM.sub(_calc_pm_range, content_str)
+        
     nums_raw = re.findall(r'\d+(?:[\.,]\d+)?', content_str)
     valid_nums = []
     for num in nums_raw:
@@ -232,13 +236,19 @@ def format_content_v3(content_str):
     # [단일값] 1개의 숫자: 1이나 0.1 같은 민감한 값의 부등호 철저히 보존!
     elif len(valid_nums) == 1:
         v1 = clean_number(valid_nums[0])
-        # [V5.5] AI 앙상블 비교 정합성을 위한 특수기호(≤, ≥, ＜, ＞) 통일
-        if re.search(r'[≥]|>=|이상|\+', content_str): return f"≥{v1}"
-        if re.search(r'[≤]|<=|이하', content_str) or re.search(r'-\s*$', content_str.replace('%','').strip()): 
-            return f"≤{v1}"
-        if re.search(r'[＜<]|미만', content_str): return f"＜{v1}"
-        if re.search(r'[＞>]|초과', content_str): return f"＞{v1}"
-        return f"{v1}"
+        # [V5.7] AI 앙상블 비교 정합성을 위한 특수기호(≤, ≥, ＜, ＞) 및 위치 통일
+        res = ""
+        if re.search(r'[≥]|>=|이상|\+', content_str): res = f"≥{v1}"
+        elif re.search(r'[≤]|<=|이하', content_str) or re.search(r'-\s*$', content_str.replace('%','').strip()): 
+            res = f"≤{v1}"
+        elif re.search(r'[＜<]|미만', content_str): res = f"＜{v1}"
+        elif re.search(r'[＞>]|초과', content_str): res = f"＞{v1}"
+        else: res = f"{v1}"
+        
+        # [V5.7] 소수점 후행 영(0) 컷오프
+        res = re.sub(r'\.0+(\D|$)', r'\1', res)
+        res = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', res)
+        return res
 
 def search_content_in_context(context_str, cas_abs_pos, ctx_start, is_table=False, table_has_percent=False):
     masked = context_str
@@ -613,18 +623,25 @@ def process_pdf(pdf_path, log_func=None):
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
             else:
-                # 1. 부등호 교정 (특수기호 강제 전환 및 방탄 문자열 치환 병행)
+                # [V5.8 연산 순서 교정] 1. 가장 먼저 오차범위(±) 수학 계산 실행
+                content = REGEX_PM.sub(_calc_pm_range, content)
+                
+                # 2. 부등호 교정 (특수기호 강제 전환 및 방탄 문자열 치환 병행)
                 content = REGEX_LE.sub(r'≤\1', content)
                 content = REGEX_LT.sub(r'＜\1', content)
                 content = REGEX_GE.sub(r'≥\1', content)
                 content = REGEX_GT.sub(r'＞\1', content)
                 
-                # 한글 및 ASCII 기호를 모두 공식 특수기호로 강제 치환
                 content = content.replace("이하", "≤").replace("미만", "＜").replace("이상", "≥").replace("초과", "＞")
                 content = content.replace("<=", "≤").replace(">=", "≥").replace("<", "＜").replace(">", "＞")
-                
-                # 2. +- 범위 교정
-                content = REGEX_PM.sub(_calc_pm_range, content)
+
+                # 3. 부등호 위치 보정 (숫자 뒤에 붙은 경우 앞으로 이동)
+                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥＜＞])\s*(?:%)?', r'\2\1%', content)
+                content = re.sub(r'([≤≥＜＞])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
+
+                # 4. 소수점 후행 영(0) 컷오프 (수학 계산 및 기호 정리가 다 끝난 후 마지막에 실행)
+                content = re.sub(r'\.0+(\D|$)', r'\1', content)
+                content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content)
                 
                 if "%" not in content:
                     content += "%"
