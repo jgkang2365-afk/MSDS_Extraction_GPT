@@ -33,24 +33,33 @@ def load_v5_patterns():
 
 P = load_v5_patterns()
 
-# [V8.1] MES 마스터 데이터 기반 명칭 표준화 맵 (구조 호환성 강화)
+# [V8.2] MES 마스터 데이터 로드 (Silent Failure 방어 및 Fail-Safe 적용)
 MES_MASTER_MAP = {}
 try:
     master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
-    if os.path.exists(master_path):
-        with open(master_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            # master_list 배열 구조인지 확인
-            items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+    
+    # 1. 파일 존재 여부 물리적 확인
+    if not os.path.exists(master_path):
+        raise FileNotFoundError(f"마스터 데이터 파일이 존재하지 않습니다: {master_path}")
+
+    with open(master_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+        items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+        
+        # 2. 데이터 유효성 검증
+        if not items_list:
+            raise ValueError("JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다.")
             
-            # 배열 구조 처리
-            for info in items_list:
-                cas = str(info.get("CAS번호", "")).strip()
-                std_name = info.get("상용명") or info.get("물질명")
-                if cas and std_name:
-                    MES_MASTER_MAP[cas] = std_name.strip()
+        for info in items_list:
+            cas = str(info.get("CAS번호", "")).strip()
+            std_name = info.get("상용명") or info.get("물질명")
+            if cas and std_name:
+                MES_MASTER_MAP[cas] = std_name.strip()
+                
 except Exception as e:
-    print(f"마스터 데이터 로드 실패: {e}")
+    # [치명적 변경] print로 조용히 넘기지 않고 RuntimeError 발생. 
+    # GUI의 global_exception_handler가 캐치하여 팝업으로 띄우도록 강제함.
+    raise RuntimeError(f"[시스템 치명적 오류] 마스터 DB 초기화에 실패했습니다. DB 파일을 확인하세요!\n상세 원인: {e}")
 
 # [V5.1 성능 최적화] 정규식 사전 컴파일 및 전역 헬퍼 함수 분리
 REGEX_LE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*이하')
