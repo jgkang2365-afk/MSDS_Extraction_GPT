@@ -567,11 +567,21 @@ class ValidationWorker(QThread):
                     else:
                         clean_name = name.strip()
                         
-                    # [최종 지침] MES 표준 명칭으로 치환 (결과 필드에서만)
-                    mes_entry = self.parent_gui.mes_cas_map.get(cas, {})
-                    mes_std_name = mes_entry.get("물질명", "")
+                    # [V11.3 최종 지침] KOSHA API 결과도 엔진(V5)의 표준명칭과 100% 동기화
+                    import msds_engine_v5 as engine_v5
+                    mes_std_name = engine_v5.MES_MASTER_MAP.get(cas, "")
+                    
                     if mes_std_name:
                         clean_name = str(mes_std_name)
+                        # 마스터 DB 노이즈 제거 (분진/흄 등은 철저히 보존)
+                        clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
+                    else:
+                        # 엔진 맵에 없을 경우에만 GUI 로컬 맵에서 2차 방어망 가동
+                        mes_entry = self.parent_gui.mes_cas_map.get(cas, {})
+                        fallback_name = mes_entry.get("물질명") or mes_entry.get("상용명")
+                        if fallback_name and str(fallback_name).lower() != 'nan':
+                            clean_name = str(fallback_name)
+                            clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
 
                     osh = c.get("osh", {})
                     is_work = osh.get("is_measured", False)

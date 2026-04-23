@@ -232,14 +232,12 @@ def format_content_v3(content_str):
     # [단일값] 1개의 숫자: 1이나 0.1 같은 민감한 값의 부등호 철저히 보존!
     elif len(valid_nums) == 1:
         v1 = clean_number(valid_nums[0])
-        # [교체할 코드]
-        # '+'는 '이상'으로 처리
+        # [V5.5] AI 앙상블 비교 정합성을 위한 특수기호(≤, ≥, ＜, ＞) 통일
         if re.search(r'[≥]|>=|이상|\+', content_str): return f"≥{v1}"
-        # '-'는 '이하'로 처리하되, 범위 연결자와 꼬이지 않도록 문자열 끝부분(-%)에 있을 때만 작동
-        if re.search(r'[≤]|<=|이하|미만', content_str) or re.search(r'-\s*$', content_str.replace('%','').strip()): 
+        if re.search(r'[≤]|<=|이하', content_str) or re.search(r'-\s*$', content_str.replace('%','').strip()): 
             return f"≤{v1}"
-        if re.search(r'[<]', content_str): return f"<{v1}"
-        if re.search(r'[>]|초과', content_str): return f">{v1}"
+        if re.search(r'[＜<]|미만', content_str): return f"＜{v1}"
+        if re.search(r'[＞>]|초과', content_str): return f"＞{v1}"
         return f"{v1}"
 
 def search_content_in_context(context_str, cas_abs_pos, ctx_start, is_table=False, table_has_percent=False):
@@ -357,6 +355,8 @@ def run_v24_baseline(pdf_path):
         content = c['content']
         if cas in MES_MASTER_MAP:
             name = MES_MASTER_MAP[cas]
+            # [V5.3] 마스터 DB의 노이즈(STEL, TWA 등 규제치 태그)만 정밀 제거
+            name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', name, flags=re.IGNORECASE).strip()
             comp_parts.append(f"{name}[{cas}({content})]")
         else:
             comp_parts.append(f"[미등록]원문명칭없음[{cas}({content})]")
@@ -402,8 +402,8 @@ def extract_section3_images(pdf_path):
         start_page = -1
         end_page = -1
         
-        # 1. 구간 탐색 (최대 7페이지까지 스캔)
-        for i in range(min(7, len(doc))):
+        # 1. 구간 탐색 (전체 페이지 스캔)
+        for i in range(len(doc)):
             text = doc[i].get_text("text")
             if start_page == -1 and re.search(r'3\.\s*구성|SECTION\s*3', text, re.I):
                 start_page = i
@@ -613,12 +613,15 @@ def process_pdf(pdf_path, log_func=None):
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
             else:
-                # 1. 부등호 교정 (정규식 + 방탄 문자열 치환 병행)
-                content = REGEX_LE.sub(r'<=\1', content)
-                content = REGEX_LT.sub(r'<\1', content)
-                content = REGEX_GE.sub(r'>=\1', content)
-                content = REGEX_GT.sub(r'>\1', content)
-                content = content.replace("이하", "<=").replace("미만", "<").replace("이상", ">=").replace("초과", ">")
+                # 1. 부등호 교정 (특수기호 강제 전환 및 방탄 문자열 치환 병행)
+                content = REGEX_LE.sub(r'≤\1', content)
+                content = REGEX_LT.sub(r'＜\1', content)
+                content = REGEX_GE.sub(r'≥\1', content)
+                content = REGEX_GT.sub(r'＞\1', content)
+                
+                # 한글 및 ASCII 기호를 모두 공식 특수기호로 강제 치환
+                content = content.replace("이하", "≤").replace("미만", "＜").replace("이상", "≥").replace("초과", "＞")
+                content = content.replace("<=", "≤").replace(">=", "≥").replace("<", "＜").replace(">", "＞")
                 
                 # 2. +- 범위 교정
                 content = REGEX_PM.sub(_calc_pm_range, content)
@@ -632,6 +635,8 @@ def process_pdf(pdf_path, log_func=None):
                 comp_parts.append(f"영업비밀[{cas}({content})]")
             elif cas in MES_MASTER_MAP:
                 std_name = MES_MASTER_MAP[cas]
+                # [V5.3] 마스터 DB의 노이즈(STEL, TWA 등 규제치 태그)만 정밀 제거
+                std_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', std_name, flags=re.IGNORECASE).strip()
                 comp_parts.append(f"{std_name}[{cas}({content})]") 
             else:
                 # [수정] AI가 추출한 name을 받아서 '명칭확인불가' 대신 원문 명칭 출력
@@ -672,8 +677,8 @@ def process_pdf(pdf_path, log_func=None):
     target_page = 1
     try:
         doc = fitz.open(pdf_path)
-        # 최대 7페이지까지만 스캔하여 3번 항목 찾기
-        for i in range(min(7, len(doc))):
+        # 전체 페이지 스캔하여 3번 항목 찾기
+        for i in range(len(doc)):
             text = doc[i].get_text("text")
             if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
                 target_page = i + 1 # GUI는 1-based index 사용
