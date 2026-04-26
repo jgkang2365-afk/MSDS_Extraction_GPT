@@ -20,3 +20,23 @@ Traceback (most recent call last):
     
 KeyboardInterrupt
 
+
+[2026-04-26 12:35:16.754619]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 3090, in perform_standard_save
+    excel.Visible = False
+    ^^^^^^^^^^^^^
+  File "C:\Users\USER\AppData\Local\Programs\Python\Python313\Lib\site-packages\win32com\client\dynamic.py", line 699, in __setattr__
+    raise AttributeError(f"Property '{self._username_}.{attr}' can not be set.")
+AttributeError: Property 'Excel.Application.Visible' can not be set.
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 3322, in perform_standard_save
+    if excel: excel.Visible = True
+              ^^^^^^^^^^^^^
+  File "C:\Users\USER\AppData\Local\Programs\Python\Python313\Lib\site-packages\win32com\client\dynamic.py", line 699, in __setattr__
+    raise AttributeError(f"Property '{self._username_}.{attr}' can not be set.")
+AttributeError: Property 'Excel.Application.Visible' can not be set.
+

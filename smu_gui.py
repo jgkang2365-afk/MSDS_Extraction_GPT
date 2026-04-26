@@ -2469,7 +2469,8 @@ class SMUGUI(QMainWindow):
         excel = None
         try:
             excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
+            try: excel.Visible = False
+            except AttributeError: pass
             wb = excel.Workbooks.Open(os.path.abspath(excel_path))
             ws = wb.Sheets(self.combo_sheet.currentText())
 
@@ -2505,10 +2506,10 @@ class SMUGUI(QMainWindow):
             QMessageBox.critical(self, "오류", f"엑셀 작업 중 오류 발생:\n{e}")
         finally:
             if excel:
-                try: 
-                    excel.Visible = True
-                    excel.UserControl = True
-                except: pass
+                try: excel.Visible = True
+                except AttributeError: pass
+                try: excel.UserControl = True
+                except AttributeError: pass
             pythoncom.CoUninitialize()
 
     def select_excel(self):
@@ -3087,8 +3088,10 @@ class SMUGUI(QMainWindow):
         excel = None
         try:
             excel = win32com.client.Dispatch("Excel.Application")
-            excel.Visible = False
-            excel.DisplayAlerts = False
+            try: excel.Visible = False
+            except AttributeError: pass
+            try: excel.DisplayAlerts = False
+            except AttributeError: pass
             
             wb = excel.Workbooks.Open(os.path.abspath(excel_path))
             ws = wb.Sheets(sheet_name)
@@ -3313,13 +3316,17 @@ class SMUGUI(QMainWindow):
                     matched_count += 1
             
             wb.Save()
-            excel.Visible = True
-            excel.Interactive = True
+            try: excel.Visible = True
+            except AttributeError: pass
+            try: excel.Interactive = True
+            except AttributeError: pass
             self.log(f"[완료] {matched_count}건 가로형 저장 성공 (시작 행: {st_row})")
             QMessageBox.information(self, "완료", f"가로형 엑셀 저장이 완료되었습니다.\n({matched_count}건 저장됨)")
 
         except Exception as e:
-            if excel: excel.Visible = True
+            if excel:
+                try: excel.Visible = True
+                except AttributeError: pass
             self.log(f"[오류] 저장 실패: {str(e)}")
             QMessageBox.critical(self, "오류", str(e))
         finally:
