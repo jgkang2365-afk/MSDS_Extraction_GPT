@@ -1426,11 +1426,19 @@ class SMUGUI(QMainWindow):
         
         result_layout.addWidget(self.match_table)
         
-        # [NEW] 수동 확정 버튼 추가
+        # [NEW] 수동 확정 버튼들 (가로 배치)
+        btn_layout = QHBoxLayout()
         btn_confirm = QPushButton("선택 항목 매칭 확정 (학습)")
         btn_confirm.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 8px;")
         btn_confirm.clicked.connect(self.confirm_manual_match)
-        result_layout.addWidget(btn_confirm)
+        
+        self.btn_batch_confirm = QPushButton("🟢 초록불 일괄 자동 학습")
+        self.btn_batch_confirm.setStyleSheet("background-color: #007bff; color: white; font-weight: bold; padding: 8px;")
+        self.btn_batch_confirm.clicked.connect(self.batch_auto_confirm)
+        
+        btn_layout.addWidget(btn_confirm)
+        btn_layout.addWidget(self.btn_batch_confirm)
+        result_layout.addLayout(btn_layout)
         
         result_group.setLayout(result_layout)
         layout.addWidget(result_group)
@@ -1670,6 +1678,85 @@ class SMUGUI(QMainWindow):
         except Exception as e:
             self.log(f"[!] 매칭 확정 중 오류: {e}")
             QMessageBox.critical(self, "오류", f"매칭 확정 처리 중 오류가 발생했습니다: {e}")
+
+    def batch_auto_confirm(self):
+        """[V11.9 Intelligence] 테이블의 모든 '🟢 초록불' 항목을 일괄 확정 및 학습"""
+        row_count = self.match_table.rowCount()
+        if row_count == 0:
+            QMessageBox.information(self, "알림", "학습할 데이터가 없습니다.")
+            return
+
+        confirm_count = 0
+        try:
+            for row in range(row_count):
+                icon_item = self.match_table.item(row, 0)
+                status_item = self.match_table.item(row, 6)
+                
+                # 이미 학습된 항목은 건너뜀
+                if status_item and "학습 완료" in status_item.text():
+                    continue
+                
+                # 신뢰도가 초록불(🟢)인 행만 타겟팅
+                if icon_item and "🟢" in icon_item.text():
+                    pdf_name = self.match_table.item(row, 2).text().strip() if self.match_table.item(row, 2) else "Unknown"
+                    excel_name = self.match_table.item(row, 4).text().strip() if self.match_table.item(row, 4) else "N/A"
+                    
+                    if excel_name == "N/A": continue
+                    
+                    # 바인딩 데이터 수집
+                    match_data = self.matching_results[row]
+                    binding = match_data.get('binding_data', {})
+                    usage_val = binding.get("사용용도", "미지정") if binding else "미지정"
+                    
+                    # 1. 지식 엔진 학습
+                    self.km.update_experience(pdf_name, excel_name, binding)
+                    
+                    # 2. SQLite DB 지식 고착화
+                    f_hash = ""
+                    db_data = {"cas": "", "measure": "", "reg1": "", "reg2": ""}
+                    for r in range(self.table.rowCount()):
+                        if self.table.item(r, 2) and self.table.item(r, 2).text().strip() == pdf_name:
+                            f_hash = self.table.item(r, 8).text() if self.table.item(r, 8) else ""
+                            db_data["cas"] = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
+                            db_data["measure"] = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
+                            db_data["reg2"] = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
+                            db_data["reg1"] = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
+                            break
+                    
+                    if f_hash:
+                        # 용접 특례 보정
+                        if "용접" in pdf_name and "7439-89-6" in db_data["cas"]:
+                            if "용접흄; 산화철" not in db_data["measure"]:
+                                db_data["measure"] = f"용접흄; 산화철; {db_data['measure']}".strip("; ")
+                        
+                        self.save_db_knowledge(pdf_name, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
+                        
+                        # 모델명 추출 학습
+                        model_matches = re.findall(r"[A-Z0-9]+-[A-Z0-9]+|[A-Z]+[0-9]+[A-Z0-9]*", pdf_name)
+                        for model_id in model_matches:
+                            if len(model_id) > 2 and model_id != pdf_name:
+                                self.save_db_knowledge(model_id, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
+                    
+                    # 3. UI 피드백 업데이트
+                    self.match_table.setItem(row, 3, QTableWidgetItem("99% (학습됨)"))
+                    self.match_table.setItem(row, 6, QTableWidgetItem("학습 완료 (확정)"))
+                    confirm_color = QColor("#e1f7d5")
+                    for c in range(self.match_table.columnCount()):
+                        item = self.match_table.item(row, c)
+                        if item: item.setBackground(confirm_color)
+                    
+                    match_data['score'] = 99
+                    confirm_count += 1
+            
+            if confirm_count > 0:
+                self.log(f"[*] 일괄 학습 완료: {confirm_count}건의 초록불 항목이 DB에 저장되었습니다.")
+                QMessageBox.information(self, "일괄 학습 완료", f"총 {confirm_count}건의 초록불 데이터가 지식 DB에 일괄 학습되었습니다!")
+            else:
+                QMessageBox.information(self, "알림", "새롭게 학습할 초록불(🟢) 항목이 없습니다.")
+                
+        except Exception as e:
+            self.log(f"[!] 일괄 확정 중 오류: {e}")
+            QMessageBox.critical(self, "오류", f"일괄 확정 처리 중 오류가 발생했습니다: {e}")
 
     def init_ui(self):
         self.setWindowTitle("1SMU MSDS Intelligence - Enterprise Edition")
