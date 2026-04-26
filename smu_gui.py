@@ -393,14 +393,20 @@ class ExtractionWorker(QThread):
                         # continue를 호출하지 않고 아래의 추출 엔진(engine.analyze_msds)으로 진입시킴
                     else:
                         self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
+                        
+                        # [V11.6 핵심 로직] manual_data 금고 확인 및 최우선 덮어쓰기
+                        manual = cached_data.get("manual_data", {})
+                        final_product = manual.get("product_name", cached_data.get("product_name", "미확인"))
+                        final_content = manual.get("raw_content", cached_data.get("raw_content", ""))
+
                         res_data = {
                             "filename": fn,
-                            "f_hash": f_hash, # [NEW] 해시 포함
-                            "product_name": cached_data.get("product_name", "미확인"),
+                            "f_hash": f_hash, 
+                            "product_name": final_product,  # manual_data가 있으면 우선 적용
                             "reliability": cached_data.get("reliability", "N/A"),
                             "신호등": cached_data.get("신호등", "⚪"),
-                            "raw_content": cached_data.get("raw_content", ""),
-                            "status": "캐시 데이터 로드됨"
+                            "raw_content": final_content,   # manual_data가 있으면 우선 적용
+                            "status": "수동 수정됨" if manual else "캐시 로드됨"
                         }
                         self.result_signal.emit(res_data)
                         self.progress_signal.emit(int((i + 1) / total * 100))
