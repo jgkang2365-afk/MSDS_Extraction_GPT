@@ -386,26 +386,26 @@ class ExtractionWorker(QThread):
                 
                 if f_hash and getattr(self, 'cache', None) and f_hash in self.cache:
                     cached_data = self.cache[f_hash]
+                    manual = cached_data.get("manual_data", {})
                     
-                    # [V11.5 AI 자동 재시도 로직] 캐시가 있더라도 '제품명 확인 필요' 등 실패 기록이면 캐시를 무시하고 AI 재타격!
-                    if cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", ""):
+                    # [V11.7 핵심 로직] 수동 데이터가 없고(not manual), 과거에 AI가 실패했던 경우에만 재시도!
+                    if not manual and (cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", "")):
                         self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과(AI 뻗음 등) 감지: API 재호출을 시도합니다.")
-                        # continue를 호출하지 않고 아래의 추출 엔진(engine.analyze_msds)으로 진입시킴
+                        # continue 안 함 -> AI 엔진 재가동
                     else:
                         self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
                         
-                        # [V11.6 핵심 로직] manual_data 금고 확인 및 최우선 덮어쓰기
-                        manual = cached_data.get("manual_data", {})
+                        # [V11.6 로직 유지] manual_data 금고 확인 및 최우선 덮어쓰기
                         final_product = manual.get("product_name", cached_data.get("product_name", "미확인"))
                         final_content = manual.get("raw_content", cached_data.get("raw_content", ""))
 
                         res_data = {
                             "filename": fn,
                             "f_hash": f_hash, 
-                            "product_name": final_product,  # manual_data가 있으면 우선 적용
+                            "product_name": final_product, 
                             "reliability": cached_data.get("reliability", "N/A"),
                             "신호등": cached_data.get("신호등", "⚪"),
-                            "raw_content": final_content,   # manual_data가 있으면 우선 적용
+                            "raw_content": final_content, 
                             "status": "수동 수정됨" if manual else "캐시 로드됨"
                         }
                         self.result_signal.emit(res_data)
