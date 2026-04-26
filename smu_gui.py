@@ -2140,6 +2140,7 @@ class SMUGUI(QMainWindow):
         self.db_table.setColumnWidth(4, 300) # 1차
         self.db_table.setColumnWidth(5, 140) # 일시
         self.db_table.setSelectionBehavior(QTableWidget.SelectRows) # 행 단위 선택
+        self.db_table.setWordWrap(True) # [V11.1] 텍스트 자동 줄바꿈 활성화
         layout.addWidget(self.db_table)
 
         # 3. 하단 액션 버튼
@@ -2165,12 +2166,18 @@ class SMUGUI(QMainWindow):
             for row_idx, row_data in enumerate(data):
                 self.db_table.insertRow(row_idx)
                 for col_idx, val in enumerate(row_data):
-                    item = QTableWidgetItem(str(val))
+                    # [V11.1] 텍스트 정제: 윈도우 줄바꿈 오류(\r) 방어
+                    clean_text = str(val).replace('\r\n', '\n').replace('\r', '\n')
+                    item = QTableWidgetItem(clean_text)
+                    
                     # 업데이트 일시 등은 읽기 전용 및 중앙 정렬
                     if col_idx in [2, 5]: 
                         item.setTextAlignment(Qt.AlignCenter)
                     item.setFlags(item.flags() ^ Qt.ItemIsEditable) # DB 탭은 관람/삭제 전용
                     self.db_table.setItem(row_idx, col_idx, item)
+            
+            # [V11.1] 핵심: 데이터 로드 후 텍스트 길이에 맞춰 행 높이 자동 조절
+            self.db_table.resizeRowsToContents()
             
             self.log(f"[*] 지식 DB 데이터 {len(data)}건 로드 완료.")
         except Exception as e:

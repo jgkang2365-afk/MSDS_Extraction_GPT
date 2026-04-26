@@ -40,3 +40,35 @@ Traceback (most recent call last):
     raise AttributeError(f"Property '{self._username_}.{attr}' can not be set.")
 AttributeError: Property 'Excel.Application.Visible' can not be set.
 
+
+[2026-04-26 16:03:45.454714]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1360, in log
+    def log(self, message):
+    
+KeyboardInterrupt
+
+
+[2026-04-26 16:07:33.613500]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1360, in log
+    def log(self, message):
+    
+KeyboardInterrupt
+
+
+[2026-04-26 16:12:07.481497]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1360, in log
+    def log(self, message):
+    
+KeyboardInterrupt
+
+
+[2026-04-26 16:15:15.277417]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1360, in log
+    def log(self, message):
+    
+KeyboardInterrupt
+

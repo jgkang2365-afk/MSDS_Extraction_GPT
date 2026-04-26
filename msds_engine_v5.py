@@ -12,13 +12,19 @@ from opendataloader.pdf import PDFParser
 import msds_utils_v3
 from dotenv import load_dotenv
 
-# .env 파일 로드
-load_dotenv()
+# .env 파일 로드 (시스템 환경 변수보다 .env 파일 우선 적용)
+load_dotenv(override=True)
 
-# [필수 세팅] OpenAI API 키
+# [필수 세팅] API 키 (시스템 변수 충돌 방지를 위해 전용 변수명 사용)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
 if not OPENAI_API_KEY:
-    print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. AI 비전 검수가 작동하지 않습니다.")
+    print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
+if not GOOGLE_API_KEY:
+    print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
+
+GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GOOGLE_API_KEY}"
 
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
 
@@ -438,76 +444,91 @@ def extract_section3_images(pdf_path):
     except Exception:
         return []
 
-def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
-    if not text_chunk.strip(): return None
+def call_gemini_2_5_lite(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
+    """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
+    if (not text_chunk.strip() and not image_list) or not GOOGLE_API_KEY: return None
 
     prod_name_baseline = v24_result.get('제품명', '')
-    
-    user_prompt = f"""
-[1차 추출 결과]
-- 제품명: {prod_name_baseline}
-- 구성성분: {v24_result.get('함유량')}
-
-[원본 정보: 텍스트]
-{text_chunk}
-"""
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
-    # OpenAI 규격의 Content 리스트 구성
-    content_list = [{"type": "text", "text": user_prompt}]
-    
-
+    # Google AI API Contents/Parts 구조 구성
+    parts = [{"text": f"{SYSTEM_PROMPT_TEXT}\n\n{user_prompt}"}]
     if image_list:
         for img in image_list:
-            # extract_section3_images에서 만든 base64 데이터 추출
-            b64_data = img.get("data", "")
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/png",
+                    "data": img.get("data", "")
+                }
+            })
+
+    payload = {
+        "contents": [{"parts": parts}],
+        "generationConfig": {
+            "temperature": 0.0,
+            "responseMimeType": "application/json"
+        }
+    }
+
+    try:
+        response = requests.post(GEMINI_API_URL, json=payload, timeout=40)
+        if response.status_code == 200:
+            result = response.json()
+            candidate = result.get("candidates", [{}])[0]
+            text_response = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
+            return json.loads(text_response)
+        else:
+            if log_func: log_func(f" ❌ Gemini API 에러 ({response.status_code}): {response.text}")
+            return None
+    except Exception as e:
+        if log_func: log_func(f" ❌ Gemini 시스템 오류: {str(e)}")
+        return None
+
+def call_gpt_4o_mini(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
+    """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
+    if (not text_chunk.strip() and not image_list) or not OPENAI_API_KEY: return None
+
+    prod_name_baseline = v24_result.get('제품명', '')
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
+    if retry_instruction:
+        user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
+
+    content_list = [{"type": "text", "text": user_prompt}]
+    if image_list:
+        for img in image_list:
             content_list.append({
                 "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{b64_data}"
-                }
+                "image_url": {"url": f"data:image/png;base64,{img.get('data', '')}"}
             })
 
     payload = {
         "model": "gpt-4o-mini",
         "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT_TEXT
-            },
-            {
-                "role": "user",
-                "content": content_list
-            }
+            {"role": "system", "content": SYSTEM_PROMPT_TEXT},
+            {"role": "user", "content": content_list}
         ],
         "temperature": 0.0,
-        "response_format": {"type": "json_object"} # JSON 응답 강제 (OpenAI 전용)
+        "response_format": {"type": "json_object"}
     }
 
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {OPENAI_API_KEY}"
     }
-    
-    url = "https://api.openai.com/v1/chat/completions"
 
     try:
-        # OpenAI는 속도 제한이 넉넉하므로 time.sleep 제거, 딜레이 없이 즉시 타격
-        response = requests.post(url, headers=headers, data=json.dumps(payload), timeout=40)
-        
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=40)
         if response.status_code == 200:
             result = response.json()
-            # OpenAI의 json_object 모드는 텍스트 마크다운(```json) 없이 순수 JSON 텍스트만 반환함
             text_response = result["choices"][0]["message"]["content"]
             return json.loads(text_response)
-            
         else:
-            if log_func: log_func(f" ❌ OpenAI API 통신 에러 ({response.status_code}): {response.text}")
+            if log_func: log_func(f" ❌ OpenAI API 에러 ({response.status_code})")
             return None
-            
     except Exception as e:
-        if log_func: log_func(f" ❌ 시스템 오류 발생: {str(e)}")
+        if log_func: log_func(f" ❌ GPT 시스템 오류: {str(e)}")
         return None
 
 
@@ -516,160 +537,112 @@ def analyze_with_gemini_ensemble(v24_result, text_chunk, image_list=[], log_func
 # =====================================================================
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
-    if log_func: log_func(f" 🚀 [앙상블 기동] V24 코어 + OpenAI gpt-4o-mini 초고속 검증 시작")
+    if log_func: log_func(f" 🚀 [하이브리드 기동] Gemini 2.5(1차) + GPT-4o-mini(2차) 듀얼 엔진 가동")
 
     v24_baseline = run_v24_baseline(pdf_path)
     text_chunk = extract_context_for_ai(pdf_path)
     
-    if not OPENAI_API_KEY or OPENAI_API_KEY == "여기에_발급받은_API_키를_입력하세요":
-        final_ai_result = None
-    else:
-        max_ai_retries = 2
-        retry_count = 0
-        final_ai_result = None
-        curr_retry_instruction = None
+    # --- [V12.1] 하이브리드 엔진 시력(Vision) 파이프라인 복구 ---
+    # AI 호출 직전 이미지 리스트 확보 (3번 섹션 캡처)
+    image_list = extract_section3_images(pdf_path)
+    
+    # [V7.0] 하이브리드 AI 듀얼 엔진 파이프라인 (Gemini 2.5 Flash-Lite -> GPT-4o-mini)
+    used_engine = "N/A"
+    final_ai_result = None
+    curr_retry_instruction = None
+    max_retries = 2
+    
+    # 1단계: Gemini 2.5 Flash-Lite (최대 2회 시도)
+    for i in range(max_retries):
+        if log_func: log_func(f" ├─ [1단계] Gemini 2.5 호출 중... (시도 {i+1}/{max_retries})")
+        ai_res = call_gemini_2_5_lite(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
         
-        # --- [V7.0 하이브리드 비전 발동 조건 방어막] ---
-        v24_content = str(v24_baseline.get("함유량", ""))
-        needs_vision = False
-        # 100% 도배, 미기재, 1차 정규식 리뷰 필요 시에만 비전 가동
-        if "100%" in v24_content or "미기재" in v24_content or v24_baseline.get("tag") == "[REVIEW]":
-            needs_vision = True
+        if ai_res:
+            # CAS 번호 검증 (자가 치유 트리거)
+            invalid_cas = []
+            for comp in ai_res.get("구성성분", []):
+                cas = str(comp.get("cas_no", "")).strip()
+                if cas and cas not in ["영업비밀", "미기재"] and not verify_cas_number(cas):
+                    invalid_cas.append(cas)
             
-        image_list = []
-        if needs_vision:
-            if log_func: log_func(" ├─ 👁️ [Vision 가동] 표 구조 파괴 의심. 3번 항목 이미지 캡처 중...")
-            image_list = extract_section3_images(pdf_path)
-        # ----------------------------------------------
-        
-        while retry_count <= max_ai_retries:
-            try:
-                ai_result = analyze_with_gemini_ensemble(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
-                
-                if not ai_result:
-                    if retry_count == 0: 
-                        final_ai_result = None
-                        break
-                    break
-                
-                if isinstance(ai_result, list) and len(ai_result) > 0: ai_result = ai_result[0]
-                if not isinstance(ai_result, dict): 
-                    if retry_count == 0: 
-                        final_ai_result = None
-                        break
-                    break
-
-                components = ai_result.get("구성성분", [])
-                checksum_errors = []
-                for comp in components:
-                    cas = str(comp.get("cas_no", "")).strip()
-                    if cas not in ["영업비밀", "미기재", "-"] and not verify_cas_number(cas):
-                        checksum_errors.append(cas)
-                
-                if not checksum_errors:
-                    final_ai_result = ai_result
-                    break
-                
-                retry_count += 1
-                if retry_count <= max_ai_retries:
-                    if log_func: log_func(f" ├─ 🔄 [Self-Healing] {retry_count}회차 재시도: 오타 감지({', '.join(checksum_errors)})")
-                    curr_retry_instruction = f"당신이 추출한 '{', '.join(checksum_errors)}' 번호들의 수학적 체크섬 검증이 실패했습니다. 제공된 텍스트 원본에서 해당 번호를 다시 정밀하게 확인하여 오타를 수정하십시오."
-                else:
-                    if log_func: log_func(f" ├─ 🛑 [Self-Healing] {max_ai_retries}회 재시도 실패. 원본 오류 유지.")
-                    final_ai_result = ai_result
-            except Exception as e:
-                if log_func: log_func(f" ❌ AI 검수 중 오류: {e}")
-                final_ai_result = None
+            if not invalid_cas:
+                final_ai_result = ai_res
+                used_engine = "Gemini 2.5 Flash-Lite (1차 성공)"
+                if log_func: log_func(" └─ ✅ Gemini 추출 성공 (CAS 검증 통과)")
                 break
+            else:
+                curr_retry_instruction = f"다음 CAS 번호들이 유효하지 않습니다: {', '.join(invalid_cas)}. 정확한 CAS 번호를 다시 확인하여 응답해 주세요."
+                if log_func: log_func(f" ⚠️ Gemini CAS 오류 발견: {', '.join(invalid_cas)} (재시도 준비)")
+        else:
+            if log_func: log_func(" ⚠️ Gemini 응답 실패 (Fallback 대기)")
+            break
 
+    # 2단계: Fallback to GPT-4o-mini
+    if not final_ai_result and OPENAI_API_KEY:
+        if log_func: log_func(" ├─ [2단계 Fallback] GPT-4o-mini 전환 호출 중...")
+        final_ai_result = call_gpt_4o_mini(v24_baseline, text_chunk, image_list=image_list, log_func=log_func)
+        if final_ai_result:
+            used_engine = "GPT-4o-mini (2차 Fallback)"
+            if log_func: log_func(" └─ ✅ GPT-4o-mini 추출 성공 (Fallback 완료)")
+    
+    # 최종 데이터 조립
     if not final_ai_result:
-        # [수정] AI 실패 시 조기 리턴하지 않고 1차 결과를 변수에 매핑
         product_name = v24_baseline.get("제품명", "제품명 확인 필요")
         comp_str = v24_baseline.get("함유량", "")
         tag = v24_baseline.get("tag", "[REVIEW]")
-        reason = "AI 응답 실패 (1차 코어 결과로 대체)"
+        reason = "모든 AI 엔진 응답 실패"
         comp_parts = [c for c in comp_str.split("; ") if c]
     else:
-        product_name = final_ai_result.get("제품명", v24_baseline.get("제품명"))
-        product_name = clean_junk_from_name(product_name)
+        product_name = clean_junk_from_name(final_ai_result.get("제품명", v24_baseline.get("제품명")))
         components = final_ai_result.get("구성성분", [])
         reason = final_ai_result.get("교정_사유", "사유 없음")
-
+        
         comp_parts = []
         for comp in components:
             cas = str(comp.get("cas_no", "")).strip()
             if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
-            content = str(comp.get("content", ""))
-            content = re.sub(r'[～∼〜]', '~', content).replace(" ", "")
+            content = str(comp.get("content", "")).replace(" ", "")
             
-            is_valid_cas_fmt = re.match(r'^\d{1,7}-\d{2}-\d$', cas)
-            # '미기재', '-' 등은 가차 없이 버림. 법적 효력이 있는 '영업비밀'만 허용.
-            if not (is_valid_cas_fmt or cas == "영업비밀"): continue
-                
-            if any(u in content.lower() for u in ['g/l', 'mg', 'ppm', 'ug', 'ml']):
-                content = "미기재%"
+            if not (re.match(r'^\d{1,7}-\d{2}-\d$', cas) or cas == "영업비밀"): continue
             
-            if "~" in content:
-                content = re.sub(r'^[≥≤><]+', '', content.strip())
-                content = re.sub(r'~[≥≤>]+', '~', content)
-            else:
-                content = re.sub(r'([0-9.]+)\s*<\s*(%?)$', r'>\1\2', content)
-                content = re.sub(r'([0-9.]+)\s*>\s*(%?)$', r'<\1\2', content)
-                content = re.sub(r'([0-9.]+)\s*≤\s*(%?)$', r'≥\1\2', content)
-                content = re.sub(r'([0-9.]+)\s*≥\s*(%?)$', r'≤\1\2', content)
-
-            # [신규] 함유량 정제 및 부등호/범위(±) 물리적 교정
             content = str(content).strip()
             if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
                 content = "미기재%"
             else:
-                # [V5.8 연산 순서 교정] 1. 가장 먼저 오차범위(±) 수학 계산 실행
                 content = REGEX_PM.sub(_calc_pm_range, content)
-                
-                # 2. 부등호 교정 (특수기호 강제 전환 및 방탄 문자열 치환 병행)
                 content = REGEX_LE.sub(r'≤\1', content)
                 content = REGEX_LT.sub(r'＜\1', content)
                 content = REGEX_GE.sub(r'≥\1', content)
                 content = REGEX_GT.sub(r'＞\1', content)
-                
                 content = content.replace("이하", "≤").replace("미만", "＜").replace("이상", "≥").replace("초과", "＞")
                 content = content.replace("<=", "≤").replace(">=", "≥").replace("<", "＜").replace(">", "＞")
-
-                # 3. 부등호 위치 보정 (뒤에 숫자가 또 오지 않을 때만, 즉 진짜 꼬리표일 때만 앞으로 이동)
                 content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥＜＞])(?!\s*[\d])', r'\2\1%', content)
                 content = re.sub(r'([≤≥＜＞])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
-
-                # [V5.9 긴급 방어망] 범위값에 부등호가 지저분하게 꼬인 경우 (예: ≥1≤5% 또는 ≥≤1%5%) 강제로 1~5% 형태로 분쇄 통일
                 content = re.sub(r'[≤≥＜＞]*\s*([\d\.]+)\s*(?:%|~|-)?\s*[≤≥＜＞]+\s*([\d\.]+)\s*(?:%)?', r'\1~\2%', content)
-
-                # 4. 소수점 후행 영(0) 컷오프 (수학 계산 및 기호 정리가 다 끝난 후 마지막에 실행)
                 content = re.sub(r'\.0+(\D|$)', r'\1', content)
                 content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content)
-                
-                if "%" not in content:
-                    content += "%"
+                if "%" not in content: content += "%"
                 content = content.replace(" ", "")
 
-            # [신규] 명칭 표준화 및 미등록 플래그 처리
-            if cas == "영업비밀":
-                comp_parts.append(f"영업비밀[{cas}({content})]")
+            if cas == "영업비밀": comp_parts.append(f"영업비밀[{cas}({content})]")
             elif cas in MES_MASTER_MAP:
-                std_name = MES_MASTER_MAP[cas]
-                # [V5.3] 마스터 DB의 노이즈(STEL, TWA 등 규제치 태그)만 정밀 제거
-                std_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', std_name, flags=re.IGNORECASE).strip()
-                comp_parts.append(f"{std_name}[{cas}({content})]") 
+                std_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', MES_MASTER_MAP[cas], flags=re.I).strip()
+                comp_parts.append(f"{std_name}[{cas}({content})]")
             else:
-                # [수정] AI가 추출한 name을 받아서 '명칭확인불가' 대신 원문 명칭 출력
                 raw_name = comp.get("name") or comp.get("chemical_name") or "원문명칭없음"
-                comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]") 
+                comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]")
 
-        comp_str = "; ".join(comp_parts) if comp_parts else ""
+        comp_str = "; ".join(comp_parts)
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
-        tag = "[AUTO-PASS]" if v24_str_clean == ai_str_clean else "[AI-FIXED]"
+        
+        # 엔진별 태그 부여
+        engine_prefix = "[G2.5" if "Gemini" in used_engine else "[GPT"
+        tag = f"{engine_prefix}-PASS]" if v24_str_clean == ai_str_clean else f"{engine_prefix}-FIXED]"
 
     if log_func:
-        log_func(f" ├─ AI 검수결과: {reason}")
+        log_func(f" ├─ 엔진: {used_engine}")
+        log_func(f" ├─ 결과: {reason}")
         log_func(f" ✅ 완료 (소요시간: {time.time()-start_time:.2f}초)")
 
     result_data = {
@@ -678,7 +651,8 @@ def process_pdf(pdf_path, log_func=None):
         "구성성분 및 함유량": comp_str, 
         "tag": tag, 
         "신뢰도": tag, 
-        "추론근거": f"OpenAI gpt-4o-mini Ensemble ({reason})"
+        "추론근거": f"{used_engine} ({reason})",
+        "page": 1
     }
 
     # [🚀추가] 제품명에 '확인 필요'가 들어있어도 무조건 노란불 켜기!
@@ -686,17 +660,12 @@ def process_pdf(pdf_path, log_func=None):
     if "확인 필요" in product_name or "미기재" in comp_str or "비밀" in comp_str or not comp_parts:
         traffic_light = "🟡 확인"
     else:
-        for cas_item in [c.split("(")[0] for c in comp_parts]:
+        for cas_item in [c.split("[")[1].split("(")[0] if "[" in c else c.split("(")[0] for c in comp_parts]:
             if cas_item not in ["영업비밀", "미기재"] and not verify_cas_number(cas_item):
                 traffic_light = "🔴 오류"
                 break
 
     result_data["신호등"] = traffic_light
-    
-    # [V5.9] 미리보기 추적 단순화 (제품명 확인을 위해 무조건 1페이지 고정)
-    result_data["page"] = 1
-    # -----------------------------------------
-    
     return result_data
 
 # [V7.0] GUI 호환성을 위한 별칭 설정

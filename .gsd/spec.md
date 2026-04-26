@@ -1,29 +1,34 @@
-# [GSD Spec] smu_gui.py 논리적 매칭 탭 '초록불 일괄 자동 학습' 기능 추가 (V11.9)
+# [GSD Spec] msds_engine_v5.py 하이브리드 AI 듀얼 엔진 (V12.0)
 
 ## 1. 개요
-매칭 탭(`LogicMatchTab`)에서 신뢰도가 높은(초록불, 🟢) 항목들을 하나씩 수동으로 확정하지 않고, 버튼 하나로 일괄적으로 지식 DB(`msds_knowledge.db`)에 학습시키고 매칭을 확정하는 기능을 추가한다.
+추출 정확도 향상 및 비용 최적화를 위해 Gemini 2.5 Flash-Lite를 기본 엔진(1차)으로 사용하고, 실패 시 GPT-4o-mini(2차)로 자동 전환되는 2단계 앙상블 파이프라인을 구축한다.
 
 ## 2. 변경 사항
-### smu_gui.py
-#### 1) 매칭 탭 UI 레이아웃 (약 1430행 부근)
-- `self.btn_batch_confirm = QPushButton("🟢 초록불 일괄 자동 학습")` 버튼 추가.
-- 스타일: `background-color: #007bff; color: white; font-weight: bold; padding: 8px; margin-left: 10px;`
-- 기존 `btn_confirm`과 수평으로 배치하기 위해 `QHBoxLayout` 도입 또는 레이아웃에 추가.
+### msds_engine_v5.py
+#### 1) 환경 변수 및 모델 설정
+- `GOOGLE_API_KEY` 로드.
+- `GEMINI_API_URL` 상수 정의 (v1beta 규격).
 
-#### 2) `batch_auto_confirm` 메서드 추가
-- `match_table`의 모든 행을 순회.
-- 0번 컬럼(신뢰도)이 "🟢"인 경우:
-    - PDF 제품명, 매칭 엑셀 항목, 바인딩 데이터를 수집.
-    - 메인 테이블(`self.table`)에서 해당 제품명의 최신 추출 데이터(CAS, 규제 정보 등)를 조회.
-    - `self.km.update_experience` 및 `self.save_db_knowledge`를 호출하여 DB 기록.
-    - `match_table`의 UI 상태(아이콘, 유사도, 배경색 등) 업데이트.
-- 작업 완료 후 "총 N건의 초록불 데이터가 지식 DB에 일괄 학습되었습니다!" 메시지 출력.
+#### 2) `call_gemini_2_5_lite` 함수 신설
+- Google AI API (Contents/Parts) 규격을 준수하여 구현.
+- `temperature: 0.0`, `response_mime_type: "application/json"` 적용.
+- 비전 데이터(이미지) 포함 가능하도록 설계.
+
+#### 3) `process_pdf` 메인 로직 개조
+- **1단계**: `call_gemini_2_5_lite` 호출 (최대 2회 자가 치유 시도).
+- **검증**: 결과가 성공적이고 CAS 체크섬 오류가 없으면 즉시 반환.
+- **2단계 (Fallback)**: Gemini 실패 시 `call_gpt_4o_mini` (기존 `analyze_with_gemini_ensemble`)로 긴급 전환.
+
+#### 4) 로그 및 태그 고도화
+- `추론근거`: "Gemini 2.5 Flash-Lite (1차 성공)" 또는 "GPT-4o-mini (2차 Fallback)" 명시.
+- `tag`: `[G2.5-PASS]`, `[GPT-FIXED]` 등 엔진 정보 포함.
 
 ## 3. 상세 구현 계획
-1. 매칭 탭의 버튼 생성부에서 새 버튼을 정의하고 `batch_auto_confirm`에 연결한다.
-2. `batch_auto_confirm` 로직은 기존 `confirm_manual_match`의 핵심 저장 로직을 루프 내에서 수행하도록 구현하되, 팝업은 최소화한다.
+1. 상단 환경 변수 섹션에 `GOOGLE_API_KEY` 및 URL 추가.
+2. `call_gemini_2_5_lite` 함수를 `analyze_with_gemini_ensemble` 이전에 추가.
+3. `process_pdf` 내부의 `while` 루프 및 엔진 전환 로직 구현.
+4. `analyze_with_gemini_ensemble`의 이름을 `call_gpt_4o_mini`로 변경하거나, 내부 호출만 GPT로 유지.
 
 ## 4. 검증 계획
-- `python -m py_compile smu_gui.py` 실행을 통한 문법 검증.
-- 매칭 결과에 초록불이 있는 상태에서 버튼 클릭 시, 로그가 출력되고 DB에 정상 저장되는지 확인.
-- 최종 완료 팝업이 한 번만 뜨는지 확인.
+- `python -m py_compile msds_engine_v5.py` 실행을 통한 문법 검증.
+- 더미 PDF 데이터를 활용하여 1차 엔진 호출 로그 및 2차 전환 로그가 정상적으로 출력되는지 확인.
