@@ -1400,7 +1400,7 @@ class SMUGUI(QMainWindow):
                             
                             # 2. self.results 메모리 실시간 동기화 (Hot-Sync)
                             for res in self.results:
-                                if res.get('hash') == f_hash:
+                                if res.get('f_hash') == f_hash:
                                     res[key] = new_text
                                     break
                             
@@ -1995,8 +1995,6 @@ class SMUGUI(QMainWindow):
             
             # 행 높이 재조정
             self._safe_resize_rows()
-            
-            self._safe_resize_rows()
             self.table.blockSignals(False) # [NEW] 시그널 재개
         except Exception as e:
             self.table.blockSignals(False)
@@ -2019,7 +2017,7 @@ class SMUGUI(QMainWindow):
             emoji = "🟢"
             bg_color = None
 
-            if status == "Confirmed":
+            if "검증 완료" in status:
                 emoji = "🟢"
                 bg_color = QColor("#e1f7d5") # 연한 초록색 (확격 표시)
             
@@ -2079,11 +2077,8 @@ class SMUGUI(QMainWindow):
             self._safe_resize_rows()
         except Exception as e:
             self.table.blockSignals(False)
-            self.log(f"[!] 행 업데이트 실패: {e}")
-            self._safe_resize_rows()
-            
-        except Exception as e:
             self.log(f"[에러] 테이블 업데이트 실패: {row}행, {e}")
+            self._safe_resize_rows()
         finally:
             # [V8.3] 무조건 UI 시그널 락 해제
             self.table.blockSignals(False)

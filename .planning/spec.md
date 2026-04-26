@@ -15,6 +15,8 @@
     - 삭제된 기능의 잔재(need_review 큐, 동기화 함수 등)를 완전히 제거하여 AttributeError 방지.
 - **엑셀 저장 순서 동기화 (Visual Sync)**:
     - 저장 시 `self.results` 순서가 아닌 **GUI 테이블의 시각적 행 순서**를 기준으로 엑셀에 기록.
+- **마이크로 버그 클린업 (Micro Cleanup)**:
+    - 상태 인식 오타, 중복 예외 처리, 메모리 동기화 오타, 중복 함수 호출 등 4종 버그 수정.
 - **절대 방어**:
     - `msds_engine_v5.py`의 추출 로직(Vision 안내견 등)은 절대 수정 금지.
 
@@ -32,9 +34,18 @@
 1. **[Cleanup]** `smu_gui.py`에서 DB 및 매칭 관련 클래스, UI, 임포트 제거. (완료)
 2. **[Refactor]** `perform_standard_save` 메서드 재구축. (완료)
 3. **[Hemostasis]** 삭제된 기능의 잔재(Dead Code) 박멸. (완료)
-4. **[Visual Sync]** 테이블 시각적 순서와 엑셀 저장 순서 동기화 구현. (진행 예정)
-5. **[Verify]** 최종 시스템 동작 검증.
+4. **[Visual Sync]** 테이블 시각적 순서와 엑셀 저장 순서 동기화 구현. (완료)
+5. **[Micro Cleanup]** smu_gui.py 내 마이크로 버그 4종 수정. (진행 예정)
+6. **[Verify]** 최종 시스템 동작 검증.
 
-## 5. 절대 준수 사항
+## 5. 지혈 및 클린업 상세 (Hemostasis & Cleanup Details)
+- **Hemostasis**: `need_review` 큐 및 동기화 함수 제거 완료.
+- **Micro Cleanup**:
+    - `update_validation_row`: 상태 체크 로직 보정 (`"검증 완료" in status`).
+    - `update_validation_row`: 중복 `except` 블록 통합.
+    - `on_table_item_changed`: `hash` -> `f_hash` 오타 수정.
+    - `add_result_to_table`: `_safe_resize_rows()` 중복 호출 제거.
+
+## 6. 절대 준수 사항
 - 모든 작업은 한국어로 보고한다.
 - `msds_engine_v5.py`는 단 한 줄도 건드리지 않는다.
