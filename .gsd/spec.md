@@ -1,23 +1,18 @@
-# [GSD Spec] smu_gui.py Excel COM 객체 속성 에러(AttributeError) 방어 로직 전면 적용
+# [GSD Spec] smu_gui.py 불완전 추출 건 캐시 무시 및 자동 재시도 로직 추가 (V11.5)
 
 ## 1. 개요
-엑셀 COM 객체(`excel`)의 속성(`Visible`, `DisplayAlerts`, `Interactive`, `UserControl`)을 설정할 때 발생하는 `AttributeError`를 방지하기 위해 모든 해당 코드 라인에 `try-except AttributeError: pass` 방어 로직을 적용한다.
+`ExtractionWorker.run` 로직에서 AI 추출이 실패했거나 불완전한 정보가 캐시된 경우(예: '제품명 확인 필요'), 캐시를 무시하고 AI 추출을 재시도하도록 보강한다.
 
-## 2. 변경 대상 및 내용
+## 2. 변경 사항
 ### smu_gui.py
-#### 1) `assign_excel_numbers` 함수 (약 2472행, 2509-2510행 부근)
-- `excel.Visible = False` -> `try-except` 적용
-- `excel.Visible = True`, `excel.UserControl = True` -> `try-except` 적용
-
-#### 2) `perform_standard_save` 함수 (약 3090-3091행, 3316-3317행, 3322행 부근)
-- `excel.Visible = False`, `excel.DisplayAlerts = False` -> `try-except` 적용
-- `excel.Visible = True`, `excel.Interactive = True` -> `try-except` 적용
-- `if excel: excel.Visible = True` -> `try-except` 적용
+#### 1) `ExtractionWorker.run` (약 382-401행 부근)
+- 캐시 체크 로직 수정: `cached_data.get("product_name") == "제품명 확인 필요"` 이거나 상태에 "오류"가 포함된 경우 `continue`를 호출하지 않고 추출 엔진으로 진입하게 한다.
+- 재시도 시 로그 출력 추가: `[*] [파일명] 불완전한 추출 결과(AI 뻗음 등) 감지: API 재호출을 시도합니다.`
 
 ## 3. 상세 구현 계획
-1. `smu_gui.py`에서 `excel.Visible`, `excel.DisplayAlerts`, `excel.Interactive`, `excel.UserControl` 속성에 값을 할당하는 모든 코드를 찾아 `try: ... except AttributeError: pass` 블록으로 감싼다.
-2. 기존의 핵심 로직(데이터 기록, 워크북 오픈 등)은 변경하지 않는다.
+1. `smu_gui.py`의 `ExtractionWorker.run` 함수 내 캐시 로직을 찾아 사용자 지시서의 코드로 교체한다.
+2. 기존의 `time.sleep(1.0)` 등 속도 조절 로직은 그대로 유지한다.
 
 ## 4. 검증 계획
 - `python -m py_compile smu_gui.py` 실행을 통한 문법 검증.
-- 엑셀 관련 기능을 실행하여 오류 없이 동작하는지 확인.
+- 캐시에 '제품명 확인 필요' 데이터가 있는 상태에서 다시 실행 시 재추출이 진행되는지 로그로 확인.

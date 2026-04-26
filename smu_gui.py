@@ -385,20 +385,26 @@ class ExtractionWorker(QThread):
                     f_hash = f"fallback_{i}_{fn}"
                 
                 if f_hash and getattr(self, 'cache', None) and f_hash in self.cache:
-                    self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
                     cached_data = self.cache[f_hash]
-                    res_data = {
-                        "filename": fn,
-                        "f_hash": f_hash, # [NEW] 해시 포함
-                        "product_name": cached_data.get("product_name", "미확인"),
-                        "reliability": cached_data.get("reliability", "N/A"),
-                        "신호등": cached_data.get("신호등", "⚪"),
-                        "raw_content": cached_data.get("raw_content", ""),
-                        "status": "캐시 데이터 로드됨"
-                    }
-                    self.result_signal.emit(res_data)
-                    self.progress_signal.emit(int((i + 1) / total * 100))
-                    continue
+                    
+                    # [V11.5 AI 자동 재시도 로직] 캐시가 있더라도 '제품명 확인 필요' 등 실패 기록이면 캐시를 무시하고 AI 재타격!
+                    if cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", ""):
+                        self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과(AI 뻗음 등) 감지: API 재호출을 시도합니다.")
+                        # continue를 호출하지 않고 아래의 추출 엔진(engine.analyze_msds)으로 진입시킴
+                    else:
+                        self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
+                        res_data = {
+                            "filename": fn,
+                            "f_hash": f_hash, # [NEW] 해시 포함
+                            "product_name": cached_data.get("product_name", "미확인"),
+                            "reliability": cached_data.get("reliability", "N/A"),
+                            "신호등": cached_data.get("신호등", "⚪"),
+                            "raw_content": cached_data.get("raw_content", ""),
+                            "status": "캐시 데이터 로드됨"
+                        }
+                        self.result_signal.emit(res_data)
+                        self.progress_signal.emit(int((i + 1) / total * 100))
+                        continue
 
                 self.update_log_signal.emit("="*20 + f" [{fn} 추출 시작] " + "="*20)
                 # [V7-Final] 통합형 엔진으로 추출 수행 (정규식 개안 및 숲-나무 분석 적용)
