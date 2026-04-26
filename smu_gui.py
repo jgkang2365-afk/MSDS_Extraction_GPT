@@ -2,8 +2,6 @@ import sys
 import os
 import json
 import re
-import sqlite3
-import time
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -16,11 +14,7 @@ from PyQt5.QtWidgets import (
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
 from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QTextDocument, QCursor, QTextCursor, QImage, QPixmap
-import pandas as pd # [NEW] 데이터 매칭용
-from thefuzz import fuzz # [NEW] 데이터 매칭용
 from html import escape
-import subprocess # [NEW] Graphify 증분 인덱싱용
-import graphify   # [NEW] 지능형 세만틱 엔진
 
 import msds_core
 import importlib # [HOT-RELOAD] 모듈 새로고침용
@@ -38,29 +32,6 @@ COL_IDX_PAGE = 10
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-# [V9.0 우뇌 각성] Graphify 백그라운드 인덱싱 워커
-class GraphifyIndexerThread(QThread):
-    progress_signal = pyqtSignal(str)
-    finished_signal = pyqtSignal(str)
-
-    def __init__(self, pdf_path, extracted_data):
-        super().__init__()
-        self.pdf_path = pdf_path
-        self.extracted_data = extracted_data
-
-    def run(self):
-        filename = os.path.basename(self.pdf_path)
-        try:
-            self.progress_signal.emit(f"🧠 지식 그래프 학습 중... ({filename})")
-            import graphify
-            import time
-            time.sleep(0.5) # [추가] 디스크 I/O 병목 방지를 위한 0.5초 숨돌리기
-            # graphify 모듈의 증분 업데이트 함수 호출
-            if hasattr(graphify, 'update_graph_incremental'):
-                graphify.update_graph_incremental(file_path=self.pdf_path, context=self.extracted_data)
-            self.finished_signal.emit(f"✅ 지식 그래프 업데이트 완료 ({filename})")
-        except Exception as e:
-            self.finished_signal.emit(f"❌ 지식 그래프 학습 실패 ({filename}): {e}")
 
 # [Part 2] Seamless PDF Preview 패널 (바이너리 강제 로드 버전)
 class PDFPreviewPanel(QScrollArea):
@@ -1067,13 +1038,10 @@ class SMUGUI(QMainWindow):
         self.cache = {} 
         self.sidebar_slim = False
         self.need_review = []  # 검수 대기열 초기화
-        self.active_graph_threads = [] # [V9.0] 활성 스레드 관리 리스트 추가
-        self.init_db()         # 지능형 엔진 가동
         self.init_ui()
         
         # [V7.5] 동기화 무결성 확보를 위한 초기화 순서 재배치
         self._setup_tab_synchronization() # 1. 시그널 먼저 연결 (대기)
-        self.km = KnowledgeManager(log_func=self.log) 
         self.load_config() # 2. 그 다음 설정 로드 (setText 발생 시 시그널 즉시 발동)
         self.load_mes_master() # [NEW] MES 마스터 데이터셋 구축
         self.showMaximized()
@@ -3019,7 +2987,7 @@ class SMUGUI(QMainWindow):
             raw = str(data.get("raw_content", ""))
             clean_cas_parts = [p.strip() for p in str(raw).split(";") if p.strip()]
             
-            item_cas = QTableWidgetItem(";\n".join(clean_cas_parts)) # 공백 제거
+            item_cas = QTableWidgetItem(";\n".join(clean_cas_parts))
             if bg_color: item_cas.setBackground(bg_color)
             self.table.setItem(row, 3, item_cas)
 
@@ -3378,16 +3346,17 @@ class SMUGUI(QMainWindow):
                         except Exception as e:
                             self.log(f"[주의] 행 보정 중 오류: {e}")
                     
-                    # 우선순위 2: 엑셀 A열 번호 매칭 (Fallback)
-                    if not tr:
-                        num_key = td["no"].zfill(3) if td["no"].isdigit() else td["no"]
-                        tr = a_map.get(num_key)
-                        if tr:
-                            strategy = "A열 ID 매칭 (보조)"
+                    # [V12.6] 주님 승인 사항: 행 번호 기준 순차 저장 로직 최우선 적용
+                    # 지능형 매칭 오류로 인한 데이터 중첩 방지를 위해 순차 행을 최우선 타겟으로 설정합니다.
                     
-                    if not tr:
-                        self.log(f"[!] [매칭실패] 매칭 인덱스 및 A열 ID 정보가 없습니다 (파일: {fn}). 건너뜀.")
-                        continue
+                    tr = st_row + idx
+                    strategy = "순차적 저장 (사용자 시작 행 기준)"
+                    
+                    # (참고) 지능형 매칭 결과는 정보성 로그로만 출력합니다.
+                    if idx_val is not None:
+                        matched_tr = st_row + idx_val
+                        if matched_tr != tr:
+                            self.log(f"[정보] 매칭 제안 행({matched_tr}) 대신 순차 행({tr})을 사용합니다.")
                     
                     curr_row = tr
                     self.log(f"[*] [저장타겟] {fn} -> {curr_row}행 ({strategy})")
@@ -3402,12 +3371,13 @@ class SMUGUI(QMainWindow):
                         val = ""
                         if key == "파일명": val = fn
                         elif key == "제품명": val = prod_name
-                        elif key == "CAS 원본": val = td["cas_sum"].replace("\n", " ").replace("  ", " ").strip()
-                        elif key == "2차 결과(규제)": val = td["reg2"].replace("\n", " ").replace("  ", " ").strip()
-                        elif key == "1차 결과(전체)": val = td["reg1"].replace("\n", " ").replace("  ", " ").strip()
+                        elif key in ["No", "번호", "순번"]: val = td["no"]
+                        elif key == "CAS 원본": val = td["cas_sum"].strip()
+                        elif key == "2차 결과(규제)": val = td["reg2"].strip()
+                        elif key == "1차 결과(전체)": val = td["reg1"].strip()
                         # [주님 지시] 측정대상을 복수(둘 다) 열에 저장
                         elif key in ["측정대상1", "측정대상2"]: 
-                            val = td["measure"].replace("\n", " ").replace("  ", " ").strip()
+                            val = td["measure"].strip()
                         
                         # [NEW] 바인딩 필드 처리
                         elif binding:

@@ -17,7 +17,7 @@ load_dotenv(override=True)
 
 # [필수 세팅] API 키 (시스템 변수 충돌 방지를 위해 전용 변수명 사용)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+GOOGLE_API_KEY = os.getenv("MSDS_GOOGLE_API_KEY")
 
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
@@ -412,13 +412,12 @@ def extract_context_for_ai(pdf_path):
         return ""
 
 def extract_section3_images(pdf_path):
-    """[V7.0 Multi-Vision] 3번 항목 시작부터 4번 항목 전까지의 모든 페이지 캡처"""
     try:
         doc = fitz.open(pdf_path)
         start_page = -1
         end_page = -1
         
-        # 1. 구간 탐색 (전체 페이지 스캔)
+        # 1. 텍스트로 구간 탐색
         for i in range(len(doc)):
             text = doc[i].get_text("text")
             if start_page == -1 and re.search(r'3\.\s*구성|SECTION\s*3', text, re.I):
@@ -427,25 +426,30 @@ def extract_section3_images(pdf_path):
                 end_page = i
                 break
         
-        if start_page == -1: return [] # 시작점 못 찾으면 빈 리스트
-        if end_page == -1: end_page = min(start_page + 1, len(doc)-1) # 4번 못 찾으면 다음 장까지만
-        
-        # 2. 범위 내 모든 페이지 캡처
         images = []
+        # 🚨 [핵심 수정] 텍스트 기반으로 3항을 못 찾았다면 포기하지 않고 무조건 1~3페이지 캡처!
+        if start_page == -1:
+            start_page = 0
+            end_page = min(2, len(doc) - 1)
+        else:
+            if end_page == -1: end_page = min(start_page + 1, len(doc)-1)
+        
+        # 2. 범위 내 페이지 강제 캡처
         for p_idx in range(start_page, end_page + 1):
             page = doc[p_idx]
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
-            if len(images) >= 3: break # 최대 3장으로 제한 (성능 방어)
+            if len(images) >= 3: break # API 부하 방지를 위해 최대 3장 제한
             
         doc.close()
         return images
     except Exception:
         return []
 
-def call_gemini_2_5_lite(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
+def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None, retry_instruction=None):
     """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
+    if image_list is None: image_list = []
     if (not text_chunk.strip() and not image_list) or not GOOGLE_API_KEY: return None
 
     prod_name_baseline = v24_result.get('제품명', '')
@@ -458,8 +462,8 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=[], log_func=None, r
     if image_list:
         for img in image_list:
             parts.append({
-                "inline_data": {
-                    "mime_type": "image/png",
+                "inlineData": {
+                    "mimeType": "image/png",
                     "data": img.get("data", "")
                 }
             })
@@ -486,8 +490,9 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=[], log_func=None, r
         if log_func: log_func(f" ❌ Gemini 시스템 오류: {str(e)}")
         return None
 
-def call_gpt_4o_mini(v24_result, text_chunk, image_list=[], log_func=None, retry_instruction=None):
+def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, retry_instruction=None):
     """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
+    if image_list is None: image_list = []
     if (not text_chunk.strip() and not image_list) or not OPENAI_API_KEY: return None
 
     prod_name_baseline = v24_result.get('제품명', '')
