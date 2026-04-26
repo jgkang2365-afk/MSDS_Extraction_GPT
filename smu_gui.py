@@ -2480,7 +2480,7 @@ class SMUGUI(QMainWindow):
         pythoncom.CoInitialize()
         excel = None
         try:
-            excel = win32com.client.Dispatch("Excel.Application")
+            excel = win32com.client.DispatchEx("Excel.Application")
             try: excel.Visible = False
             except AttributeError: pass
             wb = excel.Workbooks.Open(os.path.abspath(excel_path))
@@ -3099,7 +3099,7 @@ class SMUGUI(QMainWindow):
         pythoncom.CoInitialize()
         excel = None
         try:
-            excel = win32com.client.Dispatch("Excel.Application")
+            excel = win32com.client.DispatchEx("Excel.Application")
             try: excel.Visible = False
             except AttributeError: pass
             try: excel.DisplayAlerts = False
