@@ -6,16 +6,27 @@
         "신호등": "🟡 확인",
         "raw_content": "",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\Grease(XHP 222).PDF",
-        "page": 1
+        "page": 1,
+        "match_idx": 2,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "MOBILGREASE XHP 222"
     },
     "0c4d7b669817d6567c057c4445a0f96329638ea380dfe30bf39fac54b095a169": {
         "f_hash": "0c4d7b669817d6567c057c4445a0f96329638ea380dfe30bf39fac54b095a169",
         "product_name": "더블유디-40 (WD-40)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]탈취처리된 케로신[64742-47-8(40~50%)]; [미등록]수소처리된 중질 파라핀 증류유제 오일[64742-54-7(10~25%)]; [미등록]다이메틸메테인[74-98-6(16~21%)]; [미등록]뷰테인[106-97-8(11~14%)]",
+        "raw_content": "[미등록]탈취처리된 케로신[64742-47-8(40~50%)]; [미등록]수소처리된 중질 파라핀 증류 유제 오일[64742-54-7(10~25%)]; [미등록]다이메틸메테인[74-98-6(16~21%)]; [미등록]뷰테인[106-97-8(11~14%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\WD-40.pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 4,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "더블유디-40 (WD-40)",
+        "manual_data": {
+            "measure": ""
+        }
     },
     "bc6de84764b2f48b0dcaf1a002a72f889ed26df106dc8bbdc81968f1c5662aa4": {
         "f_hash": "bc6de84764b2f48b0dcaf1a002a72f889ed26df106dc8bbdc81968f1c5662aa4",
@@ -24,7 +35,11 @@
         "신호등": "🟢 통과",
         "raw_content": "[미등록]디젤 연료[68334-30-5(≥99.9%)]; [미등록]황[7704-34-9(≤0.1%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\경유.pdf",
-        "page": 3
+        "page": 1,
+        "match_idx": 10,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "경유 (LSMGO)"
     },
     "91ebb80cb3598217b545dc0c88c9ff5b2a5a6faaa19f94194ebf701c64dfb0f5": {
         "f_hash": "91ebb80cb3598217b545dc0c88c9ff5b2a5a6faaa19f94194ebf701c64dfb0f5",
@@ -33,25 +48,37 @@
         "신호등": "🟢 통과",
         "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]C.I. pigment yellow 14[5468-75-7(5~10%)]; [미등록]Polychloro copper phthalocyanine[1328-53-6(5~10%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(녹색).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 14,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (녹색)"
     },
     "06522a8ef5b0d7fed9d825f89de25550928f6c6326fceaf8a246fd94974525ef": {
         "f_hash": "06522a8ef5b0d7fed9d825f89de25550928f6c6326fceaf8a246fd94974525ef",
         "product_name": "럭키 Lacquer Spray (무광백색)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; 이산화티타늄[13463-67-7(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(≥≤1%5%)]; 메틸아세테이트[79-20-9(≥≤1%5%)]; 톨루엔[108-88-3(≥≤1%5%)]; [미등록]Nitrocellulose[9004-70-0(≥≤1%5%)]; n-부틸아세테이트[123-86-4(≥≤1%3%)]; 2-부톡시에탄올[111-76-2(≥≤1%2%)]",
+        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; 이산화티타늄[13463-67-7(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(백무광).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 11,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (무광백색)"
     },
     "8c79ee9776f1c7a0c4f10e7e91b9b26ab92ea32bbdc1da4d8ec4da00474f7806": {
         "f_hash": "8c79ee9776f1c7a0c4f10e7e91b9b26ab92ea32bbdc1da4d8ec4da00474f7806",
         "product_name": "럭키 Lacquer Spray (백색)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; 이산화티타늄[13463-67-7(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]프로판[74-98-6(≥1%)]; 메틸아세테이트[79-20-9(≥1%)]; 톨루엔[108-88-3(≥1%)]; [미등록]니트로셀룰로오스[9004-70-0(≥1%)]; n-부틸아세테이트[123-86-4(≥1%)]; 2-부톡시에탄올[111-76-2(≥1%)]",
+        "raw_content": "[미등록]Dimethyl ether[115-10-6(30~40%)]; 이산화티타늄[13463-67-7(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(백색).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 15,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (백색)"
     },
     "317990730270e4201a4adfd4904130ad2ca6e231f826c00aaa59921865ee4e1e": {
         "f_hash": "317990730270e4201a4adfd4904130ad2ca6e231f826c00aaa59921865ee4e1e",
@@ -60,52 +87,76 @@
         "신호등": "🟢 통과",
         "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]C.I. pigment red 048:2[7023-61-2(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(적색).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 12,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (적색)"
     },
     "d59d3f2c1b74ca83cdc4e40109ab1bc9566f3f2c7f01ea3847a45fe45cb2eea0": {
         "f_hash": "d59d3f2c1b74ca83cdc4e40109ab1bc9566f3f2c7f01ea3847a45fe45cb2eea0",
         "product_name": "럭키 Lacquer Spray (황색)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(≥1%)]; 메틸아세테이트[79-20-9(≥1%)]; 톨루엔[108-88-3(≥1%)]; [미등록]C.I. pigment yellow 083[5567-15-7(≥1%)]; [미등록]Barium sulfate, natural[7727-43-7(≥1%)]; [미등록]Nitrocellulose[9004-70-0(≥1%)]; 이산화티타늄[13463-67-7(≥1%)]; n-부틸아세테이트[123-86-4(≥1%)]; 2-부톡시에탄올[111-76-2(≥1%)]",
+        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]C.I. pigment yellow 083[5567-15-7(1~5%)]; [미등록]Barium sulfate, natural[7727-43-7(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; 이산화티타늄[13463-67-7(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(황색).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 16,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (황색)"
     },
     "93b02935f2a91da559acfe8dc5c95f8636b7a8c13f715a8de5716682c2849aaa": {
         "f_hash": "93b02935f2a91da559acfe8dc5c95f8636b7a8c13f715a8de5716682c2849aaa",
         "product_name": "럭키 Lacquer Spray (흑색)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]Carbon Black[1333-86-4(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(≥≤1%5%)]; 메틸아세테이트[79-20-9(≥≤1%5%)]; 톨루엔[108-88-3(≥≤1%5%)]; [미등록]Nitrocellulose[9004-70-0(≥≤1%5%)]; n-부틸아세테이트[123-86-4(≥≤1%3%)]; 2-부톡시에탄올[111-76-2(≥≤1%2%)]",
+        "raw_content": "[미등록]Oxybismethane[115-10-6(30~40%)]; [미등록]Carbon Black[1333-86-4(10~15%)]; [미등록]Alkyd resin[68526-21-6(10~15%)]; 아세톤[67-64-1(10~15%)]; [미등록]Propane[74-98-6(1~5%)]; 메틸아세테이트[79-20-9(1~5%)]; 톨루엔[108-88-3(1~5%)]; [미등록]Nitrocellulose[9004-70-0(1~5%)]; n-부틸아세테이트[123-86-4(1~3%)]; 2-부톡시에탄올[111-76-2(1~2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\락카(흑색).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 13,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "럭키 Lacquer Spray (흑색)"
     },
     "8098d1231fbd57fd86de9275a514e6799c400b19160f1f81fddee9d0f5fa2e9d": {
         "f_hash": "8098d1231fbd57fd86de9275a514e6799c400b19160f1f81fddee9d0f5fa2e9d",
         "product_name": "HI-PERF 2T ST",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]증류물(석유), 수소 처리된 중파라핀[64742-54-7(≥80%-≤85%)]; [미등록]탄화수소, C11-C14, n-알칸, 이소알칸, 환형, < 2% 방향족[64742-47-8(≥10%-≤15%)]; [미등록]Phenol, dodecyl-, branched[121158-58-5(≤5%)]",
+        "raw_content": "[미등록]증류물(석유), 수소 처리된 중파라핀[64742-54-7(80~85%)]; [미등록]탄화수소, C11-C14, n-알칸, 이소알칸, 환형, < 2% 방향족[64742-47-8(10~15%)]; [미등록]Phenol, dodecyl-, branched[121158-58-5(≤5%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(2T ST).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 5,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "HI-PERF 2T ST"
     },
     "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b": {
         "f_hash": "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b",
         "product_name": "ZIC TOP 5W-30 (RZIC TOP 5W-30)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]디노닐 디페닐아민[36878-20-3(≥≤0.1%5%)]; [미등록]수소처리된 중질 파라핀 증류액 (석유) 유제 오일[64742-54-7(≥≤70%80%)]; [미등록]솔벤트-탈왁스된 경질 파라핀 정제유[64742-56-9(≥≤0.1%5%)]; [미등록]1-데센, 호모중합체, 수소화된[68037-01-4(≥≤5%15%)]",
+        "raw_content": "[미등록]디노닐 디페닐아민[36878-20-3(0.1~5%)]; [미등록]수소처리된 중질 파라핀 증류액 (석유) 유제 오일[64742-54-7(70~80%)]; [미등록]솔벤트-탈왁스된 경질 파라핀 정제유[64742-56-9(0.1~5%)]; [미등록]1-데센, 호모중합체, 수소화된[68037-01-4(5~15%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(5w-30).pdf",
-        "page": 1
+        "page": 1,
+        "match_idx": 6,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "ZIC TOP 5W-30 (RZIC TOP 5W-30)"
     },
     "afe916cbefbc5d92a44a969cb202216eb52feac0efbf37f4bda0ee0b2aeb0370": {
         "f_hash": "afe916cbefbc5d92a44a969cb202216eb52feac0efbf37f4bda0ee0b2aeb0370",
         "product_name": "RUBIA FLET HD 70 10W-30",
         "reliability": "[AI-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Distillates (petroleum), hydrotreated heavy paraffinic[64742-54-7(≥80%-≤85%)]; [미등록]Phosphorodithioic acid, mixed O,O-bis (sec-Bu and 1,3-dimethylbutyl) esters, zinc salts[68649-42-3(≤5%)]",
+        "raw_content": "[미등록]Distillates (petroleum), hydrotreated heavy paraffinic[64742-54-7(80~85%)]; [미등록]Phosphorodithioic acid, mixed O,O-bis (sec-Bu and 1,3-dimethylbutyl) esters, zinc salts[68649-42-3(≤5%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진오일(10W-30).pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 7,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "RUBIA FLEET HD 700 10W-30"
     },
     "fc370a4d2a33577e7a8f05d72897c8609080da09515f11d5d71409ff378a56b8": {
         "f_hash": "fc370a4d2a33577e7a8f05d72897c8609080da09515f11d5d71409ff378a56b8",
@@ -114,7 +165,14 @@
         "신호등": "🟢 통과",
         "raw_content": "[미등록]다이메틸 에테르[115-10-6(5~10%)]; [미등록]프로페인[74-98-6(20~25%)]; [미등록]수소처리된 경질 정제유 (석유)[64742-47-8(60~65%)]; [미등록]2,2,4-트라이메틸-1,3-펜테인다이올 다이아이소뷰틸산[6846-50-0(1~5%)]; [미등록]폴리(옥시-1,2-에탄디일)[9002-92-0(1~3%)]; [미등록]폴리에틸렌 글리콜 올레일 에테르[9004-98-2(1~3%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\엔진크리너.pdf",
-        "page": 2
+        "page": 1,
+        "match_idx": 8,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "일신 엔진크리너",
+        "manual_data": {
+            "measure": ""
+        }
     },
     "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a": {
         "f_hash": "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a",
@@ -123,16 +181,32 @@
         "신호등": "🟡 확인",
         "raw_content": "이산화티타늄[13463-67-7(10~15%)]; [미등록]장석[68476-25-5(5~10%)]; 망간 및 그 무기화합물[7439-96-5(1~5%)]; [미등록]규산나트륨[1344-09-8(1~5%)]; [미등록]석회석[1317-65-3(1~5%)]; 운모[12001-26-2(1~5%)]; [미등록]철[7439-89-6(미기재%)]; [미등록]셀룰로스[65996-61-4(미기재%)]; [미등록]페로망가니즈[12604-53-4(미기재%)]; [미등록]불화 칼슘[7789-75-5(미기재%)]; 실리콘[7440-21-3(1~5%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접봉(CR-13).pdf",
-        "page": 2
+        "page": 1,
+        "manual_data": {
+            "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
+            "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
+        },
+        "match_idx": 0,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "용접재료(연강용 피복아크 용접봉) CR-13"
     },
     "73a65546238f1d7f753ffb9a4b405fa64c0d9e6623b5d7b5237294815a64897b": {
         "f_hash": "73a65546238f1d7f753ffb9a4b405fa64c0d9e6623b5d7b5237294815a64897b",
         "product_name": "용접재료(연강 및 고장력강용 플럭스 코어드 와이어)",
         "reliability": "[AI-FIXED]",
         "신호등": "🟡 확인",
-        "raw_content": "[미등록]원본물질명[7439-89-6(미기재%)]; 망간 및 그 무기화합물[7439-96-5(1~3%)]; 이산화티타늄[13463-67-7(5~10%)]; [미등록]원본물질명[7439-95-4(≤0.5%)]; 알루미늄[7429-90-5(≤0.5%)]; 산화마그네슘[1309-48-4(0.2~0.5%)]; [미등록]원본물질명[7789-75-5(0.1~1%)]; [미등록]원본물질명[1317-65-3(0.5~4%)]; 니켈(불용성)[7440-02-0(≤0.5%)]; [미등록]원본물질명[7787-32-8(1~7%)]; [미등록]원본물질명[471-34-1(0.1~3%)]",
+        "raw_content": "[미등록]원본물질명[7439-89-6(미기재%)]; 망간 및 그 무기화합물[7439-96-5(1~3%)]; 이산화티타늄[13463-67-7(5~10%)]; [미등록]원본물질명[7439-95-4(0.5~0.5%)]; 알루미늄[7429-90-5(0.5~0.5%)]; 산화마그네슘[1309-48-4(0.2~0.5%)]; [미등록]원본물질명[7789-75-5(0.1~1%)]; [미등록]원본물질명[1317-65-3(0.5~4%)]; 니켈(불용성)[7440-02-0(≤0.5%)]; [미등록]원본물질명[7787-32-8(1~7%)]; [미등록]원본물질명[471-34-1(0.1~3%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\용접재료(CSF-71T).pdf",
-        "page": 2
+        "page": 1,
+        "manual_data": {
+            "product_name": "용접재료(연강 및 고장력강용 플럭스 코어드 와이어) CSF-71T",
+            "raw_content": "7439-89-6(Rem.%); 7439-96-5(1~3%); 13463-67-7(5~10%); 7440– 21-3(0.2~1.5%); 7439-95-4(≤0.5%)"
+        },
+        "match_idx": 1,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "용접재료(연강 및 고장력강용 플럭스 코어드 와이어) CSF-71T"
     },
     "876009e7a2984dd5a564b475993419342e3301a0256c57a74e3a3c553bc10a70": {
         "f_hash": "876009e7a2984dd5a564b475993419342e3301a0256c57a74e3a3c553bc10a70",
@@ -141,7 +215,11 @@
         "신호등": "🟡 확인",
         "raw_content": "",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\유압유(AW46).PDF",
-        "page": 1
+        "page": 1,
+        "match_idx": 3,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "MOBIL HYDRAULIC AW 46"
     },
     "ff29f4f823caa31a0a1acd63b40d28076559bc1ba270301d038093190fb5939f": {
         "f_hash": "ff29f4f823caa31a0a1acd63b40d28076559bc1ba270301d038093190fb5939f",
@@ -150,6 +228,10 @@
         "신호등": "🟢 통과",
         "raw_content": "[미등록]가솔린[86290-81-5(＜86%)]; 벤젠[71-43-2(0.1~0.7%)]; [미등록]메틸 삼차 부틸 에테르[1634-04-4(11%)]; 톨루엔[108-88-3(1~10%)]; 크실렌[1330-20-7(2~4%)]; [미등록]큐멘[98-82-8(≤0.2%)]",
         "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)\\휘발유.pdf",
-        "page": 3
+        "page": 1,
+        "match_idx": 9,
+        "match_excel": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ TEST_천안시청(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+        "match_sheet": "화학물질입력_양식",
+        "match_name": "보통 휘발유 (Regular Unleaded Gasoline)"
     }
 }

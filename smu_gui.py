@@ -1934,26 +1934,23 @@ class SMUGUI(QMainWindow):
 
     def on_row_clicked(self, row, column):
         """
-        [V7.0 & V11.0 통합] 테이블 행 클릭 시 미리보기 연동 및 KOSHA 원클릭 검증
+        [V7.0 & V11.0 통합] 테이블 행 클릭 시 미리보기 연동 (1페이지 강제 고정)
         """
         try:
-            # 1. [V7.0] 기존 PDF 미리보기 위치 이동 로직
             target_pdf_path_item = self.table.item(row, COL_IDX_FILEPATH)
-            target_page_item = self.table.item(row, COL_IDX_PAGE)
-            
             if not target_pdf_path_item: return
                 
             target_pdf_path = target_pdf_path_item.text()
-            target_page_str = target_page_item.text() if target_page_item else "1"
 
             if not target_pdf_path or not os.path.exists(target_pdf_path): return
 
+            # PDF 로드
             if self.preview_pane.current_pdf_path != target_pdf_path:
                 self.preview_pane.load_pdf(target_pdf_path)
-
-            if target_page_str and target_page_str.isdigit():
-                page_num = int(target_page_str)
-                self.preview_pane.navigate_to_page(page_num)
+            
+            # [최종 단순화] 복잡한 페이지 스크롤 추적 로직 전면 삭제. 
+            # 무조건 스크롤을 0(맨 위 1페이지)으로 강제 고정하여 제품명 확인을 우선시함.
+            self.preview_pane.verticalScrollBar().setValue(0)
 
         except Exception as e:
             print(f"Row Click Error: {e}")
