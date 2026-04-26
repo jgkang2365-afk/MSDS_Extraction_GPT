@@ -2144,13 +2144,16 @@ class SMUGUI(QMainWindow):
 
             # 데이터 기입 (순차적 저장)
             saved_count = 0
-            for idx, item in enumerate(self.results):
-                fn = item["filename"]
+            for row_idx in range(self.table.rowCount()):
+                fn_item = self.table.item(row_idx, 7) # 파일명 (7번 열)
+                if not fn_item: continue
+                fn = fn_item.text().strip()
+                
                 if fn not in table_dict:
                     continue
                 
                 td = table_dict[fn]
-                curr_row = st_row + idx
+                curr_row = st_row + saved_count # 시각적 순서대로 연속된 행에 기록
                 
                 # 매핑된 컬럼에 데이터 쓰기
                 if mapping.get("제품명"): ws.Cells(curr_row, mapping["제품명"]).Value = td["product_name"]
