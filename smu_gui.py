@@ -466,11 +466,16 @@ class ValidationWorker(QThread):
                 row_idx = data.get("row_idx") # Fallback용
                 if i > 0: self.log_signal.emit("") # [추가] 파일 간 가독성을 위한 빈 줄
                 
+                # [V11.4 신규] 사용자가 테이블의 CAS를 직접 수정한 경우 (캐시에 manual_data 내 raw_content 존재) 감지
+                is_manual_cas = False
+                if f_hash and self.parent_gui.cache.get(f_hash, {}).get("manual_data", {}).get("raw_content"):
+                    is_manual_cas = True
+
                 # [Master 지시서] 🔵 파란색 신호등 기반 3-Way 하이브리드 로직 가동
                 db_records = self.parent_gui.get_db_knowledge(prod)
                 
-                # Case 1: 지식이 딱 1개인 경우 (🟢 초록색 하이패스)
-                if len(db_records) == 1:
+                # Case 1: 지식이 딱 1개인 경우 (🟢 초록색 하이패스 - 단, CAS 수동 수정 시 우회)
+                if len(db_records) == 1 and not is_manual_cas:
                     rec = db_records[0]
                     res = {
                         "row_idx": row_idx, "f_hash": f_hash, "filename": fn, "status": "High-Pass",
@@ -486,8 +491,8 @@ class ValidationWorker(QThread):
                     self.progress_signal.emit(int((i + 1) / total * 100))
                     continue
 
-                # Case N: 지식이 2개 이상인 경우 (🔵 파란색 마킹 및 사후 검수 대상)
-                elif len(db_records) >= 2:
+                # Case N: 지식이 2개 이상인 경우 (🔵 파란색 마킹 및 사후 검수 대상 - 단, CAS 수동 수정 시 우회)
+                elif len(db_records) >= 2 and not is_manual_cas:
                     rec = db_records[0] # 우선 최신 것 로드
                     res = {
                         "row_idx": row_idx, "f_hash": f_hash, "filename": fn, "status": "Review Required",
@@ -523,8 +528,13 @@ class ValidationWorker(QThread):
                 pure_cas_list = list(cas_to_content.keys())
                 pure_cas_str = "; ".join(pure_cas_list) if pure_cas_list else cas_content
 
-                # [수정] 코어 호출 시 f_hash 파라미터 전달
-                raw_val_res = self.core.validate_with_kosha(pure_cas_str, log_func=self.log_signal.emit, full=False, f_hash=f_hash)
+                # [V11.4 핵심] 수동 수정 시 KOSHA API 캐시(Cache-Hit)도 강제 우회
+                f_hash_for_api = None if is_manual_cas else f_hash
+                if is_manual_cas:
+                    self.log_signal.emit(f"[*] CAS 수동 수정 감지: 과거 지식을 무시하고 KOSHA API를 재호출합니다.")
+
+                # [수정] 코어 호출 시 조건부 f_hash 파라미터 전달
+                raw_val_res = self.core.validate_with_kosha(pure_cas_str, log_func=self.log_signal.emit, full=False, f_hash=f_hash_for_api)
                 
                 # [V7.0 추가] 캐시 적중 시 하위 파싱(components 루프 등) 전면 우회
                 if raw_val_res.get("status") == "Cache-Hit":
@@ -2204,6 +2214,13 @@ class SMUGUI(QMainWindow):
                             # 1. 캐시 영구 저장
                             if "manual_data" not in self.cache[f_hash]:
                                 self.cache[f_hash]["manual_data"] = {}
+                            
+                            # [V11.4 캐시 정화] CAS(raw_content)가 수정되면, 기존 규제 결과 캐시를 모두 삭제
+                            if key == "raw_content":
+                                for old_k in ["measure", "reg2", "reg1"]:
+                                    if old_k in self.cache[f_hash]["manual_data"]:
+                                        del self.cache[f_hash]["manual_data"][old_k]
+                                        
                             self.cache[f_hash]["manual_data"][key] = new_text
                             self.save_cache()
                             
