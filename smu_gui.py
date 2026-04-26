@@ -21,6 +21,7 @@ import importlib # [HOT-RELOAD] 모듈 새로고침용
 from msds_core import MSDSCore
 import msds_engine_v5 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
+import pandas as pd # [V10.5] 마스터 DB 로드용
 
 # [V7.0] 테이블 컬럼 인덱스 정의 (미리보기 브릿지용)
 COL_IDX_FILENAME = 7
@@ -454,45 +455,8 @@ class ValidationWorker(QThread):
                 if f_hash and self.parent_gui.cache.get(f_hash, {}).get("manual_data", {}).get("raw_content"):
                     is_manual_cas = True
 
-                # [Master 지시서] 🔵 파란색 신호등 기반 3-Way 하이브리드 로직 가동
-                db_records = self.parent_gui.get_db_knowledge(prod)
-                
-                # Case 1: 지식이 딱 1개인 경우 (🟢 초록색 하이패스 - 단, CAS 수동 수정 시 우회)
-                if len(db_records) == 1 and not is_manual_cas:
-                    rec = db_records[0]
-                    res = {
-                        "row_idx": row_idx, "f_hash": f_hash, "filename": fn, "status": "High-Pass",
-                        "product_name": prod,
-                        "validation": {
-                            "cas_with_content": rec[0].split(";\n") if rec[0] else [],
-                            "work_subjects": rec[1], 
-                            "res_1st": rec[2].split(";\n") if rec[2] else [],
-                            "res_2nd": rec[3].split(";\n") if rec[3] else []
-                        }
-                    }
-                    self.result_signal.emit(res)
-                    self.progress_signal.emit(int((i + 1) / total * 100))
-                    continue
-
-                # Case N: 지식이 2개 이상인 경우 (🔵 파란색 마킹 및 사후 검수 대상 - 단, CAS 수동 수정 시 우회)
-                elif len(db_records) >= 2 and not is_manual_cas:
-                    rec = db_records[0] # 우선 최신 것 로드
-                    res = {
-                        "row_idx": row_idx, "f_hash": f_hash, "filename": fn, "status": "Review Required",
-                        "product_name": prod, "db_records": db_records, # 전체 기록 전달
-                        "validation": {
-                            "cas_with_content": rec[0].split(";\n") if rec[0] else [],
-                            "work_subjects": rec[1], 
-                            "res_1st": rec[2].split(";\n") if rec[2] else [],
-                            "res_2nd": rec[3].split(";\n") if rec[3] else []
-                        }
-                    }
-                    self.result_signal.emit(res)
-                    self.progress_signal.emit(int((i + 1) / total * 100))
-                    continue
-
-                # Case 0: DB에 지식이 없는 경우 (기존 API 엔진 가동)
-                self.log_signal.emit(f"[*] [Case-0] DB 지식 0건: [{prod}] (API 엔진 가동)")
+                # Case 0: DB 지식 로직 제거 (항상 API 엔진 가동)
+                self.log_signal.emit(f"[*] API 엔진 가동: [{prod}]")
                 self.log_signal.emit("="*20 + f" [{prod} API 검증 시작] " + "="*20)
                 # [V8.8] 지능형 CAS 추출 및 함유량 보존 로직 (함유량% 보장)
                 # [V8.8] 지능형 CAS 추출 및 함유량 보존 로직 (함유량% 보장)
@@ -561,8 +525,7 @@ class ValidationWorker(QThread):
                         clean_name = name.strip()
                         
                     # [V11.3 최종 지침] KOSHA API 결과도 엔진(V5)의 표준명칭과 100% 동기화
-                    import msds_engine_v5 as engine_v5
-                    mes_std_name = engine_v5.MES_MASTER_MAP.get(cas, "")
+                    mes_std_name = engine.MES_MASTER_MAP.get(cas, "")
                     
                     if mes_std_name:
                         clean_name = str(mes_std_name)
@@ -764,257 +727,6 @@ class ModernMappingPanel(QGroupBox):
             if k in self.inputs:
                 self.inputs[k].setText(v)
 
-class KnowledgeManager:
-    """[Flawless] 1SMU 지능형 지식 관리 엔진 (Graphify 기반)"""
-    def __init__(self, log_func=None):
-        self.log = log_func or print
-        self.graph_path = os.path.join(os.environ["USERPROFILE"], ".graphify", "knowledge", "graph.json")
-        self.history_path = "matching_history.json"
-        self.graph_data = self._load_graph()
-
-    def _load_graph(self):
-        if os.path.exists(self.graph_path):
-            try:
-                with open(self.graph_path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except: return {}
-        return {}
-
-    def get_semantic_score(self, source, target):
-        """지식 그래프 및 매칭 히스토리를 통한 시멘틱 유사성(동의어/별칭) 검증"""
-        source = source.strip().lower()
-        target = target.strip().lower()
-        if source == target: return 100
-
-        # 1. 매칭 히스토리(학습 경험) 최우선 확인
-        if os.path.exists(self.history_path):
-            try:
-                with open(self.history_path, "r", encoding="utf-8") as f:
-                    temp_history = json.load(f)
-                    # [지시서] 리스트 오염 방탄 로직: 데이터 타입 강제 변환
-                    history = temp_history if isinstance(temp_history, dict) else {}
-                    if source in history and history[source].get("matched_name", "").lower() == target:
-                        return 99 # 학습된 매칭 경험 (최고 신뢰도)
-            except: pass
-
-        # 2. 지식 그래프 노드 내 Alias 매칭 확인
-        if self.graph_data:
-            nodes = self.graph_data.get("nodes", [])
-            for node in nodes:
-                metadata = node.get("metadata", {})
-                aliases = [a.lower() for a in metadata.get("aliases", [])]
-                name = node.get("name", "").lower()
-                
-                names_in_node = aliases + [name]
-                if source in names_in_node and target in names_in_node:
-                    return 98 # 시멘틱 링크 확인됨
-                
-        return 0
-
-    def update_experience(self, pdf_name, excel_name, binding_data):
-        """[Hot-Fix] 리스트([]) 생성 버그 차단 및 딕셔너리({}) 강제 전환"""
-        history = {}
-        if os.path.exists(self.history_path):
-            try:
-                with open(self.history_path, "r", encoding="utf-8") as f:
-                    temp_data = json.load(f)
-                    # 데이터 타입이 dict가 아닐 경우 즉시 빈 dict로 초기화하여 TypeError 방지
-                    history = temp_data if isinstance(temp_data, dict) else {}
-            except Exception:
-                history = {}
-        
-        history[pdf_name] = {
-            "matched_name": excel_name,
-            "binding": binding_data,
-            "timestamp": datetime.now().isoformat()
-        }
-        with open(self.history_path, "w", encoding="utf-8") as f:
-            json.dump(history, f, indent=4, ensure_ascii=False)
-            
-        self.log(f"[*] 지능형 학습: '{pdf_name}' -> '{excel_name}' 매칭 경험 저장 완료.")
-        
-        # [핵심] Graphify 증분 인덱싱(Incremental Indexing) 호출
-        try:
-            subprocess.Popen(["graphify", "update", self.history_path], 
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            self.log("[*] Graphify 증분 인덱싱 백그라운드 실행 중...")
-        except Exception as e:
-            self.log(f"[!] 증분 인덱싱 실패: {e}")
-
-class MatchingWorker(QThread):
-    """
-    엑셀의 '화학물질명'과 PDF 추출 결과의 '제품명'을 논리적으로 매칭함.
-    thefuzz 라이브러리를 사용하여 유사도 점수 계산.
-    """
-    finished = pyqtSignal(list) # 매칭 결과 목록 [(pdf_idx, excel_idx, score, binding_data), ...]
-    progress = pyqtSignal(int, str) # 현재 진행률, 메시지
-
-    def __init__(self, excel_path, sheet_name, pdf_results, mapping=None):
-        super().__init__()
-        self.excel_path = excel_path
-        self.sheet_name = sheet_name
-        self.pdf_results = pdf_results # [{'제품명': '...', ...}, ...]
-        self.mapping = mapping if mapping else {} # [NEW] 환경설정 매핑 정보 주입
-        self.km = None 
-        self.is_running = True
-
-    @staticmethod
-    def normalize_name(text):
-        """[Hot-Fix] 제품명 정규화: 모델명 보존을 위해 괄호 내용 삭제 로직 전면 제거"""
-        if not text: return ""
-        text = str(text).strip().lower()
-        
-        # 1. 버전 및 특정 키워드만 정제 (괄호 안의 모델명은 보존)
-        text = re.sub(r"v\d+(\.\d+)*", "", text)
-        text = re.sub(r"rev\.\d+", "", text)
-        text = text.replace("(최종)", "").replace("복사본", "").replace("copy", "")
-        
-        # 2. 특수문자 제거 시 모델명 식별자인 하이픈(-)은 보존
-        text = re.sub(r"[^가-힣a-z0-9\-]", " ", text)
-        return " ".join(text.split())
-
-    def run(self):
-        try:
-            self.progress.emit(0, "엑셀 데이터 로드 중...")
-            
-            # [V9.7] 주님이 주입한 타입 무결성 검증 (숫자 인덱스여야 함)
-            target_col_idx_raw = self.mapping.get("제품명", 4) # 기본값 D(4)
-            if isinstance(target_col_idx_raw, int):
-                target_col_idx = target_col_idx_raw - 1 # 0-based for pandas
-            else:
-                # 안전장치: 여전히 문자라면 여기서 마지막으로 변환 시도
-                target_col_idx = SMUGUI.c2i(target_col_idx_raw) - 1
-
-            if target_col_idx < 0:
-                self.progress.emit(0, "오류: 잘못된 제품명 열 설정입니다.")
-                self.finished.emit([])
-                return
-
-            target_col_letter = self.mapping.get("제품명_raw", "D") # 로깅용
-            
-            # [V9.6] 주님의 실무 양식 보장: 1~10행을 돌며 '제품명' 열에 데이터가 있는 행을 시작점(Header)으로 인지
-            raw_xl = pd.read_excel(self.excel_path, sheet_name=self.sheet_name, engine='openpyxl', header=None, nrows=10)
-            header_idx = 0
-            for r_idx, row in raw_xl.iterrows():
-                try:
-                    cell_val = str(row[target_col_idx]).strip()
-                    if cell_val and cell_val not in ["nan", "None"]:
-                        header_idx = r_idx
-                        break
-                except: continue
-            
-            # 실제 데이터 로드
-            df = pd.read_excel(self.excel_path, sheet_name=self.sheet_name, engine='openpyxl', header=header_idx)
-            
-            # [V10.1] 엑셀 열 확정 및 예외 처리 단일화 (구문 중복 제거)
-            target_col_letter = self.mapping.get("제품명_raw", "D")
-            try:
-                target_col = df.columns[target_col_idx]
-            except Exception as e:
-                self.progress.emit(0, f"오류: 엑셀 열({target_col_letter})에서 데이터를 로드할 수 없습니다: {e}")
-                self.finished.emit([])
-                return
-
-            self.progress.emit(10, "논리적 매칭 수행 중...")
-            matches = []
-            
-            # [V9.6] 0% 매칭 검증 및 로그 추출용 표본 수집
-            excel_names = [str(x).strip() for x in df[target_col]]
-            norm_excel_names = [MatchingWorker.normalize_name(x) for x in excel_names]
-            
-            if len(norm_excel_names) > 0:
-                samples = [x for x in excel_names[:5] if str(x).strip()]
-                self.progress.emit(15, f"[*] 분석 대상 열('{target_col}') 표본: {', '.join(samples[:3])}...")
-            
-            total = len(self.pdf_results)
-
-            for i, pdf_item in enumerate(self.pdf_results):
-                if not self.is_running: break
-                
-                # [수정] '제품명' 대신 엔진 표준 키인 'product_name'을 엄격히 참조
-                pdf_raw_name = str(pdf_item.get('product_name', '')).strip()
-                pdf_norm_name = self.normalize_name(pdf_raw_name)
-                
-                if not pdf_norm_name:
-                    matches.append({
-                        'pdf_idx': i, 
-                        'excel_idx': -1, 
-                        'score': 0, 
-                        'pdf_filename': pdf_item.get('filename', 'N/A'), 
-                        'pdf_name': pdf_raw_name if pdf_raw_name else "추출 실패", # [V10.3] 공란 방지
-                        'excel_name': "N/A", 
-                        'binding_data': None
-                    })
-                    continue
-
-                best_score = -1
-                best_idx = -1
-                
-                for j, excel_raw_name in enumerate(excel_names):
-                    excel_norm_name = norm_excel_names[j]
-                    if not excel_norm_name: continue
-                    
-                    # 1. 정문화된 텍스트 완전 일치
-                    if pdf_norm_name == excel_norm_name:
-                        best_score = 100
-                        best_idx = j
-                        break
-                    
-                    # 2. 유사도 계산 (하이브리드 방식)
-                    # A. Fuzzy Score (정문화 기반 비교로 노이즈 영향 최소화)
-                    f_score = fuzz.token_sort_ratio(pdf_norm_name, excel_norm_name)
-                    
-                    # B. Semantic Score
-                    s_score = 0
-                    if hasattr(self, 'km') and self.km:
-                        s_score = self.km.get_semantic_score(pdf_raw_name, excel_raw_name)
-                    
-                    # 지식 그래프 확인 시 가중치 부여
-                    score = max(f_score, s_score)
-
-                    if score > best_score:
-                        best_score = score
-                        best_idx = j
-                
-                # 바인딩 데이터 추출
-                binding_data = None
-                if best_idx != -1:
-                    row = df.iloc[best_idx]
-                    binding_data = {
-                        "공정명": str(row.get("공정명", "")),
-                        "제조/사용": str(row.get("제조/사용", "")),
-                        "사용용도": str(row.get("사용용도", "")),
-                        "월취급량": str(row.get("월취급량", "")),
-                        "단위": str(row.get("단위", ""))
-                    }
-
-                matches.append({
-                    'pdf_idx': i,
-                    'excel_idx': best_idx,
-                    'score': best_score,
-                    'pdf_filename': pdf_item.get('filename', 'N/A'),
-                    'pdf_name': pdf_raw_name if pdf_raw_name else "추출 실패", # [V10.3] 공란 방지
-                    'excel_name': excel_names[best_idx] if best_idx != -1 else "N/A",
-                    'binding_data': binding_data
-                })
-                
-                self.progress.emit(10 + int((i + 1) / total * 80), f"매칭 중: {pdf_raw_name} ({i+1}/{total})")
-
-            self.progress.emit(100, "논리적 매칭 분석 완료")
-            
-            # [V9.6] 전체 항목이 0% 매칭인 경우 경고 강화
-            if total > 0 and all(m['score'] == 0 for m in matches):
-                samples = [str(x) for x in excel_names[:5] if str(x).strip()]
-                self.progress.emit(100, f"[!] 매칭률 0%: '{target_col}'열의 표본 {samples}을 확인하십시오. 열 지정이 정확한지 검토가 필요합니다.")
-            
-            self.finished.emit(matches)
-
-        except Exception as e:
-            self.progress.emit(0, f"매칭 엔진 오류: {str(e)}")
-            self.finished.emit([])
-
-    def stop(self):
-        self.is_running = False
 
 class SMUGUI(QMainWindow):
     @staticmethod
@@ -1037,11 +749,9 @@ class SMUGUI(QMainWindow):
         self.results = []
         self.cache = {} 
         self.sidebar_slim = False
-        self.need_review = []  # 검수 대기열 초기화
         self.init_ui()
         
         # [V7.5] 동기화 무결성 확보를 위한 초기화 순서 재배치
-        self._setup_tab_synchronization() # 1. 시그널 먼저 연결 (대기)
         self.load_config() # 2. 그 다음 설정 로드 (setText 발생 시 시그널 즉시 발동)
         self.load_mes_master() # [NEW] MES 마스터 데이터셋 구축
         self.showMaximized()
@@ -1102,9 +812,7 @@ class SMUGUI(QMainWindow):
         self.menu_buttons = []
         menus = [
             ("추출 및 검증", "[DOC]", 0),
-            ("논리적 매칭", "[LINK]", 1),
-            ("환경 설정", "[SET]", 2),
-            ("지식 DB 관리", "[DB]", 3)
+            ("환경 설정", "[SET]", 1)
         ]
 
         for text, icon, idx in menus:
@@ -1118,6 +826,18 @@ class SMUGUI(QMainWindow):
 
         self.sidebar_layout.addStretch()
         self.main_h_layout.addWidget(self.sidebar_widget)
+
+    def switch_page(self, idx, btn):
+        """[Premium] 페이지 전환 및 사이드바 버튼 상태 업데이트"""
+        self.stacked_widget.setCurrentIndex(idx)
+        for b in self.menu_buttons:
+            b.setChecked(False)
+            b.update_style(False)
+        btn.setChecked(True)
+        btn.update_style(True)
+        
+        titles = ["PDF 추출 및 규제 검증", "환경 설정"]
+        self.lbl_page_title.setText(titles[idx])
 
     def toggle_sidebar(self):
         """[Premium] 사이드바 슬림 모드 <-> 풀 모드 전환 애니메이션"""
@@ -1147,24 +867,18 @@ class SMUGUI(QMainWindow):
     def switch_page(self, index, active_btn):
         """페이지 전환 및 버튼 스타일 업데이트 (V7.5 자동 갱신 추가)"""
         self.stacked_widget.setCurrentIndex(index)
-        titles = ["PDF 추출 및 규제 검증", "화학물질 사용현황 매칭 매니저", "시스템 환경 설정", "지능형 지식 DB 관리자"]
+        titles = ["PDF 추출 및 규제 검증", "시스템 환경 설정"]
         self.lbl_page_title.setText(titles[index] if index < len(titles) else "환경 설정")
         
         for btn in self.menu_buttons:
             btn.setChecked(btn == active_btn)
             btn.update_style(btn == active_btn)
             
-        # [V7.5] 매칭 탭으로 전환 시, 시트 목록이 비어 있으면 강제 갱신 시도
-        if index == 1: # 논리적 매칭 탭
-            path = self.edit_usage_excel.text()
-            if path and self.combo_usage_sheet.count() == 0:
-                self._update_combo_sheets(path, self.combo_usage_sheet)
-        elif index == 0: # 추출 및 검증 탭
+        # [V7.5] 탭으로 전환 시, 시트 목록이 비어 있으면 강제 갱신 시도
+        if index == 0: # 추출 및 검증 탭
             path = self.edit_excel.text()
             if path and self.combo_sheet.count() == 0:
                 self._update_combo_sheets(path, self.combo_sheet)
-        elif index == 3: # [NEW] 지식 DB 관리 탭
-            self.load_db_to_table()
 
     def _setup_log_section(self):
         """하단 로그 창 및 토글 버튼 구성"""
@@ -1222,108 +936,6 @@ class SMUGUI(QMainWindow):
         self.btn_toggle_log.setText("▲ 로그 열기" if is_visible else "▼ 로그 접기")
         # 높이 제약 해제하여 QSplitter가 자동화하도록 위임
 
-    def init_db(self):
-        """[V10.0] SQLite 지능형 지식 저장소 초기화 및 복합 키 마이그레이션"""
-        try:
-            self.conn = sqlite3.connect("msds_knowledge.db", check_same_thread=False)
-            self.db_cursor = self.conn.cursor()
-            
-            # 1. 신규 스키마 정의 (product_name + usage 복합 키)
-            self.db_cursor.execute("""
-                CREATE TABLE IF NOT EXISTS msds_info (
-                    product_name TEXT,
-                    usage TEXT DEFAULT '미지정',
-                    cas_content TEXT,
-                    work_subjects TEXT,
-                    reg_1st TEXT,
-                    reg_2nd TEXT,
-                    last_updated DATETIME,
-                    PRIMARY KEY (product_name, usage)
-                )
-            """)
-            
-            # 2. 하위 호환성 및 자동 마이그레이션 로직
-            # 기존 테이블에 usage 컬럼이 없는 경우 (V9.x -> V10.0 업그레이드)
-            self.db_cursor.execute("PRAGMA table_info(msds_info)")
-            columns = [col[1] for col in self.db_cursor.fetchall()]
-            
-            if 'usage' not in columns:
-                self.log("[*] DB 업그레이드 감지: 'usage' 필드를 추가하고 복합 키로 재구성합니다.")
-                # 임시 테이블을 통한 PK 변경 마이그레이션
-                self.db_cursor.execute("ALTER TABLE msds_info RENAME TO msds_info_old")
-                self.db_cursor.execute("""
-                    CREATE TABLE msds_info (
-                        product_name TEXT,
-                        usage TEXT DEFAULT '미지정',
-                        cas_content TEXT,
-                        work_subjects TEXT,
-                        reg_1st TEXT,
-                        reg_2nd TEXT,
-                        last_updated DATETIME,
-                        PRIMARY KEY (product_name, usage)
-                    )
-                """)
-                self.db_cursor.execute("""
-                    INSERT INTO msds_info (product_name, usage, cas_content, work_subjects, reg_1st, reg_2nd, last_updated)
-                    SELECT product_name, '미지정', cas_content, work_subjects, reg_1st, reg_2nd, last_updated FROM msds_info_old
-                """)
-                self.db_cursor.execute("DROP TABLE msds_info_old")
-                self.log("[*] DB 마이그레이션이 성공적으로 완료되었습니다.")
-                
-            self.conn.commit()
-            print("[*] SQLite 지능형 지식 저장소(msds_knowledge.db) 커넥션 확보 완료.")
-        except sqlite3.Error as e:
-            print(f"[!] DB 초기화 실패: {e}")
-            self.log(f"⚠️ 지식 저장소 연결 실패: {e}")
-
-    def get_db_knowledge(self, product_name):
-        """[V10.0] 제품명 100% 일치하는 모든 지식 기록 조회 (중복 처리용)"""
-        try:
-            # 복합 키 체계이므로 제품명으로 검색 시 1개 이상의 리스트가 반환될 수 있음
-            self.db_cursor.execute("SELECT cas_content, work_subjects, reg_1st, reg_2nd, usage FROM msds_info WHERE product_name=?", (product_name,))
-            return self.db_cursor.fetchall() # fetchone() 대신 fetchall()로 변경 (Case N 감지용)
-        except: return []
-
-    def save_db_knowledge(self, product_name, cas, subjects, reg1, reg2, usage="미지정"):
-        """[V10.0] 전문가 지식 영구 고착화 (Usage 포함)"""
-        try:
-            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # 주님 지시: 1% Rule 적용 (함유량이 1% 미만인 성분은 규제 요약에서 제외)
-            # reg1, reg2 데이터 내의 [...] 성분들을 필터링
-            filtered_reg1, filtered_reg2 = self._apply_one_percent_filter(reg1, reg2)
-
-            self.db_cursor.execute("""
-                REPLACE INTO msds_info 
-                (product_name, usage, cas_content, work_subjects, reg_1st, reg_2nd, last_updated)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (product_name, usage, cas, subjects, filtered_reg1, filtered_reg2, now))
-            self.conn.commit()
-            return True
-        except Exception as e:
-            self.log(f"[!] DB 저장 실패: {e}")
-            return False
-
-    def _apply_one_percent_filter(self, reg1, reg2):
-        """[V10.0] 규제 요약 정보에서 1% 미만 성분 강제 배제 (전문가 룰)"""
-        def filter_content(text):
-            if not text: return ""
-            # 각 성분 단위 필터링 ('; '로 구분된 리스트)
-            items = text.split("; ")
-            filtered = []
-            for item in items:
-                # 함유량 추출 (예: [7439-89-6(0.5%)])
-                match = re.search(r'\(([\d\.]+)\s*%\)', item)
-                if match:
-                    try:
-                        val = float(match.group(1))
-                        if val < 1.0: 
-                            # self.log(f"[*] [1% Rule] 규제 제외: {item}") # 로그 과다 방지 위해 주석
-                            continue
-                    except: pass
-                filtered.append(item)
-            return "; ".join(filtered)
-
-        return filter_content(reg1), filter_content(reg2)
 
     def log(self, message):
         """[Premium] 시스템 로그 출력 및 자동 스크롤 (GUI & 터미널 병행)"""
@@ -1341,390 +953,6 @@ class SMUGUI(QMainWindow):
             # 최악의 경우 아스키 문자만 출력
             print(f"[*] {str(message).encode('ascii', errors='replace').decode('ascii')}")
 
-    def _create_matching_page(self):
-        """[Page 1] 논리적 매칭 레이아웃 및 컨트롤"""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-
-        # 1. 상단 컨트롤 바 (엑셀 선택 및 시작)
-        ctrl_group = QGroupBox("매칭 원본 데이터 (화학물질 사용현황)")
-        ctrl_layout = QGridLayout()
-        
-        ctrl_layout.addWidget(QLabel("사용현황 엑셀:"), 0, 0)
-        self.edit_usage_excel = QLineEdit()
-        self.edit_usage_excel.setPlaceholderText("화학물질 사용현황 엑셀 파일을 선택하세요...")
-        ctrl_layout.addWidget(self.edit_usage_excel, 0, 1)
-        
-        btn_usage_ex = QPushButton("파일 열기")
-        btn_usage_ex.setFixedWidth(100)
-        btn_usage_ex.setStyleSheet("background-color: #6c757d;")
-        btn_usage_ex.clicked.connect(self.select_usage_excel)
-        ctrl_layout.addWidget(btn_usage_ex, 0, 2)
-
-        ctrl_layout.addWidget(QLabel("매칭 시트:"), 1, 0)
-        self.combo_usage_sheet = QComboBox()
-        ctrl_layout.addWidget(self.combo_usage_sheet, 1, 1, 1, 1)
-        
-        self.btn_run_matching = QPushButton("[RUN] 논리적 매칭 시작")
-        self.btn_run_matching.setFixedHeight(40)
-        self.btn_run_matching.setStyleSheet(f"background-color: {PRIMARY_BLUE}; font-size: 13px;")
-        self.btn_run_matching.clicked.connect(self.run_logical_matching)
-        ctrl_layout.addWidget(self.btn_run_matching, 1, 2)
-        
-        ctrl_group.setLayout(ctrl_layout)
-        layout.addWidget(ctrl_group)
-
-        # 2. 매칭 결과 테이블
-        result_group = QGroupBox("매칭 분석 결과 및 데이터 바인딩 상태")
-        result_layout = QVBoxLayout()
-        
-        self.match_table = QTableWidget(0, 8) # [V9.9] 컬럼 8개로 확장
-        self.match_table.setHorizontalHeaderLabels([
-            "신뢰도", "PDF 파일명", "PDF 제품명", "유사도(%)", "매칭된 엑셀 항목", "바인딩 데이터", "상태", "확정"
-        ])
-        header = self.match_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Interactive)
-        self.match_table.setColumnWidth(0, 60)
-        self.match_table.setColumnWidth(1, 150) # 파일명 칸
-        self.match_table.setColumnWidth(2, 200) # 제품명 칸
-        self.match_table.setColumnWidth(3, 80)
-        self.match_table.setColumnWidth(4, 200)
-        self.match_table.setColumnWidth(5, 300)
-        self.match_table.setColumnWidth(7, 80)
-        
-        result_layout.addWidget(self.match_table)
-        
-        # [NEW] 수동 확정 버튼들 (가로 배치)
-        btn_layout = QHBoxLayout()
-        btn_confirm = QPushButton("선택 항목 매칭 확정 (학습)")
-        btn_confirm.setStyleSheet("background-color: #28a745; color: white; font-weight: bold; padding: 8px;")
-        btn_confirm.clicked.connect(self.confirm_manual_match)
-        
-        self.btn_batch_confirm = QPushButton("🟢 초록불 일괄 자동 학습")
-        self.btn_batch_confirm.setStyleSheet("background-color: #007bff; color: white; font-weight: bold; padding: 8px;")
-        self.btn_batch_confirm.clicked.connect(self.batch_auto_confirm)
-        
-        btn_layout.addWidget(btn_confirm)
-        btn_layout.addWidget(self.btn_batch_confirm)
-        result_layout.addLayout(btn_layout)
-        
-        result_group.setLayout(result_layout)
-        layout.addWidget(result_group)
-
-        # 3. 하단 안내 상자
-        info_box = QFrame()
-        info_box.setStyleSheet(f"background-color: {LIGHT_BLUE}; border-radius: 5px;")
-        info_layout = QHBoxLayout(info_box)
-        info_lbl = QLabel("💡 <b>매칭 가이드:</b> 90% 이상(🟢)은 자동 바인딩되며, 70%~89%(🟡)는 검토가 필요합니다. 70% 미만(🔴)은 수동 확인 권장.")
-        info_lbl.setStyleSheet("color: #004085; font-size: 11px;")
-        info_layout.addWidget(info_lbl)
-        layout.addWidget(info_box)
-
-        self.matching_results = [] # 매칭 결과 저장용
-        return page
-
-    def select_usage_excel(self):
-        """사용현황 엑셀 파일 선택"""
-        # [V7.1] 전역 확장자 필터 통합 (*.xlsx, *.xls, *.xlsm, *.xlsb)
-        file_path, _ = QFileDialog.getOpenFileName(self, "사용현황 엑셀 선택", "", "Excel Files (*.xlsx *.xls *.xlsm *.xlsb)")
-        if file_path:
-            self.edit_usage_excel.setText(file_path)
-            # 시트 목록 로드
-            try:
-                # [V7.1] openpyxl 엔진 강제로 매크로 시트 충돌 방지
-                xl = pd.ExcelFile(file_path, engine='openpyxl')
-                self.combo_usage_sheet.clear()
-                self.combo_usage_sheet.addItems(xl.sheet_names)
-                self.log(f"사용현황 엑셀 로드 완료: {os.path.basename(file_path)}")
-            except Exception as e:
-                self.log(f"엑셀 로드 실패: {e}")
-
-    def run_logical_matching(self):
-        """논리적 매칭 워커 실행"""
-        if not self.results:
-            QMessageBox.warning(self, "알림", "먼저 1단계 PDF 추출을 완료해야 합니다.")
-            return
-        
-        excel_path = self.edit_usage_excel.text()
-        sheet_name = self.combo_usage_sheet.currentText()
-        
-        if not excel_path or not sheet_name:
-            QMessageBox.warning(self, "알림", "사용현황 엑셀 파일을 먼저 선택해 주세요.")
-            return
-
-        self.log("논리적 매칭 시작 (UI 데이터 동기화 포함)...")
-        # [V10.7] 테이블 실시간 데이터 긁어오기 (사용자 수정본 반영)
-        fresh_pdf_results = []
-        for r in range(self.table.rowCount()):
-            # 2번 열: 제품명, 7번 열: 파일명, 8번 열: 해시
-            p_name = self.table.item(r, 2).text().strip() if self.table.item(r, 2) else ""
-            f_name = self.table.item(r, 7).text().strip() if self.table.item(r, 7) else "Unknown"
-            f_hash = self.table.item(r, 8).text().strip() if self.table.item(r, 8) else ""
-            
-            # [방탄 로직] 순번이 없거나 999여도 제품명이 있다면 무조건 포함
-            if p_name:
-                fresh_pdf_results.append({
-                    'product_name': p_name,
-                    'filename': f_name,
-                    'hash': f_hash,
-                    'raw_content': self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
-                })
-
-        if not fresh_pdf_results:
-            QMessageBox.warning(self, "알림", "매칭할 유효한 제품 정보가 테이블에 없습니다.")
-            return
-
-        # [V9.7] 타입 무결성 패치: 생성 전 인덱스 변환 완료
-        raw_mapping = self.mapping_panel.get_mapping()
-        processed_mapping = {k: SMUGUI.c2i(v) for k, v in raw_mapping.items()}
-        processed_mapping["제품명_raw"] = raw_mapping.get("제품명", "D") # 로그용 보존
-        processed_mapping["측정대상1_idx"] = SMUGUI.c2i(raw_mapping.get("측정대상1", "N"))
-        processed_mapping["측정대상2_idx"] = SMUGUI.c2i(raw_mapping.get("측정대상2", ""))
-        
-        # Fresh 데이터를 MatchingWorker에 주입
-        self.match_worker = MatchingWorker(excel_path, sheet_name, fresh_pdf_results, mapping=processed_mapping)
-        self.match_worker.km = self.km 
-        self.match_worker.progress.connect(self.on_matching_progress)
-        self.match_worker.finished.connect(self.on_matching_finished)
-        self.match_worker.start()
-        
-        self.btn_run_matching.setEnabled(False)
-
-    def on_matching_progress(self, val, msg):
-        self.progress.setValue(val)
-        self.log(msg)
-
-    def on_matching_finished(self, matches):
-        """[Hot-Fix] AttributeError: self.matching_worker -> self.match_worker 교정"""
-        self.btn_run_matching.setEnabled(True)
-        self.matching_results = matches
-        self.match_table.setRowCount(0)
-        
-        for i, m in enumerate(matches):
-            self.match_table.insertRow(i)
-            
-            score = m['score']
-            status_icon = "🟢" if score >= 80 else "🟡" if score >= 70 else "🔴"
-            
-            # 1. 신뢰도 아이콘
-            item_icon = QTableWidgetItem(status_icon)
-            item_icon.setTextAlignment(Qt.AlignCenter)
-            self.match_table.setItem(i, 0, item_icon)
-            
-            # 2. PDF 파일명 [V9.9 신규]
-            self.match_table.setItem(i, 1, QTableWidgetItem(m.get('pdf_filename', 'N/A')))
-
-            # 3. PDF 제품명
-            self.match_table.setItem(i, 2, QTableWidgetItem(m['pdf_name']))
-            
-            # 4. 유사도
-            self.match_table.setItem(i, 3, QTableWidgetItem(f"{score}%"))
-            
-            # 5. 엑셀 매칭명
-            self.match_table.setItem(i, 4, QTableWidgetItem(m['excel_name']))
-            
-            # 6. 바인딩 데이터 (요약)
-            b = m['binding_data']
-            summary = "바인딩 없음"
-            if b:
-                summary = f"[{b['공정명']}] {b['사용용도']} ({b['월취급량']}{b['단위']})"
-            self.match_table.setItem(i, 5, QTableWidgetItem(summary))
-            
-            # 7. 상태 텍스트
-            status_txt = "자동 연결" if score >= 80 else "검토 필요" if score >= 70 else "수동 연결 필요"
-            self.match_table.setItem(i, 6, QTableWidgetItem(status_txt))
-            
-            # 8. 확정 기능 안내
-            confirm_item = QTableWidgetItem("선택 후 상단 확정 클릭")
-            confirm_item.setTextAlignment(Qt.AlignCenter)
-            confirm_item.setForeground(QColor("#6c757d"))
-            self.match_table.setItem(i, 7, confirm_item)
-
-        # [V9.0] 매칭 정보 영구 캐시 기록 (세션 재시작 후 즉시 복구용)
-        for m in matches:
-            if m['score'] >= 80:
-                fn = m['pdf_name']
-                # 8번 열(Hash)을 찾아 캐시 업데이트
-                for r in range(self.table.rowCount()):
-                    if self.table.item(r, 2) and self.table.item(r, 2).text() == fn:
-                        f_hash = self.table.item(r, 8).text() if self.table.item(r, 8) else ""
-                        if f_hash in self.cache:
-                            self.cache[f_hash]["match_idx"] = m["excel_idx"]
-                            # [수정] self.match_worker로 통일 (AttributeError 방지)
-                            self.cache[f_hash]["match_excel"] = self.match_worker.excel_path
-                            self.cache[f_hash]["match_sheet"] = self.match_worker.sheet_name
-                            self.cache[f_hash]["match_name"] = m["excel_name"]
-        self.save_cache()
-
-        self.log(f"논리적 매칭 완료 (총 {len(matches)}건)")
-        QMessageBox.information(self, "완료", f"매칭 분석이 완료되었습니다.\n성공한 매칭 정보는 영구 캐시에 저장되어 재시작 후에도 즉시 저장 가능합니다.")
-
-    def confirm_manual_match(self):
-        """[Intelligence] 선택된 항목의 매칭을 확정하고 지식 엔진에 학습시킴"""
-        curr_row = self.match_table.currentRow()
-        if curr_row < 0:
-            QMessageBox.warning(self, "알림", "확정할 행을 먼저 선택해 주세요.")
-            return
-            
-        if curr_row >= len(self.matching_results): return
-        
-        # [Hot-Fix] 리스트 스냅샷(matching_results) 대신 테이블의 현재 텍스트(Live UI) 직접 참조
-        # 사용자가 테이블에서 매칭명을 수정한 후 확정할 수 있도록 보장
-        pdf_name = self.match_table.item(curr_row, 2).text().strip() if self.match_table.item(curr_row, 2) else "Unknown"
-        excel_name = self.match_table.item(curr_row, 4).text().strip() if self.match_table.item(curr_row, 4) else "N/A"
-        
-        # 바인딩 데이터는 런타임 캐시(matching_results)에서 가져오되 존재하지 않으면 N/A 처리
-        match_data = self.matching_results[curr_row]
-        binding = match_data.get('binding_data', {})
-        usage_val = binding.get("사용용도", "미지정") if binding else "미지정"
-        
-        if excel_name == "N/A":
-            QMessageBox.warning(self, "알림", "매칭된 엑셀 항목이 없는 경우 확정할 수 없습니다.")
-            return
-
-        reply = QMessageBox.question(self, "매칭 확정", 
-                                   f"PDF 제품명: '{pdf_name}'\n매칭 항목: '{excel_name}'\n용도: '{usage_val}'\n\n이 매칭 결과를 확정하고 지능형 엔진에 학습시킬까요?",
-                                   QMessageBox.Yes | QMessageBox.No)
-        if reply == QMessageBox.No: return
-        
-        # 1. 지식 엔진 학습 (매칭 히스토리 저장 및 증분 인덱싱 트리거)
-        try:
-            # [지시서] 다중 별칭 학습 (Multi-Alias Learning) 발동
-            # 1-1. 전체 제품명 학습 (기존 KM)
-            self.km.update_experience(pdf_name, excel_name, binding)
-            
-            # [Task 3] SQLite DB 지식 고착화 (Usage 필드 포함 및 1% 필터 자동 적용)
-            # 메인 테이블에서 현재 UI에 표시된 최신 데이터(사용자 수정본) 긁어오기
-            f_hash = ""
-            db_data = {"cas": "", "measure": "", "reg1": "", "reg2": ""}
-            
-            for r in range(self.table.rowCount()):
-                if self.table.item(r, 2) and self.table.item(r, 2).text().strip() == pdf_name:
-                    f_hash = self.table.item(r, 8).text() if self.table.item(r, 8) else ""
-                    db_data["cas"] = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
-                    db_data["measure"] = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
-                    db_data["reg2"] = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
-                    db_data["reg1"] = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
-                    break
-            
-            if f_hash:
-                # [Task 4 추가] 저장 시점에도 용접 특례 강제 보정 (방탄 설계)
-                if "용접" in pdf_name and "7439-89-6" in db_data["cas"]:
-                    if "용접흄; 산화철" not in db_data["measure"]:
-                        db_data["measure"] = f"용접흄; 산화철; {db_data['measure']}".strip("; ")
-                        self.log(f"[*] [저장방탄] '{pdf_name}' 용접 특례 데이터로 보정하여 DB 기록합니다.")
-
-                # 1-2. 핵심 식별자(제품명 전체) 저장 (Usage 포함)
-                self.save_db_knowledge(pdf_name, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
-                
-                # 1-3. 다중 학습 (모델명 추출 및 개별 저장)
-                model_matches = re.findall(r"[A-Z0-9]+-[A-Z0-9]+|[A-Z]+[0-9]+[A-Z0-9]*", pdf_name)
-                for model_id in model_matches:
-                    if len(model_id) > 2 and model_id != pdf_name:
-                        self.save_db_knowledge(model_id, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
-                        self.log(f"[*] 다중 별칭 학습 고착화: '{model_id}' (용도: {usage_val})")
-
-            # 2. UI 시각적 피드백 업데이트
-            # 신뢰도 아이콘 및 유사도 점수 강제 상향 표시
-            self.match_table.setItem(curr_row, 0, QTableWidgetItem("🟢"))
-            self.match_table.item(curr_row, 0).setTextAlignment(Qt.AlignCenter)
-            # 유사도(3번) 및 상태(6번) 컬럼 업데이트
-            self.match_table.setItem(curr_row, 3, QTableWidgetItem("99% (학습됨)"))
-            self.match_table.setItem(curr_row, 6, QTableWidgetItem("학습 완료 (확정)"))
-            
-            # 행 색상 변경 (확정된 느낌 부여)
-            confirm_color = QColor("#e1f7d5") # 연한 녹색
-            for c in range(self.match_table.columnCount()):
-                item = self.match_table.item(curr_row, c)
-                if item: item.setBackground(confirm_color)
-            
-            # 3. 런타임 결과 업데이트 (90점 이상으로 간주하여 자동 저장 대상 포함)
-            match_data['score'] = 99
-            
-            self.log(f"[*] 매칭 확정 및 전체 학습 완료: '{pdf_name}' -> '{excel_name}'")
-            QMessageBox.information(self, "성공", "매칭 결과 및 핵심 모델명이 지능형 엔진에 성공적으로 반영되었습니다.")
-        except Exception as e:
-            self.log(f"[!] 매칭 확정 중 오류: {e}")
-            QMessageBox.critical(self, "오류", f"매칭 확정 처리 중 오류가 발생했습니다: {e}")
-
-    def batch_auto_confirm(self):
-        """[V11.9 Intelligence] 테이블의 모든 '🟢 초록불' 항목을 일괄 확정 및 학습"""
-        row_count = self.match_table.rowCount()
-        if row_count == 0:
-            QMessageBox.information(self, "알림", "학습할 데이터가 없습니다.")
-            return
-
-        confirm_count = 0
-        try:
-            for row in range(row_count):
-                icon_item = self.match_table.item(row, 0)
-                status_item = self.match_table.item(row, 6)
-                
-                # 이미 학습된 항목은 건너뜀
-                if status_item and "학습 완료" in status_item.text():
-                    continue
-                
-                # 신뢰도가 초록불(🟢)인 행만 타겟팅
-                if icon_item and "🟢" in icon_item.text():
-                    pdf_name = self.match_table.item(row, 2).text().strip() if self.match_table.item(row, 2) else "Unknown"
-                    excel_name = self.match_table.item(row, 4).text().strip() if self.match_table.item(row, 4) else "N/A"
-                    
-                    if excel_name == "N/A": continue
-                    
-                    # 바인딩 데이터 수집
-                    match_data = self.matching_results[row]
-                    binding = match_data.get('binding_data', {})
-                    usage_val = binding.get("사용용도", "미지정") if binding else "미지정"
-                    
-                    # 1. 지식 엔진 학습
-                    self.km.update_experience(pdf_name, excel_name, binding)
-                    
-                    # 2. SQLite DB 지식 고착화
-                    f_hash = ""
-                    db_data = {"cas": "", "measure": "", "reg1": "", "reg2": ""}
-                    for r in range(self.table.rowCount()):
-                        if self.table.item(r, 2) and self.table.item(r, 2).text().strip() == pdf_name:
-                            f_hash = self.table.item(r, 8).text() if self.table.item(r, 8) else ""
-                            db_data["cas"] = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
-                            db_data["measure"] = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
-                            db_data["reg2"] = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
-                            db_data["reg1"] = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
-                            break
-                    
-                    if f_hash:
-                        # 용접 특례 보정
-                        if "용접" in pdf_name and "7439-89-6" in db_data["cas"]:
-                            if "용접흄; 산화철" not in db_data["measure"]:
-                                db_data["measure"] = f"용접흄; 산화철; {db_data['measure']}".strip("; ")
-                        
-                        self.save_db_knowledge(pdf_name, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
-                        
-                        # 모델명 추출 학습
-                        model_matches = re.findall(r"[A-Z0-9]+-[A-Z0-9]+|[A-Z]+[0-9]+[A-Z0-9]*", pdf_name)
-                        for model_id in model_matches:
-                            if len(model_id) > 2 and model_id != pdf_name:
-                                self.save_db_knowledge(model_id, db_data["cas"], db_data["measure"], db_data["reg1"], db_data["reg2"], usage=usage_val)
-                    
-                    # 3. UI 피드백 업데이트
-                    self.match_table.setItem(row, 3, QTableWidgetItem("99% (학습됨)"))
-                    self.match_table.setItem(row, 6, QTableWidgetItem("학습 완료 (확정)"))
-                    confirm_color = QColor("#e1f7d5")
-                    for c in range(self.match_table.columnCount()):
-                        item = self.match_table.item(row, c)
-                        if item: item.setBackground(confirm_color)
-                    
-                    match_data['score'] = 99
-                    confirm_count += 1
-            
-            if confirm_count > 0:
-                self.log(f"[*] 일괄 학습 완료: {confirm_count}건의 초록불 항목이 DB에 저장되었습니다.")
-                QMessageBox.information(self, "일괄 학습 완료", f"총 {confirm_count}건의 초록불 데이터가 지식 DB에 일괄 학습되었습니다!")
-            else:
-                QMessageBox.information(self, "알림", "새롭게 학습할 초록불(🟢) 항목이 없습니다.")
-                
-        except Exception as e:
-            self.log(f"[!] 일괄 확정 중 오류: {e}")
-            QMessageBox.critical(self, "오류", f"일괄 확정 처리 중 오류가 발생했습니다: {e}")
 
     def init_ui(self):
         self.setWindowTitle("1SMU MSDS Intelligence - Enterprise Edition")
@@ -1784,22 +1012,12 @@ class SMUGUI(QMainWindow):
         self.page_extraction = self._create_extraction_page()
         self.stacked_widget.addWidget(self.page_extraction)
 
-        # 페이지 1: 논리 매칭 화면
-        self.page_matching = self._create_matching_page()
-        self.stacked_widget.addWidget(self.page_matching)
-
         self.page_settings = self._create_settings_page()
         self.stacked_widget.addWidget(self.page_settings)
-
-        # 페이지 3: [NEW] 지식 DB 관리 화면
-        self.page_db_mgmt = self._create_db_manager_page()
-        self.stacked_widget.addWidget(self.page_db_mgmt)
 
         # 3. 로그 창
         self._setup_log_section()
         
-        # [V7.1] 추출 탭과 매칭 탭 간의 설정 실시간 동기화 연결
-        self._setup_tab_synchronization()
 
     def _create_settings_page(self):
         """[Page 2] 데이터 맵핑 및 보조 관리 도구를 모은 환경 설정 페이지"""
@@ -2066,124 +1284,6 @@ class SMUGUI(QMainWindow):
                 
             menu.exec_(self.table.viewport().mapToGlobal(pos))
 
-    def _create_db_manager_page(self):
-        """[Page 3] msds_knowledge.db의 지식을 시각적으로 관리하는 페이지"""
-        page = QWidget()
-        layout = QVBoxLayout(page)
-
-        # 1. 상단 컨트롤 영역 (검색 및 새로고침)
-        ctrl_layout = QHBoxLayout()
-        
-        lbl_search = QLabel("물질명 검색:")
-        lbl_search.setFixedWidth(70)
-        ctrl_layout.addWidget(lbl_search)
-        
-        self.db_search_edit = QLineEdit()
-        self.db_search_edit.setPlaceholderText("검색할 제품명 또는 모델명을 입력하세요 (실시간 필터)...")
-        self.db_search_edit.textChanged.connect(self.search_db_knowledge)
-        ctrl_layout.addWidget(self.db_search_edit)
-        
-        btn_refresh = QPushButton("DB 새로고침")
-        btn_refresh.setFixedWidth(100)
-        btn_refresh.setStyleSheet(f"background-color: {PRIMARY_BLUE};")
-        btn_refresh.clicked.connect(self.load_db_to_table)
-        ctrl_layout.addWidget(btn_refresh)
-        
-        layout.addLayout(ctrl_layout)
-
-        # 2. 메인 DB 테이블 영역
-        self.db_table = QTableWidget(0, 6)
-        # 컬럼: 제품명, CAS 정보, 측정대상, 2차 결과, 1차 결과, 업데이트 일시
-        self.db_table.setHorizontalHeaderLabels([
-            "제품명(PK)", "CAS & 함유량", "측정대상", "2차 결과(규제)", "1차 결과(전체)", "학습 일시"
-        ])
-        
-        # 스타일 설정 (HTMLDelegate 적용으로 규제 강조 유지)
-        self.db_table.setItemDelegateForColumn(3, HTMLDelegate()) # 2차 결과
-        self.db_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self.db_table.setColumnWidth(0, 180) # 제품명
-        self.db_table.setColumnWidth(1, 250) # CAS
-        self.db_table.setColumnWidth(2, 120) # 측정대상
-        self.db_table.setColumnWidth(3, 250) # 2차
-        self.db_table.setColumnWidth(4, 300) # 1차
-        self.db_table.setColumnWidth(5, 140) # 일시
-        self.db_table.setSelectionBehavior(QTableWidget.SelectRows) # 행 단위 선택
-        self.db_table.setWordWrap(True) # [V11.1] 텍스트 자동 줄바꿈 활성화
-        layout.addWidget(self.db_table)
-
-        # 3. 하단 액션 버튼
-        btn_layout = QHBoxLayout()
-        btn_layout.addStretch()
-        
-        btn_delete = QPushButton("선택 항목 삭제 (DB 물리 제거)")
-        btn_delete.setStyleSheet("background-color: #f56c6c; color: white; font-weight: bold; padding: 10px 20px;")
-        btn_delete.clicked.connect(self.delete_db_entry)
-        btn_layout.addWidget(btn_delete)
-        
-        layout.addLayout(btn_layout)
-        
-        return page
-
-    def load_db_to_table(self):
-        """msds_info 테이블의 모든 데이터를 UI 테이블에 로드"""
-        try:
-            self.db_cursor.execute("SELECT product_name, cas_content, work_subjects, reg_2nd, reg_1st, last_updated FROM msds_info ORDER BY last_updated DESC")
-            data = self.db_cursor.fetchall()
-            
-            self.db_table.setRowCount(0)
-            for row_idx, row_data in enumerate(data):
-                self.db_table.insertRow(row_idx)
-                for col_idx, val in enumerate(row_data):
-                    # [V11.1] 텍스트 정제: 윈도우 줄바꿈 오류(\r) 방어
-                    clean_text = str(val).replace('\r\n', '\n').replace('\r', '\n')
-                    item = QTableWidgetItem(clean_text)
-                    
-                    # 업데이트 일시 등은 읽기 전용 및 중앙 정렬
-                    if col_idx in [2, 5]: 
-                        item.setTextAlignment(Qt.AlignCenter)
-                    item.setFlags(item.flags() ^ Qt.ItemIsEditable) # DB 탭은 관람/삭제 전용
-                    self.db_table.setItem(row_idx, col_idx, item)
-            
-            # [V11.1] 핵심: 데이터 로드 후 텍스트 길이에 맞춰 행 높이 자동 조절
-            self.db_table.resizeRowsToContents()
-            
-            self.log(f"[*] 지식 DB 데이터 {len(data)}건 로드 완료.")
-        except Exception as e:
-            self.log(f"[!] DB 로드 실패: {e}")
-
-    def search_db_knowledge(self, text):
-        """검색창 텍스트 변경 시 테이블 실시간 필터링"""
-        search_term = text.lower().strip()
-        for r in range(self.db_table.rowCount()):
-            # '제품명' 컬럼(0번) 기준으로 필터링
-            prod_item = self.db_table.item(r, 0)
-            if prod_item:
-                is_visible = search_term in prod_item.text().lower()
-                self.db_table.setRowHidden(r, not is_visible)
-
-    def delete_db_entry(self):
-        """선택된 제품명을 DB에서 영구 삭제"""
-        curr_row = self.db_table.currentRow()
-        if curr_row < 0:
-            QMessageBox.warning(self, "알림", "삭제할 항목을 먼저 선택해 주세요.")
-            return
-            
-        prod_name = self.db_table.item(curr_row, 0).text()
-        
-        reply = QMessageBox.question(self, "데이터 삭제 확인", 
-                                   f"제품명: '{prod_name}'\n\n이 지식을 DB에서 영구적으로 삭제하시겠습니까?\n삭제 후에는 하이패스 자동 로드가 불가능해집니다.",
-                                   QMessageBox.Yes | QMessageBox.No)
-        
-        if reply == QMessageBox.Yes:
-            try:
-                self.db_cursor.execute("DELETE FROM msds_info WHERE product_name=?", (prod_name,))
-                self.conn.commit()
-                self.db_table.removeRow(curr_row)
-                self.log(f"[*] 지식 삭제 완료: {prod_name}")
-                QMessageBox.information(self, "삭제 완료", f"'{prod_name}' 지식이 DB에서 물리적으로 제거되었습니다.")
-            except Exception as e:
-                self.log(f"[!] DB 삭제 실패: {e}")
-                QMessageBox.critical(self, "오류", f"삭제 중 오류 발생: {e}")
 
 
 
@@ -2607,59 +1707,6 @@ class SMUGUI(QMainWindow):
                 self.log(f"⚠️ 시트 목록 로드 실패: {e}")
                 self.combo_sheet.addItem("Sheet1")
 
-    def _setup_tab_synchronization(self):
-        """[V7.7] 탭 간 파일 경로 및 시트 선택 값 실시간 상호 동기화 (완성형)"""
-        # 1. 경로 동기화 시그널
-        self.edit_excel.textChanged.connect(self._sync_to_matching_tab)
-        self.edit_usage_excel.textChanged.connect(self._sync_to_extraction_tab)
-        
-        # 2. 시트 선택값 동기화 시그널 (추가)
-        self.combo_sheet.currentTextChanged.connect(self._sync_sheet_to_matching)
-        self.combo_usage_sheet.currentTextChanged.connect(self._sync_sheet_to_extraction)
-
-    def _sync_to_matching_tab(self, text):
-        """저장 탭 -> 매칭 탭 경로 동기화 (V7.7)"""
-        if not text: return
-        path = text.strip()
-        if self.edit_usage_excel.text().strip() != path:
-            self.edit_usage_excel.blockSignals(True)
-            self.edit_usage_excel.setText(path)
-            self.edit_usage_excel.blockSignals(False)
-            self._update_combo_sheets(path, self.combo_usage_sheet)
-            self.log(f"[*] 매칭 탭으로 경로 동기화 완료")
-
-    def _sync_to_extraction_tab(self, text):
-        """매칭 탭 -> 저장 탭 경로 동기화 (V7.7)"""
-        if not text: return
-        path = text.strip()
-        if self.edit_excel.text().strip() != path:
-            self.edit_excel.blockSignals(True)
-            self.edit_excel.setText(path)
-            self.edit_excel.blockSignals(False)
-            self._update_combo_sheets(path, self.combo_sheet)
-            self.log(f"[*] 추출 탭으로 경로 동기화 완료")
-
-    def _sync_sheet_to_matching(self, sheet_name):
-        """저장 탭 시트 변경 -> 매칭 탭 시트 동기화"""
-        if not sheet_name: return
-        if self.combo_usage_sheet.currentText() != sheet_name:
-            self.combo_usage_sheet.blockSignals(True)
-            idx = self.combo_usage_sheet.findText(sheet_name)
-            if idx >= 0:
-                self.combo_usage_sheet.setCurrentIndex(idx)
-                self.log(f"[*] 매칭 시트 동기화: {sheet_name}")
-            self.combo_usage_sheet.blockSignals(False)
-
-    def _sync_sheet_to_extraction(self, sheet_name):
-        """매칭 탭 시트 변경 -> 저장 탭 시트 동기화"""
-        if not sheet_name: return
-        if self.combo_sheet.currentText() != sheet_name:
-            self.combo_sheet.blockSignals(True)
-            idx = self.combo_sheet.findText(sheet_name)
-            if idx >= 0:
-                self.combo_sheet.setCurrentIndex(idx)
-                self.log(f"[*] 추출 시트 동기화: {sheet_name}")
-            self.combo_sheet.blockSignals(False)
 
     def _update_combo_sheets(self, path, combo_widget):
         """[V7.7] 범용 시트 목록 갱신 및 선택값 지능형 유지"""
@@ -2686,14 +1733,6 @@ class SMUGUI(QMainWindow):
                 combo_widget.addItem("Sheet1")
             combo_widget.blockSignals(False)
 
-            # 상대방 콤보박스와 지능형 지배권 동기화
-            other_combo = self.combo_usage_sheet if combo_widget == self.combo_sheet else self.combo_sheet
-            if other_combo.currentText() != combo_widget.currentText():
-                idx = other_combo.findText(combo_widget.currentText())
-                if idx >= 0:
-                    other_combo.blockSignals(True)
-                    other_combo.setCurrentIndex(idx)
-                    other_combo.blockSignals(False)
                     
         except Exception:
             # 실패 시 pandas fallback (생략 가능하나 무결성 위해 유지)
@@ -2776,14 +1815,6 @@ class SMUGUI(QMainWindow):
                 found_row = fallback_idx
 
         if found_row != -1:
-            # [Task 4] Case N (중복 검수 대상)인 경우 대기열에 추가
-            if status == "Review Required":
-                self.need_review.append({
-                    "row": found_row,
-                    "product_name": res_data.get("product_name"),
-                    "records": res_data.get("db_records", [])
-                })
-                self.log(f"    - [🔵검수대기] {found_row}행을 검수 대기열에 등록합니다.")
 
             self.update_validation_row(
                 found_row, 
@@ -2795,15 +1826,10 @@ class SMUGUI(QMainWindow):
             )
 
     def on_validation_finished(self):
-        """[V10.2] 검증 완료 시 처리 및 사후 검수 엔진 트리거"""
+        """2단계 API 검증 완료 처리"""
         self.table.blockSignals(False)
-        self.log(f"[*] 검증 작업 종료. (검수 필요 항목: {len(self.need_review)}건)")
-        
-        if self.need_review:
-            # [Task 4] 순차적 팝업 검수 엔진 가동
-            self.process_review_queue()
-        else:
-            QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
+        self.log("[*] 2단계 API 검증 작업이 완료되었습니다.")
+        QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
 
     def closeEvent(self, event):
         # [안전장치] 백그라운드 학습 중 종료 방지
@@ -2831,61 +1857,9 @@ class SMUGUI(QMainWindow):
             "<li><b>교차 검증:</b> 파란색 CAS 번호를 클릭하면 <b>안전보건공단(KOSHA)</b> 창이 열려 즉시 확인 가능합니다.</li>"
             "<li><b>마스터 DB 연동:</b> 마스터에 없는 물질은 [미등록]으로 표시됩니다.</li>"
             "</ol>"
-            "<p><i>* 추출 중에도 백그라운드에서 지식 그래프가 자동 학습되니 창을 강제로 끄지 마세요!</i></p>"
         )
         QMessageBox.information(self, "사용 설명서", help_text)
 
-    def process_review_queue(self):
-        """[Master 지시서] 사후 정밀 검수 엔진 (Post-Batch Review)"""
-        if not self.need_review:
-            # self.log("[*] 모든 검수 대상이 처리되었습니다.")
-            return
-
-        item = self.need_review.pop(0)
-        row = item['row']
-        prod = item['product_name']
-        records = item['records'] # DB에서 가져온 과거 기록 리스트
-
-        # 다이얼로그 구성을 위한 리스트 가공 (용객 + 학습일시)
-        choices = []
-        for r in records:
-            # records 구조: (cas, subjects, reg1, reg2, usage, last_updated)
-            # last_updated가 없을 수도 있으니 안전하게 접근
-            last_date = r[5] if len(r) > 5 else "N/A"
-            usage = r[4] if r[4] else "용도 미기재"
-            choices.append(f"[{usage}] / (학습: {last_date})")
-
-        from PyQt5.QtWidgets import QInputDialog
-        choice, ok = QInputDialog.getItem(
-            self, f"사후 정밀 검수 - {row+1}행", 
-            f"제품명: {prod}\n과거 사용 기록 중 올바른 용도를 선택하세요:",
-            choices, 0, False
-        )
-
-        if ok and choice:
-            idx = choices.index(choice)
-            selected = records[idx]
-            
-            # 선택된 데이터로 테이블 업데이트 및 신호등 🟢 교체
-            self.update_validation_row(
-                row,
-                selected[0].split(";\n") if selected[0] else [], # cas
-                selected[2].split(";\n") if selected[2] else [], # reg1
-                selected[3].split(";\n") if selected[3] else [], # reg2
-                selected[1], # subjects
-                status="Confirmed",
-                db_records=records
-            )
-            self.log(f"[*] [검수확정] {row+1}행 '{prod}' -> '{choice}' 적용 완료.")
-            
-            # [Master 지시서] 매칭 확정 시 엑셀 용도를 DB에 즉시 기록 (지능형 엔진 강화)
-            # (이 로직은 저장 시점에 동작하게 하거나 여기서 즉시 km.save_knowledge 호출 가능)
-        else:
-            self.log(f"[!] {row+1}행 '{prod}' 검수가 건너뛰어졌습니다. (파란색 🔵 유지)")
-
-        # 다음 검수 항목 처리 (GUI 프리징 방지)
-        if self.need_review:
-            QTimer.singleShot(200, self.process_review_queue)
 
     def _safe_resize_rows(self):
         """[Part 18] 재귀 호출 방지를 포함한 안전한 행 높이 조절"""
@@ -3024,23 +1998,11 @@ class SMUGUI(QMainWindow):
             
             self._safe_resize_rows()
             self.table.blockSignals(False) # [NEW] 시그널 재개
-
-            # [V9.0 우뇌 가동] UI 업데이트 직후 백그라운드 학습 트리거
-            pdf_path = data.get("full_path", "")
-            if pdf_path:
-                graph_thread = GraphifyIndexerThread(pdf_path, data)
-                graph_thread.progress_signal.connect(lambda msg: self.statusBar().showMessage(msg))
-                graph_thread.finished_signal.connect(lambda msg: self.statusBar().showMessage(msg, 5000))
-                graph_thread.finished_signal.connect(lambda _: self.active_graph_threads.remove(graph_thread) if graph_thread in self.active_graph_threads else None)
-                
-                self.active_graph_threads.append(graph_thread)
-                # [수정] 메인 GUI와 마우스 커서가 끊기지 않도록 백그라운드 최하위 우선순위 강제 부여
-                graph_thread.start(QThread.LowPriority)
         except Exception as e:
             self.table.blockSignals(False)
             self.log(f"[에러] 테이블 추가 실패: {e}")
 
-    def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass", db_records=None):
+    def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass"):
         """2단계 검증 결과를 테이블에 업데이트 (V10.2 파란색 신호등 🔵 제어 추가)"""
         try:
             # Hash를 가져와 캐시 조회
@@ -3057,18 +2019,7 @@ class SMUGUI(QMainWindow):
             emoji = "🟢"
             bg_color = None
 
-            if status == "Review Required":
-                emoji = "🔵"
-                bg_color = QColor("#e7f1ff") # 연한 파란색
-                # [NEW] 사후 검수를 위해 대기열에 추가
-                fn = self.table.item(row, 7).text() if self.table.item(row, 7) else ""
-                prod = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
-                if not any(item['row'] == row for item in self.need_review):
-                    self.need_review.append({
-                        "row": row, "product_name": prod, "records": db_records, "filename": fn
-                    })
-                    self.log(f"    - [Visual] {row}행 파란색(🔵) 마킹 및 검수 대기열 등록.")
-            elif status == "Confirmed":
+            if status == "Confirmed":
                 emoji = "🟢"
                 bg_color = QColor("#e1f7d5") # 연한 초록색 (확격 표시)
             
@@ -3139,8 +2090,8 @@ class SMUGUI(QMainWindow):
 
 
     def perform_standard_save(self):
-        """[V6.998] 가로형 저장 고도화: 사용자가 지정한 시작 행/열에 데이터 입력"""
-        if not self.results:
+        """[Standard] GUI 테이블의 데이터를 직접 참조하여 엑셀에 저장 (단순화된 파이프라인)"""
+        if not hasattr(self, 'results') or not self.results:
             QMessageBox.warning(self, "경고", "저장할 결과 데이터가 없습니다.")
             return
             
@@ -3154,7 +2105,7 @@ class SMUGUI(QMainWindow):
             QMessageBox.critical(self, "파일 열림", f"대상 엑셀 파일({os.path.basename(excel_path)})이 이미 열려 있습니다.\n파일을 닫은 후 다시 시도해 주세요.")
             return
 
-        self.log(f"[*] 가로형 저장 시작... (대상: {os.path.basename(excel_path)})")
+        self.log(f"[*] 엑셀 저장 시작... (대상: {os.path.basename(excel_path)})")
         
         import pythoncom
         import win32com.client
@@ -3162,251 +2113,91 @@ class SMUGUI(QMainWindow):
         excel = None
         try:
             excel = win32com.client.DispatchEx("Excel.Application")
-            try: excel.Visible = False
-            except AttributeError: pass
-            try: excel.DisplayAlerts = False
-            except AttributeError: pass
+            excel.Visible = False
+            excel.DisplayAlerts = False
             
             wb = excel.Workbooks.Open(os.path.abspath(excel_path))
             ws = wb.Sheets(sheet_name)
             
             # [V9.7] 중앙화된 c2i 정적 메서드 활용 (타입 무결성)
-            mapping = {k: SMUGUI.c2i(v.text().strip()) for k, v in self.mapping_panel.inputs.items()}
+            raw_mapping = self.mapping_panel.get_mapping()
+            mapping = {k: SMUGUI.c2i(v) for k, v in raw_mapping.items()}
             
             try:
                 st_row = int(self.edit_start_row.text())
             except:
                 st_row = 3
 
-            # [NEW] 기존 데이터 존재 여부 사전 체크 (덮어쓰기 방지)
-            conflicts = []
-            max_check_count = len(self.results)
-            self.log(f"[*] 기존 데이터 존재 여부 검사 중... (범위: {st_row}행부터 {max_check_count}개 행)")
-            
-            for idx in range(max_check_count):
-                check_row = st_row + idx
-                for key, col in mapping.items():
-                    if col <= 0: continue
-                    cell_val = ws.Cells(check_row, col).Value
-                    if cell_val is not None and str(cell_val).strip() != "":
-                        conflicts.append(f"{check_row}행 ({key})")
-                        break # 행당 하나만 기록
-                if len(conflicts) >= 5: break # 예시 5개면 충분
-
-            if conflicts:
-                msg = f"엑셀의 지정한 범위({st_row}행부터 {max_check_count}개 행) 내에 이미 데이터가 존재합니다.\n\n"
-                msg += "[발견된 샘플]\n" + "\n".join(conflicts) + ("\n..." if len(conflicts) >= 5 else "")
-                msg += "\n\n기존 데이터를 무시하고 강제로 덮어쓰시겠습니까?"
-                
-                reply = QMessageBox.question(self, "데이터 중복 알림", msg, 
-                                           QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-                if reply == QMessageBox.No:
-                    self.log("[!] 사용자의 취소로 저장을 중단했습니다. 엑셀을 확인해 주세요.")
-                    wb.Close(False)
-                    return
-
-            # 테이블 데이터 매핑용 캐시 (V9.2 해시 데이터 포함)
+            # 테이블 데이터 스냅샷 생성 (파일명 기준)
             table_dict = {}
             for r in range(self.table.rowCount()):
-                fn_item = self.table.item(r, 7)
+                fn_item = self.table.item(r, 7) # 파일명 (7번 열)
                 if fn_item:
-                    fn = fn_item.text()
+                    fn = fn_item.text().strip()
                     table_dict[fn] = {
-                        "no": self.table.item(r, 1).text().strip(),      # No (1번 열)
-                        "product_name": self.table.item(r, 2).text().strip(), # 제품명 (2번 열)
-                        "cas_sum": self.table.item(r, 3).text(),
-                        "measure": self.table.item(r, 4).text(),
-                        "reg2": self.table.item(r, 5).text(),
-                        "reg1": self.table.item(r, 6).text(),
-                        "hash": self.table.item(r, 8).text() if self.table.item(r, 8) else ""
+                        "product_name": self.table.item(r, 2).text().strip() if self.table.item(r, 2) else "",
+                        "cas_sum": self.table.item(r, 3).text().strip() if self.table.item(r, 3) else "",
+                        "measure": self.table.item(r, 4).text().strip() if self.table.item(r, 4) else "",
+                        "reg2": self.table.item(r, 5).text().strip() if self.table.item(r, 5) else "",
+                        "reg1": self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
                     }
 
-            # [V9.6] 저장 전 매칭 결과가 없다면 즉시 백그라운드 자동 매칭 (환경설정 연동)
-            if not hasattr(self, 'matching_results') or not self.matching_results:
-                self.log("[*] 매칭 결과가 감지되지 않아 지능형 자동 매칭을 긴급 가동합니다...")
-                try:
-                    # [V10.2] 타입 무결성 확보 및 로깅 변수 복구
-                    raw_mapping = self.mapping_panel.get_mapping()
-                    target_col_letter = str(raw_mapping.get("제품명", "D"))
-                    mapping = {k: SMUGUI.c2i(v) for k, v in raw_mapping.items()}
-                    
-                    target_col_idx = mapping.get("제품명", 4) - 1 # 0-based for pandas
-                    
-                    # 헤더 탐색 (MatchingWorker와 동일 로직)
-                    raw_h = pd.read_excel(excel_path, sheet_name=sheet_name, engine='openpyxl', header=None, nrows=10)
-                    h_pos = 0
-                    for r_idx, row in raw_h.iterrows():
-                        try:
-                            if str(row[target_col_idx]).strip() not in ["nan", "None", ""]:
-                                h_pos = r_idx; break
-                        except: continue
-                    
-                    df_m = pd.read_excel(excel_path, sheet_name=sheet_name, engine='openpyxl', header=h_pos)
-                    target_col = df_m.columns[target_col_idx]
-                    
-                    ex_names = [str(x).strip() for x in df_m[target_col]]
-                    n_ex_names = [MatchingWorker.normalize_name(x) for x in ex_names]
-                    from thefuzz import process, fuzz
-                    self.matching_results = []
-                    for res_item in self.results:
-                        p_n = res_item.get("product_name", "")
-                        b_m = process.extractOne(MatchingWorker.normalize_name(p_n), n_ex_names, scorer=fuzz.token_sort_ratio)
-                        if b_m and b_m[1] >= 80:
-                            actual_idx = n_ex_names.index(b_m[0])
-                            self.matching_results.append({
-                                "pdf_name": p_n, "excel_name": ex_names[actual_idx], 
-                                "excel_idx": actual_idx, "score": b_m[1], "binding_data": None
-                            })
-                    self.log(f"[*] 자동 매칭 데이터 {len(self.matching_results)}건 생성 성공 (설정열: {target_col_letter}).")
-                except Exception as e: self.log(f"[!] 자동 매칭 실패: {e}")
-
-            # [NEW] ID 매칭을 위한 A열 사전 스캔 (지능형 매칭 도입)
-            scan_limit = max(ws.UsedRange.Rows.Count + st_row + 50, 500)
-            self.log(f"[*] 엑셀 ID 매칭 준비 중 (범위: {st_row}~{scan_limit}행)...")
-            
-            # A열(1번 열) 데이터를 한 번에 가져와서 속도 최적화
-            a_values = ws.Range(ws.Cells(st_row, 1), ws.Cells(scan_limit, 1)).Value
-            a_map = {}
-            if a_values:
-                for r_idx, val_tuple in enumerate(a_values):
-                    actual_row = st_row + r_idx
-                    val = val_tuple[0]
-                    if val is not None:
-                        try:
-                            # 숫자 형태인 경우 '001' 형식으로 보정하여 매칭률 향상
-                            clean_id = str(int(float(val))).zfill(3)
-                            a_map[clean_id] = actual_row
-                        except:
-                            a_map[str(val).strip()] = actual_row
-
-            # [NEW] 논리적 매칭 결과 사전 가공 (90% 이상 자동 바인딩 및 인덱스 맵 생성)
-            usage_map = {}
-            index_map = {} # PDF 제품명 -> excel_idx
-            if hasattr(self, 'matching_results') and self.matching_results:
-                for m in self.matching_results:
-                    p_name = m['pdf_name']
-                    if m['score'] >= 80 and m['binding_data']:
-                        usage_map[p_name] = m['binding_data']
-                    if 'excel_idx' in m and m['excel_idx'] != -1:
-                        index_map[p_name] = m['excel_idx']
-
-            matched_count = 0
-            # [V6.999] 가로형 저장 고도화: ID 매칭을 통한 정밀 기입 + 데이터 바인딩 병합
+            # 데이터 기입 (순차적 저장)
+            saved_count = 0
             for idx, item in enumerate(self.results):
                 fn = item["filename"]
+                if fn not in table_dict:
+                    continue
                 
-                if fn in table_dict:
-                    td = table_dict[fn]
-                    prod_name = td["product_name"] # 테이블에서 수정된 제품명
-                    
-                    # [V9.0] 999 무시 및 지능형 매칭 최우선 (캐시 복원 포함)
-                    # 우선순위 1: 런타임 매칭 결과
-                    idx_val = index_map.get(item.get("product_name", ""), index_map.get(prod_name))
-                    
-                    # 우선순위 1-1: 영구 캐시에서 복원 (재시작 대응)
-                    if idx_val is None:
-                        f_hash = table_dict[fn].get("hash", "")
-                        c_data = self.cache.get(f_hash, {})
-                        if c_data.get("match_idx") is not None:
-                            # 현재 선택된 엑셀/시트와 일치하는지 검증 (필수)
-                            if c_data.get("match_excel") == excel_path and c_data.get("match_sheet") == sheet_name:
-                                idx_val = c_data["match_idx"]
-                                self.log(f"[*] 캐시에서 지능형 매칭 정보 복원: {fn} -> {idx_val}행")
+                td = table_dict[fn]
+                curr_row = st_row + idx
+                
+                # 매핑된 컬럼에 데이터 쓰기
+                if mapping.get("제품명"): ws.Cells(curr_row, mapping["제품명"]).Value = td["product_name"]
+                if mapping.get("파일명"): ws.Cells(curr_row, mapping["파일명"]).Value = fn
+                if mapping.get("CAS 원본"): ws.Cells(curr_row, mapping["CAS 원본"]).Value = td["cas_sum"]
+                if mapping.get("측정대상1"): ws.Cells(curr_row, mapping["측정대상1"]).Value = td["measure"]
+                if mapping.get("2차 결과(규제)"): ws.Cells(curr_row, mapping["2차 결과(규제)"]).Value = td["reg2"]
+                if mapping.get("1차 결과(전체)"): ws.Cells(curr_row, mapping["1차 결과(전체)"]).Value = td["reg1"]
 
-                    tr = None
-                    strategy = "N/A"
-                    
-                    if idx_val is not None:
-                        tr = st_row + idx_val
-                        strategy = "지능형 매칭 (캐시 복원/999 무시)"
-                        
-                        # [V9.0 Drift Protection] 행 밀림 방지 '이중 검증' 로직
-                        try:
-                            # 엑셀의 해당 행 제품명 실제 조회
-                            # target_col 인덱스 찾기
-                            t_col_idx = 1
-                            for col_i in range(1, 10):
-                                val = ws.Cells(st_row - 1, col_i).Value
-                                if any(kw in str(val) for kw in ["화학물질명", "제품명", "물질명", "성분명"]):
-                                    t_col_idx = col_i
-                                    break
-                            
-                            actual_name = str(ws.Cells(tr, t_col_idx).Value).strip()
-                            # 단순 비교 (공백 제거 후) - Drawing from central Static Method
-                            if MatchingWorker.normalize_name(actual_name) != MatchingWorker.normalize_name(prod_name):
-                                self.log(f"[!] [행밀림탐지] {tr}행 제품명 불일치('{actual_name}' vs '{prod_name}'). 보정 시작...")
-                                # 인접 100행 스캔
-                                search_range = range(max(st_row, tr - 100), tr + 100)
-                                for s_idx in search_range:
-                                    s_val = str(ws.Cells(s_idx, t_col_idx).Value).strip()
-                                    if MatchingWorker.normalize_name(s_val) == MatchingWorker.normalize_name(prod_name):
-                                        tr = s_idx
-                                        self.log(f"[*] [행보정성공] {tr}행에서 일치하는 제품명 발견.")
-                                        break
-                        except Exception as e:
-                            self.log(f"[주의] 행 보정 중 오류: {e}")
-                    
-                    # [V12.6] 주님 승인 사항: 행 번호 기준 순차 저장 로직 최우선 적용
-                    # 지능형 매칭 오류로 인한 데이터 중첩 방지를 위해 순차 행을 최우선 타겟으로 설정합니다.
-                    
-                    tr = st_row + idx
-                    strategy = "순차적 저장 (사용자 시작 행 기준)"
-                    
-                    # (참고) 지능형 매칭 결과는 정보성 로그로만 출력합니다.
-                    if idx_val is not None:
-                        matched_tr = st_row + idx_val
-                        if matched_tr != tr:
-                            self.log(f"[정보] 매칭 제안 행({matched_tr}) 대신 순차 행({tr})을 사용합니다.")
-                    
-                    curr_row = tr
-                    self.log(f"[*] [저장타겟] {fn} -> {curr_row}행 ({strategy})")
+                saved_count += 1
 
-                    # [NEW] 바인딩 데이터 조회 (90% 이상 확신도)
-                    # PDF 원본 제품명 또는 테이블 수정 제품명 둘 다 체크 지원
-                    binding = usage_map.get(item.get("product_name", ""), usage_map.get(prod_name))
-
-                    for key, col in mapping.items():
-                        if col <= 0: continue
-                        
-                        val = ""
-                        if key == "파일명": val = fn
-                        elif key == "제품명": val = prod_name
-                        elif key in ["No", "번호", "순번"]: val = td["no"]
-                        elif key == "CAS 원본": val = td["cas_sum"].strip()
-                        elif key == "2차 결과(규제)": val = td["reg2"].strip()
-                        elif key == "1차 결과(전체)": val = td["reg1"].strip()
-                        # [주님 지시] 측정대상을 복수(둘 다) 열에 저장
-                        elif key in ["측정대상1", "측정대상2"]: 
-                            val = td["measure"].strip()
-                        
-                        # [NEW] 바인딩 필드 처리
-                        elif binding:
-                            if key == "공정명": val = binding.get("공정명", "")
-                            elif key == "제조/사용": val = binding.get("제조/사용", "")
-                            elif key == "사용용도": val = binding.get("사용용도", "")
-                            elif key == "월취급량": val = binding.get("월취급량", "")
-                            elif key == "단위": val = binding.get("단위", "")
-                        
-                        if val:
-                            ws.Cells(curr_row, col).Value = val
-                    matched_count += 1
-            
             wb.Save()
-            try: excel.Visible = True
-            except AttributeError: pass
-            try: excel.Interactive = True
-            except AttributeError: pass
-            self.log(f"[완료] {matched_count}건 가로형 저장 성공 (시작 행: {st_row})")
-            QMessageBox.information(self, "완료", f"가로형 엑셀 저장이 완료되었습니다.\n({matched_count}건 저장됨)")
-
+            wb.Close()
+            excel.Quit()
+            self.log(f"[*] 저장 완료: 총 {saved_count}건의 데이터가 엑셀({sheet_name})에 반영되었습니다.")
+            QMessageBox.information(self, "저장 완료", f"총 {saved_count}건의 데이터가 성공적으로 저장되었습니다.")
+            
         except Exception as e:
+            self.log(f"[!] 저장 중 오류 발생: {e}")
             if excel:
-                try: excel.Visible = True
-                except AttributeError: pass
-            self.log(f"[오류] 저장 실패: {str(e)}")
-            QMessageBox.critical(self, "오류", str(e))
+                try: excel.Quit()
+                except: pass
+            QMessageBox.critical(self, "오류", f"저장 중 오류가 발생했습니다: {e}")
         finally:
             pythoncom.CoUninitialize()
+
+    def closeEvent(self, event):
+        """프로그램 종료 시 설정 저장"""
+        try:
+            self.save_config()
+        except: pass
+        event.accept()
+
+    def save_config(self):
+        """현재 설정을 config.json에 저장"""
+        config = {
+            "mapping": self.mapping_panel.get_mapping(),
+            "excel_path": self.edit_excel.text().strip(),
+            "sheet_name": self.combo_sheet.currentText(),
+            "start_row": self.edit_start_row.text().strip(),
+            "start_num": self.edit_start_num.text().strip()
+        }
+        try:
+            with open("config.json", "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            print(f"Config Save Error: {e}")
 
 
 def global_exception_handler(exctype, value, tb):
