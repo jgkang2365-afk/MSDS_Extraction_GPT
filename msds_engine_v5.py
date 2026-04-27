@@ -478,23 +478,7 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None,
 
     prod_name_baseline = v24_result.get('제품명', '')
 
-    strict_rules = """
-\n\n[🚨 AI Vision 초정밀 데이터 정제 및 추출 7대 절대 규칙 (V12.6) 🚨]
-1. [이미지 최우선 및 행(Row) 독립성]: 오직 첨부된 이미지(표)를 기준으로, 동일한 가로줄(Row)에 있는 [물질명-CAS-함유량]만 한 세트로 묶어라. 텍스트에 휘둘려 위아래 줄을 섞지 마라.
-2. [부등호 및 범위 기호의 완벽한 통일]:
-   - 범위('~') 기호 사용 시 부등호 혼용 금지: '≥95~100%' -> '95~100%'로 단순화.
-   - 단일 한계값 보존: '<2', '≤0.1' 등 숫자가 1개인 부등호는 절대 지우거나 유추하지 말고 유지.
-   - 특수 기호 변환: 숫자 뒤의 '+'는 '이상(≥)'으로, '-'는 '이하(≤)'로 변환 (예: '99.0 +%' -> '≥99.0%').
-   - 오차범위(±): '10 ± 2%'는 '8~12%'로 계산하여 변환.
-   - 불필요한 텍스트 제거: 'About', '약' 등은 제거하고 숫자와 기호만 남김.
-3. [잔여량 인식]: 함유량에 '나머지', 'Rem.', 'Balance', '잔량' 등이 적혀 있으면 무조건 'Rem.%'로 출력.
-4. [단위 필터링]: '%'가 아닌 'ppm', 'mg/kg' 등의 특수 단위는 무조건 '미기재%'로 처리. 단, 기호 없이 숫자만(예: 100.0) 적혀있다면 %로 간주.
-5. [상한선 보정]: '101%' 등 100% 초과 수치는 '100%'로 보정.
-6. [누락 금지]: 함유량이 있는데 CAS 칸이 비어있거나 '자료없음' 등이면 절대 누락하지 말고 CAS 칸에 '영업비밀'이라고 기재하여 추출.
-7. [EC 번호 구분]: '272-028-3'처럼 중간이 3자리인 유럽 EC 번호는 무시하라.
-"""
-
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}{strict_rules}"
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
@@ -538,23 +522,7 @@ def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, ret
 
     prod_name_baseline = v24_result.get('제품명', '')
 
-    strict_rules = """
-\n\n[🚨 AI Vision 초정밀 데이터 정제 및 추출 7대 절대 규칙 (V12.6) 🚨]
-1. [이미지 최우선 및 행(Row) 독립성]: 오직 첨부된 이미지(표)를 기준으로, 동일한 가로줄(Row)에 있는 [물질명-CAS-함유량]만 한 세트로 묶어라. 텍스트에 휘둘려 위아래 줄을 섞지 마라.
-2. [부등호 및 범위 기호의 완벽한 통일]:
-   - 범위('~') 기호 사용 시 부등호 혼용 금지: '≥95~100%' -> '95~100%'로 단순화.
-   - 단일 한계값 보존: '<2', '≤0.1' 등 숫자가 1개인 부등호는 절대 지우거나 유추하지 말고 유지.
-   - 특수 기호 변환: 숫자 뒤의 '+'는 '이상(≥)'으로, '-'는 '이하(≤)'로 변환 (예: '99.0 +%' -> '≥99.0%').
-   - 오차범위(±): '10 ± 2%'는 '8~12%'로 계산하여 변환.
-   - 불필요한 텍스트 제거: 'About', '약' 등은 제거하고 숫자와 기호만 남김.
-3. [잔여량 인식]: 함유량에 '나머지', 'Rem.', 'Balance', '잔량' 등이 적혀 있으면 무조건 'Rem.%'로 출력.
-4. [단위 필터링]: '%'가 아닌 'ppm', 'mg/kg' 등의 특수 단위는 무조건 '미기재%'로 처리. 단, 기호 없이 숫자만(예: 100.0) 적혀있다면 %로 간주.
-5. [상한선 보정]: '101%' 등 100% 초과 수치는 '100%'로 보정.
-6. [누락 금지]: 함유량이 있는데 CAS 칸이 비어있거나 '자료없음' 등이면 절대 누락하지 말고 CAS 칸에 '영업비밀'이라고 기재하여 추출.
-7. [EC 번호 구분]: '272-028-3'처럼 중간이 3자리인 유럽 EC 번호는 무시하라.
-"""
-
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}{strict_rules}"
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
@@ -721,6 +689,10 @@ def process_pdf(pdf_path, log_func=None):
         comp_str = "; ".join(comp_parts)
         if comp_str and not comp_str.endswith(";"):
             comp_str += ";"
+            
+        # [긴급 지혈] 전각 기호 및 잘못된 기호를 GUI 파싱용 반각 기호로 강제 변환
+        comp_str = comp_str.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+        
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
         
