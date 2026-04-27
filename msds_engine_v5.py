@@ -27,68 +27,35 @@ if not GOOGLE_API_KEY:
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GOOGLE_API_KEY}"
 
 def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
-    """[V12.9] 제품명 하이브리드 추출: 1차 샌드위치 컷 -> 2차 비전(Vision) 스나이핑"""
-    text_head = text_chunk[:1500] 
-    
-    if log_func: log_func(" ├─ [제품명 스캔] 🔪 칼날 1(파이썬 샌드위치) 시도 중...")
-    
-    # 1차: 파이썬 샌드위치 컷
-    patterns = [
-        r'(?:가\.\s*제품명|제품명\s*:|Product Name\s*:|제품명\s*\(Product Name\)\s*:)\s*(.*?)(?:\n\s*나\.\s*제품의 권장용도|\n\s*권장용도|\n\s*일반적인\s*화학명|\n\s*용도)',
-        r'화학제품과 회사에 관한 정보.*?(?:제품명\s*:|가\.\s*제품명)\s*(.*?)(?:\n)'
-    ]
-    for p in patterns:
-        match = re.search(p, text_head, re.IGNORECASE | re.DOTALL)
-        if match:
-            pn = match.group(1).strip()
-            pn = re.sub(r'\s+', ' ', pn)
-            if 2 <= len(pn) < 100:
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 칼날 1 성공: {pn}")
-                return pn, "Python(샌드위치)"
+    """[V12.9.5] 주님의 2.3 시선 이동 알고리즘 이식: 인지적 격리 비전 스나이퍼"""
+    if not api_key or not image_list: return "미추출", "실패"
 
-    if log_func: log_func(" ├─ [제품명 스캔] ⚠️ 칼날 1 빗나감. 👁️ 칼날 2(Flash 비전 스나이핑) 투입...")
-
-    # 2차: 플래시 비전 스나이핑 (사진 1페이지 제공)
-    if not api_key: 
-        if log_func: log_func(" ├─ [제품명 스캔] ❌ API 키 누락으로 칼날 2 취소")
-        return "미추출", "API_KEY_MISSING"
-    if not image_list or len(image_list) == 0:
-        if log_func: log_func(" ├─ [제품명 스캔] ❌ 이미지 데이터가 없어 비전 스나이핑 불가")
-        return "미추출", "NO_IMAGE"
-
-    # image_list[0] 형식 방어적 처리
+    # 1페이지 사진 데이터 준비
     first_page_img = image_list[0]
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
-    mime_type = first_page_img.get("mimeType", "image/png") if isinstance(first_page_img, dict) else "image/png"
-        
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={api_key}"
-    prompt = """너는 사진에서 제품명만 골라내는 정밀 사수다.
+    mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
-[Full-Copy]: 제품명 섹션에 적힌 모든 글자(모델명, 규격, 괄호 안 내용 포함)를 요약 없이 그대로 가져오되,
+    # [핵심] 인지적 격리 프롬프트
+    prompt = """
+    너는 MSDS의 제품명을 정확히 확정 짓는 전문 판독관이다. 사진에서 다음 3단계 수칙을 엄격히 준수하라.
 
-[Trash-Filter]: 제품명 아래에 붙어 있는 '제조사명', '개정일자', '긴급전화번호' 등 제품 이름이 아닌 메타데이터는 가차 없이 버려라.
+    1. [구역 격리]: "1. 화학제품과 회사에 관한 정보" 항목을 찾고, 그 아래부터 "2. 유해성·위험성" 항목 시작 전까지만 읽어라. 2번 항목의 GHS 그림이나 안전 문구(P305 등)는 네 시야에 없는 것이니 절대 무시하라.
+    2. [의미적 레이블 앵커]: '가. 제품명', '상품명', '품명', '제품의 명칭', 'Product Name' 등 제품의 이름을 나타내는 모든 유사 레이블을 앵커로 삼아라. 레이블이 없더라도 1번 항목 바로 아래에 가장 강조된 텍스트를 목표로 한다.
+    3. [원본 무삭제 카피]: 모델명, 규격, 괄호 안 영문명까지 토씨 하나 틀리지 말고 그대로 베껴라. 요약은 절대 금지한다. 단, '제조자'나 '나.' 항목이 나오면 그 직전에서 즉시 멈춰라.
 
-[Boundary]: '나.', '용도', '제조자', '2.' 등의 다음 항목 표식(Label)이 나타나면 그 직전에서 반드시 멈춰라.
+    부연 설명 없이 오직 제품명 문자열만 딱 한 줄로 출력하라. 못 찾겠으면 '미추출'.
+    """
 
-오직 제품의 정체성을 나타내는 '전체 이름'만 딱 한 줄로 출력해라."""
-    
-    payload = {
-        "contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]
-    }
-    
+    payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
-        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        resp = requests.post(GEMINI_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
         if resp.status_code == 200:
             pn_ai = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            if pn_ai and "미추출" not in pn_ai and "확인" not in pn_ai:
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 칼날 2 성공: {pn_ai}")
-                return pn_ai.replace('\n', ' ').strip(), "Flash(비전스나이핑)"
-        else:
-            if log_func: log_func(f" ├─ [제품명 스캔] ❌ 칼날 2 API 응답 오류: HTTP {resp.status_code}")
-    except Exception as e:
-        if log_func: log_func(f" ├─ [제품명 스캔] ❌ 칼날 2 네트워크/API 오류: {str(e)[:50]}")
-        
-    if log_func: log_func(" ├─ [제품명 스캔] ❌ 칼날 1, 2 모두 실패. 메인 AI에게 위임합니다.")
+            # GHS 쓰레기 데이터 최종 검열
+            if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공: {pn_ai[:30]}")
+                return pn_ai.replace('\n', ' ').strip(), "Vision"
+    except: pass
     return "미추출", "실패"
 
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
@@ -657,9 +624,13 @@ def process_pdf(pdf_path, log_func=None):
         ai_res = call_gemini_2_5_lite(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
         
         if ai_res:
-            # [NEW] 사전 추출된 제품명이 있다면, AI가 찾은 제품명을 무시하고 강제로 덮어씌움
+            # [NEW] 절대 권력 부여: 비전 스나이퍼(hybrid_pn)가 성공했다면 메인 AI 결과는 무조건 폐기
             if hybrid_pn and hybrid_pn != "미추출":
                 ai_res["제품명"] = hybrid_pn
+                if log_func: log_func(f" ├─ [우선순위 1위] 비전 스나이퍼 결과 강제 적용: {hybrid_pn[:30]}")
+            else:
+                main_pn = str(ai_res.get("제품명", "")).strip()
+                if log_func: log_func(f" ├─ [우선순위 2위] 비전 실패. 메인 AI 결과 채택: {main_pn[:30]}")
             # CAS 번호 검증 (자가 치유 트리거)
             invalid_cas = []
             for comp in ai_res.get("구성성분", []):
@@ -689,9 +660,15 @@ def process_pdf(pdf_path, log_func=None):
         if log_func: log_func(" ├─ [2단계 Fallback] GPT-4o-mini 전환 호출 중...")
         final_ai_result = call_gpt_4o_mini(v24_baseline, text_chunk, image_list=image_list, log_func=log_func)
         if final_ai_result:
-            # [NEW] 사전 추출된 제품명이 있다면, AI가 찾은 제품명을 무시하고 강제로 덮어씌움
-            if hybrid_pn and hybrid_pn != "미추출":
+            # [NEW] 상호 검증: 메인 AI가 놓쳤을 때만 하이브리드(Vision) 결과로 심폐소생
+            main_pn = str(final_ai_result.get("제품명", "")).strip()
+            is_bad = not main_pn or any(k in main_pn.lower() for k in ["none", "확인", "미추출"])
+            
+            if is_bad and hybrid_pn and hybrid_pn != "미추출":
                 final_ai_result["제품명"] = hybrid_pn
+                if log_func: log_func(" ├─ [심폐소생] 메인 AI 실패로 비전 스나이핑 결과를 채택합니다.")
+            elif not is_bad:
+                if log_func: log_func(" ├─ [검증완료] 메인 AI의 제품명을 최종 확정합니다.")
             used_engine = "bulldozer"
             if log_func: log_func(" └─ ✅ GPT-4o-mini 추출 성공 (Fallback 완료)")
     
