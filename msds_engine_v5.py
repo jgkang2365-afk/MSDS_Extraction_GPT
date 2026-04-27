@@ -687,10 +687,8 @@ def process_pdf(pdf_path, log_func=None):
 
             comp_parts.append(f"{cas}({content})")
 
-        # [V12.3] 최종 문자열 조립 및 끝에 세미콜론(;) 보장
+        # [V12.3] 최종 문자열 조립 (구분자 세미콜론만 사용)
         comp_str = "; ".join(comp_parts)
-        if comp_str and not comp_str.endswith(";"):
-            comp_str += ";"
         
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
