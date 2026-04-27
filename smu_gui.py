@@ -336,7 +336,7 @@ class ExtractionWorker(QThread):
     update_log_signal = pyqtSignal(str)
     progress_signal = pyqtSignal(int)
     result_signal = pyqtSignal(dict)
-    finished_signal = pyqtSignal()
+    finished_signal = pyqtSignal(dict)
     cache_update_signal = pyqtSignal(str, dict) # [NEW] 캐시 업데이트 요청용
 
     def __init__(self, core, pdf_paths, cache=None):
@@ -346,6 +346,7 @@ class ExtractionWorker(QThread):
         self.cache = cache or {}
 
     def run(self):
+        stats = {"regex": 0, "flash": 0, "bulldozer": 0}
         total = len(self.pdf_paths)
         for i, path in enumerate(self.pdf_paths):
             try:
@@ -383,6 +384,7 @@ class ExtractionWorker(QThread):
                         }
                         self.result_signal.emit(res_data)
                         self.progress_signal.emit(int((i + 1) / total * 100))
+                        stats["regex"] += 1
                         continue
 
                 self.update_log_signal.emit("="*20 + f" [{fn} 추출 시작] " + "="*20)
@@ -396,7 +398,8 @@ class ExtractionWorker(QThread):
                     "신호등": ext_res.get("신호등", "⚪"), 
                     "raw_content": ext_res.get("구성성분 및 함유량", ext_res.get("함유량", "")),
                     "full_path": path, # [V7.0] 절대 경로 저장
-                    "page": ext_res.get("page", 1) # [V7.0] 페이지 정보 저장
+                    "page": ext_res.get("page", 1), # [V7.0] 페이지 정보 저장
+                    "used_engine": ext_res.get("used_engine", "regex")
                 }
                 
                 # [NEW] 캐시에 저장 요청
@@ -407,6 +410,13 @@ class ExtractionWorker(QThread):
                 res_data["filename"] = fn
                 res_data["status"] = "추출 완료"
                 
+                # 통계 집계
+                engine_type = res_data.get("used_engine", "regex")
+                if engine_type in stats:
+                    stats[engine_type] += 1
+                else:
+                    stats["regex"] += 1
+
                 self.result_signal.emit(res_data)
                 self.progress_signal.emit(int((i + 1) / total * 100))
             except Exception as e:
@@ -425,7 +435,7 @@ class ExtractionWorker(QThread):
             # [지능형 속도 조절] 파일 간 최소 1초의 간격을 두어 RPM 제한 회피
             time.sleep(1.0)
         
-        self.finished_signal.emit()
+        self.finished_signal.emit(stats)
 
 class ValidationWorker(QThread):
     """2단계: 테이블의 CAS 데이터를 기반으로 KOSHA API 검증 수행"""
@@ -1778,7 +1788,7 @@ class SMUGUI(QMainWindow):
         self.worker.progress_signal.connect(self.progress.setValue)
         self.worker.result_signal.connect(self.add_result_to_table)
         self.worker.cache_update_signal.connect(self.update_cache) # [NEW] 캐시 업데이트 연동
-        self.worker.finished_signal.connect(lambda: QMessageBox.information(self, "완료", "1단계 PDF 추출이 완료되었습니다. 수정 후 2단계를 진행하세요."))
+        self.worker.finished_signal.connect(self.on_extraction_finished)
         self.worker.start()
 
     def run_validation(self):
@@ -1806,6 +1816,24 @@ class SMUGUI(QMainWindow):
         self.worker.result_signal.connect(self.on_validation_result) 
         self.worker.finished_signal.connect(self.on_validation_finished)
         self.worker.start()
+
+    def on_extraction_finished(self, stats):
+        """1단계 PDF 추출 완료 요약 보고 (V12.8 통계 대시보드)"""
+        self.table.blockSignals(False)
+        self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
+        
+        summary = (
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "   📊 MSDS 추출 가동 현황 보고\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ 총 처리 파일: {sum(stats.values())}건\n\n"
+            f"🔹 REGEX (정규식/캐시): {stats.get('regex', 0)}건\n"
+            f"🔸 FLASH (Gemini 2.5): {stats.get('flash', 0)}건\n"
+            f"🚀 BULLDOZER (Fallback): {stats.get('bulldozer', 0)}건\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "추출된 데이터를 확인/수정한 후 [2단계 검증]을 진행하세요."
+        )
+        QMessageBox.information(self, "추출 완료 리포트", summary)
 
     def on_validation_result(self, res_data):
         """[V10.2] 하이브리드 검증 결과 처리 (신호등 🔵 마킹 및 검수 큐잉 포함)"""

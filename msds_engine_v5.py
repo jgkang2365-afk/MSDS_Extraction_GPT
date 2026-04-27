@@ -578,7 +578,7 @@ def process_pdf(pdf_path, log_func=None):
     image_list = extract_section3_images(pdf_path)
     
     # [V7.0] 하이브리드 AI 듀얼 엔진 파이프라인 (Gemini 2.5 Flash-Lite -> GPT-4o-mini)
-    used_engine = "N/A"
+    used_engine = "regex"
     final_ai_result = None
     curr_retry_instruction = None
     max_retries = 2
@@ -597,8 +597,13 @@ def process_pdf(pdf_path, log_func=None):
                     invalid_cas.append(cas)
             
             if not invalid_cas:
+                if not ai_res.get("구성성분", []) or "확인" in str(ai_res.get("제품명", "")):
+                    curr_retry_instruction = "구성성분이 비어있거나 제품명을 찾지 못했습니다. 표를 다시 꼼꼼히 확인하여 누락 없이 추출해 주세요."
+                    if log_func: log_func(f" ⚠️ Gemini 추출 부실 감지 (성분 0개 또는 제품명 미확인)")
+                    continue 
+
                 final_ai_result = ai_res
-                used_engine = "Gemini 2.5 Flash-Lite (1차 성공)"
+                used_engine = "flash"
                 if log_func: log_func(" └─ ✅ Gemini 추출 성공 (CAS 검증 통과)")
                 break
             else:
@@ -613,7 +618,7 @@ def process_pdf(pdf_path, log_func=None):
         if log_func: log_func(" ├─ [2단계 Fallback] GPT-4o-mini 전환 호출 중...")
         final_ai_result = call_gpt_4o_mini(v24_baseline, text_chunk, image_list=image_list, log_func=log_func)
         if final_ai_result:
-            used_engine = "GPT-4o-mini (2차 Fallback)"
+            used_engine = "bulldozer"
             if log_func: log_func(" └─ ✅ GPT-4o-mini 추출 성공 (Fallback 완료)")
     
     # 최종 데이터 조립
@@ -684,6 +689,7 @@ def process_pdf(pdf_path, log_func=None):
         "tag": tag, 
         "신뢰도": tag, 
         "추론근거": f"{used_engine} ({reason})",
+        "used_engine": used_engine,
         "page": 1
     }
 
