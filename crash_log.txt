@@ -72,3 +72,19 @@ Traceback (most recent call last):
     
 KeyboardInterrupt
 
+
+[2026-04-27 14:16:31.951746]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 425, in run
+    time.sleep(1.0)
+    ^^^^
+NameError: name 'time' is not defined. Did you forget to import 'time'?
+
+
+[2026-04-27 15:06:12.515935]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 2193, in closeEvent
+    def closeEvent(self, event):
+    
+KeyboardInterrupt
+

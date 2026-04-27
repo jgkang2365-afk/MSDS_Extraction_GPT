@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 import json
 import re
 from datetime import datetime
@@ -461,17 +462,26 @@ class ValidationWorker(QThread):
                 # [V8.8] 지능형 CAS 추출 및 함유량 보존 로직 (함유량% 보장)
                 # [V8.8] 지능형 CAS 추출 및 함유량 보존 로직 (함유량% 보장)
                 cas_to_content = {}
-                for match in re.finditer(r"(\d{2,7}-\d{2}-\d)\s*(?:\(([^)]+)\))?", str(cas_content)):
-                    cas = match.group(1)
-                    content_val = match.group(2) if match.group(2) else ""
-                    # [V8.8] 함유량 % 기호 강제 삽입 로직 (숫자가 있는데 %가 없으면 추가)
-                    if content_val and "%" not in content_val:
-                        # 숫자나 범위를 포함하고 있다면 % 추가
-                        if re.search(r'\d', content_val):
-                            content_val = f"{content_val}%"
-                    cas_to_content[cas] = content_val
+                preserved_non_cas = [] # [버그 수정] KOSHA에 안 갈 '영업비밀' 등 보존소
                 
-                # 2. 주님의 지시대로 순수 CAS 문자열만 발라내어 엔진에 전달
+                for item in str(cas_content).split(";"):
+                    item = item.strip()
+                    if not item: continue
+                    
+                    match = re.search(r'(\d{2,7}-\d{2}-\d)', item)
+                    if match:
+                        cas = match.group(1)
+                        # 함유량 괄호 안의 내용만 추출
+                        content_match = re.search(r'\(([^)]+)\)', item)
+                        content_val = content_match.group(1) if content_match else ""
+                        
+                        if content_val and "%" not in content_val and re.search(r'\d', content_val):
+                            content_val = f"{content_val}%"
+                        cas_to_content[cas] = content_val
+                    else:
+                        # CAS 번호 규격이 아닌 것(예: 영업비밀(10%))은 그대로 킵해둠
+                        preserved_non_cas.append(item)
+                
                 pure_cas_list = list(cas_to_content.keys())
                 pure_cas_str = "; ".join(pure_cas_list) if pure_cas_list else cas_content
 
@@ -577,6 +587,10 @@ class ValidationWorker(QThread):
                             # [V9.3] 주님 지령: <1% 성분은 반드시 측정 비대상[물질명(함유량%)] 형식으로 묶음
                             res_work_non_subjects.append(f"{clean_name}({range_val})")
 
+                # [버그 수정] KOSHA 검색에서 제외되었던 영업비밀 등을 1차 결과(전체)에 다시 합류시킴
+                if preserved_non_cas:
+                    res_1st_list.extend(preserved_non_cas)
+
                 # 측정대상 포맷팅 결합
                 subj_str = "; ".join(res_work_subjects)
                 non_subj_str = f"측정 비대상[{'; '.join(res_work_non_subjects)}]" if res_work_non_subjects else ""
@@ -590,7 +604,7 @@ class ValidationWorker(QThread):
                 }
 
                 # [지시서] 용접(Welding) 상황 인식형 유해인자 보정 로직 발동
-                is_welding = "용접" in prod
+                is_welding = ("용접" in prod) or ("welding" in prod.lower())
                 has_iron = "7439-89-6" in cas_to_content
                 
                 if is_welding and has_iron:
@@ -645,9 +659,9 @@ class ModernMappingPanel(QGroupBox):
 
         # 사용자가 요청한 가로형 5대 핵심 열 + 바인딩 5개 필드
         fields = [
-            ("제품명", "D"), ("파일명", "P"),
-            ("2차 결과(규제)", "L"), ("1차 결과(전체)", "M"),
-            ("측정대상1", "N"), ("측정대상2", ""), # 측정대상을 복수로 저장하기 위해 두 칸으로 분리
+            ("순번/No", "A"), ("제품명", "D"), ("파일명", "P"),
+            ("2차 결과(규제)", "L"), ("1차 결과(전체)", "N"),
+            ("측정대상1", "M"), ("측정대상2", ""), # 측정대상을 복수로 저장하기 위해 두 칸으로 분리
             ("CAS 원본", "O"),
             ("공정명", "B"), ("제조/사용", "C"),
             ("사용용도", "E"), ("월취급량", "S"), ("단위", "T")
@@ -1181,7 +1195,7 @@ class SMUGUI(QMainWindow):
         self.table.setColumnWidth(0, 80)
         self.table.setColumnWidth(1, 45)
         self.table.setColumnWidth(2, 200)
-        self.table.setColumnWidth(3, 160)
+        self.table.setColumnWidth(3, 220)
         self.table.setColumnWidth(4, 110)
         self.table.setColumnWidth(5, 250)
         self.table.setColumnWidth(6, 300)
@@ -1242,10 +1256,8 @@ class SMUGUI(QMainWindow):
             # PDF 로드
             if self.preview_pane.current_pdf_path != target_pdf_path:
                 self.preview_pane.load_pdf(target_pdf_path)
-            
-            # [최종 단순화] 복잡한 페이지 스크롤 추적 로직 전면 삭제. 
-            # 무조건 스크롤을 0(맨 위 1페이지)으로 강제 고정하여 제품명 확인을 우선시함.
-            self.preview_pane.verticalScrollBar().setValue(0)
+                # [최종 단순화] 새로운 PDF를 로드할 때만 스크롤을 맨 위로 고정
+                self.preview_pane.verticalScrollBar().setValue(0)
 
         except Exception as e:
             print(f"Row Click Error: {e}")
@@ -1665,11 +1677,16 @@ class SMUGUI(QMainWindow):
                     wb.Close(False)
                     return
 
-            # 2. 번호 부여 (A열)
+            # 2. 번호 부여 (매핑된 열 사용)
+            mapping = self.mapping_panel.get_mapping()
+            col_letter = mapping.get("순번/No", "A")
+            col_idx = SMUGUI.c2i(col_letter)
+            if col_idx < 1: col_idx = 1 # Fallback to A
+
             for i in range(count):
                 val = start_no + i
                 # 문자열 포맷팅 ('001 형식으로 입력하여 엑셀이 숫자로 자동 변환하는 것 방지)
-                ws.Cells(start_row + i, 1).Value = f"'{val:03d}" 
+                ws.Cells(start_row + i, col_idx).Value = f"'{val:03d}" 
             
             wb.Save()
             self.log(f"[*] 엑셀 A열 {start_row}행부터 {count}개의 번호를 부여했습니다. (시작: {start_no:03d})")
@@ -2027,15 +2044,9 @@ class SMUGUI(QMainWindow):
             if bg_color: item_seq.setBackground(bg_color)
             self.table.setItem(row, traffic_col, item_seq)
 
-            # 1% 필터 배제 규칙 강화 (정규표현식으로 함유량 파싱)
-            def is_above_one_percent(text):
-                m = re.search(r'\((\d+\.?\d*)\s*%\)', text)
-                if m:
-                    return float(m.group(1)) >= 1.0
-                return True # 함유량 미기재 시 일단 포함
-
-            final_res1 = [r for r in res_1st_list if is_above_one_percent(r)]
-            final_res2 = [r for r in res_2nd_list if is_above_one_percent(r)]
+            # [V12.6] 1% 필터 배제 규칙 제거 (필터 없이 그대로 통과)
+            final_res1 = res_1st_list
+            final_res2 = res_2nd_list
 
             # 1. 제품명
             existing_prod = self.table.item(row, 2).text() if self.table.item(row, 2) else ""
@@ -2130,6 +2141,7 @@ class SMUGUI(QMainWindow):
                 if fn_item:
                     fn = fn_item.text().strip()
                     table_dict[fn] = {
+                        "no": self.table.item(r, 1).text().strip() if self.table.item(r, 1) else "",
                         "product_name": self.table.item(r, 2).text().strip() if self.table.item(r, 2) else "",
                         "cas_sum": self.table.item(r, 3).text().strip() if self.table.item(r, 3) else "",
                         "measure": self.table.item(r, 4).text().strip() if self.table.item(r, 4) else "",
@@ -2150,13 +2162,21 @@ class SMUGUI(QMainWindow):
                 td = table_dict[fn]
                 curr_row = st_row + saved_count # 시각적 순서대로 연속된 행에 기록
                 
-                # 매핑된 컬럼에 데이터 쓰기
-                if mapping.get("제품명"): ws.Cells(curr_row, mapping["제품명"]).Value = td["product_name"]
-                if mapping.get("파일명"): ws.Cells(curr_row, mapping["파일명"]).Value = fn
-                if mapping.get("CAS 원본"): ws.Cells(curr_row, mapping["CAS 원본"]).Value = td["cas_sum"]
-                if mapping.get("측정대상1"): ws.Cells(curr_row, mapping["측정대상1"]).Value = td["measure"]
-                if mapping.get("2차 결과(규제)"): ws.Cells(curr_row, mapping["2차 결과(규제)"]).Value = td["reg2"]
-                if mapping.get("1차 결과(전체)"): ws.Cells(curr_row, mapping["1차 결과(전체)"]).Value = td["reg1"]
+                # [V12.7] 매핑된 모든 컬럼에 데이터 기입 (유연한 확장)
+                for key, c_idx in mapping.items():
+                    if not c_idx or c_idx < 1: continue
+                    
+                    val = None
+                    if key == "제품명": val = td.get("product_name")
+                    elif key == "파일명": val = fn
+                    elif key == "CAS 원본": val = td.get("cas_sum")
+                    elif key == "측정대상1" or key == "측정대상2": val = td.get("measure")
+                    elif key == "2차 결과(규제)": val = td.get("reg2")
+                    elif key == "1차 결과(전체)": val = td.get("reg1")
+                    elif key == "순번/No": val = td.get("no")
+                    
+                    if val is not None:
+                        ws.Cells(curr_row, c_idx).Value = val
 
                 saved_count += 1
 

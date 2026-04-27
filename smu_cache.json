@@ -1,59 +1,47 @@
 {
+    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+        "product_name": "KUKDONG OIL & CHEMICALS CO., LTD.",
+        "reliability": "[G2.5-FIXED]",
+        "신호등": "🟡 확인",
+        "raw_content": "64742-54-7(64~74%); 64742-54-7(미기재%); 68649-42-3(2~3%);",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/001_SUPER WAY LUBE 32.pdf",
+        "page": 1
+    },
     "ff2fd7f232b580b53ccfbfbb4573e2a582d4453445727e966ef48e4034e3c472": {
         "f_hash": "ff2fd7f232b580b53ccfbfbb4573e2a582d4453445727e966ef48e4034e3c472",
         "product_name": "Kiox RD HD 68 PHS(구 Rando HD 68 PHS)",
         "reliability": "[GPT-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]Distillates (petroleum), hydrotreated heavy paraffinic[64742-54-7(99~100%)]; [미등록]Phosphorodithioic acid O,O-dialkyl(C1-C14) esters zinc salts[68649-42-3(0.1~0.4%)]; [미등록]2,6-di-tert-butylphenol[128-39-2(0.1~0.2%)]",
+        "raw_content": "64742-54-7(99~100%); 68649-42-3(0.1~0.4%); 128-39-2(0.1~0.2%);",
         "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/002_Kixx RD HD 68 PHS.pdf",
-        "page": 1
-    },
-    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
-        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
-        "product_name": "Super Way Lube 32",
-        "reliability": "[G2.5-FIXED]",
-        "신호등": "🟢 통과",
-        "raw_content": "[미등록]HYDROTREATED HEAVY PARAFFINIC[64742-54-7(≥97%)]; [미등록]Zinc Dialkyl Dithiophosphate[68649-42-3(2~3%)]",
-        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/003_SUPER WAY LUBE 32.pdf",
         "page": 1
     },
     "44dc5d83213c83c6ce26d901be8591211a03d66156343bfaab5bd24718b8ed40": {
         "f_hash": "44dc5d83213c83c6ce26d901be8591211a03d66156343bfaab5bd24718b8ed40",
         "product_name": "",
         "reliability": "[G2.5-FIXED]",
-        "신호등": "🟡 확인",
-        "raw_content": "물[7732-18-5(2%)]; [미등록]Hydroxyethyl Cellulose[9004-62-0(미기재%)]; 물[7732-18-5(10%)]; [미등록]아민류(광물성)[102-71-6(20%)]",
-        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/004_수용성절연삭유 2종1호.pdf",
-        "page": 1,
-        "manual_data": {
-            "product_name": "수용성절연삭유 2종1호 (KS M 2173): KS표준)",
-            "raw_content": "물[7732-18-5(ReM.%)];\n[미등록]Hydroxyethyl Cellulose[9004-62-0(2%)];\n[미등록]아민류(광물성)[102-71-6(20%)]",
-            "measure": "금속가공유",
-            "reg2": "금속가공유"
-        }
+        "신호등": "🟢 통과",
+        "raw_content": "9004-62-0(2%); 7732-18-5(10%); 102-71-6(20%);",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/003_수용성절연삭유 2종1호.pdf",
+        "page": 1
     },
     "e0004ce0a4e0a96a4f854adaf6b65fdc9e210fbc89243b595e991ca91b66f531": {
         "f_hash": "e0004ce0a4e0a96a4f854adaf6b65fdc9e210fbc89243b595e991ca91b66f531",
-        "product_name": "WD-40 에어로졸",
+        "product_name": "",
         "reliability": "[G2.5-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]HYDRO TREATED LIGHT DISTILLATE (석유계 용제)[64742-47-8(35~40%)]; [미등록]SOLVENT-DEWAXED HEAVY PARAFFINIC DISTILLATE (중유-파라핀 증류액)[64742-65-0(10~15%)]; [미등록]PROPANE[74-98-6(8~12%)]; [미등록]n-BUTANE[106-97-8(28~32%)]",
-        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/005_WD-40 에어로 졸캔.pdf",
-        "page": 1,
-        "manual_data": {
-            "measure": ""
-        }
+        "raw_content": "64742-47-8(35~40%); 64742-65-0(10~15%); 74-98-6(8~12%); 106-97-8(28~32%);",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/004_WD-40 에어로 졸캔.pdf",
+        "page": 1
     },
     "c71b305e8d1e72dad8b3998046d3b47bf47aeee84fb3b2b7f7040083ab372cef": {
         "f_hash": "c71b305e8d1e72dad8b3998046d3b47bf47aeee84fb3b2b7f7040083ab372cef",
         "product_name": "LONG #2 Spray (롱#2 스프레이)",
         "reliability": "[G2.5-FIXED]",
         "신호등": "🟢 통과",
-        "raw_content": "[미등록]페인트플레이밍(석유), 산화된 칼슘염[68425-34-3(1~10%)]; [미등록]폴리부텐(Polybutene)[9003-29-6(0.1~0.2%)]; [미등록]칼슘 석유 설폰산(Sulfonic acids, petroleum, calcium salts)[61789-86-4(1~5%)]; [미등록]비스-카보네이트(탄산수소칼륨)(petrolatum, hydrogenated light)[64742-47-8(1~5%)]; [미등록]메틸사이클로헥산(Methylcyclohexane)[108-87-2(1~5%)]; [미등록]2-메틸펜탄(2-Methylpentane)[589-34-4(1~5%)]; [미등록]1,2-다이메틸사이클로펜탄[591-76-4(1~5%)]; [미등록]1,3-다이메틸사이클로펜탄[2452-99-5(1~3%)]; n-헵탄[142-82-5(0.1~0.9%)]; [미등록]프로판(Propane)[74-98-6(10~20%)]; [미등록]부탄(Butane)[106-97-8(50~60%)]",
-        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/006_롱#2스프레이.pdf",
-        "page": 1,
-        "manual_data": {
-            "measure": "측정 비대상[n-헵탄(0.1~0.9%)]"
-        }
+        "raw_content": "68425-34-3(1~10%); 9003-29-6(0.1~0.2%); 61789-86-4(1~5%); 64742-47-8(1~5%); 108-87-2(1~5%); 589-34-4(1~5%); 591-76-4(1~5%); 2452-99-5(1~3%); 2453-00-1(1~3%); 142-82-5(0.1~0.9%); 74-98-6(10~20%); 106-97-8(50~60%);",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/005_롱#2스프레이.pdf",
+        "page": 1
     }
 }

@@ -367,15 +367,7 @@ def run_v24_baseline(pdf_path):
 
     comp_parts = []
     for c in all_components:
-        cas = c['cas_no']
-        content = c['content']
-        if cas in MES_MASTER_MAP:
-            name = MES_MASTER_MAP[cas]
-            # [V5.3] 마스터 DB의 노이즈(STEL, TWA 등 규제치 태그)만 정밀 제거
-            name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', name, flags=re.IGNORECASE).strip()
-            comp_parts.append(f"{name}[{cas}({content})]")
-        else:
-            comp_parts.append(f"[미등록]원문명칭없음[{cas}({content})]")
+        comp_parts.append(f"{c['cas_no']}({c['content']})")
             
     comp_str = "; ".join(comp_parts) if comp_parts else ""
     tag = "[PASS]" if all_components and comp_str else "[REVIEW]"
@@ -453,7 +445,24 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None,
     if (not text_chunk.strip() and not image_list) or not GOOGLE_API_KEY: return None
 
     prod_name_baseline = v24_result.get('제품명', '')
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
+
+    strict_rules = """
+\n\n[🚨 AI Vision 초정밀 데이터 정제 및 추출 7대 절대 규칙 (V12.6) 🚨]
+1. [이미지 최우선 및 행(Row) 독립성]: 오직 첨부된 이미지(표)를 기준으로, 동일한 가로줄(Row)에 있는 [물질명-CAS-함유량]만 한 세트로 묶어라. 텍스트에 휘둘려 위아래 줄을 섞지 마라.
+2. [부등호 및 범위 기호의 완벽한 통일]:
+   - 범위('~') 기호 사용 시 부등호 혼용 금지: '≥95~100%' -> '95~100%'로 단순화.
+   - 단일 한계값 보존: '<2', '≤0.1' 등 숫자가 1개인 부등호는 절대 지우거나 유추하지 말고 유지.
+   - 특수 기호 변환: 숫자 뒤의 '+'는 '이상(≥)'으로, '-'는 '이하(≤)'로 변환 (예: '99.0 +%' -> '≥99.0%').
+   - 오차범위(±): '10 ± 2%'는 '8~12%'로 계산하여 변환.
+   - 불필요한 텍스트 제거: 'About', '약' 등은 제거하고 숫자와 기호만 남김.
+3. [잔여량 인식]: 함유량에 '나머지', 'Rem.', 'Balance', '잔량' 등이 적혀 있으면 무조건 'Rem.%'로 출력.
+4. [단위 필터링]: '%'가 아닌 'ppm', 'mg/kg' 등의 특수 단위는 무조건 '미기재%'로 처리. 단, 기호 없이 숫자만(예: 100.0) 적혀있다면 %로 간주.
+5. [상한선 보정]: '101%' 등 100% 초과 수치는 '100%'로 보정.
+6. [누락 금지]: 함유량이 있는데 CAS 칸이 비어있거나 '자료없음' 등이면 절대 누락하지 말고 CAS 칸에 '영업비밀'이라고 기재하여 추출.
+7. [EC 번호 구분]: '272-028-3'처럼 중간이 3자리인 유럽 EC 번호는 무시하라.
+"""
+
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}{strict_rules}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
@@ -496,7 +505,24 @@ def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, ret
     if (not text_chunk.strip() and not image_list) or not OPENAI_API_KEY: return None
 
     prod_name_baseline = v24_result.get('제품명', '')
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
+
+    strict_rules = """
+\n\n[🚨 AI Vision 초정밀 데이터 정제 및 추출 7대 절대 규칙 (V12.6) 🚨]
+1. [이미지 최우선 및 행(Row) 독립성]: 오직 첨부된 이미지(표)를 기준으로, 동일한 가로줄(Row)에 있는 [물질명-CAS-함유량]만 한 세트로 묶어라. 텍스트에 휘둘려 위아래 줄을 섞지 마라.
+2. [부등호 및 범위 기호의 완벽한 통일]:
+   - 범위('~') 기호 사용 시 부등호 혼용 금지: '≥95~100%' -> '95~100%'로 단순화.
+   - 단일 한계값 보존: '<2', '≤0.1' 등 숫자가 1개인 부등호는 절대 지우거나 유추하지 말고 유지.
+   - 특수 기호 변환: 숫자 뒤의 '+'는 '이상(≥)'으로, '-'는 '이하(≤)'로 변환 (예: '99.0 +%' -> '≥99.0%').
+   - 오차범위(±): '10 ± 2%'는 '8~12%'로 계산하여 변환.
+   - 불필요한 텍스트 제거: 'About', '약' 등은 제거하고 숫자와 기호만 남김.
+3. [잔여량 인식]: 함유량에 '나머지', 'Rem.', 'Balance', '잔량' 등이 적혀 있으면 무조건 'Rem.%'로 출력.
+4. [단위 필터링]: '%'가 아닌 'ppm', 'mg/kg' 등의 특수 단위는 무조건 '미기재%'로 처리. 단, 기호 없이 숫자만(예: 100.0) 적혀있다면 %로 간주.
+5. [상한선 보정]: '101%' 등 100% 초과 수치는 '100%'로 보정.
+6. [누락 금지]: 함유량이 있는데 CAS 칸이 비어있거나 '자료없음' 등이면 절대 누락하지 말고 CAS 칸에 '영업비밀'이라고 기재하여 추출.
+7. [EC 번호 구분]: '272-028-3'처럼 중간이 3자리인 유럽 EC 번호는 무시하라.
+"""
+
+    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}{strict_rules}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
@@ -606,8 +632,12 @@ def process_pdf(pdf_path, log_func=None):
         for comp in components:
             cas = str(comp.get("cas_no", "")).strip()
             if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
-            content = str(comp.get("content", "")).replace(" ", "")
             
+            # [버그 수정] CAS가 비어있거나 '자료없음' 등인 경우 삭제하지 않고 '영업비밀'로 강제 치환
+            if not cas or any(kw in cas for kw in ["-", "없음", "자료", "미기재", "비공개", "비밀"]):
+                cas = "영업비밀"
+                
+            content = str(comp.get("content", "")).replace(" ", "")
             if not (re.match(r'^\d{1,7}-\d{2}-\d$', cas) or cas == "영업비밀"): continue
             
             content = str(content).strip()
@@ -629,15 +659,13 @@ def process_pdf(pdf_path, log_func=None):
                 if "%" not in content: content += "%"
                 content = content.replace(" ", "")
 
-            if cas == "영업비밀": comp_parts.append(f"영업비밀[{cas}({content})]")
-            elif cas in MES_MASTER_MAP:
-                std_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', MES_MASTER_MAP[cas], flags=re.I).strip()
-                comp_parts.append(f"{std_name}[{cas}({content})]")
-            else:
-                raw_name = comp.get("name") or comp.get("chemical_name") or "원문명칭없음"
-                comp_parts.append(f"[미등록]{raw_name}[{cas}({content})]")
+            # [V12.3] 주님 요청 규격: 제품명 수식어 제거하고 CAS(함유량)% 형태만 유지
+            comp_parts.append(f"{cas}({content})")
 
+        # [V12.3] 최종 문자열 조립 및 끝에 세미콜론(;) 보장
         comp_str = "; ".join(comp_parts)
+        if comp_str and not comp_str.endswith(";"):
+            comp_str += ";"
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
         
