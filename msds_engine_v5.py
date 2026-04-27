@@ -633,17 +633,18 @@ def process_pdf(pdf_path, log_func=None):
             cas = str(comp.get("cas_no", "")).strip()
             if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
             
-            # [버그 수정] CAS가 비어있거나 '자료없음' 등인 경우 삭제하지 않고 '영업비밀'로 강제 치환
-            if not cas or any(kw in cas for kw in ["-", "없음", "자료", "미기재", "비공개", "비밀"]):
-                cas = "영업비밀"
+            # 1. [원칙 1] CAS 번호 규격이 아니면 함유량이 있어도 가차 없이 버림 (버그 원인 제거)
+            if not re.match(r'^\d{1,7}-\d{2}-\d$', cas): 
+                continue
                 
-            content = str(comp.get("content", "")).replace(" ", "")
-            if not (re.match(r'^\d{1,7}-\d{2}-\d$', cas) or cas == "영업비밀"): continue
+            content = str(comp.get("content", "")).strip()
             
-            content = str(content).strip()
-            if not content or any(kw in content for kw in ["미기재", "함유량미기재", "비밀", "영업비밀"]): 
+            # 2. [원칙 2] CAS 번호는 정상인데 함유량이 비어있거나 '없음' 등이면 '미기재%'로 보존
+            if not content or any(kw in content for kw in ["-", "없음", "자료", "미기재", "비공개", "비밀"]): 
                 content = "미기재%"
             else:
+                # (기존 정제 로직 유지)
+                content = content.replace(" ", "")
                 content = REGEX_PM.sub(_calc_pm_range, content)
                 content = REGEX_LE.sub(r'≤\1', content)
                 content = REGEX_LT.sub(r'＜\1', content)
@@ -657,9 +658,7 @@ def process_pdf(pdf_path, log_func=None):
                 content = re.sub(r'\.0+(\D|$)', r'\1', content)
                 content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content)
                 if "%" not in content: content += "%"
-                content = content.replace(" ", "")
 
-            # [V12.3] 주님 요청 규격: 제품명 수식어 제거하고 CAS(함유량)% 형태만 유지
             comp_parts.append(f"{cas}({content})")
 
         # [V12.3] 최종 문자열 조립 및 끝에 세미콜론(;) 보장
