@@ -115,10 +115,10 @@ except Exception as e:
     raise RuntimeError(f"[시스템 치명적 오류] 마스터 DB 초기화에 실패했습니다. DB 파일을 확인하세요!\n상세 원인: {e}")
 
 # [V5.1 성능 최적화] 정규식 사전 컴파일 및 전역 헬퍼 함수 분리
-REGEX_LE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*이하')
-REGEX_LT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*미만')
-REGEX_GE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*이상')
-REGEX_GT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*초과')
+REGEX_LE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:이하|≤|<=)')
+REGEX_LT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:미만|＜|<)')
+REGEX_GE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:이상|≥|>=)')
+REGEX_GT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:초과|＞|>)')
 REGEX_PM = re.compile(r'(\d+(?:\.\d+)?)\s*(?:±|\+-)\s*(\d+(?:\.\d+)?)')
 
 def _calc_pm_range(m):
@@ -667,21 +667,23 @@ def process_pdf(pdf_path, log_func=None):
             if not content or any(kw in content for kw in ["-", "없음", "자료", "미기재", "비공개", "비밀"]): 
                 content = "미기재%"
             else:
-                # (기존 정제 로직 유지)
+                # (기존 정제 로직 유지 - 전각 기호 원천 제거 및 반각 기호 통일)
                 content = content.replace(" ", "")
                 content = REGEX_PM.sub(_calc_pm_range, content)
                 content = REGEX_LE.sub(r'≤\1', content)
-                content = REGEX_LT.sub(r'＜\1', content)
+                content = REGEX_LT.sub(r'<\1', content)
                 content = REGEX_GE.sub(r'≥\1', content)
-                content = REGEX_GT.sub(r'＞\1', content)
-                content = content.replace("이하", "≤").replace("미만", "＜").replace("이상", "≥").replace("초과", "＞")
-                content = content.replace("<=", "≤").replace(">=", "≥").replace("<", "＜").replace(">", "＞")
-                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥＜＞])(?!\s*[\d])', r'\2\1%', content)
-                content = re.sub(r'([≤≥＜＞])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
-                content = re.sub(r'[≤≥＜＞]*\s*([\d\.]+)\s*(?:%|~|-)?\s*[≤≥＜＞]+\s*([\d\.]+)\s*(?:%)?', r'\1~\2%', content)
-                content = re.sub(r'\.0+(\D|$)', r'\1', content)
-                content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content)
-                if "%" not in content: content += "%"
+                content = REGEX_GT.sub(r'>\1', content)
+                content = content.replace("이하", "≤").replace("미만", "<").replace("이상", "≥").replace("초과", ">")
+                content = content.replace("<=", "≤").replace(">=", "≥")
+                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥<>])(?!\s*[\d])', r'\2\1%', content)
+                content = re.sub(r'([≤≥<>])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
+                content = re.sub(r'[≤≥<>]*\s*([\d\.]+)\s*(?:%|~|-)?\s*[≤≥<>]+\s*([\d\.]+)\s*(?:%)?', r'\1~\2%', content)
+                # (기존 치환 로직 아래에 추가)
+                content = re.sub(r'\.0+(\D|$)', r'\1', content) # 10.0% -> 10%
+                content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content) # 10.50% -> 10.5%
+                if "%" not in content: 
+                    content += "%" # 기호 누락 방지 보험
 
             comp_parts.append(f"{cas}({content})")
 
@@ -689,9 +691,6 @@ def process_pdf(pdf_path, log_func=None):
         comp_str = "; ".join(comp_parts)
         if comp_str and not comp_str.endswith(";"):
             comp_str += ";"
-            
-        # [긴급 지혈] 전각 기호 및 잘못된 기호를 GUI 파싱용 반각 기호로 강제 변환
-        comp_str = comp_str.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
         
         v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
         ai_str_clean = comp_str.replace(" ", "")
