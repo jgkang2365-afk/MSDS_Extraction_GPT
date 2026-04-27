@@ -88,3 +88,54 @@ Traceback (most recent call last):
     
 KeyboardInterrupt
 
+
+[2026-04-27 18:50:07.835977]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 2431, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 876, in __init__
+    self.init_ui()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1092, in init_ui
+    self._setup_sidebar()
+    ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 919, in _setup_sidebar
+    self.sidebar_widget.setStyleSheet(f"background-color: {SIDEBAR_BLUE}; border: none;")
+                                                           ^^^^^^^^^^^^
+NameError: name 'SIDEBAR_BLUE' is not defined
+
+
+[2026-04-27 18:52:12.123570]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 2482, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 927, in __init__
+    self.init_ui()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1143, in init_ui
+    self._setup_sidebar()
+    ~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1000, in _setup_sidebar
+    self.menu_buttons[0].update_style(True)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 450, in update_style
+    active_style = f"background-color: {WHITE}; color: {PRIMARY_BLUE}; border-left: 4px solid {WHITE};" if is_active else "background-color: transparent; color: white; border-left: 4px solid transparent;"
+                                        ^^^^^
+NameError: name 'WHITE' is not defined
+
+
+[2026-04-27 19:36:15.798401]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 2517, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 918, in __init__
+    self.init_ui()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1195, in init_ui
+    self.page_extraction = self._create_extraction_page()
+                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1339, in _create_extraction_page
+    self.content_splitter.addWidget(self.preview_pane)
+    ^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'SMUGUI' object has no attribute 'content_splitter'
+

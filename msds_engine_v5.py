@@ -26,6 +26,71 @@ if not GOOGLE_API_KEY:
 
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={GOOGLE_API_KEY}"
 
+def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
+    """[V12.9] 제품명 하이브리드 추출: 1차 샌드위치 컷 -> 2차 비전(Vision) 스나이핑"""
+    text_head = text_chunk[:1500] 
+    
+    if log_func: log_func(" ├─ [제품명 스캔] 🔪 칼날 1(파이썬 샌드위치) 시도 중...")
+    
+    # 1차: 파이썬 샌드위치 컷
+    patterns = [
+        r'(?:가\.\s*제품명|제품명\s*:|Product Name\s*:|제품명\s*\(Product Name\)\s*:)\s*(.*?)(?:\n\s*나\.\s*제품의 권장용도|\n\s*권장용도|\n\s*일반적인\s*화학명|\n\s*용도)',
+        r'화학제품과 회사에 관한 정보.*?(?:제품명\s*:|가\.\s*제품명)\s*(.*?)(?:\n)'
+    ]
+    for p in patterns:
+        match = re.search(p, text_head, re.IGNORECASE | re.DOTALL)
+        if match:
+            pn = match.group(1).strip()
+            pn = re.sub(r'\s+', ' ', pn)
+            if 2 <= len(pn) < 100:
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 칼날 1 성공: {pn}")
+                return pn, "Python(샌드위치)"
+
+    if log_func: log_func(" ├─ [제품명 스캔] ⚠️ 칼날 1 빗나감. 👁️ 칼날 2(Flash 비전 스나이핑) 투입...")
+
+    # 2차: 플래시 비전 스나이핑 (사진 1페이지 제공)
+    if not api_key: 
+        if log_func: log_func(" ├─ [제품명 스캔] ❌ API 키 누락으로 칼날 2 취소")
+        return "미추출", "API_KEY_MISSING"
+    if not image_list or len(image_list) == 0:
+        if log_func: log_func(" ├─ [제품명 스캔] ❌ 이미지 데이터가 없어 비전 스나이핑 불가")
+        return "미추출", "NO_IMAGE"
+
+    # image_list[0] 형식 방어적 처리
+    first_page_img = image_list[0]
+    b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
+    mime_type = first_page_img.get("mimeType", "image/png") if isinstance(first_page_img, dict) else "image/png"
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key={api_key}"
+    prompt = """너는 사진에서 제품명만 골라내는 정밀 사수다.
+
+[Full-Copy]: 제품명 섹션에 적힌 모든 글자(모델명, 규격, 괄호 안 내용 포함)를 요약 없이 그대로 가져오되,
+
+[Trash-Filter]: 제품명 아래에 붙어 있는 '제조사명', '개정일자', '긴급전화번호' 등 제품 이름이 아닌 메타데이터는 가차 없이 버려라.
+
+[Boundary]: '나.', '용도', '제조자', '2.' 등의 다음 항목 표식(Label)이 나타나면 그 직전에서 반드시 멈춰라.
+
+오직 제품의 정체성을 나타내는 '전체 이름'만 딱 한 줄로 출력해라."""
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]
+    }
+    
+    try:
+        resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        if resp.status_code == 200:
+            pn_ai = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            if pn_ai and "미추출" not in pn_ai and "확인" not in pn_ai:
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 칼날 2 성공: {pn_ai}")
+                return pn_ai.replace('\n', ' ').strip(), "Flash(비전스나이핑)"
+        else:
+            if log_func: log_func(f" ├─ [제품명 스캔] ❌ 칼날 2 API 응답 오류: HTTP {resp.status_code}")
+    except Exception as e:
+        if log_func: log_func(f" ├─ [제품명 스캔] ❌ 칼날 2 네트워크/API 오류: {str(e)[:50]}")
+        
+    if log_func: log_func(" ├─ [제품명 스캔] ❌ 칼날 1, 2 모두 실패. 메인 AI에게 위임합니다.")
+    return "미추출", "실패"
+
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
 
 def load_v5_patterns():
@@ -124,7 +189,7 @@ def clean_product_name(raw_name):
     if not cleaned or len(cleaned) < 2: return "제품명 확인 필요"
     return cleaned
 
-def extract_product_name_hybrid(pdf_path, P):
+def extract_product_name_v24(pdf_path, P):
     # [복구] 제품명은 fitz로 첫 페이지만 읽는 것이 가장 정확함
     try:
         doc = fitz.open(pdf_path)
@@ -302,7 +367,7 @@ def fallback_text_extraction(pdf_path, product_name, P):
     return [{"cas_no": k, "content": v} for k, v in cas_best_data.items()]
 
 def run_v24_baseline(pdf_path):
-    product_name = extract_product_name_hybrid(pdf_path, P)
+    product_name = extract_product_name_v24(pdf_path, P)
     all_components = []
     try:
         parser = PDFParser()
@@ -572,10 +637,13 @@ def process_pdf(pdf_path, log_func=None):
 
     v24_baseline = run_v24_baseline(pdf_path)
     text_chunk = extract_context_for_ai(pdf_path)
-    
+
     # --- [V12.1] 하이브리드 엔진 시력(Vision) 파이프라인 복구 ---
     # AI 호출 직전 이미지 리스트 확보 (3번 섹션 캡처)
     image_list = extract_section3_images(pdf_path)
+
+    # [NEW] 제품명 2중 방어망 (비전 스나이핑) 가동
+    hybrid_pn, hybrid_source = extract_product_name_hybrid(text_chunk, image_list, GOOGLE_API_KEY, log_func=log_func)
     
     # [V7.0] 하이브리드 AI 듀얼 엔진 파이프라인 (Gemini 2.5 Flash-Lite -> GPT-4o-mini)
     used_engine = "regex"
@@ -589,6 +657,9 @@ def process_pdf(pdf_path, log_func=None):
         ai_res = call_gemini_2_5_lite(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
         
         if ai_res:
+            # [NEW] 사전 추출된 제품명이 있다면, AI가 찾은 제품명을 무시하고 강제로 덮어씌움
+            if hybrid_pn and hybrid_pn != "미추출":
+                ai_res["제품명"] = hybrid_pn
             # CAS 번호 검증 (자가 치유 트리거)
             invalid_cas = []
             for comp in ai_res.get("구성성분", []):
@@ -618,6 +689,9 @@ def process_pdf(pdf_path, log_func=None):
         if log_func: log_func(" ├─ [2단계 Fallback] GPT-4o-mini 전환 호출 중...")
         final_ai_result = call_gpt_4o_mini(v24_baseline, text_chunk, image_list=image_list, log_func=log_func)
         if final_ai_result:
+            # [NEW] 사전 추출된 제품명이 있다면, AI가 찾은 제품명을 무시하고 강제로 덮어씌움
+            if hybrid_pn and hybrid_pn != "미추출":
+                final_ai_result["제품명"] = hybrid_pn
             used_engine = "bulldozer"
             if log_func: log_func(" └─ ✅ GPT-4o-mini 추출 성공 (Fallback 완료)")
     
@@ -693,9 +767,13 @@ def process_pdf(pdf_path, log_func=None):
         "page": 1
     }
 
-    # [🚀추가] 제품명에 '확인 필요'가 들어있어도 무조건 노란불 켜기!
+    # [🚀수정] 신호등 판별 로직 강화 ('미추출', 'none' 원천 차단)
     traffic_light = "🟢 통과"
-    if "확인 필요" in product_name or "미기재" in comp_str or "비밀" in comp_str or not comp_parts:
+    prod_check = str(product_name).strip().lower()
+    
+    if not prod_check or prod_check == "none" or "확인" in prod_check or "미추출" in prod_check:
+        traffic_light = "🟡 확인"
+    elif "미기재" in comp_str or "비밀" in comp_str or not comp_parts:
         traffic_light = "🟡 확인"
     else:
         for cas_item in [c.split("[")[1].split("(")[0] if "[" in c else c.split("(")[0] for c in comp_parts]:

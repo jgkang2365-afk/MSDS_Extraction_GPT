@@ -344,11 +344,16 @@ class ExtractionWorker(QThread):
         self.core = core
         self.pdf_paths = pdf_paths
         self.cache = cache or {}
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
 
     def run(self):
         stats = {"regex": 0, "flash": 0, "bulldozer": 0}
         total = len(self.pdf_paths)
         for i, path in enumerate(self.pdf_paths):
+            if not self.is_running: break
             try:
                 fn = os.path.basename(path)
                 if i > 0: self.update_log_signal.emit("") # [추가] 파일 간 가독성을 위한 빈 줄
@@ -449,10 +454,15 @@ class ValidationWorker(QThread):
         self.parent_gui = parent_gui # [NEW] DB 접근 및 로그 출력을 위한 부모 참조
         self.core = core
         self.table_data = table_data # [[f_hash, fn, prod, cas_content], ...]
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
 
     def run(self):
         total = len(self.table_data)
         for i, data in enumerate(self.table_data):
+            if not self.is_running: break
             try:
                 f_hash = data.get("f_hash")
                 fn = data.get("filename")
@@ -859,9 +869,6 @@ class SMUGUI(QMainWindow):
             b.update_style(False)
         btn.setChecked(True)
         btn.update_style(True)
-        
-        titles = ["PDF 추출 및 규제 검증", "환경 설정"]
-        self.lbl_page_title.setText(titles[idx])
 
     def toggle_sidebar(self):
         """[Premium] 사이드바 슬림 모드 <-> 풀 모드 전환 애니메이션"""
@@ -888,16 +895,7 @@ class SMUGUI(QMainWindow):
         
         self.btn_toggle_sidebar.setText("≡" if self.sidebar_slim else "◀")
 
-    def switch_page(self, index, active_btn):
-        """페이지 전환 및 버튼 스타일 업데이트 (V7.5 자동 갱신 추가)"""
-        self.stacked_widget.setCurrentIndex(index)
-        titles = ["PDF 추출 및 규제 검증", "시스템 환경 설정"]
-        self.lbl_page_title.setText(titles[index] if index < len(titles) else "환경 설정")
-        
-        for btn in self.menu_buttons:
-            btn.setChecked(btn == active_btn)
-            btn.update_style(btn == active_btn)
-            
+
         # [V7.5] 탭으로 전환 시, 시트 목록이 비어 있으면 강제 갱신 시도
         if index == 0: # 추출 및 검증 탭
             path = self.edit_excel.text()
@@ -996,36 +994,7 @@ class SMUGUI(QMainWindow):
         self.content_layout.setContentsMargins(10, 10, 10, 10)
         self.main_h_layout.addLayout(self.content_layout, 1)
 
-        self.page_header = QHBoxLayout()
-        self.lbl_page_title = QLabel("PDF 추출 및 규제 검증")
-        self.lbl_page_title.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        self.lbl_page_title.setStyleSheet(f"color: {PRIMARY_BLUE}; margin-bottom: 5px;")
-        self.page_header.addWidget(self.lbl_page_title)
-        self.page_header.addStretch()
 
-        # [NEW] UX/UI 온보딩: 도움말 버튼 추가
-        self.btn_help = QToolButton()
-        self.btn_help.setText(" ? ")
-        self.btn_help.setToolTip("핵심 사용법 가이드를 확인합니다.")
-        self.btn_help.setStyleSheet(f"""
-            QToolButton {{
-                background-color: {PRIMARY_BLUE};
-                color: white;
-                border-radius: 12px;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 2px;
-            }}
-            QToolButton:hover {{
-                background-color: #004d80;
-            }}
-        """)
-        self.btn_help.setFixedSize(25, 25)
-        self.btn_help.clicked.connect(self.show_help_dialog)
-        self.page_header.addWidget(self.btn_help)
-
-        self.content_layout.addLayout(self.page_header)
-        
         self.main_splitter = QSplitter(Qt.Vertical)
         self.content_layout.addWidget(self.main_splitter)
 
@@ -1118,35 +1087,72 @@ class SMUGUI(QMainWindow):
         self.lbl_file_count.setStyleSheet("background-color: #f56c6c; color: white; border-radius: 10px; padding: 2px 5px; font-weight: bold; font-size: 11px;")
         header.addWidget(self.lbl_file_count)
 
-        btn_load = QPushButton("파일 선택")
-        btn_load.setFixedWidth(80); btn_load.setFixedHeight(35)
-        btn_load.clicked.connect(self.load_pdfs)
+        btn_load = QPushButton("폴더/파일 선택")
+        btn_load.setFixedWidth(110); btn_load.setFixedHeight(35)
+        
+        menu_load = QMenu(self)
+        action_file = menu_load.addAction("📄 파일 선택")
+        action_folder = menu_load.addAction("📁 폴더 선택")
+        action_file.triggered.connect(self.load_pdfs)
+        action_folder.triggered.connect(self.load_pdf_folder)
+        btn_load.setMenu(menu_load)
+        
         header.addWidget(btn_load)
 
         btn_reset = QPushButton("초기화")
         btn_reset.setFixedWidth(60); btn_reset.setFixedHeight(35)
-        btn_reset.setStyleSheet("background-color: #6c757d;")
+        btn_reset.setStyleSheet("background-color: #6c757d; color: white; font-weight: bold;")
         btn_reset.clicked.connect(self.reset_all)
         header.addWidget(btn_reset)
 
         btn_reload = QPushButton("엔진 🔄")
         btn_reload.setFixedWidth(70); btn_reload.setFixedHeight(35)
-        btn_reload.setStyleSheet("background-color: #67c23a;")
+        btn_reload.setStyleSheet("background-color: #67c23a; color: white; font-weight: bold;")
         btn_reload.clicked.connect(self.reload_engine)
         header.addWidget(btn_reload)
 
         header.addSpacing(20)
         self.btn_step1 = QPushButton("1단계 추출")
-        self.btn_step1.setFixedHeight(35); self.btn_step1.setStyleSheet("font-weight: bold;")
+        self.btn_step1.setFixedHeight(35); self.btn_step1.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold;")
         self.btn_step1.setToolTip("목록에 있는 PDF 파일들에서 MSDS 데이터를 AI로 자동 추출합니다.")
         self.btn_step1.clicked.connect(self.run_extraction)
         header.addWidget(self.btn_step1)
 
         self.btn_step2 = QPushButton("2단계 검증")
-        self.btn_step2.setFixedHeight(35); self.btn_step2.setStyleSheet("background-color: #f39c12; font-weight: bold;")
+        self.btn_step2.setFixedHeight(35); self.btn_step2.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold;")
         self.btn_step2.setToolTip("추출된 데이터를 바탕으로 공단 DB 및 마스터 DB와 대조하여 규제 여부를 검증합니다.")
         self.btn_step2.clicked.connect(self.run_validation)
         header.addWidget(self.btn_step2)
+
+        self.btn_stop = QPushButton("실행 중지")
+        self.btn_stop.setFixedHeight(35); self.btn_stop.setStyleSheet("QPushButton { background-color: #d93025; color: white; font-weight: bold; } QPushButton:disabled { background-color: #eaa9a9; color: #ffffff; }")
+        self.btn_stop.setEnabled(False)
+        self.btn_stop.clicked.connect(self.stop_process)
+        header.addWidget(self.btn_stop)
+
+        header.addStretch() # 버튼들을 왼쪽으로 밀고 우측에 여백 확보
+
+        # [NEW] UX/UI 온보딩: 도움말 버튼 추가 (기존 빈 줄 낭비 방지를 위해 이 줄로 편입)
+        self.btn_help = QToolButton()
+        self.btn_help.setText(" ? ")
+        self.btn_help.setToolTip("핵심 사용법 가이드를 확인합니다.")
+        self.btn_help.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {PRIMARY_BLUE};
+                color: white;
+                border-radius: 12px;
+                font-weight: bold;
+                font-size: 14px;
+                padding: 2px;
+            }}
+            QToolButton:hover {{
+                background-color: #004d80;
+            }}
+        """)
+        self.btn_help.setFixedSize(25, 25)
+        self.btn_help.clicked.connect(self.show_help_dialog)
+        header.addWidget(self.btn_help)
+
         main_layout.addLayout(header)
 
         # B. 슬림 컨트롤 바 (엑셀 설정) - 가로형 배치로 공간 절약
@@ -1174,10 +1180,16 @@ class SMUGUI(QMainWindow):
         excel_bar.addSpacing(15)
         btn_save_h = QPushButton("📁 엑셀에 저장")
         btn_save_h.setFixedWidth(130); btn_save_h.setFixedHeight(35)
-        btn_save_h.setStyleSheet("background-color: #28a745; font-weight: bold;")
+        btn_save_h.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
         btn_save_h.setToolTip("현재 화면에 표시된 데이터를 엑셀(Excel) 파일로 저장합니다.")
         btn_save_h.clicked.connect(self.perform_standard_save)
         excel_bar.addWidget(btn_save_h)
+        
+        self.btn_open_ex = QPushButton("📂 엑셀 열기")
+        self.btn_open_ex.setFixedWidth(110); self.btn_open_ex.setFixedHeight(35)
+        self.btn_open_ex.setStyleSheet("background-color: #17a2b8; color: white; font-weight: bold;")
+        self.btn_open_ex.clicked.connect(self.open_saved_excel)
+        excel_bar.addWidget(self.btn_open_ex)
         
         main_layout.addLayout(excel_bar)
 
@@ -1509,6 +1521,7 @@ class SMUGUI(QMainWindow):
             # [NEW] 중복 파일 제외 로직
             new_files = []
             for f in files:
+                f = os.path.normpath(f).replace('\\', '/')
                 if f in self.pdf_paths:
                     self.log(f"[경고] {os.path.basename(f)} 파일은 이미 목록에 있습니다. (추가 제외됨)")
                     continue
@@ -1518,6 +1531,33 @@ class SMUGUI(QMainWindow):
                 self.pdf_paths.extend(new_files)
                 self.update_file_count_display()
                 self.log(f"[*] {len(new_files)}개의 PDF 파일이 추가되었습니다.")
+
+    def load_pdf_folder(self):
+        """[NEW] 폴더 선택 및 하위 PDF 일괄 추가"""
+        folder = QFileDialog.getExistingDirectory(self, "분석할 MSDS 폴더 선택")
+        if folder:
+            all_pdfs = []
+            for root, _, files in os.walk(folder):
+                for f in files:
+                    if f.lower().endswith(".pdf"):
+                        all_pdfs.append(os.path.normpath(os.path.join(root, f)).replace('\\', '/'))
+            
+            if not all_pdfs:
+                self.log("[!] 선택한 폴더에 추가할 PDF 파일이 없습니다.")
+                return
+                
+            new_files = []
+            for f in all_pdfs:
+                if f in self.pdf_paths:
+                    continue
+                new_files.append(f)
+            
+            if new_files:
+                self.pdf_paths.extend(new_files)
+                self.update_file_count_display()
+                self.log(f"[*] 폴더에서 {len(new_files)}개의 PDF 파일이 일괄 추가되었습니다. (중복 제외)")
+            else:
+                self.log("[경고] 해당 폴더 내의 모든 PDF가 이미 목록에 포함되어 있습니다.")
 
     def on_files_dropped(self, paths):
         """[NEW] 드래그 앤 드롭된 파일/폴더 처리"""
@@ -1783,6 +1823,9 @@ class SMUGUI(QMainWindow):
         self.table.blockSignals(True) # [NEW] 대량 작업 전 시그널 차단
         self.table.setRowCount(0)
         self.progress.setValue(0)
+        self.btn_stop.setEnabled(True)
+        self.btn_step1.setEnabled(False)
+        self.btn_step2.setEnabled(False)
         self.worker = ExtractionWorker(self.core, self.pdf_paths, cache=self.cache)
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
@@ -1810,6 +1853,9 @@ class SMUGUI(QMainWindow):
             table_data.append({"row_idx": r, "f_hash": f_hash, "filename": fn, "prod": prod, "cas_content": cas_content})
 
         self.progress.setValue(0)
+        self.btn_stop.setEnabled(True)
+        self.btn_step1.setEnabled(False)
+        self.btn_step2.setEnabled(False)
         self.worker = ValidationWorker(self, self.core, table_data) # [Task 2] self(GUI) 전달 추가
         self.worker.log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
@@ -1820,6 +1866,9 @@ class SMUGUI(QMainWindow):
     def on_extraction_finished(self, stats):
         """1단계 PDF 추출 완료 요약 보고 (V12.8 통계 대시보드)"""
         self.table.blockSignals(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_step1.setEnabled(True)
+        self.btn_step2.setEnabled(True)
         self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
         
         summary = (
@@ -1873,8 +1922,31 @@ class SMUGUI(QMainWindow):
     def on_validation_finished(self):
         """2단계 API 검증 완료 처리"""
         self.table.blockSignals(False)
+        self.btn_stop.setEnabled(False)
+        self.btn_step1.setEnabled(True)
+        self.btn_step2.setEnabled(True)
         self.log("[*] 2단계 API 검증 작업이 완료되었습니다.")
         QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
+
+    def stop_process(self):
+        """[NEW] 현재 진행 중인 작업을 중지"""
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.log("🛑 사용자에 의해 중지 신호가 전달되었습니다. 잠시만 기다려 주세요...")
+            # 강제 종료보다는 안전하게 루프가 끝날 때까지 대기하도록 유도
+            self.btn_stop.setEnabled(False)
+
+    def open_saved_excel(self):
+        """[NEW] 저장된 엑셀 파일을 즉시 열기"""
+        path = self.edit_excel.text().strip()
+        if path and os.path.exists(path):
+            try:
+                os.startfile(path)
+                self.log(f"[*] 엑셀 파일 열기: {os.path.basename(path)}")
+            except Exception as e:
+                self.log(f"[!] 파일 열기 실패: {e}")
+        else:
+            QMessageBox.warning(self, "파일 없음", "지정된 엑셀 파일을 찾을 수 없거나 경로가 비어 있습니다.")
 
     def closeEvent(self, event):
         # [안전장치] 백그라운드 학습 중 종료 방지
