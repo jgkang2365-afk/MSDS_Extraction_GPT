@@ -430,8 +430,11 @@ def extract_context_for_ai(pdf_path):
         else: 
             target_text = full_text
         
-        # [핵심] 기존의 return target_text[:5000] 삭제. 잘라먹지 말고 그대로 반환.
-        return target_text
+        # [수정 전]
+        # return target_text
+
+        # [수정 후 (정확히 이렇게 덮어쓸 것)]
+        return target_text[:5000]
     except Exception:
         return ""
 
