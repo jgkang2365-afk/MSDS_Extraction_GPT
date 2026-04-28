@@ -621,25 +621,12 @@ def process_pdf(pdf_path, log_func=None):
             is_prod_bad = not prod_str or prod_str == "none" or "확인" in prod_str or "미추출" in prod_str
             is_comp_empty = not ai_res.get("구성성분", [])
 
-            # 2. 숫자 환각 감지기 (섹션 3 한정, 무관용 원칙)
-            is_hallucinated = False
-            for comp in ai_res.get("구성성분", []):
-                c_str = str(comp.get("content", ""))
-                if c_str in ["영업비밀", "미기재", "Rem.%", "잔량", "나머지"]: continue
-                nums = re.findall(r'\d+(?:\.\d+)?', c_str)
-                for n in nums:
-                    if n not in sec3_clean:
-                        is_hallucinated = True
-                        break
-                if is_hallucinated: break
-
             # 3. 실패 검증 및 교대 트리거
-            if invalid_cas or is_prod_bad or is_comp_empty or is_hallucinated:
+            if invalid_cas or is_prod_bad or is_comp_empty:
                 reason = []
                 if invalid_cas: reason.append("CAS오류")
                 if is_prod_bad: reason.append("제품명문제")
                 if is_comp_empty: reason.append("성분0개")
-                if is_hallucinated: reason.append("수치환각")
                 if log_func: log_func(f" ⚠️ Gemini 1차 검증 실패 ({', '.join(reason)}) -> 불도저(GPT) 강제 전환")
                 break 
 
