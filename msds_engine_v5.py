@@ -24,7 +24,7 @@ if not OPENAI_API_KEY:
 if not GOOGLE_API_KEY:
     print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
-VERSION = "15.0.9"
+VERSION = "15.1.0"
 
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
 
@@ -113,8 +113,7 @@ PROMPT_GPT_FALLBACK = """
 [🔥 2차 엔진 절대 원칙]
 1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
 2. 🚨 유연한 식별 원칙 (1차와 다름): CAS 번호 칸에 다른 식별번호(예: /KE-12345)가 섞여 있더라도, 어떻게든 유효한 CAS 번호(형식: 숫자-숫자-숫자)를 찾아내서 살려내세요. 단, 정말로 '영업비밀', '비공개' 등의 문구만 있어서 CAS를 찾을 수 없는 경우에만 폐기하세요.
-3. 다중 칼럼 포기: 만약 표가 하나의 열이 아니라, 여러 제품(예: CR-13, CR-14)으로 나뉜 다중 칼럼 표라면 무리해서 추출하지 말고 추출을 포기(빈 배열 반환)하세요.
-4. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
 
 JSON 출력 포맷:
 {
@@ -228,8 +227,11 @@ def find_section3_pages(doc):
         # 3번 항 시작 지점 탐색
         if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
             pages.append(i)
-        # 4번 항이 나오면 탐색 종료 (3번 항이 여러 페이지일 경우 대비)
-        elif pages and re.search(r'4\.\s*응급|SECTION\s*4|4\s*:\s*FIRST', text, re.I):
+        # 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
+        # (Section 3 제목이 이전 페이지, 표 본체가 이 페이지에 있는 경우 대비)
+        if pages and re.search(r'4\.\s*응급|SECTION\s*4|4\s*:\s*FIRST', text, re.I):
+            if i not in pages:
+                pages.append(i)
             break
     return pages
 
