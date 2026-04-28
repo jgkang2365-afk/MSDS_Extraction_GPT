@@ -24,6 +24,8 @@ if not OPENAI_API_KEY:
 if not GOOGLE_API_KEY:
     print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
+VERSION = "15.0.9"
+
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
 
 def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
@@ -85,6 +87,44 @@ def load_system_prompt():
 # 전역 프롬프트 로드
 SYSTEM_PROMPT_TEXT = load_system_prompt()
 
+# 🎯 [1차 스나이퍼용 프롬프트] Gemini 2.5 Flash 전용
+PROMPT_GEMINI_FLASH = """
+당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS Section 3 표 이미지만 보고 데이터를 추출하세요.
+
+[🔥 1차 엔진 절대 원칙]
+1. 엄격한 수평 1:1 매칭: 같은 가로줄(Same Y-axis)에 있는 CAS 번호와 함유량만 연결하세요.
+2. 🚨 절대 폐기 원칙: CAS 칸이 비어있거나 '영업비밀', '비공개', '승인번호', '미기재' 등이 적혀있다면 그 행은 쓰레기입니다. 가차 없이 폐기하세요.
+3. 유추 금지: 선이 어긋나거나 셀 병합이 복잡해서 수평이 맞지 않으면 억지로 엮지 말고 버리세요. (어려운 표는 2차 요원에게 넘길 것입니다)
+4. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+
+JSON 출력 포맷:
+{
+  "구성성분": [
+    {"cas_no": "123-45-6", "content": "10~20%"}
+  ],
+  "교정_사유": "추출 근거 요약"
+}
+"""
+
+# 🚜 [2차 복구 요원용 프롬프트] GPT-4o-mini 전용
+PROMPT_GPT_FALLBACK = """
+당신은 2차 심층 복구 요원(Recovery Agent)입니다. 1차 엔진이 이 표의 공간적 구조를 파악하지 못해 당신에게 넘어왔습니다. 첨부된 이미지를 보고 데이터를 추출하세요.
+
+[🔥 2차 엔진 절대 원칙]
+1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
+2. 🚨 유연한 식별 원칙 (1차와 다름): CAS 번호 칸에 다른 식별번호(예: /KE-12345)가 섞여 있더라도, 어떻게든 유효한 CAS 번호(형식: 숫자-숫자-숫자)를 찾아내서 살려내세요. 단, 정말로 '영업비밀', '비공개' 등의 문구만 있어서 CAS를 찾을 수 없는 경우에만 폐기하세요.
+3. 다중 칼럼 포기: 만약 표가 하나의 열이 아니라, 여러 제품(예: CR-13, CR-14)으로 나뉜 다중 칼럼 표라면 무리해서 추출하지 말고 추출을 포기(빈 배열 반환)하세요.
+4. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+
+JSON 출력 포맷:
+{
+  "구성성분": [
+    {"cas_no": "123-45-6", "content": "10~20%"}
+  ],
+  "교정_사유": "심층 복구 근거 요약"
+}
+"""
+
 # [V8.2] MES 마스터 데이터 로드 (Silent Failure 방어 및 Fail-Safe 적용)
 MES_MASTER_MAP = {}
 try:
@@ -103,7 +143,9 @@ try:
             raise ValueError("JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다.")
             
         for info in items_list:
-            cas = str(info.get("CAS번호", "")).strip()
+            cas_raw = str(info.get("CAS번호", "")).strip()
+            # CAS 번호 정규화 (앞의 0 제거하여 매칭 확률 증대)
+            cas = re.sub(r'^0+', '', cas_raw)
             # [수정] 초산메틸 대신 메틸 아세테이트를 잡도록 '물질명' 최우선 적용
             std_name = info.get("물질명") or info.get("상용명")
             if cas and std_name:
@@ -142,83 +184,9 @@ def clean_junk_from_name(name):
     name = re.sub(r'(.+?)\1+', r'\1', name)
     return name.strip(": ").strip()
 
-def clean_product_name(raw_name):
-    if not raw_name or str(raw_name).strip() in ["Unknown", "제품명 확인 필요"]: return "제품명 확인 필요"
-    cleaned = clean_junk_from_name(raw_name)
-    cleaned = re.sub(r'^(?:제품명\s*)+', '', cleaned).strip()
-    noise_filters = P.get("NOISE_FILTERS", [])
-    if any(k in cleaned for k in noise_filters): return "제품명 확인 필요"
-    cleaned = re.sub(r'1\.\s*화학제품과\s*회사에\s*관한\s*정보.*', '', cleaned).strip()
-    date_regex = P.get("DATE_CLEAN_REGEX", r'^([A-Za-z]{3}\.?\s*\d{1,2},?\s*\d{4}|\d{4}-\d{2}-\d{2}|\d{4}\.\d{2}\.\d{2})$')
-    if re.match(date_regex, cleaned) or not cleaned or len(cleaned) < 2: return "제품명 확인 필요"
-    cleaned = re.sub(r'^[\-\:\[\]\(\)\s]+', '', cleaned).strip()
-    cleaned = re.sub(r'[\-\:\s\.]+$', '', cleaned).strip()
-    if not cleaned or len(cleaned) < 2: return "제품명 확인 필요"
-    return cleaned
+# [V14.6] 정규식 최적화 및 전역 헬퍼 함수
 
-def extract_product_name_v24(pdf_path, P):
-    # [복구] 제품명은 fitz로 첫 페이지만 읽는 것이 가장 정확함
-    try:
-        doc = fitz.open(pdf_path)
-        if doc.page_count == 0: return "제품명 확인 필요"
-        page0 = doc[0]
-        full_text = page0.get_text("text", sort=True)
-        doc.close()
 
-        splitter_regex = r'(항\s*2|0?2\s*\.\s*유\s*해|0?2\s*\.\s*위\s*험|0?2\s*\.\s*HAZARD|2\s*항|제\s*2\s*장|Section\s*2)'
-        section1_text = re.split(splitter_regex, full_text, flags=re.IGNORECASE)[0]
-        all_lines = [line.strip() for line in section1_text.split('\n') if line.strip()]
-        lines = all_lines[:40]
-
-        target_keys = ['제품명', '상품명', '물질명', '화학물질명', 'Product Name', 'Product name', '제품 식별자', 'GHS product identifier', 'Trade Name']
-        tail_cutter = r'(나\s*\.|b\s*\.|1\.2\s|제품의\s*권고\s*용도|권고\s*용도|제품\s*코드|신고\s*번호|발행일|AA\d+-\d+|Manufacturer|회사명|용도|동의어)'
-        target_keys_no_space = [re.sub(r'\s+', '', k).lower() for k in target_keys]
-
-        def is_junk_candidate(cand):
-            cand_lower = cand.strip().lower()
-            if not cand_lower: return True
-            if cand_lower in ['unknown', 'none', ':', '-', '=', '제품명 확인 필요']: return True
-            return False
-
-        for i, line in enumerate(lines):
-            for key in target_keys:
-                regex_key = r'\s*'.join(re.escape(c) for c in key.replace(" ", ""))
-                match = re.search(rf'(?:{regex_key})\s*[:\-]?\s*(.+)$', line, re.IGNORECASE)
-                if match:
-                    candidate = match.group(1).strip()
-                    candidate = re.split(tail_cutter, candidate, flags=re.IGNORECASE)[0].strip()
-                    if len(candidate) > 1 and not is_junk_candidate(candidate): return clean_product_name(candidate)
-
-            clean_line = re.sub(r'^([\d\.\-\s]+|[가-마a-eA-E]\s*[\.\)]\s*)+', '', line).strip()
-            clean_line = re.sub(r'^[:\-]\s*', '', clean_line).strip()
-            line_no_space = re.sub(r'\s+', '', clean_line).lower()
-            
-            if line_no_space in target_keys_no_space:
-                for j in range(1, 6):
-                    if i + j < len(lines):
-                        candidate = lines[i+j].strip()
-                        candidate = re.split(tail_cutter, candidate, flags=re.IGNORECASE)[0].strip()
-                        if len(candidate) > 1 and not is_junk_candidate(candidate): return clean_product_name(candidate)
-
-        for k in range(min(15, len(lines))):
-            cand = lines[k].strip()
-            if len(cand) > 2 and not re.match(r'^[\d\.\-\s]+$', cand) and not is_junk_candidate(cand):
-                if any(bad in cand.lower() for bad in ['물질안전보건자료', 'msds', '안전보건']): continue
-                return clean_product_name(cand)
-        return "제품명 확인 필요"
-    except Exception: return "제품명 확인 필요"
-
-def normalize_text(text):
-    if not text: return ""
-    try:
-        src = "０１２３４５6７８９％～∼－：：，ㅡ－＝"
-        dst = "0123456789%~~-::,-- -="
-        table = str.maketrans(src, dst)
-        t = unicodedata.normalize("NFKC", text).translate(table)
-        t = re.sub(r"(\d{2,7})[\s\-]+(\d{2})[\s\-]+(\d)(?!\d)", r"\1-\2-\3", t)
-        t = re.sub(r'(\d+(?:[\.,]\d+)?)\s*([~-])\s*(\d+(?:[\.,]\d+)?)', r'\1\2\3', t)
-        return t
-    except: return text
 
 # [엔진 내장] CAS 검증
 def verify_cas_number(cas_string):
@@ -240,264 +208,101 @@ def clean_number(n_str):
         return str(f)
     except: return n_str
 
-def format_content_v3(content_str):
-    if not content_str: return "미기재%"
-    c = str(content_str).upper()
-    if any(kw in c for kw in ["영업비밀", "SECRET", "TRADE", "PROPRIETARY"]): return "영업비밀"
-    
-    # [V5.8] 숫자 추출 전 오차범위(±) 선제 계산 (예: 10±2 -> 8~12)
-    if re.search(r'±|\+-', content_str):
-        content_str = REGEX_PM.sub(_calc_pm_range, content_str)
-        
-    nums_raw = re.findall(r'\d+(?:[\.,]\d+)?', content_str)
-    valid_nums = []
-    for num in nums_raw:
-        clean_n = num.replace(',', '.')
-        if clean_n.startswith("00") and "." not in clean_n: continue
-        try:
-            val = float(clean_n)
-            if val > 100.0: clean_n = "100" # 100% 상한선 보정
-            valid_nums.append(clean_n)
-        except: pass
-        
-    if not valid_nums: return "미기재%"
-    
-    # [범위값] 2개 이상의 숫자: 지저분한 부등호 싹 날리고 '~'로만 깔끔하게 결합
-    if len(valid_nums) >= 2:
-        v1_raw, v2_raw = valid_nums[0], valid_nums[1]
-        try:
-            if float(v1_raw) > float(v2_raw): v1_raw, v2_raw = v2_raw, v1_raw
-        except: pass
-        v1, v2 = clean_number(v1_raw), clean_number(v2_raw)
-        return f"{v1}~{v2}"
-        
-    # [단일값] 1개의 숫자: 1이나 0.1 같은 민감한 값의 부등호 철저히 보존!
-    elif len(valid_nums) == 1:
-        v1 = clean_number(valid_nums[0])
-        # [V5.7] AI 앙상블 비교 정합성을 위한 특수기호(≤, ≥, ＜, ＞) 및 위치 통일
-        res = ""
-        if re.search(r'[≥]|>=|이상|\+', content_str): res = f"≥{v1}"
-        elif re.search(r'[≤]|<=|이하', content_str) or re.search(r'-\s*$', content_str.replace('%','').strip()): 
-            res = f"≤{v1}"
-        elif re.search(r'[＜<]|미만', content_str): res = f"＜{v1}"
-        elif re.search(r'[＞>]|초과', content_str): res = f"＞{v1}"
-        else: res = f"{v1}"
-        
-        # [V5.7] 소수점 후행 영(0) 컷오프
-        res = re.sub(r'\.0+(\D|$)', r'\1', res)
-        res = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', res)
-        return res
+def minimal_clean(content):
+    """[V15.0] 후처리 극단적 단순화: 공백 제거만 수행"""
+    if not content: return ""
+    return str(content).replace(" ", "")
 
-def search_content_in_context(context_str, cas_abs_pos, ctx_start, is_table=False, table_has_percent=False):
-    masked = context_str
-    cas_regex_blind = r'(?<!\d)[1-9]\d{1,6}-\d{2}-\d(?!\d)'
-    masked = re.sub(cas_regex_blind, lambda x: " " * len(x.group()), masked)
-    masked = re.sub(r'\b\d{3}-\d{3}-\d{2}-\d\b', lambda x: " " * len(x.group()), masked)
-    masked = re.sub(r'\b\d{3}-\d{3}-\d\b', lambda x: " " * len(x.group()), masked)
-    
-    cas_pos_in_ctx = cas_abs_pos - ctx_start
-    best_candidate = ("함유량미기재", sys.maxsize)
-    cas_start = cas_pos_in_ctx
-    m_cas = re.match(r'(?<!\d)[1-9]\d{1,6}-\d{2}-\d(?!\d)', context_str[cas_start:])
-    cas_end = cas_start + len(m_cas.group()) if m_cas else cas_start + 10
-    
-    content_p = r"((?:[<>=~≥≤]+\s*)?\d+(?:[\.,]\d+)?(?:(?:\s*[\-~–—<>=≥≤]+\s*)+)\d+(?:[\.,]\d+)?\s*(?:%|w/w)?\s*(?:미만|이하|이상|초과)?|(?:[<>=~≥≤]+\s*)?\d+(?:[\.,]\d+)?\s*(?:%|w/w)?\s*(?:미만|이하|이상|초과)?)"
 
-    for mc in re.finditer(content_p, masked):
-        c_val = mc.group(1).strip()
-        if re.search(r"[\.:]\s*$", c_val): continue
-        formatted = format_content_v3(c_val)
-        if formatted != "함유량미기재":
-            raw_dist = mc.start() - cas_pos_in_ctx
-            score = abs(raw_dist)
-            if raw_dist < 0: score += abs(raw_dist) * 9.0 
-            if score < best_candidate[1]: best_candidate = (formatted, score)
-    return best_candidate[0]
-
-# [복구] ODL이 뻗었을 때 살려주는 최강의 텍스트 안전망
-def fallback_text_extraction(pdf_path, product_name, P):
-    pdf_doc = fitz.open(pdf_path)
-    full_text = ""
-    for i in range(min(5, len(pdf_doc))): full_text += pdf_doc[i].get_text("text", sort=True) + "\n"
-    pdf_doc.close()
-    full_text = normalize_text(full_text)
-    cas_best_data = {}
-    cas_regex = r'(?:^|[^\d])([1-9]\d{1,6}-\d{2}-\d)(?:[^\d]|$)' 
-    for m in re.finditer(cas_regex, full_text):
-        cas = m.group(1)
-        if not verify_cas_number(cas): continue
-        start_idx = max(0, m.start(1) - 300)
-        end_idx = min(len(full_text), m.end(1) + 300)
-        content_val = search_content_in_context(full_text[start_idx:end_idx], m.start(1), start_idx)
-        if cas not in cas_best_data or (cas_best_data[cas] == "함유량미기재" and content_val != "함유량미기재"):
-            cas_best_data[cas] = content_val
-    return [{"cas_no": k, "content": v} for k, v in cas_best_data.items()]
-
-def run_v24_baseline(pdf_path):
-    product_name = extract_product_name_v24(pdf_path, P)
-    all_components = []
-    try:
-        parser = PDFParser()
-        doc = parser.parse(pdf_path)
-        
-        # [복구] ODL이 None을 반환(충돌 시)하면 즉시 안전망 가동
-        if not doc:
-            return {"제품명": product_name, "함유량": "; ".join([f"{c['cas_no']}({c['content']})" for c in fallback_text_extraction(pdf_path, product_name, P)]), "tag": "[REVIEW]"}
-
-        in_section_3 = False
-        stop_parsing = False
-        has_table_in_sec3 = False
-        table_has_percent = False 
-        cas_regex = r'(?:^|[^\d])([1-9]\d{1,6}-\d{2}-\d)(?:[^\d]|$)'
-
-        if doc and doc.pages:
-            for page in doc.pages:
-                if stop_parsing: break
-                for element in page.elements:
-                    el_type = getattr(element, 'type', '')
-                    txt_val = getattr(element, 'text', '').strip()
-                    if el_type == "TEXT":
-                        sec4_match = re.search(r'4\.\s*응급|SECTION\s*4|First-aid measures', txt_val, re.I)
-                        sec3_match = re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', txt_val, re.I)
-                        if sec3_match and sec4_match and sec3_match.start() < sec4_match.start():
-                            in_section_3 = True; stop_parsing = True; break
-                        if sec4_match: stop_parsing = True; break
-                        if not in_section_3 and sec3_match: in_section_3 = True; continue
-
-                    if not in_section_3 and el_type == "TABLE" and element.rows:
-                        if re.search(r'성분|물질명|CAS|Composition', " ".join([getattr(c, 'text', '') for c in element.rows[0].cells]), re.I): in_section_3 = True
-
-                    if in_section_3 and el_type == "TABLE":
-                        has_table_in_sec3 = True
-                        for row in element.rows:
-                            row_text = normalize_text(" ".join([getattr(cell, 'text', '').strip() for cell in row.cells]))
-                            if re.search(r'%|％|함량|농도', row_text, re.I): table_has_percent = True
-                            for m in re.finditer(cas_regex, row_text):
-                                cas = m.group(1)
-                                if not verify_cas_number(cas): continue
-                                best_content = search_content_in_context(row_text, m.start(1), 0, is_table=True, table_has_percent=table_has_percent)
-                                existing = next((c for c in all_components if c['cas_no'] == cas), None)
-                                if existing:
-                                    if existing['content'] == "함유량미기재" and best_content != "함유량미기재": existing['content'] = best_content
-                                else: all_components.append({"cas_no": cas, "content": best_content})
-        
-        # [복구] 표에서 못 찾으면 fallback 실행!
-        if not has_table_in_sec3 or len(all_components) == 0:
-            all_components = fallback_text_extraction(pdf_path, product_name, P)
-            
-    except Exception:
-        # [복구] 에러나도 fallback 실행!
-        all_components = fallback_text_extraction(pdf_path, product_name, P)
-
-    for comp in all_components:
-        orig = str(comp.get('content', '')).strip()
-        if not orig or orig in ["-", "Unknown", "미기재"]: orig = "함유량미기재"
-        if len(all_components) == 1 and orig == "함유량미기재": comp['content'] = "100%"
-        else:
-            if "%" not in orig and orig != "함유량미기재": comp['content'] = f"{orig}%"
-            else: comp['content'] = orig
-
-    comp_parts = []
-    for c in all_components:
-        comp_parts.append(f"{c['cas_no']}({c['content']})")
-            
-    comp_str = "; ".join(comp_parts) if comp_parts else ""
-    tag = "[PASS]" if all_components and comp_str else "[REVIEW]"
-
-    return {"제품명": product_name, "함유량": comp_str, "tag": tag}
 
 # =====================================================================
 # [2단계] 제미나이 AI 앙상블 (팀장 검수 엔진)
 # =====================================================================
-def extract_context_for_ai(pdf_path):
-    """[V7.8 AI Context] 5페이지 최적화 스캔 + 5000자 절삭 로직 철거"""
+
+
+def find_section3_pages(doc):
+    """[V15.0] 텍스트 스캔을 통한 Section 3(구성성분) 포함 페이지 정밀 탐지"""
+    pages = []
+    for i in range(len(doc)):
+        text = doc[i].get_text("text")
+        # 3번 항 시작 지점 탐색
+        if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
+            pages.append(i)
+        # 4번 항이 나오면 탐색 종료 (3번 항이 여러 페이지일 경우 대비)
+        elif pages and re.search(r'4\.\s*응급|SECTION\s*4|4\s*:\s*FIRST', text, re.I):
+            break
+    return pages
+
+def extract_section3_images(pdf_path, log_func=None):
+    """[V14.6] Section 3 영역 고해상도(2.5x) 캡처 및 스캔본 정찰병(Recon)"""
     try:
         doc = fitz.open(pdf_path)
-        full_text = ""
-        # 속도와 비용 방어를 위해 5페이지만 스캔 (충분함)
-        for i in range(min(5, len(doc))):
-            full_text += doc[i].get_text("text", sort=True) + "\n"
-        doc.close()
+        pages = find_section3_pages(doc)
         
-        sec1 = re.search(r'(?:^|\n|\b)\s*(?:1[\.\s\)]+|항\s*1|1\s*항|SECTION\s*1)[^0-9\n]*(?:화학|Product)', full_text, re.I)
-        sec4 = re.search(r'(?:^|\n|\b)\s*(?:4[\.\s\)]+|항\s*4|4\s*항|SECTION\s*4)[^0-9\n]*(?:응급|First)', full_text, re.I)
-
-        if sec1 and sec4 and sec1.start() < sec4.start(): 
-            # 4항 시작점까지만 깔끔하게 발췌
-            target_text = full_text[sec1.start() : sec4.start() + 500]
-        elif sec1: 
-            target_text = full_text[sec1.start() : ]
-        else: 
-            target_text = full_text
-        
-        # [수정 전]
-        # return target_text
-
-        # [수정 후 (정확히 이렇게 덮어쓸 것)]
-        return target_text[:5000]
-    except Exception:
-        return ""
-
-def extract_section3_images(pdf_path):
-    try:
-        doc = fitz.open(pdf_path)
-        start_page = -1
-        end_page = -1
-        
-        # 1. 텍스트로 구간 탐색
-        for i in range(len(doc)):
-            text = doc[i].get_text("text")
-            if start_page == -1 and re.search(r'3\.\s*구성|SECTION\s*3', text, re.I):
-                start_page = i
-            if start_page != -1 and re.search(r'4\.\s*응급|SECTION\s*4', text, re.I):
-                end_page = i
-                break
+        # [🚨 Plan B: 스캔본 정찰병 가동]
+        if not pages:
+            if log_func: log_func(" 🔍 텍스트 기반 탐지 실패. 스캔본 정찰병(Recon) 가동...")
+            recon_images = []
+            for i in range(min(5, len(doc))):
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8)) # 정찰용 저해상도
+                recon_images.append({
+                    "mimeType": "image/png", 
+                    "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                })
+            
+            # 정찰병 호출 (숫자만 추출하도록 강제)
+            recon_prompt = """
+            이 이미지들 중 '3. 구성성분' 표가 있는 페이지의 번호(0부터 시작하는 index)를 찾아라.
+            반드시 아래 JSON 형식으로만 응답하라:
+            {"page_index": 숫자}
+            찾지 못했다면 {"page_index": -1}
+            """
+            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt)
+            
+            try:
+                page_idx = int(recon_res.get("page_index", -1))
+            except:
+                page_idx = -1
+                
+            if page_idx >= 0 and page_idx < len(doc):
+                pages = [page_idx]
+                # [수정] 표가 다음 장으로 넘어갈 것을 대비해 N+1 페이지도 바인딩
+                if page_idx + 1 < len(doc):
+                    pages.append(page_idx + 1)
+                if log_func: log_func(f" 🎯 정찰병이 페이지를 찾았습니다: {pages}번 바인딩")
+            else:
+                if log_func: log_func(" ❌ 정찰병도 표를 찾지 못했습니다.")
+                doc.close()
+                return []
         
         images = []
-        # 🚨 [핵심 수정] 텍스트 기반으로 3항을 못 찾았다면 포기하지 않고 무조건 1~3페이지 캡처!
-        if start_page == -1:
-            start_page = 0
-            end_page = min(2, len(doc) - 1)
-        else:
-            if end_page == -1: end_page = min(start_page + 1, len(doc)-1)
-        
-        # 2. 범위 내 페이지 강제 캡처
-        for p_idx in range(start_page, end_page + 1):
+        for p_idx in pages:
             page = doc[p_idx]
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
-            if len(images) >= 3: break # API 부하 방지를 위해 최대 3장 제한
+            if len(images) >= 3: break
             
         doc.close()
         return images
     except Exception:
         return []
 
-def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None, retry_instruction=None):
-    """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
-    if image_list is None: image_list = []
-    if (not text_chunk.strip() and not image_list) or not GOOGLE_API_KEY: return None
-
-    prod_name_baseline = v24_result.get('제품명', '')
-
-    if image_list:
-        user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[경고: 텍스트 데이터는 심각하게 오염되어 제공하지 않음. 오직 첨부된 '이미지' 속 표만 보고 데이터를 추출할 것.]"
-    else:
-        user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[원본 정보: 텍스트]\n{text_chunk}"
-    if retry_instruction:
-        user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
+def call_gemini_2_5_flash(image_list=None, prompt=None, log_func=None):
+    """[V14.6] 1차 스나이퍼: 고속 시각 추출"""
+    if not image_list or not GOOGLE_API_KEY: return None
+    
+    final_prompt = prompt if prompt else PROMPT_GEMINI_FLASH
 
     # Google AI API Contents/Parts 구조 구성
-    parts = [{"text": f"{SYSTEM_PROMPT_TEXT}\n\n{user_prompt}"}]
-    if image_list:
-        for img in image_list:
-            parts.append({
-                "inlineData": {
-                    "mimeType": "image/png",
-                    "data": img.get("data", "")
-                }
-            })
+    parts = [{"text": f"{SYSTEM_PROMPT_TEXT}\n\n{final_prompt}"}]
+    for img in image_list:
+        parts.append({
+            "inlineData": {
+                "mimeType": "image/png",
+                "data": img.get("data", "")
+            }
+        })
 
     payload = {
         "contents": [{"parts": parts}],
@@ -514,34 +319,22 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None,
             candidate = result.get("candidates", [{}])[0]
             text_response = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
             return json.loads(text_response)
-        else:
-            if log_func: log_func(f" ❌ Gemini API 에러 ({response.status_code}): {response.text}")
-            return None
-    except Exception as e:
-        if log_func: log_func(f" ❌ Gemini 시스템 오류: {str(e)}")
+        return None
+    except:
         return None
 
-def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, retry_instruction=None):
-    """[V12.1] 텍스트/이미지 동시 방어 로직 적용"""
-    if image_list is None: image_list = []
-    if (not text_chunk.strip() and not image_list) or not OPENAI_API_KEY: return None
+def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
+    """[V14.6] 2차 복구 요원: 심층 구조 분석"""
+    if not image_list or not OPENAI_API_KEY: return None
 
-    prod_name_baseline = v24_result.get('제품명', '')
+    final_prompt = prompt if prompt else PROMPT_GPT_FALLBACK
 
-    if image_list:
-        user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[경고: 텍스트 데이터는 심각하게 오염되어 제공하지 않음. 오직 첨부된 '이미지' 속 표만 보고 데이터를 추출할 것.]"
-    else:
-        user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[원본 정보: 텍스트]\n{text_chunk}"
-    if retry_instruction:
-        user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
-
-    content_list = [{"type": "text", "text": user_prompt}]
-    if image_list:
-        for img in image_list:
-            content_list.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{img.get('data', '')}"}
-            })
+    content_list = [{"type": "text", "text": final_prompt}]
+    for img in image_list:
+        content_list.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{img.get('data', '')}"}
+        })
 
     payload = {
         "model": "gpt-4o-mini",
@@ -564,162 +357,127 @@ def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, ret
             result = response.json()
             text_response = result["choices"][0]["message"]["content"]
             return json.loads(text_response)
-        else:
-            if log_func: log_func(f" ❌ OpenAI API 에러 ({response.status_code})")
-            return None
-    except Exception as e:
-        if log_func: log_func(f" ❌ GPT 시스템 오류: {str(e)}")
+        return None
+    except:
         return None
 
-
-# =====================================================================
-# [메인] GUI 연동 마스터 파이프라인
-# =====================================================================
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
-    if log_func: log_func(f" 🚀 [하이브리드 기동] Gemini 2.5(1차) + GPT-4o-mini(2차) 듀얼 엔진 가동")
+    if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 비전 전용 파이프라인 가동")
 
-    v24_baseline = run_v24_baseline(pdf_path)
-    text_chunk = extract_context_for_ai(pdf_path)
+    # 1. Section 3 이미지 추출
+    image_list = extract_section3_images(pdf_path, log_func=log_func)
+    if not image_list:
+        if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
+        return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
 
-    # --- [V12.1] 하이브리드 엔진 시력(Vision) 파이프라인 복구 ---
-    # AI 호출 직전 이미지 리스트 확보 (3번 섹션 캡처)
-    image_list = extract_section3_images(pdf_path)
-
-    # [NEW] 제품명 2중 방어망 (비전 스나이핑) 가동
-    hybrid_pn, hybrid_source = extract_product_name_hybrid(text_chunk, image_list, GOOGLE_API_KEY, log_func=log_func)
+    # 2. 제품명 하이브리드 스캔 (무조건 1페이지 캡처)
+    try:
+        doc = fitz.open(pdf_path)
+        first_page_text = doc[0].get_text() if len(doc) > 0 else ""
+        # 제품명 추출 전용 1페이지 렌더링
+        pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+        cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
+        doc.close()
+    except:
+        cover_img = image_list # 실패 시 기존 이미지 폴백
+        first_page_text = ""
     
-    # [V7.0] 하이브리드 AI 듀얼 엔진 파이프라인 (Gemini 2.5 Flash-Lite -> GPT-4o-mini)
-    used_engine = "regex"
-    final_ai_result = None
-    curr_retry_instruction = None
-    max_retries = 1
-    
-    # [NEW] 섹션 3 전용 검열 구역(section3_only_text) 추출 및 공백 제거
-    section3_only_text = text_chunk
-    sec3_match = re.search(r'(?:^|\n|\b)\s*(?:3[\.\s\)]+|항\s*3|3\s*항|SECTION\s*3)[^0-9\n]*(?:구성|Composition)', text_chunk, re.I)
-    sec4_match = re.search(r'(?:^|\n|\b)\s*(?:4[\.\s\)]+|항\s*4|4\s*항|SECTION\s*4)[^0-9\n]*(?:응급|First)', text_chunk, re.I)
-    if sec3_match and sec4_match and sec3_match.start() < sec4_match.start():
-        section3_only_text = text_chunk[sec3_match.start() : sec4_match.start()]
-    elif sec3_match:
-        section3_only_text = text_chunk[sec3_match.start() : ]
-    sec3_clean = section3_only_text.replace(" ", "")
+    hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, GOOGLE_API_KEY, log_func=log_func)
 
-    # 1단계: Gemini 2.5 Flash-Lite (단판 승부)
-    for i in range(max_retries):
-        if log_func: log_func(f" ├─ [1단계] Gemini 2.5 호출 중...")
-        ai_res = call_gemini_2_5_lite(v24_baseline, text_chunk, image_list=image_list, log_func=log_func, retry_instruction=curr_retry_instruction)
-        
-        if ai_res:
-            # [NEW] 절대 권력 부여: 비전 스나이퍼(hybrid_pn)가 성공했다면 메인 AI 결과는 무조건 폐기
-            if hybrid_pn and hybrid_pn != "미추출":
-                ai_res["제품명"] = hybrid_pn
-                if log_func: log_func(f" ├─ [우선순위 1위] 비전 스나이퍼 결과 강제 적용: {hybrid_pn[:30]}")
-            else:
-                main_pn = str(ai_res.get("제품명", "")).strip()
-                if log_func: log_func(f" ├─ [우선순위 2위] 비전 실패. 메인 AI 결과 채택: {main_pn[:30]}")
-            
-            # 1. CAS 번호 검증
-            invalid_cas = []
-            for comp in ai_res.get("구성성분", []):
-                cas = str(comp.get("cas_no", "")).strip()
-                if cas and cas not in ["영업비밀", "미기재"] and not verify_cas_number(cas):
-                    invalid_cas.append(cas)
-            
-            prod_str = str(ai_res.get("제품명", "")).strip().lower()
-            is_prod_bad = not prod_str or prod_str == "none" or "확인" in prod_str or "미추출" in prod_str
-            is_comp_empty = not ai_res.get("구성성분", [])
+    # 3. 1차 스나이퍼(Flash) 투입
+    if log_func: log_func(" 🎯 1차 고속 스나이퍼(Gemini-Flash) 투입")
+    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH)
+    used_engine = "Gemini-Flash"
 
-            # 3. 실패 검증 및 교대 트리거
-            if invalid_cas or is_prod_bad or is_comp_empty:
-                reason = []
-                if invalid_cas: reason.append("CAS오류")
-                if is_prod_bad: reason.append("제품명문제")
-                if is_comp_empty: reason.append("성분0개")
-                if log_func: log_func(f" ⚠️ Gemini 1차 검증 실패 ({', '.join(reason)}) -> 불도저(GPT) 강제 전환")
-                break 
+    # 4. 스마트 Gatekeeper (황색불 판별)
+    needs_gpt = False
+    valid_components = []
 
-            final_ai_result = ai_res
-            used_engine = "flash"
-            if log_func: log_func(" └─ ✅ Gemini 추출 성공 (무결성 검증 통과)")
-            break
-        else:
-            if log_func: log_func(" ⚠️ Gemini 응답 실패 (Fallback 대기)")
-            break
-
-    # 2단계: Fallback to GPT-4o-mini
-    if not final_ai_result and OPENAI_API_KEY:
-        if log_func: log_func(" ├─ [2단계 Fallback] GPT-4o-mini 전환 호출 중...")
-        final_ai_result = call_gpt_4o_mini(v24_baseline, text_chunk, image_list=image_list, log_func=log_func)
-        if final_ai_result:
-            # [NEW] 상호 검증: 메인 AI가 놓쳤을 때만 하이브리드(Vision) 결과로 심폐소생
-            main_pn = str(final_ai_result.get("제품명", "")).strip()
-            is_bad = not main_pn or any(k in main_pn.lower() for k in ["none", "확인", "미추출"])
-            
-            if is_bad and hybrid_pn and hybrid_pn != "미추출":
-                final_ai_result["제품명"] = hybrid_pn
-                if log_func: log_func(" ├─ [심폐소생] 메인 AI 실패로 비전 스나이핑 결과를 채택합니다.")
-            elif not is_bad:
-                if log_func: log_func(" ├─ [검증완료] 메인 AI의 제품명을 최종 확정합니다.")
-            used_engine = "bulldozer"
-            if log_func: log_func(" └─ ✅ GPT-4o-mini 추출 성공 (Fallback 완료)")
-    
-    # 최종 데이터 조립
-    if not final_ai_result:
-        product_name = v24_baseline.get("제품명", "제품명 확인 필요")
-        comp_str = v24_baseline.get("함유량", "")
-        tag = v24_baseline.get("tag", "[REVIEW]")
-        reason = "모든 AI 엔진 응답 실패"
-        comp_parts = [c for c in comp_str.split("; ") if c]
+    if not ai_res or "구성성분" not in ai_res:
+        needs_gpt = True # 구조 붕괴
     else:
-        product_name = clean_junk_from_name(final_ai_result.get("제품명", v24_baseline.get("제품명")))
-        components = final_ai_result.get("구성성분", [])
-        reason = final_ai_result.get("교정_사유", "사유 없음")
-        
-        comp_parts = []
-        for comp in components:
+        for comp in ai_res.get("구성성분", []):
             cas = str(comp.get("cas_no", "")).strip()
-            if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
+            content_str = str(comp.get("content", "")).replace(" ", "") # 공백만 제거 (최소 정제)
             
-            # 1. [원칙 1] CAS 번호 규격이 아니면 함유량이 있어도 가차 없이 버림 (버그 원인 제거)
-            if not re.match(r'^\d{1,7}-\d{2}-\d$', cas): 
+            # [필터링] 영업비밀성 키워드면 1차에서도 버림
+            if not cas or any(kw in cas for kw in ["영업비밀", "비공개", "승인번호", "미기재", "Secret"]):
+                continue
+
+            # [롤백] 1차 엔진(Gemini)은 엄격한 기준 적용 (혼합 표기면 폐기하고 2차로 넘김)
+            cas_clean = re.sub(r'^0+', '', cas) # 앞의 0 제거
+            is_valid_cas = re.match(r'^\d{1,7}-\d{2}-\d$', cas_clean)
+            
+            if not is_valid_cas:
+                needs_gpt = True # CAS 규격이 깨졌으면 1차 엔진의 시각 오류로 간주, GPT 호출!
                 continue
                 
-            content = str(comp.get("content", "")).strip()
+            # [황색불 조건] 함유량 오류
+            if not re.search(r'\d', content_str) and "Rem" not in content_str:
+                needs_gpt = True 
+                break
+            valid_components.append(comp)
+        
+        # [황색불 조건] 비공개/빈칸을 버리고 났더니 유효 성분이 0개다? 1차 엔진의 시야 실패!
+        if len(valid_components) == 0:
+            needs_gpt = True
+
+    # 5. 2차 복구 요원(GPT) 투입
+    if needs_gpt:
+        if log_func: log_func(" 🟡 1차 엔진 추출 불가 판단. 2차 입체 복구 요원(GPT-4o-mini) 투입!")
+        ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK)
+        used_engine = "GPT-4o-mini"
+        
+        # GPT마저 실패하거나 유효 성분이 0개면 깔끔하게 포기 (대안 찾지 마!)
+        if not ai_res or not ai_res.get("구성성분") or len(ai_res.get("구성성분", [])) == 0:
+            if log_func: log_func(" ❌ 모든 AI 엔진 추출 실패 (수동 검토 대상)")
+            return {
+                "error": "AI 추출 완전 실패 (수동 검토 필요)",
+                "제품명": hybrid_pn,
+                "신호등": "🔴"
+            }
+
+    final_ai_result = ai_res
+
+    # 6. 데이터 조립 및 Phase 3 단순 후처리 (공백 제거)
+    product_name = hybrid_pn # 1페이지에서 스나이핑한 진짜 제품명 강제 적용
+
+    
+    # [수정] AI가 찾은 제품명을 인위적으로 정제하지 않음
+    
+    components = final_ai_result.get("구성성분", [])
+    reason = final_ai_result.get("교정_사유", "사유 없음")
+    
+    comp_parts = []
+    for comp in components:
+        cas = str(comp.get("cas_no", "")).strip()
+        # CAS 번호 정규화: 앞의 0 제거
+        if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
+        
+        # CAS 번호 규격 검증 (혼합 표기에서 순수 CAS만 추출)
+        cas_match = re.search(r'(\d{1,7}-\d{2}-\d)', cas)
+        if not cas_match: 
+            continue
+        cas = cas_match.group(1)
             
-            # 2. [원칙 2] CAS 번호는 정상인데 함유량이 비어있거나 '없음' 등이면 '미기재%'로 보존
-            if not content or any(kw in content for kw in ["-", "없음", "자료", "미기재", "비공개", "비밀"]): 
-                content = "미기재%"
-            else:
-                # (기존 정제 로직 유지 - 전각 기호 원천 제거 및 반각 기호 통일)
-                content = content.replace(" ", "")
-                content = REGEX_PM.sub(_calc_pm_range, content)
-                content = REGEX_LE.sub(r'≤\1', content)
-                content = REGEX_LT.sub(r'<\1', content)
-                content = REGEX_GE.sub(r'≥\1', content)
-                content = REGEX_GT.sub(r'>\1', content)
-                content = content.replace("이하", "≤").replace("미만", "<").replace("이상", "≥").replace("초과", ">")
-                content = content.replace("<=", "≤").replace(">=", "≥")
-                content = re.sub(r'([\d\.]+)\s*(?:%)?\s*([≤≥<>])(?!\s*[\d])', r'\2\1%', content)
-                content = re.sub(r'([≤≥<>])\s*([\d\.]+)\s*(?:%)?', r'\1\2%', content)
-                content = re.sub(r'[≤≥<>]*\s*([\d\.]+)\s*(?:%|~|-)?\s*[≤≥<>]+\s*([\d\.]+)\s*(?:%)?', r'\1~\2%', content)
-                # (기존 치환 로직 아래에 추가)
-                content = re.sub(r'\.0+(\D|$)', r'\1', content) # 10.0% -> 10%
-                content = re.sub(r'(\.[0-9]*[1-9])0+(\D|$)', r'\1\2', content) # 10.50% -> 10.5%
-                if "%" not in content: 
-                    content += "%" # 기호 누락 방지 보험
+        # 함유량 극단적 단순 정제 (공백 제거만)
+        substance_content = minimal_clean(comp.get("content", ""))
+        if not substance_content: continue
 
-            comp_parts.append(f"{cas}({content})")
+        # 주님 지시: 물질명 100% 제거하고 오직 CAS(함유량) 포맷으로만 조립
+        comp_parts.append(f"{cas}({substance_content})")
 
-        # [V12.3] 최종 문자열 조립 (구분자 세미콜론만 사용)
-        comp_str = "; ".join(comp_parts)
-        
-        v24_str_clean = str(v24_baseline.get("함유량")).replace(" ", "")
-        ai_str_clean = comp_str.replace(" ", "")
-        
-        # 엔진별 태그 부여
-        engine_prefix = "[G2.5" if "Gemini" in used_engine else "[GPT"
-        tag = f"{engine_prefix}-PASS]" if v24_str_clean == ai_str_clean else f"{engine_prefix}-FIXED]"
+    if not comp_parts:
+        if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
+        return {
+            "error": "AI 추출 완전 실패 (수동 검토 필요)",
+            "제품명": hybrid_pn,
+            "신호등": "🔴"
+        }
+
+    comp_str = "; ".join(comp_parts)
+    tag = f"[{used_engine}-PASS]"
 
     if log_func:
         log_func(f" ├─ 엔진: {used_engine}")
@@ -734,24 +492,9 @@ def process_pdf(pdf_path, log_func=None):
         "신뢰도": tag, 
         "추론근거": f"{used_engine} ({reason})",
         "used_engine": used_engine,
-        "page": 1
+        "page": 1,
+        "신호등": "🟡 복구됨" if used_engine == "GPT-4o-mini" else "🟢 통과"
     }
-
-    # [🚀수정] 신호등 판별 로직 강화 ('미추출', 'none' 원천 차단)
-    traffic_light = "🟢 통과"
-    prod_check = str(product_name).strip().lower()
-    
-    if not prod_check or prod_check == "none" or "확인" in prod_check or "미추출" in prod_check:
-        traffic_light = "🟡 확인"
-    elif "미기재" in comp_str or "비밀" in comp_str or not comp_parts:
-        traffic_light = "🟡 확인"
-    else:
-        for cas_item in [c.split("[")[1].split("(")[0] if "[" in c else c.split("(")[0] for c in comp_parts]:
-            if cas_item not in ["영업비밀", "미기재"] and not verify_cas_number(cas_item):
-                traffic_light = "🔴 오류"
-                break
-
-    result_data["신호등"] = traffic_light
     return result_data
 
 # [V7.0] GUI 호환성을 위한 별칭 설정

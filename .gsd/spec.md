@@ -1,30 +1,38 @@
-# Specification: MSDS API & Logic Refinement (Final Patch)
+# [GSD2] V15.0 Vision-Only 아키텍처 전환 스펙
 
-## 1. 개요 (Overview)
-`msds_engine_v5.py` 내의 하급 오류(환경변수 모순, 가변 객체 기본값, API 규격 불일치)를 일괄 정리하여 시스템 안정성을 확보합니다.
+## 1. 개요
+현재의 하이브리드(텍스트+이미지) 방식은 데이터 혼합 및 기준 충돌로 인해 정확도가 저하되고 있습니다. 이를 해결하기 위해 `현 프로젝트의 문제점.txt`에 제시된 설계 철학을 바탕으로, 텍스트 페이로드를 완전히 제거하고 **이미지 표 구조(Row-based)** 인지에 최적화된 단일 비전 파이프라인으로 전환합니다.
 
-## 2. 변경 사항 (Changes)
+## 2. 핵심 변경 사항 (FTF 프로토콜)
 
-### 2.1 환경변수 모순 해결
-- `GOOGLE_API_KEY` 로드 시 키값을 `MSDS_GOOGLE_API_KEY`로 변경하여 `.env` 파일과 동기화.
+### [Forest] 사전 분석
+- **문제점**: 텍스트 기반 fallback(`run_v24_baseline`), Section 3 탐지 실패 시 1~3페이지 강제 캡처, AI 결과에 대한 이중 정규식 후처리(`format_content_v3`), CAS 오류 시 전체 폐기 로직.
+- **영향 범위**: `msds_engine_v5.py` 전면 개편.
 
-### 2.2 가변 객체 기본값(Mutable Default) 수정
-- `call_gemini_2_5_lite` 및 `call_gpt_4o_mini` 함수의 `image_list=[]` 파라미터를 `image_list=None`으로 수정.
-- 함수 내부 상단에 `if image_list is None: image_list = []` 안전 로직 추가.
+### [Tree] 정밀 수정 단계
 
-### 2.3 Gemini REST API 규격 준수 (CamelCase)
-- `call_gemini_2_5_lite` 내 페이로드의 `inline_data` -> `inlineData`, `mime_type` -> `mimeType`으로 수정.
+#### 🛠️ 제1작업: Section 3 탐지 및 이미지 추출 엔진 교체
+- `find_section3_pages(doc)`: 텍스트 스캔으로 3번 항(구성성분)의 시작과 끝(4번 항 시작 전) 페이지 번호를 정확히 추출.
+- **폴백 제거**: 3번 항을 못 찾으면 1~3페이지를 던지지 않고 즉시 "Section 3 미탐지" 오류 반환.
+- `extract_table_images(doc, pages)`: 해상도 배율을 2.5로 상향하여 표 가독성 확보.
 
-## 3. 상세 구현 계획 (Implementation Plan)
+#### 🛠️ 제2작업: 메인 파이프라인(`process_pdf`) 비전 단일화
+- `run_v24_baseline` (정규식 엔진) 호출 제거.
+- `extract_context_for_ai` (텍스트 페이로드) 추출 제거.
+- AI 엔진(`Gemini`, `GPT-4o-mini`)에 텍스트 데이터 전달 중단. 오직 시스템 프롬프트와 페이지만 전달.
 
-### Phase 1: Tree 수정 (Surgical Edits)
-- [x] `msds_engine_v5.py` Line 20 수정.
-- [x] `msds_engine_v5.py` Line 450-468 수정 (`call_gemini_2_5_lite`).
-- [x] `msds_engine_v5.py` Line 492-495 수정 (`call_gpt_4o_mini`).
+#### 🛠️ 제3작업: 후처리 및 검증 로직 최적화 (Hemostasis)
+- **정규식 다이어트**: `format_content_v3`의 복잡한 로직을 버리고 `minimal_clean` (공백 제거, % 보정)으로 대체.
+- **부분 폐기 원칙**: CAS 번호가 유효하지 않은 행만 제거하고, 나머지 유효한 성분은 살려둠.
+- **제품명 우선순위**: `extract_product_name_hybrid` (비전 스나이퍼) 결과가 있을 경우 이를 최우선으로 확정.
 
-### Phase 2: Forest 사후 검증
-- [x] 문법 오류 확인 (Python compile check).
-- [x] 기존 V24 로직 및 Vision Fallback 로직 훼손 여부 최종 확인.
+### [Forest] 사후 검증
+- Section 3가 없는 문서에서 적절한 오류가 발생하는지 확인.
+- CAS 번호가 이미지에서 일부 깨져도 나머지 성분이 정상 추출되는지 확인.
+- 함유량 부등호(≤, ≥) 및 범위(~ )가 AI 추출값 그대로 보존되는지 확인.
 
-## 4. 사용자 승인 요청
-위의 3가지 핵심 수정 사항을 즉시 반영해도 될까요?
+## 3. 성공 기준 (UAT)
+1. 모든 추출 과정에서 텍스트 기반 fallback이 작동하지 않음.
+2. Section 3 이미지만을 사용하여 Row 단위 CAS-함량 매칭이 이루어짐.
+3. AI가 생성한 "시각_분석_로그"가 결과 JSON에 포함되어 투명성 확보.
+4. "영업비밀" 성분이 포함된 경우 해당 행은 CAS 원칙에 따라 제외됨 (사용자 지침 준수).

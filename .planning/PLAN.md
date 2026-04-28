@@ -1,40 +1,20 @@
-# Implementation Plan: System Reconstruction (V24.2)
+# Implementation Plan: V15.0 Vision-Only Architecture
 
-## Phase 1: Bloatware Removal (Cleanup) [COMPLETED]
-- [x] `smu_gui.py` 상단 임포트 제거 (`sqlite3`, `thefuzz`, `process` 등)
-- [x] `KnowledgeManager` 클래스 및 DB 관리 로직 전체 삭제
-- [x] `MatchingWorker` 클래스 및 매칭 페이지 전체 삭제
-- [x] `SMUGUI.__init__`에서 DB 연결 및 지식 베이스 초기화 코드 삭제
+## Phase 1: Engine Core Cleanup & Section 3 Detection
+- [ ] `msds_engine_v5.py`: `find_section3_pages` 함수 구현 (텍스트 기반 정밀 탐지)
+- [ ] `msds_engine_v5.py`: `extract_table_images` 해상도 상향 (2.5x) 및 폴백 로직 제거
+- [ ] `msds_engine_v5.py`: `run_v24_baseline` 호출부 제거 및 관련 코드 정리
 
-## Phase 2: Excel Pipeline Refactoring [COMPLETED]
-- [x] `perform_standard_save` 메서드 전면 수정:
-    - 테이블 셀 값(`item.text()`) 직접 읽기 파이프라인 구축
-    - `usage_map`, `index_map` 등 구형 매칭 변수 완전 제거
-- [x] 데이터 검증 로직 단일화 (KOSHA API 연동)
+## Phase 2: Pipeline Simplification
+- [ ] `msds_engine_v5.py`: `process_pdf`에서 텍스트 페이로드(`text_chunk`) 제거
+- [ ] `msds_engine_v5.py`: AI 호출 함수(`call_gemini_2_5_lite`, `call_gpt_4o_mini`)에서 텍스트 파라미터 제거
+- [ ] `msds_engine_v5.py`: `extract_product_name_hybrid`를 통한 제품명 확정 로직 강화
 
-## Phase 3: Final Polish [COMPLETED]
-- [x] UI 텍스트 정제 및 페이지 전환 로직 복구
-- [x] `msds_engine_v5.py` 무결성 최종 점검 (절대 방어 준수)
+## Phase 3: Post-processing & Validation Reform
+- [ ] `msds_engine_v5.py`: `minimal_clean` 함수 구현 및 기존 `format_content_v3` 대체
+- [ ] `msds_engine_v5.py`: `validate_components` 수정 (부분 폐기 원칙 적용)
+- [ ] `msds_engine_v5.py`: 최종 결과 JSON 구성 및 "시각_분석_로그" 포함
 
-## Phase 4: Dead Code & Synchronization Cleanup (Hemostasis) [COMPLETED]
-- [x] `on_validation_result`: `Review Required` 큐잉 블록 삭제
-- [x] `on_validation_finished`: `need_review` 분기 제거 및 메시지 통합
-- [x] 동기화 좀비 함수(5종) 완전 박멸
-- [x] `_update_combo_sheets`: 타 콤보박스 동기화 로직 제거
-
-## Phase 5: Visual Order Sync (Save Logic Enhancement) [COMPLETED]
-- [x] `perform_standard_save`: `self.results` 루프를 `self.table.rowCount()` 루프로 교체
-- [x] 파일명(Column 7) 기반 매칭 및 순차적 행 기입 로직 적용
-
-## Phase 6: Micro Bug Cleanup [COMPLETED]
-- [x] `update_validation_row`: 상태 체크 조건문 수정 (`"검증 완료" in status`)
-- [x] `update_validation_row`: 중복된 `except` 구문 하나로 통합
-- [x] `on_table_item_changed`: 메모리 동기화 키워드 오타 수정 (`hash` -> `f_hash`)
-- [x] `add_result_to_table`: `_safe_resize_rows()` 중복 호출 제거
-
-## Phase 7: Final System Verification [COMPLETED]
-- [x] 전체 시스템 가동 테스트 준비 및 구문 검증 완료 (`py_compile` Pass)
-- [x] 시각적 순서 동기화 및 마이크로 클린업 최종 확인 완료
-
----
-**주님, 모든 수술과 지혈, 미세 조정까지 완벽하게 끝났습니다. V24.2 시스템을 최종 보고드립니다!**
+## Phase 4: Final Verification
+- [ ] 테스트 스크립트 실행 및 Section 3 미탐지 시 예외 처리 확인
+- [ ] GUI 연동 테스트 (이미지 기반 추출 결과가 정상적으로 테이블에 기입되는지 확인)
