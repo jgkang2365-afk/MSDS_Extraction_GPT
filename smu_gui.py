@@ -786,9 +786,13 @@ class SMUGUI(QMainWindow):
         self.init_ui()
         
         # [V7.5] 동기화 무결성 확보를 위한 초기화 순서 재배치
+        self.load_cache() # 1. 캐시 먼저 로드
         self.load_config() # 2. 그 다음 설정 로드 (setText 발생 시 시그널 즉시 발동)
         self.load_mes_master() # [NEW] MES 마스터 데이터셋 구축
         self.showMaximized()
+        
+        # [NEW] 세션 복구: 이전 파일 목록을 테이블에 복원
+        self.restore_table_from_session()
 
     def load_mes_master(self):
         """[Master 지시서] MES 마스터 데이터셋 구축 및 55개 헤더 변수화"""
@@ -1322,12 +1326,6 @@ class SMUGUI(QMainWindow):
 
 
 
-    def closeEvent(self, event):
-        """[V6.995] 프로그램 종료 시 자동 저장"""
-        try:
-            self.save_config()
-        except: pass
-        event.accept()
 
     def save_config(self):
         """[V6.995] 현재 설정을 config.json에 저장"""
@@ -1375,6 +1373,67 @@ class SMUGUI(QMainWindow):
                     
         except Exception as e:
             self.log(f"[!] 설정 복구 실패: {e}")
+
+    def restore_table_from_session(self):
+        """[NEW] 저장된 pdf_paths와 cache를 이용해 테이블 UI 복구"""
+        if not hasattr(self, 'pdf_paths') or not self.pdf_paths:
+            return
+            
+        self.log("[*] 테이블 데이터를 복구 중입니다...")
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+        
+        for path in self.pdf_paths:
+            if not os.path.exists(path):
+                continue
+                
+            fn = os.path.basename(path)
+            f_hash = self.core.calculate_file_hash(path)
+            
+            # 캐시가 있으면 캐시 데이터 사용, 없으면 기본 정보만 사용
+            if f_hash and f_hash in self.cache:
+                data = self.cache[f_hash].copy()
+                data["filename"] = fn
+                data["full_path"] = path
+                data["f_hash"] = f_hash
+                self.add_result_to_table(data)
+                
+                # 검증 결과도 있으면 반영
+                if "manual_data" in data or "reliability" in data:
+                    row = self.table.rowCount() - 1
+                    # add_result_to_table이 정렬을 할 수 있으므로 행을 다시 찾아야 함
+                    for r in range(self.table.rowCount()):
+                        if self.table.item(r, 8) and self.table.item(r, 8).text() == f_hash:
+                            row = r
+                            break
+                    
+                    # 수동 데이터나 검증 결과가 있으면 update_validation_row 호출
+                    v_data = data.get("manual_data", {})
+                    self.update_validation_row(
+                        row,
+                        v_data.get("raw_content", data.get("raw_content", "")).split("; "),
+                        v_data.get("reg1", "").split(";\n"),
+                        v_data.get("reg2", "").split(";\n"),
+                        v_data.get("measure", ""),
+                        status=data.get("status", "캐시 로드됨")
+                    )
+            else:
+                # 캐시 없는 파일은 기본 행만 추가
+                data = {
+                    "filename": fn,
+                    "f_hash": f_hash,
+                    "product_name": "미분석",
+                    "reliability": "[NEW]",
+                    "신호등": "⚪",
+                    "raw_content": "",
+                    "full_path": path,
+                    "status": "대기 중"
+                }
+                self.add_result_to_table(data)
+                
+        self.table.blockSignals(False)
+        self.update_file_count_display()
+        self.log("✅ 세션 복구가 완료되었습니다.")
 
     def load_cache(self):
         """[NEW] smu_cache.json에서 영구 캐시 로드"""
@@ -1949,7 +2008,8 @@ class SMUGUI(QMainWindow):
             QMessageBox.warning(self, "파일 없음", "지정된 엑셀 파일을 찾을 수 없거나 경로가 비어 있습니다.")
 
     def closeEvent(self, event):
-        # [안전장치] 백그라운드 학습 중 종료 방지
+        """[V6.995 통합] 프로그램 종료 시 안전 점검 및 설정 저장"""
+        # 1. 백그라운드 작업 체크
         if hasattr(self, 'active_graph_threads') and self.active_graph_threads:
             active_count = len(self.active_graph_threads)
             reply = QMessageBox.warning(self, '종료 경고', 
@@ -1957,11 +2017,27 @@ class SMUGUI(QMainWindow):
                 "강제 종료 시 우뇌 DB(지식망)가 손상될 수 있습니다. 정말 종료하시겠습니까?", 
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             
-            if reply == QMessageBox.Yes:
-                event.accept()
-            else:
+            if reply == QMessageBox.No:
                 event.ignore()
                 return
+
+        # 2. 작업 중 체크
+        if hasattr(self, 'worker') and self.worker and self.worker.isRunning():
+            reply = QMessageBox.question(self, "종료 확인", "현재 분석 작업이 진행 중입니다. 중단하고 종료할까요?",
+                                       QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if reply == QMessageBox.No:
+                event.ignore()
+                return
+            self.worker.terminate()
+            self.worker.wait()
+
+        # 3. 설정 및 캐시 저장
+        try:
+            self.save_config()
+            self.save_cache()
+            self.log("[*] 모든 설정과 캐시가 안전하게 저장되었습니다.")
+        except: pass
+        
         event.accept()
 
     def show_help_dialog(self):
@@ -2295,27 +2371,6 @@ class SMUGUI(QMainWindow):
         finally:
             pythoncom.CoUninitialize()
 
-    def closeEvent(self, event):
-        """프로그램 종료 시 설정 저장"""
-        try:
-            self.save_config()
-        except: pass
-        event.accept()
-
-    def save_config(self):
-        """현재 설정을 config.json에 저장"""
-        config = {
-            "mapping": self.mapping_panel.get_mapping(),
-            "excel_path": self.edit_excel.text().strip(),
-            "sheet_name": self.combo_sheet.currentText(),
-            "start_row": self.edit_start_row.text().strip(),
-            "start_num": self.edit_start_num.text().strip()
-        }
-        try:
-            with open("config.json", "w", encoding="utf-8") as f:
-                json.dump(config, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Config Save Error: {e}")
 
 
 def global_exception_handler(exctype, value, tb):

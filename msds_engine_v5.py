@@ -481,7 +481,7 @@ def call_gemini_2_5_lite(v24_result, text_chunk, image_list=None, log_func=None,
 
     prod_name_baseline = v24_result.get('제품명', '')
 
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
+    user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[원본 정보: 텍스트]\n{text_chunk}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
@@ -525,7 +525,7 @@ def call_gpt_4o_mini(v24_result, text_chunk, image_list=None, log_func=None, ret
 
     prod_name_baseline = v24_result.get('제품명', '')
 
-    user_prompt = f"[1차 추출 결과]\n- 제품명: {prod_name_baseline}\n- 구성성분: {v24_result.get('함유량')}\n\n[원본 정보: 텍스트]\n{text_chunk}"
+    user_prompt = f"[문서 정보]\n- 제품명(참고용): {prod_name_baseline}\n\n[원본 정보: 텍스트]\n{text_chunk}"
     if retry_instruction:
         user_prompt += f"\n\n[🚨 자가 치유(Self-Healing) 요청]\n{retry_instruction}"
 
