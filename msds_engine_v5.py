@@ -528,11 +528,13 @@ def process_pdf(pdf_path, log_func=None):
             "제품명": hybrid_pn,
             "측정대상": target_substances, # 👈 강제 삽입!
             "교정_사유": "다중 모델(시리즈) 문서 감지 또는 표준 예외 치환",
-            "신호등": "🟡"
+            "신호등": "🟡",
+            "used_engine": "flash" if used_engine == "Gemini-Flash" else "bulldozer" # 👈 GUI 규격에 맞게 변환하여 추가!
         }
 
     # 정상 단일 모델일 경우
     tag = f"[{used_engine}-PASS]"
+    gui_engine_name = "flash" if used_engine == "Gemini-Flash" else "bulldozer" # 👈 공통 변수 추가
     
     # [V15.3.1 추가] 제품명이 '미추출'인 경우에도 주의가 필요하므로 황색불(🟡) 반환
     if hybrid_pn == "미추출":
@@ -541,7 +543,8 @@ def process_pdf(pdf_path, log_func=None):
             "제품명": hybrid_pn,
             "측정대상": target_substances,
             "교정_사유": "제품명 추출 실패 - 수동 확인 요망",
-            "신호등": "🟡"
+            "신호등": "🟡",
+            "used_engine": gui_engine_name # 👈 추가!
         }
 
     return {
@@ -549,7 +552,8 @@ def process_pdf(pdf_path, log_func=None):
         "제품명": hybrid_pn,
         "측정대상": target_substances,
         "교정_사유": reason,
-        "신호등": "🟢"
+        "신호등": "🟢",
+        "used_engine": gui_engine_name # 👈 추가!
     }
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
