@@ -1,22 +1,12 @@
 {
-    "f5e58ec0bdbdc9896fa80adb31715c10a7bf4d21248aca4a5b673ba96bdc68ad": {
-        "f_hash": "f5e58ec0bdbdc9896fa80adb31715c10a7bf4d21248aca4a5b673ba96bdc68ad",
-        "product_name": "MOBILGREASE XHP 222",
+    "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a": {
+        "f_hash": "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a",
+        "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
         "reliability": "N/A",
-        "신호등": "🔴",
-        "raw_content": "",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)/001_Grease(XHP 222).PDF",
+        "신호등": "🟡",
+        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)",
+        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)/014_용접봉(CR-13).pdf",
         "page": 1,
         "used_engine": "regex"
-    },
-    "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b": {
-        "f_hash": "51a4628b0a1f5a9d49eef1a03341a30982286e4f69a6637997aeb2135ab65a9b",
-        "product_name": "ZIC TOP 5W-30 (RZIC TOP 5W-30)",
-        "reliability": "[GPT-4o-mini-PASS]",
-        "신호등": "🟡 복구됨",
-        "raw_content": "36878-20-3(>=0.1-<5%); 64742-54-7(>=70-<80%); 64742-56-9(>=0.1-<5%); 68037-01-4(>=5-<15%)",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)/012_엔진오일(5w-30).pdf",
-        "page": 1,
-        "used_engine": "GPT-4o-mini"
     }
 }

@@ -24,7 +24,7 @@ if not OPENAI_API_KEY:
 if not GOOGLE_API_KEY:
     print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
-VERSION = "15.1.0"
+VERSION = "15.3.1"
 
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
 
@@ -208,9 +208,24 @@ def clean_number(n_str):
     except: return n_str
 
 def minimal_clean(content):
-    """[V15.0] 후처리 극단적 단순화: 공백 제거만 수행"""
+    """[V15.2] 함유량 부등호 치환, 소수점 제거 및 기호 표준화"""
     if not content: return ""
-    return str(content).replace(" ", "")
+    c = str(content).replace(" ", "")
+
+    # 1. 한글 부등호 위치 변경 및 기호화 (86%미만 -> <86%)
+    c = re.sub(r'([0-9.]+)(?:%?)(이하|미만)(?:%?)', r'<\1%', c)
+    c = re.sub(r'([0-9.]+)(?:%?)(이상|초과)(?:%?)', r'>\1%', c)
+
+    # 2. 특수기호 표준화
+    c = c.replace("≤", "<").replace("≥", ">").replace("＜", "<").replace("＞", ">")
+
+    # 3. 무의미한 소수점(.0) 제거 (1.0~5.0% -> 1~5%, 10.0% -> 10%)
+    c = re.sub(r'\.0+(?=[^\d]|$)', '', c)
+
+    # 4. 범위 혼합 기호 깔끔하게 치환 (≥80-≤85% -> 80~85%)
+    c = re.sub(r'[><=]*([0-9.]+)[%]*[-~][><=]*([0-9.]+)[%]*', r'\1~\2%', c)
+
+    return c
 
 
 
@@ -387,6 +402,18 @@ def process_pdf(pdf_path, log_func=None):
     
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, GOOGLE_API_KEY, log_func=log_func)
 
+    # ----------------------------------------------------
+    # [V15.3] 제품명 노이즈 제거 및 다중 모델 감지 (축약 금지, 원본 보존)
+    
+    # 1. 앞쪽 쓸데없는 특수기호만 제거 ("- 럭키 Lacquer" -> "럭키 Lacquer")
+    hybrid_pn = re.sub(r'^[\s\-_*:#=|]+', '', hybrid_pn)
+    is_multi_model = False
+    
+    # 2. 콤마(,)가 많거나 길면 다중 모델로 판별만 하고(🟡황색불 트리거), 이름은 절대 자르지 마라!
+    if hybrid_pn.count(',') >= 2 or len(hybrid_pn) > 60:
+        is_multi_model = True
+    # ----------------------------------------------------
+
     # 3. 1차 스나이퍼(Flash) 투입
     if log_func: log_func(" 🎯 1차 고속 스나이퍼(Gemini-Flash) 투입")
     ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH)
@@ -479,25 +506,51 @@ def process_pdf(pdf_path, log_func=None):
         }
 
     comp_str = "; ".join(comp_parts)
+    target_substances = "" # 🚨 측정대상 변수 추가
+
+    # ----------------------------------------------------
+    # 🚨 [V15.3] 특정 다중 모델 용접봉(CR-13 시리즈) 하드코딩 예외 처리
+    if "연강용 피복아크 용접봉" in hybrid_pn and "CS-200" in hybrid_pn and "CR-13" in hybrid_pn:
+        hybrid_pn = "용접재료(연강용 피복아크 용접봉) CR-13"
+        comp_str = "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
+        
+        # 🚨 주님 지시: 측정대상 텍스트 강제 고정!
+        target_substances = "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄"
+        
+        is_multi_model = True 
+        if log_func: log_func(" ⚠️ [하드코딩 예외] CR-13 감지! 제품명, 성분, 측정대상 강제 치환 완료")
+    # ----------------------------------------------------
+
+    # 🚨 [V15.2 핵심] AI 추출은 무사히 끝났으나, 다중 모델이므로 🟡황색불로 강제 변경!
+    if is_multi_model:
+        return {
+            "구성성분": comp_str,
+            "제품명": hybrid_pn,
+            "측정대상": target_substances, # 👈 강제 삽입!
+            "교정_사유": "다중 모델(시리즈) 문서 감지 또는 표준 예외 치환",
+            "신호등": "🟡"
+        }
+
+    # 정상 단일 모델일 경우
     tag = f"[{used_engine}-PASS]"
+    
+    # [V15.3.1 추가] 제품명이 '미추출'인 경우에도 주의가 필요하므로 황색불(🟡) 반환
+    if hybrid_pn == "미추출":
+        return {
+            "구성성분": comp_str,
+            "제품명": hybrid_pn,
+            "측정대상": target_substances,
+            "교정_사유": "제품명 추출 실패 - 수동 확인 요망",
+            "신호등": "🟡"
+        }
 
-    if log_func:
-        log_func(f" ├─ 엔진: {used_engine}")
-        log_func(f" ├─ 결과: {reason}")
-        log_func(f" ✅ 완료 (소요시간: {time.time()-start_time:.2f}초)")
-
-    result_data = {
-        "제품명": product_name, 
-        "함유량": comp_str, 
-        "구성성분 및 함유량": comp_str, 
-        "tag": tag, 
-        "신뢰도": tag, 
-        "추론근거": f"{used_engine} ({reason})",
-        "used_engine": used_engine,
-        "page": 1,
-        "신호등": "🟡 복구됨" if used_engine == "GPT-4o-mini" else "🟢 통과"
+    return {
+        "구성성분": comp_str,
+        "제품명": hybrid_pn,
+        "측정대상": target_substances,
+        "교정_사유": reason,
+        "신호등": "🟢"
     }
-    return result_data
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
 analyze_msds = process_pdf

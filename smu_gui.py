@@ -238,8 +238,8 @@ class HTMLDelegate(QStyledItemDelegate):
             else:
                 html_parts.append(escaped_p)
         
-        # [수정점] 줄바꿈 시 ; 뒤에 HTML 개행 태그(<br>)를 강제 삽입하여 표시 화면도 완벽하게 줄바꿈
-        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{';<br>'.join(html_parts)}</body></html>"
+        # [수정] 강제 개행(<br>)을 제거하고 세미콜론과 공백(; )으로 연결하여 가로 흐름 최적화 (수직 팽창 방지)
+        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{'; '.join(html_parts)}</body></html>"
         
         doc = QTextDocument()
         doc.setDefaultFont(option.font)
@@ -401,9 +401,11 @@ class ExtractionWorker(QThread):
                     "product_name": ext_res.get("제품명", "미확인"),
                     "reliability": ext_res.get("신뢰도", "N/A"),
                     "신호등": ext_res.get("신호등", "⚪"), 
-                    "raw_content": ext_res.get("구성성분 및 함유량", ext_res.get("함유량", "")),
-                    "full_path": path, # [V7.0] 절대 경로 저장
-                    "page": ext_res.get("page", 1), # [V7.0] 페이지 정보 저장
+                    "raw_content": ext_res.get("구성성분", ext_res.get("구성성분 및 함유량", "")),
+                    # 🚨 [V15.3 파이프 연결] 엔진이 강제로 쏴주는 '측정대상' 수신!
+                    "measure_target": ext_res.get("측정대상", ""), 
+                    "full_path": path, 
+                    "page": ext_res.get("page", 1), 
                     "used_engine": ext_res.get("used_engine", "regex")
                 }
                 
@@ -2158,8 +2160,14 @@ class SMUGUI(QMainWindow):
             if bg_color: item_cas.setBackground(bg_color)
             self.table.setItem(row, 3, item_cas)
 
-            # 5-7. 공란 (2단계용)
-            for c_idx in range(4, 7):
+            # 5. [수정] 공란이었던 측정대상(4번 열)에 엔진이 강제로 보낸 데이터가 있다면 삽입!
+            measure_val = data.get("measure_target", "")
+            item_measure = QTableWidgetItem(str(measure_val))
+            if bg_color: item_measure.setBackground(bg_color)
+            self.table.setItem(row, 4, item_measure)
+
+            # 6-7. 2차/1차 결과 열(5, 6번 열)만 2단계를 위해 공란으로 비워둠
+            for c_idx in range(5, 7):
                 item_blank = QTableWidgetItem("")
                 if bg_color: item_blank.setBackground(bg_color)
                 self.table.setItem(row, c_idx, item_blank)
