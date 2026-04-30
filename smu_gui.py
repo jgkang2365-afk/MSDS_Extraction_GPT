@@ -2085,16 +2085,8 @@ class SMUGUI(QMainWindow):
             
         return name
 
-    def _format_content(self, range_val):
-        """[Part 22] 함유량 포맷: 숫자 뒤에 % 강제 부여"""
-        if not range_val: return ""
-        if "%" in str(range_val): return str(range_val)
-        
-        val = str(range_val).strip()
-        if "~" in val:
-            parts = val.split("~")
-            return f"{parts[0]}~{parts[1]}%"
-        return f"{val}%"
+    # [V15.5.4] GUI-side character substitution logic (assassin) removed to preserve data integrity.
+    # Raw data from the engine is now displayed As-is.
 
     def add_result_to_table(self, data):
         """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""

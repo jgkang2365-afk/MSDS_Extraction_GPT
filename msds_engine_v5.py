@@ -24,7 +24,7 @@ if not OPENAI_API_KEY:
 if not GOOGLE_API_KEY:
     print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
-VERSION = "15.3.1"
+VERSION = "15.6"
 
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
 
@@ -50,7 +50,7 @@ def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
 
     payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
-        resp = requests.post(GEMINI_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=10)
+        resp = requests.post(GEMINI_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
         if resp.status_code == 200:
             pn_ai = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             # GHS 쓰레기 데이터 최종 검열
@@ -96,6 +96,9 @@ PROMPT_GEMINI_FLASH = """
 2. 🚨 절대 폐기 원칙: CAS 칸이 비어있거나 '영업비밀', '비공개', '승인번호', '미기재' 등이 적혀있다면 그 행은 쓰레기입니다. 가차 없이 폐기하세요.
 3. 유추 금지: 선이 어긋나거나 셀 병합이 복잡해서 수평이 맞지 않으면 억지로 엮지 말고 버리세요. (어려운 표는 2차 요원에게 넘길 것입니다)
 4. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+   🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
+   [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
+   [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
 
 JSON 출력 포맷:
 {
@@ -112,8 +115,11 @@ PROMPT_GPT_FALLBACK = """
 
 [🔥 2차 엔진 절대 원칙]
 1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
-2. 🚨 유연한 식별 원칙 (1차와 다름): CAS 번호 칸에 다른 식별번호(예: /KE-12345)가 섞여 있더라도, 어떻게든 유효한 CAS 번호(형식: 숫자-숫자-숫자)를 찾아내서 살려내세요. 단, 정말로 '영업비밀', '비공개' 등의 문구만 있어서 CAS를 찾을 수 없는 경우에만 폐기하세요.
+2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 동원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
 3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+   🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
+   [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
+   [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
 
 JSON 출력 포맷:
 {
@@ -207,25 +213,94 @@ def clean_number(n_str):
         return str(f)
     except: return n_str
 
-def minimal_clean(content):
-    """[V15.2] 함유량 부등호 치환, 소수점 제거 및 기호 표준화"""
-    if not content: return ""
-    c = str(content).replace(" ", "")
+def final_quality_control(components, full_text, log_func=None):
+    """[V15.6] 통합 후행 교정 엔진 (ff2aaab 안전 로직 기반 모듈화)"""
+    refined = []
+    has_invalid = False
+    # 팩트 체크용: 모든 공백류(\s)와 하이픈 제거 (구 코드 re.sub(r'[\s-]','') 동일)
+    norm_text = re.sub(r'[\s\-]', '', full_text).upper() if full_text else ""
 
-    # 1. 한글 부등호 위치 변경 및 기호화 (86%미만 -> <86%)
-    c = re.sub(r'([0-9.]+)(?:%?)(이하|미만)(?:%?)', r'<\1%', c)
-    c = re.sub(r'([0-9.]+)(?:%?)(이상|초과)(?:%?)', r'>\1%', c)
+    for comp in components:
+        cas = str(comp.get("cas_no", "")).strip()
 
-    # 2. 특수기호 표준화
-    c = c.replace("≤", "<").replace("≥", ">").replace("＜", "<").replace("＞", ">")
+        # 1. 앞의 0 제거 (예: 064742-82-1 -> 64742-82-1)
+        if re.match(r'^0+\d+-\d{2}-\d$', cas):
+            cas = re.sub(r'^0+', '', cas)
 
-    # 3. 무의미한 소수점(.0) 제거 (1.0~5.0% -> 1~5%, 10.0% -> 10%)
-    c = re.sub(r'\.0+(?=[^\d]|$)', '', c)
+        # 2. 혼합 형태에서 순수 CAS 추출 (예: "616-38-6 / KE-11278" -> "616-38-6")
+        cas_match = re.search(r'(\d{1,7}-\d{2}-\d)', cas)
+        if not cas_match:
+            continue
+        cas = cas_match.group(1)
 
-    # 4. 범위 혼합 기호 깔끔하게 치환 (≥80-≤85% -> 80~85%)
-    c = re.sub(r'[><=]*([0-9.]+)[%]*[-~][><=]*([0-9.]+)[%]*', r'\1~\2%', c)
+        # 3. 영업비밀 등 비식별 데이터 스킵
+        if any(w in str(comp.get("cas_no", "")) for w in ["영업비밀", "비공개", "승인번호", "미기재", "Secret", "N/A"]):
+            continue
 
-    return c
+        # 4. CAS 수학적 체크섬 검증
+        if not verify_cas_number(cas):
+            has_invalid = True
+            continue
+
+        # 5. CAS 물리적 팩트 체크 (텍스트 추출 가능한 PDF에서만 작동)
+        if norm_text:
+            clean_cas = cas.replace("-", "")
+            if clean_cas not in norm_text:
+                if log_func: log_func(f" 🚨 [팩트체크] 원본 텍스트에 미존재하는 환각 CAS 폐기: {cas}")
+                has_invalid = True
+                continue
+
+        # 6. 함유량 정제 (부등호 정밀 보존 V15.6)
+        content = str(comp.get("content", "")).replace(" ", "")
+        if not content:
+            continue
+
+        # 6a. 텍스트 부등호 → 기호 변환 (수학적 의미 정밀 구분)
+        #     미만 = strictly less than = <    |  이하 = less than or equal = ≤
+        #     초과 = strictly greater than = > |  이상 = greater than or equal = ≥
+        content = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)이상(?:%?)', r'≥\1', content)
+
+        # 6b. 전각 특수기호만 반각으로 변환 (≤, ≥는 절대 보존!)
+        content = content.replace('＜', '<').replace('＞', '>')
+
+        # 6c. 무의미한 소수점(.0) 제거
+        content = re.sub(r'\.0+(?=[^\d]|$)', '', content)
+
+        # 6d. 범위 표준화 (V15.7 주님 최종 규칙)
+        #     범위값: 최소값 부등호 → 항상 제거
+        #             최대값 부등호 → 최대값이 정확히 1일 때만 보존, 그 외 제거
+        #     예시: ≥0.1~<1% → 0.1~<1%  |  ≥0.1~<5% → 0.1~5%  |  ≥0.1~<0.5% → 0.1~0.5%
+        range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', content)
+        if range_m:
+            p1, n1, p2, n2 = range_m.groups()
+            # 최소값 부등호: 항상 제거
+            # 최대값이 정확히 1 → 부등호 보존 또는 자동 보정(<)
+            #   AI가 부등호를 누락(0.1~1%)해도 MSDS에서 X~1%는 사실상 X~<1%이므로 < 강제 삽입
+            try: upper = float(n2)
+            except: upper = 0
+            if upper == 1:
+                prefix2 = p2 if p2 else "<"  # 부등호 없으면 < 자동 추가
+                content = f"{n1}~{prefix2}{n2}%"
+            else:
+                content = f"{n1}~{n2}%"
+        elif "Rem" in content:
+            # 6e. Rem.% 보정
+            if "%" not in content:
+                content = "Rem.%"
+        else:
+            # 6f. 단일 값 → 부등호 무조건 보존 (예: <1%, ≥0.1%, <5% 모두 그대로)
+            single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', content)
+            if single_m:
+                p, n = single_m.groups()
+                content = f"{p}{n}%"
+
+        if content:
+            refined.append({"cas": cas, "content": content})
+
+    return refined, has_invalid
 
 
 
@@ -388,10 +463,16 @@ def process_pdf(pdf_path, log_func=None):
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
 
-    # 2. 제품명 하이브리드 스캔 (무조건 1페이지 캡처)
+    # 2. 제품명 하이브리드 스캔 및 전체 텍스트 추출 (Grounding용)
+    full_text_for_grounding = ""
     try:
         doc = fitz.open(pdf_path)
         first_page_text = doc[0].get_text() if len(doc) > 0 else ""
+        
+        # [V15.5.4] 팩트 체크를 위한 전체 텍스트 수집
+        for page in doc:
+            full_text_for_grounding += page.get_text()
+            
         # 제품명 추출 전용 1페이지 렌더링
         pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
         cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
@@ -399,6 +480,7 @@ def process_pdf(pdf_path, log_func=None):
     except:
         cover_img = image_list # 실패 시 기존 이미지 폴백
         first_page_text = ""
+        full_text_for_grounding = ""
     
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, GOOGLE_API_KEY, log_func=log_func)
 
@@ -478,24 +560,10 @@ def process_pdf(pdf_path, log_func=None):
     components = final_ai_result.get("구성성분", [])
     reason = final_ai_result.get("교정_사유", "사유 없음")
     
-    comp_parts = []
-    for comp in components:
-        cas = str(comp.get("cas_no", "")).strip()
-        # CAS 번호 정규화: 앞의 0 제거
-        if re.match(r'^0+\d+-\d{2}-\d$', cas): cas = re.sub(r'^0+', '', cas)
-        
-        # CAS 번호 규격 검증 (혼합 표기에서 순수 CAS만 추출)
-        cas_match = re.search(r'(\d{1,7}-\d{2}-\d)', cas)
-        if not cas_match: 
-            continue
-        cas = cas_match.group(1)
-            
-        # 함유량 극단적 단순 정제 (공백 제거만)
-        substance_content = minimal_clean(comp.get("content", ""))
-        if not substance_content: continue
-
-        # 주님 지시: 물질명 100% 제거하고 오직 CAS(함유량) 포맷으로만 조립
-        comp_parts.append(f"{cas}({substance_content})")
+    # 🚨 [V15.6] 중앙 통제실(후행 교정기)로 데이터 일괄 세탁
+    refined_comps, has_invalid_cas = final_quality_control(components, full_text_for_grounding, log_func)
+    
+    comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
 
     if not comp_parts:
         if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
@@ -547,12 +615,19 @@ def process_pdf(pdf_path, log_func=None):
             "used_engine": gui_engine_name # 👈 추가!
         }
 
+    # [V15.5 추가] 가짜 CAS가 탐지된 경우 초록불(🟢) 차단 및 황색불(🟡) 강제 전환
+    final_signal = "🟢"
+    final_reason = reason
+    if has_invalid_cas:
+        final_signal = "🟡"
+        final_reason = f"{reason} (⚠️ 일부 부적절한 CAS 포맷 감지 및 제외됨)"
+
     return {
         "구성성분": comp_str,
         "제품명": hybrid_pn,
         "측정대상": target_substances,
-        "교정_사유": reason,
-        "신호등": "🟢",
+        "교정_사유": final_reason,
+        "신호등": final_signal,
         "used_engine": gui_engine_name # 👈 추가!
     }
 

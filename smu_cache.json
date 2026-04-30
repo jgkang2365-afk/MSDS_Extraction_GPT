@@ -1,13 +1,79 @@
 {
-    "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a": {
-        "f_hash": "614983c9506f512f1f8896c39d3a0cec6cedb10eac4b589169d90d71338d174a",
-        "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
+    "ec30931fb0f55fc47ef2613459754ca9ed987b3c2067d015c030cec554467d2e": {
+        "f_hash": "ec30931fb0f55fc47ef2613459754ca9ed987b3c2067d015c030cec554467d2e",
+        "product_name": "Husqvarna 2-Stroke Oil LS+",
         "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)",
-        "measure_target": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "full_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/TEST_농업기술센터-스마트농업과-농기계임대센터(동)/014_용접봉(CR-13).pdf",
+        "신호등": "🔴",
+        "raw_content": "",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/공원녹지사업본부-산림휴양과-등산로관리단,공원관리과/1.Husqvarna+2-Stroke+Oil+LS+-MSDS_KOREA-Korean.pdf",
         "page": 1,
         "used_engine": "regex"
+    },
+    "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
+        "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
+        "product_name": "프로스테인 네오-PC100(크리어)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~<1%); 96-29-7(0.1~<1%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/공원녹지사업본부-산림휴양과-등산로관리단,공원관리과/MSDS(프로스테인).pdf",
+        "page": 1,
+        "used_engine": "flash"
+    },
+    "6f33b8036ac09c9ef16f7efe250578f1cf277f729b989f946834bcd8bf49680d": {
+        "f_hash": "6f33b8036ac09c9ef16f7efe250578f1cf277f729b989f946834bcd8bf49680d",
+        "product_name": "월드스테인마스터 WS-4013 티크",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "616-38-6(30~40%); 8001-26-1(20~30%); 64742-47-8(20~30%); 68953-58-2(1~10%); 64742-96-7(1~10%); 100684-33-1(0.1~<1%); 13586-82-8(0.1~<1%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/공원녹지사업본부-산림휴양과-등산로관리단,공원관리과/월드스테인마스터 WS-4013 티크.pdf",
+        "page": 1,
+        "used_engine": "flash"
+    },
+    "3246aa0d9490711e18dee257720ddc8e88600ca77ff9c7b37cda4c2163005d25": {
+        "f_hash": "3246aa0d9490711e18dee257720ddc8e88600ca77ff9c7b37cda4c2163005d25",
+        "product_name": "인산 이수소 칼륨(Potassium phosphate monobasic)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7778-77-0(99~100%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/맑은물사업본부-급수과-수질실험실/MSDS\\1. Potassium phosphate monobasic(7778-77-0)_R11_대정.pdf",
+        "page": 1,
+        "used_engine": "flash"
+    },
+    "12e67536a1a9f4b60332a9cc0ab8126d0ca7f7bee9120c8bdff344b112699c62": {
+        "f_hash": "12e67536a1a9f4b60332a9cc0ab8126d0ca7f7bee9120c8bdff344b112699c62",
+        "product_name": "0.05mol/L-싸이오황산나트륨용액(N/20) (0.05mol/L-Sodium thiosulfate solution(N/20))",
+        "reliability": "N/A",
+        "신호등": "🟡",
+        "raw_content": "10102-17-7(1~2%); 497-19-8(<0.1%); 123-51-3(<0.1%); 7732-18-5(>98%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/맑은물사업본부-급수과-수질실험실/MSDS\\2. N-20 Sodium thiosulfate solution_삼전 (1).pdf",
+        "page": 1,
+        "used_engine": "flash"
+    },
+    "5487ca404194852dd3183b364ebff8e6943fd63acd31b20de7d1a24651e3d2c1": {
+        "f_hash": "5487ca404194852dd3183b364ebff8e6943fd63acd31b20de7d1a24651e3d2c1",
+        "product_name": "1% 페놀프탈레인 용액 (1% Phenolphthalein solution)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "77-09-8(1%); 64-17-5(89~90%); 7732-18-5(9~10%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/맑은물사업본부-급수과-수질실험실/MSDS\\3. 1% Phenolphthalein solution (1).pdf",
+        "page": 1,
+        "used_engine": "flash"
+    },
+    "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91": {
+        "f_hash": "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91",
+        "product_name": "1,5-Diphenylcarbonohydrazide",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "140-22-7(min.85%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/맑은물사업본부-급수과-수질실험실/MSDS\\4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
+        "page": 1,
+        "used_engine": "flash"
     }
 }
