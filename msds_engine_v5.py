@@ -24,7 +24,7 @@ if not OPENAI_API_KEY:
 if not GOOGLE_API_KEY:
     print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
-VERSION = "15.6"
+VERSION = "15.7"
 
 GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
 
@@ -250,8 +250,10 @@ def final_quality_control(components, full_text, log_func=None):
                 has_invalid = True
                 continue
 
-        # 6. 함유량 정제 (부등호 정밀 보존 V15.6)
+        # 6. 함유량 정제 (부등호 정밀 보존 V15.7)
         content = str(comp.get("content", "")).replace(" ", "")
+        # 6-pre. 비수치 괄호 한정어 제거 (예: "99(AfterDrying)%" → "99%")
+        content = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', content)
         if not content:
             continue
 
@@ -265,6 +267,8 @@ def final_quality_control(components, full_text, log_func=None):
 
         # 6b. 전각 특수기호만 반각으로 변환 (≤, ≥는 절대 보존!)
         content = content.replace('＜', '<').replace('＞', '>')
+        # 6b-2. ASCII 복합 부등호 → 유니코드 정규화 (<=→≤, >=→≥)
+        content = content.replace('<=', '≤').replace('>=', '≥')
 
         # 6c. 무의미한 소수점(.0) 제거
         content = re.sub(r'\.0+(?=[^\d]|$)', '', content)
@@ -315,11 +319,11 @@ def find_section3_pages(doc):
     for i in range(len(doc)):
         text = doc[i].get_text("text")
         # 3번 항 시작 지점 탐색
-        if re.search(r'3\.\s*구성|SECTION\s*3|3\s*:\s*COMPOSITION', text, re.I):
+        if re.search(r'(?:SECTION\s*)?3[\s.:]*(?:구성|COMPOSITION)', text, re.I):
             pages.append(i)
         # 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
         # (Section 3 제목이 이전 페이지, 표 본체가 이 페이지에 있는 경우 대비)
-        if pages and re.search(r'4\.\s*응급|SECTION\s*4|4\s*:\s*FIRST', text, re.I):
+        if pages and re.search(r'(?:SECTION\s*)?4[\s.:]*(?:응급|FIRST)', text, re.I):
             if i not in pages:
                 pages.append(i)
             break
