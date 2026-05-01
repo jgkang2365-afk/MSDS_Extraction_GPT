@@ -550,14 +550,13 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
     
-    # [V15.8.1] 파일당 전담 스나이퍼 배정
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
     if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
-    # 1. Section 3 이미지 추출
-    image_list, section3_text_only = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
+    # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음
+    image_list, section3_text_for_omission = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     if not image_list:
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
@@ -568,32 +567,24 @@ def process_pdf(pdf_path, log_func=None):
         doc = fitz.open(pdf_path)
         first_page_text = doc[0].get_text() if len(doc) > 0 else ""
         
-        # [V15.5.4] 팩트 체크를 위한 전체 텍스트 수집
         for page in doc:
             full_text_for_grounding += page.get_text()
             
-        # 제품명 추출 전용 1페이지 렌더링
         pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
         cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
         doc.close()
     except:
-        cover_img = image_list # 실패 시 기존 이미지 폴백
+        cover_img = image_list 
         first_page_text = ""
         full_text_for_grounding = ""
     
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
-    # ----------------------------------------------------
-    # [V15.3] 제품명 노이즈 제거 및 다중 모델 감지 (축약 금지, 원본 보존)
-    
-    # 1. 앞쪽 쓸데없는 특수기호만 제거 ("- 럭키 Lacquer" -> "럭키 Lacquer")
     hybrid_pn = re.sub(r'^[\s\-_*:#=|]+', '', hybrid_pn)
     is_multi_model = False
     
-    # 2. 콤마(,)가 많거나 길면 다중 모델로 판별만 하고(🟡황색불 트리거), 이름은 절대 자르지 마라!
     if hybrid_pn.count(',') >= 2 or len(hybrid_pn) > 60:
         is_multi_model = True
-    # ----------------------------------------------------
 
     # 3. 1차 스나이퍼(Flash) 투입
     if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
@@ -629,13 +620,13 @@ def process_pdf(pdf_path, log_func=None):
                 break
             valid_components.append(comp)
         
-        # [황색불 조건] 비공개/빈칸을 버리고 났더니 유효 성분이 0개다? 1차 엔진의 시야 실패!
+        # [V15.8.3] 누락 탐지기: 전체 문서가 아닌 '표가 있는 페이지의 텍스트'만으로 비교!
         if len(valid_components) == 0:
             needs_gpt = True
         else:
-            # [V15.8] 누락 탐지기: 원본 CAS 개수와 비교하여 누락 시 GPT 투입
             try:
-                check_omission(full_text_for_grounding, valid_components)
+                # full_text_for_grounding 대신 section3_text_for_omission 사용!
+                check_omission(section3_text_for_omission, valid_components)
             except ValueError as e:
                 if log_func: log_func(f" 🟡 {e}")
                 needs_gpt = True
