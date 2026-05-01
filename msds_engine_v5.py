@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.8"
+VERSION = "15.8.9"
 
 def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
     """[V15.8.8] 쿨다운 레지스트리 연동: 429 키는 60초 블랙리스트, 살아있는 키 자동 배정"""
@@ -116,7 +116,12 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
             
         except requests.exceptions.RequestException as e:
             if log_func: log_func(f"  🔴 {alias} 네트워크 끊김: {str(e)[:60]}")
-            time.sleep(2 ** min(attempt, 5))
+            # [V15.8.9] 대기하지 않고 즉시 해당 키 블랙리스트 후 무조건 스와핑
+            mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+            current_sniper = get_next_sniper()
+            if current_sniper and log_func:
+                log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환 (통신 단절 돌파)")
+            time.sleep(1) # 아주 짧은 숨 고르기
             continue
             
     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
@@ -313,9 +318,14 @@ def clean_number(n_str):
     except: return n_str
 
 def _normalize_single_content(raw):
-    """[V15.8.8] 개별 함유량 문자열 정제 헬퍼"""
+    """[V15.8.9] 개별 함유량 정제 및 물리적 방어망"""
     v = raw.strip().replace(" ", "")
     v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
+    
+    # [방어막 1] 알파벳(g, mg, ml 등)이 포함되어 있으면 분자량 환각으로 간주하고 폐기
+    if re.search(r'[a-zA-Z]', v.replace("Rem", "")):
+        return "미기재%"
+
     v = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', v)
     v = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', v)
     v = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', v)
@@ -324,21 +334,27 @@ def _normalize_single_content(raw):
     v = v.replace('<=', '≤').replace('>=', '≥')
     v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
 
-    weird_range = re.match(r'^≤([0-9.]+)(?:%?)≤([0-9.]+)(?:%?)$', v)
+    # [방어막 2] 양방향 부등호 완벽 지원 (≥...≤ 패턴)
+    weird_range = re.match(r'^([≥>]*)([0-9.]+)(?:%?)([≤<]*)([0-9.]+)(?:%?)$', v)
     if weird_range:
-        n1, n2 = weird_range.groups()
-        return f"{n1}~{n2}%"
+        p1, n1, p2, n2 = weird_range.groups()
+        if p1 and p2: return f"{n1}~{n2}%"
+        
     range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', v)
     if range_m:
         p1, n1, p2, n2 = range_m.groups()
         return f"{n1}~{p2}{n2}%"
+        
     if "Rem" in v:
         return "Rem.%" if "%" not in v else v
+        
     single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', v)
     if single_m:
         p, n = single_m.groups()
         return f"{p}{n}%"
-    return v
+        
+    # 위 규격에 아무것도 맞지 않는 찌꺼기는 무조건 환각 처리
+    return "미기재%"
 
 def final_quality_control(components, full_text, log_func=None):
     """[V15.8.8] 지능형 다중 CAS ↔ 함유량 1:1 매칭 분리"""
@@ -447,7 +463,7 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             else:
                 if log_func: log_func(" ❌ 정찰병도 표를 찾지 못했습니다.")
                 doc.close()
-                return [], "" # 빈 튜플 반환
+                return [], "", [] # 3개 반환으로 통일
 
         images = []
         raw_text = ""
@@ -471,7 +487,6 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             else:
                 section3_text_only = raw_text[start_m.start():]
 
-        # ... (중략) ...
         return images, section3_text_only, pages # 👈 이미지, 텍스트, 페이지 번호 목록 반환
     except Exception:
         return [], "", []
@@ -513,24 +528,26 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
         return None
 
 def check_omission(original_text, extracted_data):
-    """[V15.8.8] 카운트 기반 누락 검증: 중복 출현 CAS까지 정밀하게 체크합니다."""
+    """
+    [절대 방어 문구: 수정 금지 구역]
+    중복 CAS 번호에 의한 가짜 누락 알람 폭주를 막기 위해 반드시 set()을 사용하여 고유 개수만 비교할 것.
+    """
     if not original_text: return 
     
-    # 1. 원본 텍스트에서 CAS 번호 형태를 모두 추출 (중복 허용)
+    # 1. 원본 텍스트에서 순수 고유 CAS만 카운트 (set 복원)
     cas_pattern = re.compile(r'\d{1,7}-\d{2}-\d')
-    all_cas_found = cas_pattern.findall(original_text)
-    
-    # 유효한 CAS만 필터링 (중복 포함)
-    valid_original_cas = [cas for cas in all_cas_found if verify_cas_number(cas)]
+    unique_cas_found = list(set(cas_pattern.findall(original_text)))
+    valid_original_cas = [cas for cas in unique_cas_found if verify_cas_number(cas)]
     original_cas_count = len(valid_original_cas)
     
-    # 2. 추출 데이터 개수 계산
+    # 2. 추출 데이터도 중복으로 찢어진 행을 감안해 고유 CAS 종류만 카운트
     if isinstance(extracted_data, list):
-        extracted_cas_count = len(extracted_data)
+        extracted_cas_set = set([c.get("cas") for c in extracted_data])
+        extracted_cas_count = len(extracted_cas_set)
     else:
-        extracted_cas_count = len(extracted_data.get("구성성분", []))
+        extracted_cas_set = set([c.get("cas_no") for c in extracted_data.get("구성성분", [])])
+        extracted_cas_count = len(extracted_cas_set)
     
-    # 3. 누락 적발
     if extracted_cas_count < original_cas_count:
         raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}). 2차 불도저(GPT) 요원 투입!")
 
@@ -584,7 +601,7 @@ def process_pdf(pdf_path, log_func=None):
     if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
     # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음 (1 PDF = 1 스나이퍼 원칙)
-    image_list, section3_text_for_omission = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
+    image_list, section3_text_for_omission, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     if not image_list:
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
@@ -760,3 +777,29 @@ def process_pdf(pdf_path, log_func=None):
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
 analyze_msds = process_pdf
+
+# =====================================================================
+# [V15.8.9] 엔진 자가 검증 (Regression Defense Block)
+# =====================================================================
+def self_test_regression():
+    """모듈 로드 시 과거에 터졌던 엣지 케이스들을 사전 검증하여 코어 오염을 원천 차단합니다."""
+    # 1. 환각 필터 테스트
+    assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴됨"
+    assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴됨"
+    assert _normalize_single_content("10-20") == "10~20%", "회귀 오류: 기본 범위 정규식 파괴됨"
+    
+    # 2. 다중 CAS 세포 분열 로직(V15.8.7 성공 케이스) 보존 테스트
+    dummy_comps = [{"cas_no": "92128-87-5 / 308068-11-3", "content": "1%"}]
+    res, _ = final_quality_control(dummy_comps, "")
+    assert len(res) == 2, "회귀 오류: 다중 CAS 분리(세포 분열) 로직 파괴됨"
+    assert res[0]["cas"] == "92128-87-5", "회귀 오류: CAS 정제 파괴됨"
+    
+    # 3. 영업비밀 아군 사격 차단(V15.8.7 성공 케이스) 보존 테스트
+    dummy_comps2 = [{"cas_no": "64-17-5 (영업비밀)", "content": "10%"}]
+    res2, _ = final_quality_control(dummy_comps2, "")
+    assert len(res2) == 1, "회귀 오류: 영업비밀 보존 로직 파괴됨"
+    
+    print("[OK] 엔진 자가 검증(Unit Test) 통과: 회귀 오류 없음.")
+
+# 파일 로드 시 자동 실행
+self_test_regression()
