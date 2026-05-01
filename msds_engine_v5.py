@@ -51,39 +51,46 @@ def get_next_sniper():
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.3"
+VERSION = "15.8.4"
 
-def call_gemini_with_retry(payload, current_sniper, max_retries=3):
-    """[V15.8.1] 지정된 전담 스나이퍼의 키로만 사격합니다. (로그 다이어트)"""
-    if not current_sniper:
-        raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
-        
-    api_key = current_sniper["key"]
-    alias = current_sniper["alias"]
+def call_gemini_with_retry(payload, initial_sniper, max_retries=3):
+    """[V15.8.4] 무한 탄창 스와핑 로직 (과속 시 대기 없이 즉시 키 교체)"""
+    current_sniper = initial_sniper
     
     for attempt in range(max_retries):
+        if not current_sniper:
+            raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
+            
+        api_key = current_sniper["key"]
+        alias = current_sniper["alias"]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
             # API 사격 개시
             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=40)
             
-            # 429 과속 단속에 걸렸을 경우 (조용히 보고 후 대기)
+            # 🚨 429 과속 단속에 걸렸을 경우 (멍청하게 기다리지 않고 총을 바꾼다!)
             if response.status_code == 429:
-                wait_time = 2 ** attempt # 1초, 2초, 4초 대기
-                print(f"  🟡 {alias} 과속 지연 ({wait_time}초 대기 중...)")
-                time.sleep(wait_time)
+                next_sniper = get_next_sniper()
+                print(f"  🟡 {alias} 과속(429)! 대기 없이 즉시 [{next_sniper['alias']}](으)로 총을 바꿔 쏩니다.")
+                current_sniper = next_sniper
+                time.sleep(1) # API 스위칭을 위한 최소한의 숨 고르기
                 continue
                 
             response.raise_for_status() 
             return response.json()
+            
         except Exception as e:
+            # 429가 아닌 진짜 에러(500, 503 등)일 경우에만 터미널에 사유 출력 후 지수 백오프
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"  🔴 {alias} 사격 실패: HTTP {e.response.status_code} - {e.response.text}")
+                
             if attempt == max_retries - 1:
                 raise e
             time.sleep(2 ** attempt)
             continue
             
-    raise Exception(f"🚨 {alias} 3회 연속 사격 실패. 불도저(GPT) 투입!")
+    raise Exception(f"🚨 3회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
     """[V15.8.2] 족쇄 해제 & 공란(Blank) 반환 패치"""
@@ -300,13 +307,13 @@ def final_quality_control(components, full_text, log_func=None):
             has_invalid = True
             continue
 
-        # 5. CAS 물리적 팩트 체크 (텍스트 추출 가능한 PDF에서만 작동)
-        if norm_text:
-            clean_cas = cas.replace("-", "")
-            if clean_cas not in norm_text:
-                if log_func: log_func(f" 🚨 [팩트체크] 원본 텍스트에 미존재하는 환각 CAS 폐기: {cas}")
-                has_invalid = True
-                continue
+        # [V15.8.4 수술] 5. CAS 물리적 팩트 체크 (무력화: 텍스트 누락으로 인한 아군 팀킬 방지)
+        # if norm_text:
+        #     clean_cas = cas.replace("-", "")
+        #     if clean_cas not in norm_text:
+        #         if log_func: log_func(f" 🚨 [팩트체크] 원본 텍스트에 미존재하는 환각 CAS 폐기: {cas}")
+        #         has_invalid = True
+        #         continue
 
         # 6. 함유량 정제 (부등호 정밀 보존 V15.7)
         content = str(comp.get("content", "")).replace(" ", "")
@@ -429,17 +436,27 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
                 return [], "" # 빈 튜플 반환
 
         images = []
-        section3_text_only = "" # 👈 국소 텍스트 저장용
-        
+        raw_text = ""
         for p_idx in pages:
             page = doc[p_idx]
-            section3_text_only += page.get_text("text") + "\n"
+            raw_text += page.get_text("text") + "\n"
             pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
             if len(images) >= 3: break
             
         doc.close()
+
+        # [V15.8.4] 정밀 슬라이싱: 2/3번 항목 시작부터 3/4번 항목 시작 전까지만 텍스트 칼질
+        section3_text_only = raw_text
+        start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
+        if start_m:
+            end_m = re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I)
+            if end_m:
+                section3_text_only = raw_text[start_m.start():start_m.end() + end_m.start()]
+            else:
+                section3_text_only = raw_text[start_m.start():]
+
         return images, section3_text_only # 👈 이미지와 텍스트 동시 반환
     except Exception:
         return [], ""
