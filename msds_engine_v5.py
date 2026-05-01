@@ -51,10 +51,10 @@ def get_next_sniper():
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.4"
+VERSION = "15.8.5"
 
-def call_gemini_with_retry(payload, initial_sniper, max_retries=3):
-    """[V15.8.4] 무한 탄창 스와핑 로직 (과속 시 대기 없이 즉시 키 교체)"""
+def call_gemini_with_retry(payload, initial_sniper, max_retries=3, log_func=None):
+    """[V15.8.5] 완벽한 무한 탄창 스와핑 및 절대 침묵 방지 로직"""
     current_sniper = initial_sniper
     
     for attempt in range(max_retries):
@@ -69,24 +69,28 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=3):
             # API 사격 개시
             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=40)
             
-            # 🚨 429 과속 단속에 걸렸을 경우 (멍청하게 기다리지 않고 총을 바꾼다!)
-            if response.status_code == 429:
-                next_sniper = get_next_sniper()
-                print(f"  🟡 {alias} 과속(429)! 대기 없이 즉시 [{next_sniper['alias']}](으)로 총을 바꿔 쏩니다.")
-                current_sniper = next_sniper
-                time.sleep(1) # API 스위칭을 위한 최소한의 숨 고르기
-                continue
+            # HTTP 상태 코드가 200(정상)이 아닐 경우 (429, 403, 500 등 구글의 모든 방어망 포함)
+            if response.status_code != 200:
+                error_msg = response.text
+                if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code}): {error_msg[:60]}...")
                 
-            response.raise_for_status() 
+                # 에러 종류 불문하고 무조건 다음 키로 강제 교체 후 즉시 재사격!
+                next_sniper = get_next_sniper()
+                if next_sniper:
+                    if log_func: log_func(f"  🔄 즉시 [{next_sniper['alias']}](으)로 탄창 교체 후 재진입합니다.")
+                    current_sniper = next_sniper
+                    time.sleep(1) # API 스위칭을 위한 최소한의 숨 고르기
+                    continue
+                else:
+                    if log_func: log_func(f"  ❌ 여분 스나이퍼가 없어 {2**attempt}초 대기합니다.")
+                    time.sleep(2 ** attempt)
+                    continue
+                    
             return response.json()
             
-        except Exception as e:
-            # 429가 아닌 진짜 에러(500, 503 등)일 경우에만 터미널에 사유 출력 후 지수 백오프
-            if hasattr(e, 'response') and e.response is not None:
-                print(f"  🔴 {alias} 사격 실패: HTTP {e.response.status_code} - {e.response.text}")
-                
-            if attempt == max_retries - 1:
-                raise e
+        except requests.exceptions.RequestException as e:
+            # 통신 자체가 끊어진 경우 (Connection Error 등)
+            if log_func: log_func(f"  🔴 {alias} 네트워크 끊김: {str(e)[:60]}")
             time.sleep(2 ** attempt)
             continue
             
@@ -114,7 +118,8 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
     payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
         # [V15.8.1] 전담 스나이퍼 탄창 사용
-        result = call_gemini_with_retry(payload, current_sniper)
+        # [V15.8.5] log_func 전달 파이프 연결
+        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
         if result:
             pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             
@@ -486,8 +491,8 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
     }
 
     try:
-        # [V15.8.1] 전담 스나이퍼 탄창 사용
-        result = call_gemini_with_retry(payload, current_sniper)
+        # [V15.8.5] 본진 로그 파이프 연결!
+        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
         if result:
             candidate = result.get("candidates", [{}])[0]
             text_response = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
@@ -600,7 +605,8 @@ def process_pdf(pdf_path, log_func=None):
 
     # 3. 1차 스나이퍼(Flash) 투입
     if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
-    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper)
+    # [V15.8.5] 누락되었던 log_func 파라미터 강제 주입!
+    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper, log_func=log_func)
     used_engine = "Gemini-Flash"
 
     # 4. 스마트 Gatekeeper (황색불 판별)

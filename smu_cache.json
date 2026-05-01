@@ -4,18 +4,18 @@
         "product_name": "순&수 우드스테인 BASE",
         "reliability": "N/A",
         "신호등": "🟡",
-        "raw_content": "7732-18-5(36~46%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+        "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 330-54-1(0.1~4%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
         "page": 1,
-        "used_engine": "flash"
+        "used_engine": "bulldozer"
     },
     "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
         "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
-        "product_name": "프로스테인 네오-PC100(클리어)",
+        "product_name": "",
         "reliability": "N/A",
         "신호등": "🟡",
-        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 8001-26-1(7~14%); 1330-20-7(4~11%); 100-41-4(1~6%)",
+        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 8001-26-1(7~14%); 1330-20-7(4~11%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
         "page": 1,
@@ -31,104 +31,5 @@
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/005_msds_사라퐁(O).pdf",
         "page": 1,
         "used_engine": "flash"
-    },
-    "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8": {
-        "f_hash": "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8",
-        "product_name": "수피아 모이스쳐 핸드워시",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/006_수피아물비누-MSDS(O).pdf",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
-        "f_hash": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
-        "product_name": "블루우드스테인(Blue wood stain) [자단]",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "616-38-6(45~50%); 64742-47-8(20~25%); 8001-26-1(15~25%); 68152-57-8(5~10%); 108-65-6(1~5%); 13586-82-8(0.1~1%); 8008-20-6(0.1~1%); 68002-82-4(0.1~1%); 63800-37-3(0.1~1%); 115-77-5(0.1~1%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(≤0.1%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(1~3%); 51274-00-1(1~2%); 1333-86-4(0.1~1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
-        "page": 1,
-        "used_engine": "flash"
-    },
-    "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b": {
-        "f_hash": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 92128-87-5(2%); 308068-11-3(1%); 16830-15-2(1%); 18449-41-7(0.30%); 53238-80-5(0.01%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/011_1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153": {
-        "f_hash": "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "631-61-8(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/022_AMMONIUM ACETATE.PDF",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241": {
-        "f_hash": "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "75-05-8(95~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/023_Acetonitrile.pdf",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5": {
-        "f_hash": "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5",
-        "product_name": "D-(+)-Gluconic acid δ-lactone",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "90-80-2(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/024_D-GLUCONIC ACID LACTONE.PDF",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9": {
-        "f_hash": "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "50-70-4(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/025_D-Sorbitol.PDF",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531": {
-        "f_hash": "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "7732-18-5(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/030_Water.pdf",
-        "page": 1,
-        "used_engine": "bulldozer"
-    },
-    "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c": {
-        "f_hash": "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c",
-        "product_name": "",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%); 65996-61-4(Rem.%); 12604-53-4(1~5%); 7789-75-5(1~5%); 7440-21-3(Rem.%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/031_용접봉CR-13 CSW-0001_MSDS_용접재료(연강용 피복아크 용접봉)_(국문)v5_2023.08.22 (2).pdf",
-        "page": 1,
-        "used_engine": "bulldozer"
     }
 }
