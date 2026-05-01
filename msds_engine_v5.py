@@ -51,9 +51,9 @@ def get_next_sniper():
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.5"
+VERSION = "15.8.6"
 
-def call_gemini_with_retry(payload, initial_sniper, max_retries=3, log_func=None):
+def call_gemini_with_retry(payload, initial_sniper, max_retries=5, log_func=None):
     """[V15.8.5] 완벽한 무한 탄창 스와핑 및 절대 침묵 방지 로직"""
     current_sniper = initial_sniper
     
@@ -423,7 +423,7 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             반드시 아래 JSON 형식으로만 응답하라: {"page_index": 숫자}
             찾지 못했다면 {"page_index": -1}
             """
-            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper)
+            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper, log_func=log_func)
             
             try:
                 page_idx = int(recon_res.get("page_index", -1))
@@ -560,8 +560,11 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
             result = response.json()
             text_response = result["choices"][0]["message"]["content"]
             return json.loads(text_response)
-        return None
-    except:
+        else:
+            if log_func: log_func(f" 🔴 불도저(GPT) 서버 에러: HTTP {response.status_code}")
+            return None
+    except Exception as e:
+        if log_func: log_func(f" 🔴 불도저(GPT) 통신 에러: {str(e)[:50]}")
         return None
 
 def process_pdf(pdf_path, log_func=None):
