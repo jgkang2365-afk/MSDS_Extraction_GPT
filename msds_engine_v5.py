@@ -358,7 +358,8 @@ def final_quality_control(components, full_text, log_func=None):
         raw_cas_field = str(comp.get("cas_no", "")).strip()
 
         # 1. CAS 번호부터 싹쓸이
-        cas_list = re.findall(r'(\d{1,7}-\d{2}-\d)', raw_cas_field)
+        # [V15.8.11 핵심 수술] 앞뒤로 숫자나 하이픈이 연속된 색인번호 꼬리 자르기 방지
+        cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', raw_cas_field)
         # 2. 번호가 아예 없고 '영업비밀'만 적힌 경우만 거름
         if not cas_list and any(w in raw_cas_field for w in ["영업비밀", "비공개", "Secret"]):
             continue
@@ -527,8 +528,8 @@ def check_omission(original_text, extracted_data):
     """
     if not original_text: return 
     
-    # 1. 원본 텍스트에서 순수 고유 CAS만 카운트 (set 복원)
-    cas_pattern = re.compile(r'\d{1,7}-\d{2}-\d')
+    # 1. 원본 텍스트에서 순수 고유 CAS만 카운트 (set 복원 및 V15.8.11 정규식 방어막 적용)
+    cas_pattern = re.compile(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])')
     unique_cas_found = list(set(cas_pattern.findall(original_text)))
     valid_original_cas = [cas for cas in unique_cas_found if verify_cas_number(cas)]
     original_cas_count = len(valid_original_cas)
