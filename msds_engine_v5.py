@@ -333,23 +333,20 @@ def final_quality_control(components, full_text, log_func=None):
         # 6c. 무의미한 소수점(.0) 제거
         content = re.sub(r'\.0+(?=[^\d]|$)', '', content)
 
-        # 6d. 범위 표준화 (V15.7 주님 최종 규칙)
-        #     범위값: 최소값 부등호 → 항상 제거
-        #             최대값 부등호 → 최대값이 정확히 1일 때만 보존, 그 외 제거
-        #     예시: ≥0.1~<1% → 0.1~<1%  |  ≥0.1~<5% → 0.1~5%  |  ≥0.1~<0.5% → 0.1~0.5%
+        # 6d. 범위 및 부등호 표준화 (오지랖 철거 & 양방향 부등호 치료)
+        
+        # 기괴한 양방향 부등호(≥95%≤100%) 패턴을 95~100%로 강제 교정
+        weird_range = re.match(r'^≥([0-9.]+)(?:%?)≤([0-9.]+)(?:%?)$', content)
+        if weird_range:
+            n1, n2 = weird_range.groups()
+            content = f"{n1}~{n2}%"
+            
+        # 정상 범위 정규식
         range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', content)
         if range_m:
             p1, n1, p2, n2 = range_m.groups()
-            # 최소값 부등호: 항상 제거
-            # 최대값이 정확히 1 → 부등호 보존 또는 자동 보정(<)
-            #   AI가 부등호를 누락(0.1~1%)해도 MSDS에서 X~1%는 사실상 X~<1%이므로 < 강제 삽입
-            try: upper = float(n2)
-            except: upper = 0
-            if upper == 1:
-                prefix2 = p2 if p2 else "<"  # 부등호 없으면 < 자동 추가
-                content = f"{n1}~{prefix2}{n2}%"
-            else:
-                content = f"{n1}~{n2}%"
+            # 원본 부등호(p2)가 있으면 살리고, 없으면 빈칸 (ex: 0.1-1 -> 0.1~1%)
+            content = f"{n1}~{p2}{n2}%"
         elif "Rem" in content:
             # 6e. Rem.% 보정
             if "%" not in content:
