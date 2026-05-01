@@ -53,9 +53,10 @@ if not OPENAI_API_KEY:
 
 VERSION = "15.8.6"
 
-def call_gemini_with_retry(payload, initial_sniper, max_retries=5, log_func=None):
-    """[V15.8.5] 완벽한 무한 탄창 스와핑 및 절대 침묵 방지 로직"""
+def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
+    """[V15.8.8] 429 방어 강화: 지수 백오프 + 풀 2바퀴 허용"""
     current_sniper = initial_sniper
+    sniper_count = len(valid_snipers) if valid_snipers else 1
     
     for attempt in range(max_retries):
         if not current_sniper:
@@ -66,35 +67,44 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=5, log_func=None
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
-            # API 사격 개시
             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=40)
             
-            # HTTP 상태 코드가 200(정상)이 아닐 경우 (429, 403, 500 등 구글의 모든 방어망 포함)
             if response.status_code != 200:
                 error_msg = response.text
                 if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code}): {error_msg[:60]}...")
                 
-                # 에러 종류 불문하고 무조건 다음 키로 강제 교체 후 즉시 재사격!
+                # [V15.8.8] 429 전용 쿨다운: 키 풀 1바퀴 소진 시 장기 대기
                 next_sniper = get_next_sniper()
                 if next_sniper:
-                    if log_func: log_func(f"  🔄 즉시 [{next_sniper['alias']}](으)로 탄창 교체 후 재진입합니다.")
                     current_sniper = next_sniper
-                    time.sleep(1) # API 스위칭을 위한 최소한의 숨 고르기
+                    
+                    # 키 풀을 한 바퀴 돌았으면(모든 키가 429) 장기 대기
+                    if (attempt + 1) % sniper_count == 0:
+                        wait_sec = min(15 * ((attempt // sniper_count) + 1), 60)
+                        if log_func: log_func(f"  ⏳ 전 스나이퍼 429 → {wait_sec}초 냉각 후 [{current_sniper['alias']}]로 재진입")
+                        time.sleep(wait_sec)
+                    else:
+                        if response.status_code == 429:
+                            wait_sec = 5  # 429는 최소 5초 쿨다운
+                        else:
+                            wait_sec = 2  # 기타 에러는 2초
+                        if log_func: log_func(f"  🔄 [{current_sniper['alias']}](으)로 탄창 교체 ({wait_sec}초 대기)")
+                        time.sleep(wait_sec)
                     continue
                 else:
-                    if log_func: log_func(f"  ❌ 여분 스나이퍼가 없어 {2**attempt}초 대기합니다.")
-                    time.sleep(2 ** attempt)
+                    wait_sec = 2 ** min(attempt, 5)
+                    if log_func: log_func(f"  ❌ 여분 스나이퍼가 없어 {wait_sec}초 대기합니다.")
+                    time.sleep(wait_sec)
                     continue
                     
             return response.json()
             
         except requests.exceptions.RequestException as e:
-            # 통신 자체가 끊어진 경우 (Connection Error 등)
             if log_func: log_func(f"  🔴 {alias} 네트워크 끊김: {str(e)[:60]}")
-            time.sleep(2 ** attempt)
+            time.sleep(2 ** min(attempt, 5))
             continue
             
-    raise Exception(f"🚨 3회 연속 사격 실패. 불도저(GPT) 투입!")
+    raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
     """[V15.8.2] 족쇄 해제 & 공란(Blank) 반환 패치"""
@@ -283,61 +293,76 @@ def clean_number(n_str):
         return str(f)
     except: return n_str
 
+def _normalize_single_content(raw):
+    """[V15.8.8] 개별 함유량 문자열 정제 헬퍼"""
+    v = raw.strip().replace(" ", "")
+    v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
+    v = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', v)
+    v = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', v)
+    v = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', v)
+    v = re.sub(r'([0-9.]+)(?:%?)이상(?:%?)', r'≥\1', v)
+    v = v.replace('＜', '<').replace('＞', '>')
+    v = v.replace('<=', '≤').replace('>=', '≥')
+    v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
+
+    weird_range = re.match(r'^≤([0-9.]+)(?:%?)≤([0-9.]+)(?:%?)$', v)
+    if weird_range:
+        n1, n2 = weird_range.groups()
+        return f"{n1}~{n2}%"
+    range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', v)
+    if range_m:
+        p1, n1, p2, n2 = range_m.groups()
+        return f"{n1}~{p2}{n2}%"
+    if "Rem" in v:
+        return "Rem.%" if "%" not in v else v
+    single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', v)
+    if single_m:
+        p, n = single_m.groups()
+        return f"{p}{n}%"
+    return v
+
 def final_quality_control(components, full_text, log_func=None):
-    """[V15.8.7] 지능형 다중 CAS 복제 및 분리 추진"""
+    """[V15.8.8] 지능형 다중 CAS ↔ 함유량 1:1 매칭 분리"""
     refined = []
     has_invalid = False
     norm_text = re.sub(r'[\s\-]', '', full_text).upper() if full_text else ""
     for comp in components:
         raw_cas_field = str(comp.get("cas_no", "")).strip()
 
-        # [수술 1] 1. CAS 번호부터 싹쓸이 (복제 준비)
+        # 1. CAS 번호부터 싹쓸이
         cas_list = re.findall(r'(\d{1,7}-\d{2}-\d)', raw_cas_field)
-        # 2. 번호가 아예 없고 '영업비밀'만 적힌 경우만 여기서 거름
+        # 2. 번호가 아예 없고 '영업비밀'만 적힌 경우만 거름
         if not cas_list and any(w in raw_cas_field for w in ["영업비밀", "비공개", "Secret"]):
             continue
         if not cas_list:
             continue
 
-        # 6. 함유량 정제
-        content_val = str(comp.get("content", "")).replace(" ", "")
-        content_val = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', content_val)
-        if not content_val:
-            continue
+        # 3. 함유량 원본 추출
+        raw_content = str(comp.get("content", "")).strip()
 
-        content_val = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', content_val)
-        content_val = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', content_val)
-        content_val = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', content_val)
-        content_val = re.sub(r'([0-9.]+)(?:%?)이상(?:%?)', r'≥\1', content_val)
-        content_val = content_val.replace('＜', '<').replace('＞', '>')
-        content_val = content_val.replace('<=', '≤').replace('>=', '≥')
-        content_val = re.sub(r'\.0+(?=[^\d]|$)', '', content_val)
+        # [V15.8.8 핵심] 함유량도 슬래시(/)로 분리하여 CAS와 1:1 매칭
+        content_parts_raw = re.split(r'\s*/\s*', raw_content)
+        content_parts = [_normalize_single_content(c) for c in content_parts_raw if c.strip()]
 
-        weird_range = re.match(r'^≤([0-9.]+)(?:%?)≤([0-9.]+)(?:%?)$', content_val)
-        if weird_range:
-            n1, n2 = weird_range.groups()
-            content_val = f"{n1}~{n2}%"
-        range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', content_val)
-        if range_m:
-            p1, n1, p2, n2 = range_m.groups()
-            content_val = f"{n1}~{p2}{n2}%"
-        elif "Rem" in content_val:
-            if "%" not in content_val:
-                content_val = "Rem.%"
+        # CAS 수와 함유량 수가 정확히 일치하면 1:1 매칭
+        if len(cas_list) == len(content_parts):
+            for cas_raw, cv in zip(cas_list, content_parts):
+                cas = re.sub(r'^0+', '', cas_raw)
+                if not verify_cas_number(cas):
+                    has_invalid = True
+                    continue
+                if cv:
+                    refined.append({"cas": cas, "content": cv})
         else:
-            single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', content_val)
-            if single_m:
-                p, n = single_m.groups()
-                content_val = f"{p}{n}%"
-
-        for cas in cas_list:
-            # 3. [V15.8.7] 번호가 존재한다면 체크섬 통과 시 무조건 살림
-            cas = re.sub(r'^0+', '', cas)
-            if not verify_cas_number(cas):
-                has_invalid = True
-                continue
-            if content_val:
-                refined.append({"cas": cas, "content": content_val})
+            # 불일치 시: 단일 함유량이면 공통 적용, 아니면 첫 번째 값 사용
+            fallback_content = content_parts[0] if content_parts else ""
+            for cas_raw in cas_list:
+                cas = re.sub(r'^0+', '', cas_raw)
+                if not verify_cas_number(cas):
+                    has_invalid = True
+                    continue
+                if fallback_content:
+                    refined.append({"cas": cas, "content": fallback_content})
     try:
         check_omission(full_text, refined)
     except ValueError as e:
