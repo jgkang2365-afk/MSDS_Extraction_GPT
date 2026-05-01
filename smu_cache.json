@@ -9,5 +9,38 @@
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
         "page": 1,
         "used_engine": "flash"
+    },
+    "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
+        "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
+        "product_name": "프로스태인 네오-PC100(크리어)",
+        "reliability": "N/A",
+        "신호등": "🟡",
+        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 8001-26-1(7~14%); 1330-20-7(4~11%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
+        "page": 1,
+        "used_engine": "bulldozer"
+    },
+    "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d": {
+        "f_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+        "product_name": "사라퐁",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(60~70%); 1310-73-2(<1%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/005_msds_사라퐁(O).pdf",
+        "page": 1,
+        "used_engine": "bulldozer"
+    },
+    "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8": {
+        "f_hash": "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8",
+        "product_name": "수피아 모이스쳐 핸드워시",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/006_수피아물비누-MSDS(O).pdf",
+        "page": 1,
+        "used_engine": "bulldozer"
     }
 }

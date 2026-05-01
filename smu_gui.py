@@ -1270,22 +1270,31 @@ class SMUGUI(QMainWindow):
 
     def on_row_clicked(self, row, column):
         """
-        [V7.0 & V11.0 통합] 테이블 행 클릭 시 미리보기 연동 (1페이지 강제 고정)
+        [V15.8.8] 테이블 행 클릭 시 해당 성분이 위치한 PDF 페이지로 자동 이동
         """
         try:
             target_pdf_path_item = self.table.item(row, COL_IDX_FILEPATH)
             if not target_pdf_path_item: return
-                
             target_pdf_path = target_pdf_path_item.text()
-
             if not target_pdf_path or not os.path.exists(target_pdf_path): return
 
-            # PDF 로드
+            # 1. PDF 로드
+            is_new_pdf = False
             if self.preview_pane.current_pdf_path != target_pdf_path:
                 self.preview_pane.load_pdf(target_pdf_path)
-                # [최종 단순화] 새로운 PDF를 로드할 때만 스크롤을 맨 위로 고정
-                self.preview_pane.verticalScrollBar().setValue(0)
+                is_new_pdf = True
 
+            # 2. 페이지 이동
+            page_item = self.table.item(row, COL_IDX_PAGE)
+            if page_item and page_item.text().strip():
+                try:
+                    p_str = re.sub(r'[^0-9]', '', page_item.text())
+                    if p_str:
+                        target_page = int(p_str)
+                        QTimer.singleShot(100, lambda: self.preview_pane.navigate_to_page(target_page))
+                except: pass
+            elif is_new_pdf:
+                self.preview_pane.verticalScrollBar().setValue(0)
         except Exception as e:
             print(f"Row Click Error: {e}")
 

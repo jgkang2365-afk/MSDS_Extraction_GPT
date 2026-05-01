@@ -43,20 +43,47 @@ if not valid_snipers:
 
 sniper_pool = cycle(valid_snipers) if valid_snipers else None
 
+# [V15.8.8] 스나이퍼 쿨다운 레지스트리: 429를 받은 키는 일정 시간 블랙리스트
+_sniper_cooldown = {}  # {alias: timestamp_until}
+_sniper_round_robin_idx = 0
+
 def get_next_sniper():
-    """파일 하나를 새로 잡을 때마다 전담 스나이퍼를 배정합니다."""
-    if not sniper_pool: return None
-    return next(sniper_pool)
+    """[V15.8.8] 쿨다운이 끝난 키 중 라운드로빈으로 배정"""
+    global _sniper_round_robin_idx
+    if not valid_snipers: return None
+    
+    now = time.time()
+    n = len(valid_snipers)
+    
+    # 1. 쿨다운이 풀린 키 중에서 라운드로빈
+    for _ in range(n):
+        idx = _sniper_round_robin_idx % n
+        _sniper_round_robin_idx += 1
+        sniper = valid_snipers[idx]
+        cooldown_until = _sniper_cooldown.get(sniper["alias"], 0)
+        if now >= cooldown_until:
+            return sniper
+    
+    # 2. 모든 키가 쿨다운 중 → 가장 빨리 풀리는 키를 대기 후 반환
+    earliest_alias = min(_sniper_cooldown, key=_sniper_cooldown.get)
+    wait_sec = _sniper_cooldown[earliest_alias] - now
+    if wait_sec > 0:
+        time.sleep(wait_sec + 0.5)
+    return next(s for s in valid_snipers if s["alias"] == earliest_alias)
+
+def mark_sniper_cooldown(sniper, cooldown_sec=60):
+    """[V15.8.8] 429를 받은 스나이퍼를 일정 시간 블랙리스트"""
+    if sniper:
+        _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.6"
+VERSION = "15.8.8"
 
 def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
-    """[V15.8.8] 429 방어 강화: 지수 백오프 + 풀 2바퀴 허용"""
+    """[V15.8.8] 쿨다운 레지스트리 연동: 429 키는 60초 블랙리스트, 살아있는 키 자동 배정"""
     current_sniper = initial_sniper
-    sniper_count = len(valid_snipers) if valid_snipers else 1
     
     for attempt in range(max_retries):
         if not current_sniper:
@@ -73,29 +100,17 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
                 error_msg = response.text
                 if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code}): {error_msg[:60]}...")
                 
-                # [V15.8.8] 429 전용 쿨다운: 키 풀 1바퀴 소진 시 장기 대기
-                next_sniper = get_next_sniper()
-                if next_sniper:
-                    current_sniper = next_sniper
-                    
-                    # 키 풀을 한 바퀴 돌았으면(모든 키가 429) 장기 대기
-                    if (attempt + 1) % sniper_count == 0:
-                        wait_sec = min(15 * ((attempt // sniper_count) + 1), 60)
-                        if log_func: log_func(f"  ⏳ 전 스나이퍼 429 → {wait_sec}초 냉각 후 [{current_sniper['alias']}]로 재진입")
-                        time.sleep(wait_sec)
-                    else:
-                        if response.status_code == 429:
-                            wait_sec = 5  # 429는 최소 5초 쿨다운
-                        else:
-                            wait_sec = 2  # 기타 에러는 2초
-                        if log_func: log_func(f"  🔄 [{current_sniper['alias']}](으)로 탄창 교체 ({wait_sec}초 대기)")
-                        time.sleep(wait_sec)
-                    continue
-                else:
-                    wait_sec = 2 ** min(attempt, 5)
-                    if log_func: log_func(f"  ❌ 여분 스나이퍼가 없어 {wait_sec}초 대기합니다.")
-                    time.sleep(wait_sec)
-                    continue
+                # [V15.8.8] 429면 해당 키를 60초 블랙리스트
+                if response.status_code == 429:
+                    mark_sniper_cooldown(current_sniper, cooldown_sec=60)
+                elif response.status_code == 503:
+                    mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+                
+                # 쿨다운 레지스트리가 알아서 살아있는 키를 골라줌
+                current_sniper = get_next_sniper()
+                if current_sniper:
+                    if log_func: log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환")
+                continue
                     
             return response.json()
             
@@ -180,13 +195,15 @@ PROMPT_GEMINI_FLASH = """
 4. 🚨 1% 부등호 조작 금지: 원본에 '0.1-1' 이라 적혀 있으면 '0.1~1%'로 출력하라. 임의로 '<1%'처럼 부등호를 지어내는 환각을 절대 금지한다.
 5. 포맷 통일: 함유량 숫자 뒤에는 반드시 '%'를 붙여라.
 
-JSON 출력 포맷:
-{
-  "구성성분": [
-    {"cas_no": "123-45-6", "content": "10~20%"}
-  ],
-  "교정_사유": "시각 추출 완료"
-}
+6. 🚨 페이지 트래킹: 첨부된 이미지 중 해당 성분이 발견된 이미지의 실제 페이지 번호(이미지 구석에 적힌 번호 등)를 'page' 필드에 기재하라.
+ 
+ JSON 출력 포맷:
+ {
+   "구성성분": [
+     {"cas_no": "123-45-6", "content": "10~20%", "page": "3"}
+   ],
+   "교정_사유": "시각 추출 완료"
+ }
 """
 
 # 🚜 [2차 복구 요원용 프롬프트] GPT-4o-mini 전용
@@ -195,19 +212,21 @@ PROMPT_GPT_FALLBACK = """
 
 [🔥 2차 엔진 절대 원칙]
 1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
-2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 동원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
+2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 도원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
 3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
    🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
    [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
    [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
 
-JSON 출력 포맷:
-{
-  "구성성분": [
-    {"cas_no": "123-45-6", "content": "10~20%"}
-  ],
-  "교정_사유": "심층 복구 근거 요약"
-}
+4. 🚨 페이지 트래킹: 각 성분이 발견된 페이지 번호를 'page' 필드에 기재하라.
+ 
+ JSON 출력 포맷:
+ {
+   "구성성분": [
+     {"cas_no": "123-45-6", "content": "10~20%", "page": "3"}
+   ],
+   "교정_사유": "심층 복구 근거 요약"
+ }
 """
 
 # [V8.2] MES 마스터 데이터 로드 (Silent Failure 방어 및 Fail-Safe 적용)
@@ -344,7 +363,8 @@ def final_quality_control(components, full_text, log_func=None):
         content_parts_raw = re.split(r'\s*/\s*', raw_content)
         content_parts = [_normalize_single_content(c) for c in content_parts_raw if c.strip()]
 
-        # CAS 수와 함유량 수가 정확히 일치하면 1:1 매칭
+        # CAS 번호 당 하나씩 정제 데이터 생성
+        page_val = comp.get("page", "")
         if len(cas_list) == len(content_parts):
             for cas_raw, cv in zip(cas_list, content_parts):
                 cas = re.sub(r'^0+', '', cas_raw)
@@ -352,9 +372,8 @@ def final_quality_control(components, full_text, log_func=None):
                     has_invalid = True
                     continue
                 if cv:
-                    refined.append({"cas": cas, "content": cv})
+                    refined.append({"cas": cas, "content": cv, "page": page_val})
         else:
-            # 불일치 시: 단일 함유량이면 공통 적용, 아니면 첫 번째 값 사용
             fallback_content = content_parts[0] if content_parts else ""
             for cas_raw in cas_list:
                 cas = re.sub(r'^0+', '', cas_raw)
@@ -362,7 +381,7 @@ def final_quality_control(components, full_text, log_func=None):
                     has_invalid = True
                     continue
                 if fallback_content:
-                    refined.append({"cas": cas, "content": fallback_content})
+                    refined.append({"cas": cas, "content": fallback_content, "page": page_val})
     try:
         check_omission(full_text, refined)
     except ValueError as e:
@@ -452,9 +471,10 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             else:
                 section3_text_only = raw_text[start_m.start():]
 
-        return images, section3_text_only # 👈 이미지와 텍스트 동시 반환
+        # ... (중략) ...
+        return images, section3_text_only, pages # 👈 이미지, 텍스트, 페이지 번호 목록 반환
     except Exception:
-        return [], ""
+        return [], "", []
 
 def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None):
     """[V14.6] 1차 스나이퍼: 고속 시각 추출"""
@@ -493,27 +513,25 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
         return None
 
 def check_omission(original_text, extracted_data):
-    """[V15.8] 원본의 CAS 개수와 AI가 뽑아온 성분 개수를 교차 검증합니다."""
-    if not original_text: return # 텍스트가 없는 스캔본은 검증 불가
+    """[V15.8.8] 카운트 기반 누락 검증: 중복 출현 CAS까지 정밀하게 체크합니다."""
+    if not original_text: return 
     
-    # 1. 원본 텍스트에서 CAS 번호 형태의 텍스트가 몇 개 있는지 센다.
+    # 1. 원본 텍스트에서 CAS 번호 형태를 모두 추출 (중복 허용)
     cas_pattern = re.compile(r'\d{1,7}-\d{2}-\d')
-    original_cas_list = list(set(cas_pattern.findall(original_text)))
-    # 유효한 CAS만 카운트
-    valid_original_cas = [cas for cas in original_cas_list if verify_cas_number(cas)]
+    all_cas_found = cas_pattern.findall(original_text)
+    
+    # 유효한 CAS만 필터링 (중복 포함)
+    valid_original_cas = [cas for cas in all_cas_found if verify_cas_number(cas)]
     original_cas_count = len(valid_original_cas)
     
-    # 2. 스나이퍼가 가져온 결과물의 개수를 센다.
-    # extracted_data는 보통 {"구성성분": [...]} 또는 refined_comps 리스트일 수 있음
+    # 2. 추출 데이터 개수 계산
     if isinstance(extracted_data, list):
         extracted_cas_count = len(extracted_data)
     else:
         extracted_cas_count = len(extracted_data.get("구성성분", []))
     
-    # 3. 누락 적발 시 황색불(비상) 발동!
+    # 3. 누락 적발
     if extracted_cas_count < original_cas_count:
-        print(f"🟡 [누락 적발] 원본 CAS({original_cas_count}개) vs 추출({extracted_cas_count}개). 스나이퍼가 성분을 빼먹었습니다!")
-        # [V15.8] 에러를 던져 2차 요원(GPT)을 투입하게 유도
         raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}). 2차 불도저(GPT) 요원 투입!")
 
 def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
