@@ -356,7 +356,7 @@ class ExtractionWorker(QThread):
             if not self.is_running: break
             try:
                 fn = os.path.basename(path)
-                if i > 0: self.update_log_signal.emit("") # [추가] 파일 간 가독성을 위한 빈 줄
+                if i > 0: self.update_log_signal.emit("<span style='color:#5DADE2;'><b>" + "━"*70 + "</b></span>") 
                 
                 # [NEW] 캐시 체크 (SHA-256 해시 기준)
                 f_hash = self.core.calculate_file_hash(path)
@@ -471,7 +471,7 @@ class ValidationWorker(QThread):
                 prod = data.get("prod")
                 cas_content = data.get("cas_content")
                 row_idx = data.get("row_idx") # Fallback용
-                if i > 0: self.log_signal.emit("") # [추가] 파일 간 가독성을 위한 빈 줄
+                if i > 0: self.log_signal.emit("<span style='color:#5DADE2;'><b>" + "━"*70 + "</b></span>")
                 
                 # [V11.4 신규] 사용자가 테이블의 CAS를 직접 수정한 경우 (캐시에 manual_data 내 raw_content 존재) 감지
                 is_manual_cas = False
@@ -876,6 +876,12 @@ class SMUGUI(QMainWindow):
         btn.setChecked(True)
         btn.update_style(True)
 
+        # [V7.5] 탭으로 전환 시, 시트 목록이 비어 있으면 강제 갱신 시도
+        if idx == 0: # 추출 및 검증 탭
+            path = self.edit_excel.text()
+            if path and self.combo_sheet.count() == 0:
+                self._update_sheet_list(path)
+
     def toggle_sidebar(self):
         """[Premium] 사이드바 슬림 모드 <-> 풀 모드 전환 애니메이션"""
         self.sidebar_slim = not self.sidebar_slim
@@ -900,13 +906,6 @@ class SMUGUI(QMainWindow):
             btn.set_slim(self.sidebar_slim)
         
         self.btn_toggle_sidebar.setText("≡" if self.sidebar_slim else "◀")
-
-
-        # [V7.5] 탭으로 전환 시, 시트 목록이 비어 있으면 강제 갱신 시도
-        if index == 0: # 추출 및 검증 탭
-            path = self.edit_excel.text()
-            if path and self.combo_sheet.count() == 0:
-                self._update_combo_sheets(path, self.combo_sheet)
 
     def _setup_log_section(self):
         """하단 로그 창 및 토글 버튼 구성"""

@@ -139,3 +139,19 @@ Traceback (most recent call last):
     ^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'SMUGUI' object has no attribute 'content_splitter'
 
+
+[2026-05-01 18:47:53.951719]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 906, in toggle_sidebar
+    if index == 0: # 추출 및 검증 탭
+       ^^^^^
+NameError: name 'index' is not defined
+
+
+[2026-05-01 18:48:08.649128]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 906, in toggle_sidebar
+    if index == 0: # 추출 및 검증 탭
+       ^^^^^
+NameError: name 'index' is not defined
+

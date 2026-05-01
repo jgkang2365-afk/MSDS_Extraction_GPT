@@ -51,7 +51,7 @@ def get_next_sniper():
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.1"
+VERSION = "15.8.3"
 
 def call_gemini_with_retry(payload, current_sniper, max_retries=3):
     """[V15.8.1] 지정된 전담 스나이퍼의 키로만 사격합니다. (로그 다이어트)"""
@@ -62,7 +62,7 @@ def call_gemini_with_retry(payload, current_sniper, max_retries=3):
     alias = current_sniper["alias"]
     
     for attempt in range(max_retries):
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
             # API 사격 개시
@@ -86,23 +86,22 @@ def call_gemini_with_retry(payload, current_sniper, max_retries=3):
     raise Exception(f"🚨 {alias} 3회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
-    """[V12.9.5] 주님의 2.3 시선 이동 알고리즘 이식: 인지적 격리 비전 스나이퍼"""
-    if not current_sniper or not image_list: return "미추출", "실패"
+    """[V15.8.2] 족쇄 해제 & 공란(Blank) 반환 패치"""
+    if not current_sniper or not image_list: return "", "실패"
 
     # 1페이지 사진 데이터 준비
     first_page_img = image_list[0]
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
-    # [핵심] 인지적 격리 프롬프트
+    # [핵심] 주님의 지시로 다이어트된 프롬프트
     prompt = """
-    너는 MSDS의 제품명을 정확히 확정 짓는 전문 판독관이다. 사진에서 다음 3단계 수칙을 엄격히 준수하라.
+    너는 MSDS의 제품명을 정확히 확정 짓는 전문 판독관이다. 사진에서 다음 2단계 수칙을 엄격히 준수하라.
 
-    1. [구역 격리]: "1. 화학제품과 회사에 관한 정보" 항목을 찾고, 그 아래부터 "2. 유해성·위험성" 항목 시작 전까지만 읽어라. 2번 항목의 GHS 그림이나 안전 문구(P305 등)는 네 시야에 없는 것이니 절대 무시하라.
-    2. [의미적 레이블 앵커]: '가. 제품명', '상품명', '품명', '제품의 명칭', 'Product Name' 등 제품의 이름을 나타내는 모든 유사 레이블을 앵커로 삼아라. 레이블이 없더라도 1번 항목 바로 아래에 가장 강조된 텍스트를 목표로 한다.
-    3. [원본 무삭제 카피]: 모델명, 규격, 괄호 안 영문명까지 토씨 하나 틀리지 말고 그대로 베껴라. 요약은 절대 금지한다. 단, '제조자'나 '나.' 항목이 나오면 그 직전에서 즉시 멈춰라.
+    1. [구역 격리]: "1. 화학제품과 회사에 관한 정보" 항목을 찾고, 그 아래부터 "2. 유해성·위험성" 항목 시작 전까지만 읽어라. 2번 항목의 GHS 그림이나 안전 문구는 철저히 무시하라.
+    2. [핵심 타격]: '가. 제품명', '상품명', '품명', '제품의 명칭', 'Product Name' 등의 레이블이 가리키는 [순수 제품명]만 정확히 추출하라. 
 
-    부연 설명 없이 오직 제품명 문자열만 딱 한 줄로 출력하라. 못 찾겠으면 '미추출'.
+    제품 번호, 카탈로그 코드, 권장 용도, 제조사 정보 등 불필요한 텍스트는 스스로 판단하여 제거하고, 오직 '제품명' 문자열만 부연 설명 없이 딱 한 줄로 출력하라. 못 찾겠으면 아무것도 출력하지 마라.
     """
 
     payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
@@ -111,13 +110,15 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
         result = call_gemini_with_retry(payload, current_sniper)
         if result:
             pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            # GHS 쓰레기 데이터 최종 검열
+            
+            # AI가 공란을 주거나 실패했을 때를 대비한 안전망
             if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
                 if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공: {pn_ai[:30]}")
                 return pn_ai.replace('\n', ' ').strip(), "Vision"
     except Exception as e:
         if log_func: log_func(f" ├─ [제품명 스캔] ❌ 실패: {e}")
-    return "미추출", "실패"
+        
+    return "", "실패"  # '미추출' 대신 깔끔한 공란 반환
 
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
 
@@ -380,43 +381,39 @@ def final_quality_control(components, full_text, log_func=None):
 
 
 def find_section3_pages(doc):
-    """[V15.0] 텍스트 스캔을 통한 Section 3(구성성분) 포함 페이지 정밀 탐지"""
+    """[V15.8.3] 2번 항목(비표준) 및 3번 항목 정밀 탐지"""
     pages = []
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # 3번 항 시작 지점 탐색
-        if re.search(r'(?:SECTION\s*)?3[\s.:]*(?:구성|COMPOSITION)', text, re.I):
+        # 2번 또는 3번 항 시작 지점 탐색
+        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', text, re.I):
             pages.append(i)
-        # 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
-        # (Section 3 제목이 이전 페이지, 표 본체가 이 페이지에 있는 경우 대비)
-        if pages and re.search(r'(?:SECTION\s*)?4[\s.:]*(?:응급|FIRST)', text, re.I):
+        # 3번 또는 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
+        if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
             if i not in pages:
                 pages.append(i)
             break
     return pages
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
-    """[V14.6] Section 3 영역 고해상도(2.5x) 캡처 및 스캔본 정찰병(Recon)"""
+    """[V15.8.3] 표 이미지와 함께 해당 페이지의 텍스트만 국소 추출하여 반환"""
     try:
         doc = fitz.open(pdf_path)
         pages = find_section3_pages(doc)
         
-        # [🚨 Plan B: 스캔본 정찰병 가동]
         if not pages:
-            if log_func: log_func(" 🔍 텍스트 기반 탐지 실패. 스캔본 정찰병(Recon) 가동...")
+            if log_func: log_func(" 🔍 텍스트 기반 탐지 실패. 스캔본 정찰병 가동...")
             recon_images = []
             for i in range(min(5, len(doc))):
-                pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8)) # 정찰용 저해상도
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
                 recon_images.append({
                     "mimeType": "image/png", 
                     "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")
                 })
             
-            # 정찰병 호출 (숫자만 추출하도록 강제)
             recon_prompt = """
-            이 이미지들 중 '3. 구성성분' 표가 있는 페이지의 번호(0부터 시작하는 index)를 찾아라.
-            반드시 아래 JSON 형식으로만 응답하라:
-            {"page_index": 숫자}
+            이 이미지들 중 '2. 구성성분' 또는 '3. 구성성분' 표가 있는 페이지의 번호(0부터 시작하는 index)를 찾아라.
+            반드시 아래 JSON 형식으로만 응답하라: {"page_index": 숫자}
             찾지 못했다면 {"page_index": -1}
             """
             recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper)
@@ -428,27 +425,29 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
                 
             if page_idx >= 0 and page_idx < len(doc):
                 pages = [page_idx]
-                # [수정] 표가 다음 장으로 넘어갈 것을 대비해 N+1 페이지도 바인딩
                 if page_idx + 1 < len(doc):
                     pages.append(page_idx + 1)
                 if log_func: log_func(f" 🎯 정찰병이 페이지를 찾았습니다: {pages}번 바인딩")
             else:
                 if log_func: log_func(" ❌ 정찰병도 표를 찾지 못했습니다.")
                 doc.close()
-                return []
-        
+                return [], "" # 빈 튜플 반환
+
         images = []
+        section3_text_only = "" # 👈 국소 텍스트 저장용
+        
         for p_idx in pages:
             page = doc[p_idx]
+            section3_text_only += page.get_text("text") + "\n"
             pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
             if len(images) >= 3: break
             
         doc.close()
-        return images
+        return images, section3_text_only # 👈 이미지와 텍스트 동시 반환
     except Exception:
-        return []
+        return [], ""
 
 def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None):
     """[V14.6] 1차 스나이퍼: 고속 시각 추출"""
@@ -558,7 +557,7 @@ def process_pdf(pdf_path, log_func=None):
     if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
     # 1. Section 3 이미지 추출
-    image_list = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
+    image_list, section3_text_only = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     if not image_list:
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
@@ -711,15 +710,15 @@ def process_pdf(pdf_path, log_func=None):
     tag = f"[{used_engine}-PASS]"
     gui_engine_name = "flash" if used_engine == "Gemini-Flash" else "bulldozer" # 👈 공통 변수 추가
     
-    # [V15.3.1 추가] 제품명이 '미추출'인 경우에도 주의가 필요하므로 황색불(🟡) 반환
-    if hybrid_pn == "미추출":
+    # [V15.8.2 패치] 제품명이 공란('')인 경우 수동 확인을 위해 황색불(🟡) 반환
+    if not hybrid_pn:
         return {
             "구성성분": comp_str,
-            "제품명": hybrid_pn,
+            "제품명": "",
             "측정대상": target_substances,
             "교정_사유": "제품명 추출 실패 - 수동 확인 요망",
             "신호등": "🟡",
-            "used_engine": gui_engine_name # 👈 추가!
+            "used_engine": gui_engine_name
         }
 
     # [V15.5 추가] 가짜 CAS가 탐지된 경우 초록불(🟢) 차단 및 황색불(🟡) 강제 전환
