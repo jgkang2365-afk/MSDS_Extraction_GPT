@@ -4,6 +4,7 @@ import base64
 import sys
 import re
 import time
+from itertools import cycle
 import json
 import fitz  # [복구 완료] 텍스트 추출의 핵심 엔진 부활!
 import unicodedata
@@ -17,20 +18,76 @@ load_dotenv(override=True)
 
 # [필수 세팅] API 키 (시스템 변수 충돌 방지를 위해 전용 변수명 사용)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GOOGLE_API_KEY = os.getenv("MSDS_GOOGLE_API_KEY")
+
+# --- V15.8.1 API 무한 탄창 로직 (전담 마크 시스템) ---
+api_keys_raw = [
+    os.getenv("MSDS_GOOGLE_API_KEY_1"),
+    os.getenv("MSDS_GOOGLE_API_KEY_2"),
+    os.getenv("MSDS_GOOGLE_API_KEY_3"),
+    os.getenv("MSDS_GOOGLE_API_KEY_4")
+]
+
+# 유효한 키에 별명(alias) 부여
+valid_snipers = []
+for i, key in enumerate(api_keys_raw, 1):
+    if key:
+        valid_snipers.append({"alias": f"스나이퍼-{i}", "key": key})
+
+if not valid_snipers:
+    # 레거시 키 지원 (하위 호환성)
+    legacy_key = os.getenv("MSDS_GOOGLE_API_KEY")
+    if legacy_key:
+        valid_snipers = [{"alias": "스나이퍼-L", "key": legacy_key}]
+    else:
+        print("경고: 장전된 구글 API 키가 없습니다! .env를 확인하세요.")
+
+sniper_pool = cycle(valid_snipers) if valid_snipers else None
+
+def get_next_sniper():
+    """파일 하나를 새로 잡을 때마다 전담 스나이퍼를 배정합니다."""
+    if not sniper_pool: return None
+    return next(sniper_pool)
 
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
-if not GOOGLE_API_KEY:
-    print("경고: .env 파일에 GOOGLE_API_KEY가 없습니다. 1차 메인 엔진(Gemini)이 작동하지 않습니다.")
 
-VERSION = "15.7"
+VERSION = "15.8.1"
 
-GEMINI_API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GOOGLE_API_KEY}"
+def call_gemini_with_retry(payload, current_sniper, max_retries=3):
+    """[V15.8.1] 지정된 전담 스나이퍼의 키로만 사격합니다. (로그 다이어트)"""
+    if not current_sniper:
+        raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
+        
+    api_key = current_sniper["key"]
+    alias = current_sniper["alias"]
+    
+    for attempt in range(max_retries):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        
+        try:
+            # API 사격 개시
+            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=40)
+            
+            # 429 과속 단속에 걸렸을 경우 (조용히 보고 후 대기)
+            if response.status_code == 429:
+                wait_time = 2 ** attempt # 1초, 2초, 4초 대기
+                print(f"  🟡 {alias} 과속 지연 ({wait_time}초 대기 중...)")
+                time.sleep(wait_time)
+                continue
+                
+            response.raise_for_status() 
+            return response.json()
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise e
+            time.sleep(2 ** attempt)
+            continue
+            
+    raise Exception(f"🚨 {alias} 3회 연속 사격 실패. 불도저(GPT) 투입!")
 
-def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
+def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
     """[V12.9.5] 주님의 2.3 시선 이동 알고리즘 이식: 인지적 격리 비전 스나이퍼"""
-    if not api_key or not image_list: return "미추출", "실패"
+    if not current_sniper or not image_list: return "미추출", "실패"
 
     # 1페이지 사진 데이터 준비
     first_page_img = image_list[0]
@@ -50,14 +107,16 @@ def extract_product_name_hybrid(text_chunk, image_list, api_key, log_func=None):
 
     payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
-        resp = requests.post(GEMINI_API_URL, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
-        if resp.status_code == 200:
-            pn_ai = resp.json().get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        # [V15.8.1] 전담 스나이퍼 탄창 사용
+        result = call_gemini_with_retry(payload, current_sniper)
+        if result:
+            pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             # GHS 쓰레기 데이터 최종 검열
             if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
                 if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공: {pn_ai[:30]}")
                 return pn_ai.replace('\n', ' ').strip(), "Vision"
-    except: pass
+    except Exception as e:
+        if log_func: log_func(f" ├─ [제품명 스캔] ❌ 실패: {e}")
     return "미추출", "실패"
 
 PATTERN_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'patterns.json')
@@ -304,6 +363,13 @@ def final_quality_control(components, full_text, log_func=None):
         if content:
             refined.append({"cas": cas, "content": content})
 
+    # [V15.8] 누락 탐지기 작동 (원본 텍스트와 비교)
+    try:
+        check_omission(full_text, refined)
+    except ValueError as e:
+        if log_func: log_func(f" ⚠️ [누락 감지] {e}")
+        has_invalid = True # 누락도 일종의 무결성 결함으로 간주하여 황색불 유도
+
     return refined, has_invalid
 
 
@@ -329,7 +395,7 @@ def find_section3_pages(doc):
             break
     return pages
 
-def extract_section3_images(pdf_path, log_func=None):
+def extract_section3_images(pdf_path, current_sniper, log_func=None):
     """[V14.6] Section 3 영역 고해상도(2.5x) 캡처 및 스캔본 정찰병(Recon)"""
     try:
         doc = fitz.open(pdf_path)
@@ -353,7 +419,7 @@ def extract_section3_images(pdf_path, log_func=None):
             {"page_index": 숫자}
             찾지 못했다면 {"page_index": -1}
             """
-            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt)
+            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper)
             
             try:
                 page_idx = int(recon_res.get("page_index", -1))
@@ -384,9 +450,9 @@ def extract_section3_images(pdf_path, log_func=None):
     except Exception:
         return []
 
-def call_gemini_2_5_flash(image_list=None, prompt=None, log_func=None):
+def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None):
     """[V14.6] 1차 스나이퍼: 고속 시각 추출"""
-    if not image_list or not GOOGLE_API_KEY: return None
+    if not image_list or not current_sniper: return None
     
     final_prompt = prompt if prompt else PROMPT_GEMINI_FLASH
 
@@ -409,15 +475,40 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, log_func=None):
     }
 
     try:
-        response = requests.post(GEMINI_API_URL, json=payload, timeout=40)
-        if response.status_code == 200:
-            result = response.json()
+        # [V15.8.1] 전담 스나이퍼 탄창 사용
+        result = call_gemini_with_retry(payload, current_sniper)
+        if result:
             candidate = result.get("candidates", [{}])[0]
             text_response = candidate.get("content", {}).get("parts", [{}])[0].get("text", "")
             return json.loads(text_response)
         return None
-    except:
+    except Exception as e:
+        if log_func: log_func(f" ❌ Gemini 호출 에러: {e}")
         return None
+
+def check_omission(original_text, extracted_data):
+    """[V15.8] 원본의 CAS 개수와 AI가 뽑아온 성분 개수를 교차 검증합니다."""
+    if not original_text: return # 텍스트가 없는 스캔본은 검증 불가
+    
+    # 1. 원본 텍스트에서 CAS 번호 형태의 텍스트가 몇 개 있는지 센다.
+    cas_pattern = re.compile(r'\d{1,7}-\d{2}-\d')
+    original_cas_list = list(set(cas_pattern.findall(original_text)))
+    # 유효한 CAS만 카운트
+    valid_original_cas = [cas for cas in original_cas_list if verify_cas_number(cas)]
+    original_cas_count = len(valid_original_cas)
+    
+    # 2. 스나이퍼가 가져온 결과물의 개수를 센다.
+    # extracted_data는 보통 {"구성성분": [...]} 또는 refined_comps 리스트일 수 있음
+    if isinstance(extracted_data, list):
+        extracted_cas_count = len(extracted_data)
+    else:
+        extracted_cas_count = len(extracted_data.get("구성성분", []))
+    
+    # 3. 누락 적발 시 황색불(비상) 발동!
+    if extracted_cas_count < original_cas_count:
+        print(f"🟡 [누락 적발] 원본 CAS({original_cas_count}개) vs 추출({extracted_cas_count}개). 스나이퍼가 성분을 빼먹었습니다!")
+        # [V15.8] 에러를 던져 2차 요원(GPT)을 투입하게 유도
+        raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}). 2차 불도저(GPT) 요원 투입!")
 
 def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     """[V14.6] 2차 복구 요원: 심층 구조 분석"""
@@ -459,10 +550,15 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
 
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
-    if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 비전 전용 파이프라인 가동")
+    
+    # [V15.8.1] 파일당 전담 스나이퍼 배정
+    current_sniper = get_next_sniper()
+    alias = current_sniper["alias"] if current_sniper else "알수없음"
+    
+    if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
     # 1. Section 3 이미지 추출
-    image_list = extract_section3_images(pdf_path, log_func=log_func)
+    image_list = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     if not image_list:
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
@@ -486,7 +582,7 @@ def process_pdf(pdf_path, log_func=None):
         first_page_text = ""
         full_text_for_grounding = ""
     
-    hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, GOOGLE_API_KEY, log_func=log_func)
+    hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
     # ----------------------------------------------------
     # [V15.3] 제품명 노이즈 제거 및 다중 모델 감지 (축약 금지, 원본 보존)
@@ -501,8 +597,8 @@ def process_pdf(pdf_path, log_func=None):
     # ----------------------------------------------------
 
     # 3. 1차 스나이퍼(Flash) 투입
-    if log_func: log_func(" 🎯 1차 고속 스나이퍼(Gemini-Flash) 투입")
-    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH)
+    if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
+    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper)
     used_engine = "Gemini-Flash"
 
     # 4. 스마트 Gatekeeper (황색불 판별)
@@ -537,6 +633,13 @@ def process_pdf(pdf_path, log_func=None):
         # [황색불 조건] 비공개/빈칸을 버리고 났더니 유효 성분이 0개다? 1차 엔진의 시야 실패!
         if len(valid_components) == 0:
             needs_gpt = True
+        else:
+            # [V15.8] 누락 탐지기: 원본 CAS 개수와 비교하여 누락 시 GPT 투입
+            try:
+                check_omission(full_text_for_grounding, valid_components)
+            except ValueError as e:
+                if log_func: log_func(f" 🟡 {e}")
+                needs_gpt = True
 
     # 5. 2차 복구 요원(GPT) 투입
     if needs_gpt:
