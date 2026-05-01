@@ -540,10 +540,7 @@ def process_pdf(pdf_path, log_func=None):
     
     if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
-    # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음
-    # 1. Section 3 이미지 추출 전 동기화
-    # 1. Section 3 이미지 추출 전 동기화
-    current_sniper = get_next_sniper()
+    # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음 (1 PDF = 1 스나이퍼 원칙)
     image_list, section3_text_for_omission = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     if not image_list:
         if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
@@ -566,9 +563,7 @@ def process_pdf(pdf_path, log_func=None):
         first_page_text = ""
         full_text_for_grounding = ""
     
-    # 2. 제품명 스캔 시작 전 최신 스나이퍼 호출
-    # 2. 제품명 스캔 시작 전 최신 스나이퍼 호출
-    current_sniper = get_next_sniper()
+    # [V15.8.7 복원] 1 PDF = 1 스나이퍼 원칙: 진입 시 배정된 스나이퍼를 계속 사용
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
     hybrid_pn = re.sub(r'^[\s\-_*:#=|]+', '', hybrid_pn)
@@ -577,10 +572,8 @@ def process_pdf(pdf_path, log_func=None):
     if hybrid_pn.count(',') >= 2 or len(hybrid_pn) > 60:
         is_multi_model = True
 
-    # 3. 1차 스나이퍼(Flash) 투입
-    # [수술 2] 호출 직전에 글로벌 탄창 상태를 반영하여 최신 스나이퍼를 다시 배정
-    current_sniper = get_next_sniper()
-    if log_func: log_func(f" 🎯 1차 고속 스나이퍼({current_sniper['alias'] if current_sniper else '알수없음'}) 투입")
+    # 3. 1차 스나이퍼(Flash) 투입 (진입 시 배정된 스나이퍼 재사용)
+    if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
     # [V15.8.5] 누락되었던 log_func 파라미터 강제 주입!
     ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper, log_func=log_func)
     used_engine = "Gemini-Flash"
