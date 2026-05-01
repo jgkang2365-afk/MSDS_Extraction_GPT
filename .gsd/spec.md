@@ -1,39 +1,34 @@
-# [GSD2] V15.6 아키텍처 대통합 및 후행 교정 모듈화 스펙
+# [GSD2] V15.8.7 Final Evolution: Intelligent Cell Division & Omission Control
 
 ## 1. 개요
-`msds_engine_v5.py`의 메인 파이프라인에 혼재된 검증 및 정제 로직을 `final_quality_control`로 모듈화하여 코드 가독성과 유지보수성을 극대화합니다. 주님의 의도인 '환각 차단'과 '부등호 복원'을 중앙에서 일괄 제어합니다.
+MSDS 엔진 V15.8.7의 최종 완성 단계로, 한 셀에 다수의 CAS 번호가 포함된 경우 이를 지능적으로 분리(Cell Division)하여 데이터 유실을 방지하고, 누락 탐지기(Omission Detector)를 통해 데이터의 완전성을 검증합니다.
 
 ## 2. 핵심 변경 사항 (FTF 프로토콜)
 
 ### [Forest] 사전 분석
-- **대상**: `msds_engine_v5.py`
-- **현상**: `process_pdf` 함수 내부에 CAS 검증, 팩트 체크, 함유량 정제 로직이 루프 형태로 복잡하게 얽혀 있음.
-- **해결**: 모든 사후 검증 로직을 `final_quality_control` 함수로 추출하고, 메인 루프는 결과 조립에만 집중함.
+- **대상**: `msds_engine_v5.py` 내 `final_quality_control` 함수.
+- **현상**: `re.search` 기반의 단일 CAS 추출 로직으로 인해 다중 CAS 데이터가 유실됨.
+- **목표**: `re.findall`을 통한 다중 행 복제 및 누락 방지 로직 완성.
 
 ### [Tree] 정밀 수정 단계
 
-#### 🛠️ 미션 1: 통합 교정 함수 신설
-- `minimal_clean` 함수를 삭제하고 `final_quality_control` 함수 삽입.
-- 주요 기능:
-    - 영업비밀 등 합법적 누락 데이터 필터링.
-    - 원본 텍스트 기반 CAS 팩트 체크 (Grounding).
-    - CAS 정규식 및 체크섬 수학적 검증.
-    - **1% 미만 부등호(<1%) 강제 복원** (정규식 기반 팩트 체크).
-    - 부등호 기호 표준화 (<, ≤ 등).
+#### 🛠️ 미션 1: 지능형 다중 CAS 분리 엔진 구현
+- `final_quality_control` 루프 내에서 `re.findall(r'(\d{1,7}-\d{2}-\d)', cas_raw)` 사용.
+- 발견된 모든 CAS에 대해 `refined.append({"cas": cas, "content": content})` 실행.
+- 함유량 정제 로직을 CAS 추출 이전 또는 공통 영역으로 이동하여 효율화.
 
-#### 🛠️ 미션 2: Phase 6 루프 단순화
-- `process_pdf` 함수 내 Phase 6 데이터 조립부(L485~521)를 삭제.
-- `final_quality_control` 호출 코드로 대체하여 가독성 확보.
+#### 🛠️ 미션 2: 누락 탐지기(Omission Detector) 연결
+- `check_omission` 함수가 분리된 행 개수를 정확히 인식하도록 파라미터 조정.
+- 누락 발생 시 `has_invalid = True`를 통해 GUI에 황색불 신호 전달.
 
-#### 🛠️ 기타 수정
-- `VERSION` 변수를 `"15.6"`으로 업데이트.
+#### 🛠️ 미션 3: 불필요한 레거시 주석 제거 및 버전 유지
+- 기존 `V15.8.7`의 정체성을 유지하며 코드 안정성 확보.
 
 ### [Forest] 사후 검증
-- `final_quality_control`이 `refined_comps`와 `has_invalid_cas` 플래그를 정확히 반환하는지 확인.
-- 부등호 보존 로직이 `replace`와 `re.sub`를 통해 정확히 수행되는지 검토.
+- 다중 CAS가 포함된 테스트 데이터로 행 분리 여부 확인.
+- `check_omission`이 의도대로 작동하여 누락 시 경고를 띄우는지 확인.
 
 ## 3. 성공 기준 (UAT)
-1. `msds_engine_v5.py` 실행 시 버전이 `V15.6`으로 출력됨.
-2. 환각 CAS 번호가 로그와 함께 정상적으로 폐기됨.
-3. 원본에 `<1%` 또는 `1%미만` 표기가 있을 경우 추출 결과가 `<1%`로 강제 복원됨.
-4. 코드 구조가 모듈화되어 `process_pdf` 함수 길이가 획기적으로 줄어듦.
+1. 한 셀에 `CAS1 / CAS2`가 있을 때, 결과 리스트에 2개의 성분이 각각 나타남.
+2. 원본 PDF의 CAS 개수보다 추출된 CAS 개수가 적을 경우 GUI에 로그와 함께 🟡 표시됨.
+3. 부등호(`≤`, `<`, `~`) 및 `Rem.%` 등 특수 포맷이 깨지지 않고 보존됨.

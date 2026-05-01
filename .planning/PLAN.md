@@ -1,14 +1,16 @@
-# Implementation Plan: V15.6 Architecture Consolidation
+# Implementation Plan: V15.8.7 Final Evolution
 
-## Phase 1: Core Refactoring (Mission 1)
-- [ ] `msds_engine_v5.py`: `minimal_clean` 함수 제거 (L216-228)
-- [ ] `msds_engine_v5.py`: `final_quality_control` 함수 삽입 (동일 위치)
-- [ ] `msds_engine_v5.py`: `VERSION` 변수 `15.6`으로 업데이트
+## Phase 1: Intelligent Cell Division implementation
+- [ ] `msds_engine_v5.py`: `final_quality_control` 함수 내부 로직 수정
+    - `re.search` -> `re.findall` 변경
+    - 다중 CAS 매칭 시 반복문을 통한 `refined` 리스트 추가 로직 구현
+    - 함유량 정제 로직을 루프 내 공통 적용되도록 재배치
 
-## Phase 2: Pipeline Simplification (Mission 2)
-- [ ] `msds_engine_v5.py`: `process_pdf` 내 Phase 6 루프(L485-521) 제거
-- [ ] `msds_engine_v5.py`: `final_quality_control` 호출 및 결과 바인딩 코드 삽입
+## Phase 2: Omission Detector Integration
+- [ ] `check_omission` 호출부 검증
+    - 추출된 최종 성분 리스트 개수가 원본과 일치하는지 확인하는 로직 점검
+    - 누락 발생 시 `log_func` 출력 문구 강화
 
-## Phase 3: Verification
-- [ ] `py_compile msds_engine_v5.py` 실행하여 구문 오류 체크
-- [ ] `smu_gui.py` 실행 테스트 (선택 사항)
+## Phase 3: Verification & Test
+- [ ] `py_compile msds_engine_v5.py` 구문 검사
+- [ ] 다중 CAS 가상 데이터를 이용한 단위 테스트 (필요 시)

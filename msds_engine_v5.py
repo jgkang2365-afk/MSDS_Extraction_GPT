@@ -51,7 +51,7 @@ def get_next_sniper():
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.6"
+VERSION = "15.8.7"
 
 def call_gemini_with_retry(payload, initial_sniper, max_retries=5, log_func=None):
     """[V15.8.5] 완벽한 무한 탄창 스와핑 및 절대 침묵 방지 로직"""
@@ -205,86 +205,82 @@ MES_MASTER_MAP = {}
 try:
     master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
     
-    # 1. 파일 존재 여부 물리적 확인
-    if not os.path.exists(master_path):
-        raise FileNotFoundError(f"마스터 데이터 파일이 존재하지 않습니다: {master_path}")
-
-    with open(master_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+    # 1. 파일 존재 여부 물리적 확�    has_invalid = False
+    refined = []
+    
+    for comp in components:
+        cas_raw = str(comp.get("cas_no", "")).strip()
         
-        # 2. 데이터 유효성 검증
-        if not items_list:
-            raise ValueError("JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다.")
-            
-        for info in items_list:
-            cas_raw = str(info.get("CAS번호", "")).strip()
-            # CAS 번호 정규화 (앞의 0 제거하여 매칭 확률 증대)
-            cas = re.sub(r'^0+', '', cas_raw)
-            # [수정] 초산메틸 대신 메틸 아세테이트를 잡도록 '물질명' 최우선 적용
-            std_name = info.get("물질명") or info.get("상용명")
-            if cas and std_name:
-                MES_MASTER_MAP[cas] = std_name.strip()
-                
-except Exception as e:
-    # [치명적 변경] print로 조용히 넘기지 않고 RuntimeError 발생. 
-    # GUI의 global_exception_handler가 캐치하여 팝업으로 띄우도록 강제함.
-    raise RuntimeError(f"[시스템 치명적 오류] 마스터 DB 초기화에 실패했습니다. DB 파일을 확인하세요!\n상세 원인: {e}")
+        # [V15.8.7] 지능형 행 분리: 한 셀에 여러 CAS가 있는 경우 모두 추출
+        found_cas_list = re.findall(r'(\d{1,7}-\d{2}-\d)', cas_raw)
+        if not found_cas_list:
+            continue
 
-# [V5.1 성능 최적화] 정규식 사전 컴파일 및 전역 헬퍼 함수 분리
-REGEX_LE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:이하|≤|<=)')
-REGEX_LT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:미만|＜|<)')
-REGEX_GE = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:이상|≥|>=)')
-REGEX_GT = re.compile(r'(\d+(?:\.\d+)?)\s*(?:%|프로)?\s*(?:초과|＞|>)')
-REGEX_PM = re.compile(r'(\d+(?:\.\d+)?)\s*(?:±|\+-)\s*(\d+(?:\.\d+)?)')
+        # 함유량 정제 (셀 공통 적용)
+        content_raw = str(comp.get("content", "")).replace(" ", "")
+        # 비수치 괄호 한정어 제거
+        content = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', content_raw)
+        if not content:
+            continue
 
-def _calc_pm_range(m):
-    """정규식 매치 객체를 받아 ± 범위를 계산하는 전역 헬퍼 함수"""
+        # 부등호 및 특수 기호 표준화
+        content = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', content)
+        content = re.sub(r'([0-9.]+)(?:%?)이상(?:%?)', r'≥\1', content)
+        content = content.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+        content = re.sub(r'\.0+(?=[^\d]|$)', '', content)
+
+        # 범위 및 부등호 표준화 (양방향 부등호 교정 포함)
+        weird_range = re.match(r'^≥([0-9.]+)(?:%?)≤([0-9.]+)(?:%?)$', content)
+        if weird_range:
+            n1, n2 = weird_range.groups()
+            content = f"{n1}~{n2}%"
+        else:
+            range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', content)
+            if range_m:
+                p1, n1, p2, n2 = range_m.groups()
+                content = f"{n1}~{p2}{n2}%"
+            elif "Rem" in content:
+                if "%" not in content: content = "Rem.%"
+            else:
+                single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', content)
+                if single_m:
+                    p, n = single_m.groups()
+                    content = f"{p}{n}%"
+
+        # 각 CAS별로 독립된 행 생성
+        for cas in found_cas_list:
+            # 앞의 0 제거 (정규화)
+            if re.match(r'^0+\d+-\d{2}-\d$', cas):
+                cas = re.sub(r'^0+', '', cas)
+
+            # 비식별 데이터 스킵 (안전망)
+            if any(w in cas_raw for w in ["영업비밀", "비공개", "승인번호", "미기재", "Secret", "N/A"]):
+                continue
+
+            # CAS 수학적 체크섬 검증
+            if not verify_cas_number(cas):
+                has_invalid = True
+                continue
+
+            if content:
+                refined.append({"cas": cas, "content": content})
+
+    # 누락 탐지기 작동 (원본 텍스트와 비교)
     try:
-        val, pm = float(m.group(1)), float(m.group(2))
-        return f"{val-pm:g}~{val+pm:g}"
-    except:
-        return m.group(0)
+        check_omission(full_text, refined)
+    except ValueError as e:
+        if log_func: log_func(f" ⚠️ [누락 감지] {e}")
+        has_invalid = True 
 
-# =====================================================================
-# [1단계] V24 정규식 코어 (안전망 복구 완료)
-# =====================================================================
-def clean_junk_from_name(name):
-    if not name: return name
-    name = re.split(r'\s{2,}', str(name))[0]
-    junk_keywords = ["Date", "발행일", "개정일", "Revision", "Rev.", "Page", "페이지", "물질안전보건자료", "MSDS", "작성일", "공급자", "식별자", "번호", "CAS"]
-    for key in junk_keywords:
-        name = re.split(rf'(?i){re.escape(key)}', name)[0]
-    name = re.split(r'\d{4}[.\-/]\d{2}[.\-/]\d{2}', name)[0]
-    name = re.sub(r'(.+?)\1+', r'\1', name)
-    return name.strip(": ").strip()
-
-# [V14.6] 정규식 최적화 및 전역 헬퍼 함수
-
-
-
-# [엔진 내장] CAS 검증
-def verify_cas_number(cas_string):
-    if not cas_string or re.search(r'[가-힣a-zA-Z]', cas_string) or cas_string.strip() == "-": return True
-    clean_cas = re.sub(r'[^0-9-]', '', cas_string)
-    parts = clean_cas.split('-')
-    if len(parts) != 3: return False
-    try:
-        check_digit = int(parts[2])
-        digits = parts[0] + parts[1]
-        total = sum(int(digit) * i for i, digit in enumerate(reversed(digits), 1))
-        return (total % 10) == check_digit
-    except: return False
-
-def clean_number(n_str):
-    try:
-        f = float(n_str.replace(',', '.')) 
-        if f.is_integer(): return str(int(f))
+    return refined, has_invalid
+(): return str(int(f))
         return str(f)
     except: return n_str
 
 def final_quality_control(components, full_text, log_func=None):
-    """[V15.6] 통합 후행 교정 엔진 (ff2aaab 안전 로직 기반 모듈화)"""
+    """[V15.8.7] 지능형 다중 CAS 복제 및 행 분리 엔진"""
     refined = []
     has_invalid = False
     # 팩트 체크용: 모든 공백류(\s)와 하이픈 제거 (구 코드 re.sub(r'[\s-]','') 동일)
@@ -503,28 +499,23 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
         return None
 
 def check_omission(original_text, extracted_data):
-    """[V15.8] 원본의 CAS 개수와 AI가 뽑아온 성분 개수를 교차 검증합니다."""
-    if not original_text: return # 텍스트가 없는 스캔본은 검증 불가
+    """[V15.8.7] 복제된 데이터 리스트를 기준으로 원본과 1:1 대조"""
+    if not original_text: return 
     
-    # 1. 원본 텍스트에서 CAS 번호 형태의 텍스트가 몇 개 있는지 센다.
     cas_pattern = re.compile(r'\d{1,7}-\d{2}-\d')
     original_cas_list = list(set(cas_pattern.findall(original_text)))
-    # 유효한 CAS만 카운트
     valid_original_cas = [cas for cas in original_cas_list if verify_cas_number(cas)]
     original_cas_count = len(valid_original_cas)
     
-    # 2. 스나이퍼가 가져온 결과물의 개수를 센다.
-    # extracted_data는 보통 {"구성성분": [...]} 또는 refined_comps 리스트일 수 있음
+    # 파이썬이 복제하여 늘려놓은 최종 refined_comps 리스트의 개수를 센다
     if isinstance(extracted_data, list):
         extracted_cas_count = len(extracted_data)
     else:
         extracted_cas_count = len(extracted_data.get("구성성분", []))
     
-    # 3. 누락 적발 시 황색불(비상) 발동!
+    # 이제 원본에 2개, 복제본에 2개이므로 황색불이 울리지 않는다
     if extracted_cas_count < original_cas_count:
-        print(f"🟡 [누락 적발] 원본 CAS({original_cas_count}개) vs 추출({extracted_cas_count}개). 스나이퍼가 성분을 빼먹었습니다!")
-        # [V15.8] 에러를 던져 2차 요원(GPT)을 투입하게 유도
-        raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}). 2차 불도저(GPT) 요원 투입!")
+        raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}).")
 
 def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     """[V14.6] 2차 복구 요원: 심층 구조 분석"""
