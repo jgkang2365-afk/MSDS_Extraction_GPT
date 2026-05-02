@@ -212,7 +212,7 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.6.1] 미만/이하 완벽 보존, 초고수치 차단 및 자가검증 버그 해결"""
+    """[V17.2.6.3] 자가검증 완벽 통과 및 수치 환각 방어 보강 (안티 보정판)"""
     orig_raw = str(content_str).strip()
     
     # 괄호 안의 불필요한 설명(max, 최대 등) 제거
@@ -233,44 +233,41 @@ def _normalize_single_content(content_str):
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # ± 범위 처리
-    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
-    if pm_match:
-        try:
-            val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            if val <= 100: # 100% 초과 초고수치 차단
-                n1, n2 = sorted([val-pm, val+pm])
-                return f"{n1:g}~{n2:g}%"
-        except: pass
-
-    # 일반 범위 처리 (숫자~숫자) - 알파벳 섞인 오탐(Page 1-2) 방어
+    # 일반 범위, ± 범위 및 단일 수치 처리 (🚨 알파벳/한글이 섞인 오탐 완전 방어)
     if not re.search(r'[a-zA-Z가-힣]', v): 
-        # 🚨 [패치 완료] 중간 부등호를 먹어치우던 정규식 버그 수정 (% 기호만 필터)
+        # 1. ± 범위 처리 (🚨 앵커 추가 및 보호 블록 내부로 이동)
+        pm_match = re.search(r'^([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)$', v)
+        if pm_match:
+            try:
+                val, pm = float(pm_match.group(1)), float(pm_match.group(2))
+                if val <= 100:
+                    n1, n2 = sorted([val-pm, val+pm])
+                    return f"{n1:g}~{n2:g}%"
+            except: pass
+
+        # 2. 일반 범위 패턴
         range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
         if range_m:
             p1, n1, sep, p2, n2 = range_m.groups()
             if sep or (p1 and p2):
                 try:
                     f1, f2 = float(n1), float(n2)
-                    if f1 <= 100 and f2 <= 100: # 🚨 K-308 545% 차단
+                    if f1 <= 100 and f2 <= 100:
                         if f1 > f2:
                             n1, n2 = n2, n1
                             p1, p2 = p2, p1 
-                        
-                        # 🚨 [패치 완료] 양방향 부등호(≥95≤100)는 범위(95~100)로 통합 (자가 검증 통과)
                         if p1 and p2 and not sep:
                             return f"{n1}~{n2}%"
-                            
                         res = f"{p1}{n1}~{p2}{n2}"
                         return res if '%' in res else res + '%'
                 except: pass
 
-    # 단일 수치 처리
-    single_m = re.search(r'([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*', v)
-    if single_m:
-        p, n = single_m.groups()
-        if float(n) <= 100: # 🚨 100% 초과 차단
-            return f"{p}{n}%"
+        # 3. 단일 수치 패턴 (🚨 앵커 ^ $ 유지)
+        single_m = re.search(r'^([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*$', v)
+        if single_m:
+            p, n = single_m.groups()
+            if float(n) <= 100:
+                return f"{p}{n}%"
 
     if "Rem" in v: return "Rem.%"
     return "미기재%"
@@ -436,7 +433,7 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.6] 세포 분열(__SPLIT__) 및 숫자 오탐지 완벽 방어"""
+    """[V17.2.6.3] 세포 분열(__SPLIT__) 및 숫자 오탐지 완벽 방어 (보정판)"""
     cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
@@ -463,7 +460,8 @@ def parse_row_robust_v2(row):
 
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                if any(k in c for k in ['%', '~', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
+                # 🚨 하이픈(-)과 소수점(.)을 다시 추가하여 45-50, 0.5 등을 Strong으로 보호
+                if any(k in c for k in ['%', '~', '-', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
                     if not strong_content: strong_content = _clean_content_odl(c)
                 else:
                     try:
@@ -491,7 +489,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.6" 
+            "engine": "ODL-v2.6.3" 
         })
     return final_comps
 
