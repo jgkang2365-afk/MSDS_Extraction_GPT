@@ -916,7 +916,7 @@ class SMUGUI(QMainWindow):
 
         log_header = QFrame()
         log_header.setFixedHeight(30)
-        log_header.setStyleSheet("background-color: #eee; border-top: 1px solid #ddd;")
+        log_header.setStyleSheet("background-color: #eee; border: none;")
         log_h_layout = QHBoxLayout(log_header)
         log_h_layout.setContentsMargins(10, 0, 10, 0)
         
@@ -1001,6 +1001,16 @@ class SMUGUI(QMainWindow):
 
 
         self.main_splitter = QSplitter(Qt.Vertical)
+        # [V15.8.15] 로그창과 테이블 경계 시인성 강화를 위한 프리미엄 블루 디바이더 이식
+        self.main_splitter.setStyleSheet(f"""
+            QSplitter::handle:vertical {{
+                height: 3px;
+                background-color: {PRIMARY_BLUE};
+            }}
+            QSplitter::handle:vertical:hover {{
+                background-color: #0078d4;
+            }}
+        """)
         self.content_layout.addWidget(self.main_splitter)
 
         self.stacked_widget = QStackedWidget()
@@ -2210,18 +2220,31 @@ class SMUGUI(QMainWindow):
             
             self.table.blockSignals(True)
             
-            # [Master 지시서] 신호등 이모지 및 배경색 제어
+            # 🚨 [수정: V15.8.16 호환] 신호등 이모지 및 배경색 제어 (1단계 경고 보존)
             traffic_col = 0
             curr_traffic_text = self.table.item(row, traffic_col).text() if self.table.item(row, traffic_col) else ""
-            pure_idx = re.sub(r'^[🔴🟡🟢🔵]\s*', '', curr_traffic_text)
             
-            emoji = "🟢"
+            # 1. 기존의 이모지(경고 상태)와 순번을 분리
+            match = re.match(r'^([🔴🟡🟢⚪])\s*(.*)$', curr_traffic_text)
+            existing_emoji = match.group(1) if match else "⚪"
+            pure_idx = match.group(2) if match else curr_traffic_text
+
+            # 2. 기본값 세팅
+            emoji = existing_emoji 
             bg_color = None
 
+            # 3. 2단계 검증이 끝났을 때의 색상 결정 로직 (덮어쓰기 방어)
             if "검증 완료" in status:
-                emoji = "🟢"
-                bg_color = QColor("#e1f7d5") # 연한 초록색 (확격 표시)
-            
+                if existing_emoji in ["🔴", "🟡"]:
+                    # 1단계에서 이미 에러/경고가 떴다면, 그 색상을 100% 유지!
+                    emoji = existing_emoji 
+                    if existing_emoji == "🔴": bg_color = QColor("#ffebeb")
+                    elif existing_emoji == "🟡": bg_color = QColor("#fff9db")
+                else:
+                    # 1단계가 무사 통과(⚪ 또는 🟢)였을 때만 초록불(합격) 마킹
+                    emoji = "🟢"
+                    bg_color = QColor("#e1f7d5")
+
             # 신호등 업데이트
             item_seq = QTableWidgetItem(f"{emoji} {pure_idx}")
             item_seq.setTextAlignment(Qt.AlignCenter)

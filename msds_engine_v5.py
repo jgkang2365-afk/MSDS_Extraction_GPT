@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.15"
+VERSION = "15.8.17"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -223,7 +223,7 @@ PROMPT_GPT_FALLBACK = """
 당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
 
 [🔥 불도저 단순 추출 5대 원칙]
-1. 생각 금지: 부등호 교정, % 기호 붙이기, '잔량' 번역 등 어떠한 가공도 하지 마세요. 표에 적힌 글씨를 그대로 타이핑하세요.
+1. 생각 금지: 부등호(<, >, ≤, ≥)를 임의로 범위(~)로 바꾸거나, 그 반대로 조작하지 마세요. (예: '<1'은 '<1'로, '0.1~1'은 '0.1~1'로 표에 적힌 글씨 그대로 타이핑).
 2. 영업비밀 및 공란 통과: CAS 번호 칸에 '영업비밀', '-', '비공개' 등이 적혀있다면 그 글자를 그대로 적으세요.
 3. 🚨 Y축(행) 절대 유지: CAS 번호 칸이 아예 비어있더라도 절대 그 행을 건너뛰지 말고 "cas_no": "빈칸"으로 명시하여 구조를 유지하세요.
 4. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
@@ -342,9 +342,15 @@ def _normalize_single_content(content_str):
     content_str = re.sub(r'([\d\.]+)\s*(<)', r'>\1', content_str)
     content_str = re.sub(r'([\d\.]+)\s*(>)', r'<\1', content_str)
     
-    # [V15.8.15] 다국어(한/영/일) 잔량 및 부등호 키워드 글로벌 정규화
+    # [V15.8.17] 띄어쓰기가 필수인 영문(less than 등)을 먼저 처리한 후 공백 제거!
     content_str = re.sub(r'(?i)잔량|balance|remainder|残量', 'Rem.', content_str)
     
+    # 공백 무시 옵션(\s*)을 넣어 "less than"과 "lessthan" 모두 완벽 방어
+    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', content_str)
+    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', content_str)
+    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', content_str)
+    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', content_str)
+
     # 3. 숫자로 끝나는 경우 % 기호 강제 부착 방어막
     if re.search(r'\d$', content_str):
         content_str += '%'
@@ -358,10 +364,6 @@ def _normalize_single_content(content_str):
         return "미기재%"
 
     # [V15.8.15] 다국어 부등호 정밀 치환 (Below, Less than, 未満 등)
-    v = re.sub(r'(?i)([0-9.]+)(?:%?)(미만|below|less than|未満)', r'<\1', v)
-    v = re.sub(r'(?i)([0-9.]+)(?:%?)(이하|up to|以下)', r'≤\1', v)
-    v = re.sub(r'(?i)([0-9.]+)(?:%?)(초과|more than|over|超)', r'>\1', v)
-    v = re.sub(r'(?i)([0-9.]+)(?:%?)(이상|above|以上)', r'≥\1', v)
     v = v.replace('＜', '<').replace('＞', '>')
     v = v.replace('<=', '≤').replace('>=', '≥')
     v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
@@ -389,12 +391,12 @@ def _normalize_single_content(content_str):
     return "미기재%"
 
 def final_quality_control(components, full_text, log_func=None):
-    """[V15.8.14] 다중 CAS 분리 + Grounding(환각 방어) + 중복 제거(De-dup) 통합 엔진"""
+    """[V15.8.17] 다중 CAS 분리 + 정밀 Grounding(하이픈 보존) + 중복 제거(De-dup) 통합 엔진"""
     refined_dict = {}  # [V15.8.14] 중복 제거를 위한 딕셔너리 사용
     has_invalid = False
     
-    # [V15.8.14] 데드 코드 부활: 문서 전체 텍스트에서 공백/하이픈 제거한 순수 문자열 (Grounding용)
-    norm_text = re.sub(r'[\s\-]', '', full_text).upper() if full_text else ""
+    # 🚨 [V15.8.17 수정] 하이픈(-)은 제거하지 마라! 전화번호가 CAS 번호로 둔갑하는 대참사 방지
+    norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
     
     for comp in components:
         raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
@@ -421,13 +423,11 @@ def final_quality_control(components, full_text, log_func=None):
                 has_invalid = True
                 continue
                 
-            # 🚨 [V15.8.14 핵심] CAS Grounding 검증 (문서에 실제 존재하는지 확인)
+            # 🚨 [V15.8.17 수정] CAS Grounding 검증 (하이픈이 유지된 순수 CAS로만 대조)
             if norm_text:
-                cas_no_hyphen = cas.replace('-', '')
-                if cas_no_hyphen not in norm_text:
-                    if log_func: log_func(f" ⚠️ [Grounding 방어] 문서에 존재하지 않는 환각 CAS 탐지 및 폐기: {cas}")
+                if cas not in norm_text:
+                    if log_func: log_func(f" ⚠️ [Grounding 경고] 텍스트 미발견 (환각 의심되나 시각 추출 우선 보존): {cas}")
                     has_invalid = True
-                    continue # 가짜 CAS는 버린다!
 
             if cv:
                 # 🚨 [V15.8.14 핵심] 중복 제거 (De-duplication)
@@ -509,7 +509,8 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         for p_idx in pages:
             page = doc[p_idx]
             raw_text += _get_sorted_and_normalized_text(page) + "\n"
-            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+            # 🚨 [V15.8.16] 해상도 롤백 (1.5 -> 2.5) : 화질 저하로 인한 행 누락 및 소수점/부등호 인식 오류 원천 차단
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
             if len(images) >= 3: break
@@ -643,7 +644,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V{VERSION} Vision-Only] 분석 시작 ➡️ 담당: {alias}")
+    if log_func: log_func(f" 🚀 [V15.8.17 Vision-Only] 분석 시작 ➡️ 담당: {alias}")
 
     # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음 (1 PDF = 1 스나이퍼 원칙)
     image_list, section3_text_for_omission, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
@@ -749,8 +750,16 @@ def process_pdf(pdf_path, log_func=None):
     components = final_ai_result.get("구성성분", [])
     reason = final_ai_result.get("교정_사유", "사유 없음")
     
-    # 🚨 [V15.8.15] Local Grounding: 멀티 문서 혼입 방지를 위해 1페이지+섹션3 텍스트만 환각 검증에 사용
-    local_grounding_text = str(first_page_text) + "\n" + str(section3_text_for_omission)
+    # 🚨 [V15.8.17 수정] Local Grounding 범위 확장: 조각난 section3_text가 아니라, 표가 발견된 '페이지 전체 텍스트'를 결합
+    local_grounding_text = str(first_page_text)
+    try:
+        doc_g = fitz.open(pdf_path)
+        for p_idx in pages:
+            if p_idx != 0: # 1페이지 중복 합침 방지
+                local_grounding_text += "\n" + _get_sorted_and_normalized_text(doc_g[p_idx])
+        doc_g.close()
+    except Exception:
+        local_grounding_text += "\n" + str(section3_text_for_omission)
     
     refined_comps, has_invalid_cas = final_quality_control(components, local_grounding_text, log_func)
     
