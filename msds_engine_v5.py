@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "16.0.0"
+VERSION = "17.1.0"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -210,19 +210,11 @@ PROMPT_GEMINI_FLASH = """
 당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS 표 이미지만 보고 데이터를 추출하세요.
 
 [🔥 1차 엔진 절대 원칙]
-1. 🚨 시스템 프롬프트(System Prompt)의 '시각 추출 절대 원칙'을 100% 최우선으로 복종하라.
-2. 🚨 Y축 행 밀림 절대 금지: CAS 칸이 비어있거나 기호(-)만 있다면 해당 행의 함유량을 위/아래의 다른 CAS에 섞지 마라. 반드시 "cas_no": "빈칸"으로 독립된 객체를 생성하여 Y축 1:1 매칭을 유지하라.
-3. 🚨 환각 금지: 표에 '함유량'이나 '%'가 명시된 컬럼의 숫자만 추출하라.
-4. 🚨 부등호 범위 조작 금지: 원본에 '0.1-1' 이면 '0.1~1%'로, '>=95 - <=100' 이면 '>=95 - <=100' 눈에 보이는 그대로 추출하라.
-
-JSON 출력 포맷:
-{
-  "구성성분": [
-    {"cas_no": "123-45-6", "content": "10~20%"},
-    {"cas_no": "빈칸", "content": "36~46%"}
-  ],
-  "교정_사유": "시각 추출 완료"
-}
+1. 🚨 Y축 행 밀림 절대 금지: CAS 칸이 비어있거나 기호(-)만 있다면 함유량을 위/아래의 다른 CAS에 섞지 마라. 반드시 "cas_no": "빈칸"으로 독립 객체를 생성하여 1:1 매칭을 유지하라.
+2. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
+3. 🚨 환각 금지 & 결측치 처리: 표에 명시되지 않은 숫자를 함유량으로 지어내지 마라. CAS는 있는데 함유량 칸이 비어있다면 반드시 함유량을 '미기재%'로 출력하라.
+4. 🚨 부등호 범위 조작 금지: 원본에 '0.1-1' 이면 '0.1~1%'로, 눈에 보이는 그대로 추출하라.
+5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
 """
 
 # 🚜 [2차 복구 요원용 프롬프트] GPT-4o-mini 전용
@@ -310,7 +302,7 @@ def clean_junk_from_name(name):
 
 
 # [엔진 내장] CAS 검증
-# [V15.8.13] 텍스트 좌표 정렬 및 전각 문자(Full-width) 반각화 클렌저
+# [V17.0.0] 텍스트 좌표 정렬 및 전각 문자(Full-width) 반각화 클렌저
 def _get_sorted_and_normalized_text(page):
     try:
         blocks = page.get_text("blocks")
@@ -341,36 +333,30 @@ def clean_number(n_str):
     except: return n_str
 
 def _normalize_single_content(content_str):
-    """[V15.8.12] 개별 함유량 정제 및 물리적 방어망"""
+    """[V17.0.0] 개별 함유량 정제 및 물리적 방어망"""
     content_str = str(content_str).strip()
     
-    # [V15.8.12] GPT의 가공 업무를 파이썬 기계 정제기로 100% 이관
-    # 1. 일본식 역순 부등호 교정 (예: "99.0 <" -> ">99.0", "98.0 >" -> "<98.0")
+    # 1. 일본식 역순 부등호 교정
     content_str = re.sub(r'([\d\.]+)\s*(<)', r'>\1', content_str)
     content_str = re.sub(r'([\d\.]+)\s*(>)', r'<\1', content_str)
     
-    # [V15.8.17] 띄어쓰기가 필수인 영문(less than 등)을 먼저 처리한 후 공백 제거!
     content_str = re.sub(r'(?i)잔량|balance|remainder|残量', 'Rem.', content_str)
     
-    # 공백 무시 옵션(\s*)을 넣어 "less than"과 "lessthan" 모두 완벽 방어
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', content_str)
 
-    # 3. 숫자로 끝나는 경우 % 기호 강제 부착 방어막
     if re.search(r'\d$', content_str):
         content_str += '%'
 
     v = content_str.replace(" ", "")
     v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
     
-    # [V15.8.13] (w/w) 등 유효 알파벳 허용 및 방어막 1 적용
     v = re.sub(r'(?i)\(w/w\)|\(v/v\)|\(w/v\)|\(weight/weight\)|proprietary|secret', '', v)
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v):
         return "미기재%"
 
-    # [V15.8.15] 다국어 부등호 정밀 치환 (Below, Less than, 未満 등)
     v = v.replace('＜', '<').replace('＞', '>')
     v = v.replace('<=', '≤').replace('>=', '≥')
     v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
@@ -381,11 +367,13 @@ def _normalize_single_content(content_str):
         p1, n1, p2, n2 = weird_range.groups()
         if p1 and p2: return f"{n1}~{n2}%"
         
-    # [V15.8.19 수정] 양쪽 숫자가 모두 있는 범위(Range)의 경우 모든 부등호를 강제 제거 (예: >=95-<=100 -> 95~100%)
+    # 🚨 [V17 수정] 양방향 찌꺼기는 지우되, 1% 미만을 뜻하는 '<' 기호는 무조건 보존
     range_m = re.match(r'^([<>≤≥]*)([0-9.]+)[%]*[-~]([<>≤≥]*)([0-9.]+)[%]*$', v)
     if range_m:
         p1, n1, p2, n2 = range_m.groups()
-        return f"{n1}~{n2}%"
+        p1_clean = p1.replace('≥', '').replace('>', '').replace('≤', '').replace('<', '')
+        p2_clean = p2.replace('≤', '').replace('≥', '').replace('>', '') # '<' 기호 보존
+        return f"{p1_clean}{n1}~{p2_clean}{n2}%"
         
     if "Rem" in v:
         return "Rem.%" if "%" not in v else v
@@ -466,18 +454,17 @@ def final_quality_control(components, full_text, log_func=None):
 
 
 def find_section3_pages(doc):
-    """[V15.8.3] 2번 항목(비표준) 및 3번 항목 정밀 탐지"""
+    """[V17 패치] 3, 4번 항목 공존 시 조기 종료 버그 해결"""
     pages = []
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # [V15.8.14] 탐지 키워드 대폭 확장 (성분, INGREDIENTS 등 추가)
-        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS|CHARACTERIZATION)', text, re.I):
-            pages.append(i)
-        # 3번 또는 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
+        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS)', text, re.I):
+            if i not in pages:
+                pages.append(i)
         if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
             if i not in pages:
                 pages.append(i)
-            break
+            break # 4번 항목이 있는 이 페이지까지는 무조건 다 담고 나서 종료!
     return pages
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
@@ -652,6 +639,82 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
         if log_func: log_func(f" 🔴 불도저(GPT) 통신 에러: {str(e)[:50]}")
         return None
 
+def _clean_content_odl(text):
+    """[V2.1] 함량 정제 로직 (불필요한 공백 제거 및 잔량 처리)"""
+    t = text.replace(" ", "")
+    if any(k in t.lower() for k in ["balance", "잔량", "rem"]):
+        return "Rem.%"
+    return t
+
+def parse_row_robust_v2(row):
+    """[V2.1] 열 순서 무관, 의미 기반 다중 CAS 분할 및 함량/물질명 추출"""
+    # 1. 셀 정제 및 빈 셀 제거
+    cells = [re.sub(r'\s+', ' ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
+    if len(cells) < 2: return None
+
+    # 🔴 [해결 2] 완전 일치(Exact Match) 기반 Header 제거
+    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
+    cell_lower_set = {re.sub(r'[\s\(\)]', '', c.lower()) for c in cells}
+    if cell_lower_set.intersection(header_keywords): return None
+
+    cas_list = []
+    content = None
+    name_candidates = []
+
+    for c in cells:
+        # 🔹 [수용 4] 다중 CAS 분할
+        found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
+        if found_cas:
+            cas_list.extend(found_cas)
+            continue
+
+        # 🔹 [수용 3] 함량 (% 기호 강박증 해결)
+        if re.search(r'\d', c) and (any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', 'Rem']) or len(c) <= 7):
+            if not content and not re.match(r'^\d{4}[./-]\d{2}[./-]\d{2}$', c):
+                content = _clean_content_odl(c)
+                continue
+
+        # 🔹 물질명 후보
+        if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
+            name_candidates.append(c)
+
+    if not cas_list: return None
+
+    # 🔹 [해결 5] 이름 선택
+    name = ""
+    if name_candidates:
+        valid_names = [n for n in name_candidates if len(n) < 50]
+        name = max(valid_names, key=len) if valid_names else name_candidates[0]
+
+    final_comps = []
+    for cas in cas_list:
+        final_comps.append({
+            "name": name,
+            "cas_no": cas,
+            "content": content or "미기재%"
+        })
+    return final_comps
+
+def extract_components_odl_robust(odl_doc, target_pages):
+    """[V2.1] 의미 기반 ODL 파싱 엔진 (Target Page 격리 적용)"""
+    components = []
+    if not target_pages or not odl_doc or not odl_doc.pages:
+        return components
+
+    for p_idx in target_pages:
+        if p_idx >= len(odl_doc.pages): continue
+        page = odl_doc.pages[p_idx]
+        
+        # page.elements 내 TABLE 타입 탐색
+        tables = [el for el in getattr(page, 'elements', []) if getattr(el, 'type', '') == "TABLE"]
+        
+        for table in tables:
+            for row in table.rows:
+                parsed_comps = parse_row_robust_v2(row)
+                if parsed_comps:
+                    components.extend(parsed_comps)
+    return components
+
 def fallback_text_extraction(section3_text, log_func=None):
     """
     [🔥 V16 Fallback 제한] 전체 텍스트(full_text) 탐색 절대 금지. 
@@ -692,18 +755,14 @@ def fallback_text_extraction(section3_text, log_func=None):
 
 def process_pdf(pdf_path, log_func=None):
     """
-    [V16] Multi-Stage Extraction Pipeline
-    1. ODL 2D Row-Based (Rule-based)
-    2. Gemini Flash (AI Sniper)
-    3. GPT-4o-mini (AI Bulldozer)
-    4. Regex (Isolated Fallback)
+    [V17] Multi-Stage Extraction Pipeline
+    1. ODL 2D Row-Based (Rule-based) -> AI Sniper (Gemini) -> AI Bulldozer (GPT)
     """
     start_time = time.time()
-    
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V16.0.0] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [V17.0.0] 엔진 가동: {os.path.basename(pdf_path)}")
 
     # 1. 시각적/텍스트적 컨텍스트 확보
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
@@ -724,109 +783,94 @@ def process_pdf(pdf_path, log_func=None):
         
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
-    # 3. ODL 2D Row-Based Extraction (제1엔진)
-    odl_components = []
-    used_engine = "None"
+    # ====================================================================
+    # [🔥 V17 아키텍처: 기계(ODL) 1순위, AI(Gemini) 2순위]
+    # ====================================================================
+    used_engine = ""
+    is_ai_extracted = False
+    ai_res = None
+    
+    # ------------------------------------------------------------------
+    # [Step 0] 3번 항목이 위치한 타겟 페이지 탐색 (V17 패치 적용본)
+    doc_t = fitz.open(pdf_path)
+    target_pages = find_section3_pages(doc_t) 
+    doc_t.close()
+
+    # [Step 1] 기계식 2D 정밀 스캔 (ODL) 가동
+    # 🚨 핵심: ODL에게 파일 경로와 함께 'target_pages'를 넘겨주어 사격 구역을 제한!
     try:
-        if log_func: log_func(" ├─ [Step 1] ODL 2D Row-Based 엔진 가동...")
         parser = PDFParser()
         odl_doc = parser.parse(pdf_path)
-        target_tables = []
-        if odl_doc and odl_doc.pages:
-            for p_idx in pages:
-                if p_idx < len(odl_doc.pages):
-                    for el in odl_doc.pages[p_idx].elements:
-                        if getattr(el, 'type', '') == "TABLE": target_tables.append(el)
-
-        # ====================================================================
-        # [🔥 V16 ODL 2D Row-Based Extraction (문자열 변환 절대 금지!)]
-        # ====================================================================
-        for table in target_tables:
-            for row in table.rows:
-                # 1. 셀 텍스트를 리스트 구조로 보존 (join 금지)
-                cells = [cell.text.strip() for cell in row.cells if cell.text]
-                if len(cells) < 2: continue
-
-                # 2. [핵심] 2D 좌표(Index) 1:1 매핑
-                raw_name = cells[0]
-                raw_cas = cells[1] if len(cells) > 1 else ""
-                raw_content = cells[2] if len(cells) > 2 else ""
-
-                # 헤더 스킵
-                if any(k in raw_name for k in ["CAS", "화학물질", "물질명", "구성성분"]): continue
-
-                # CAS 추출
-                cas_list = re.findall(r'(\d{1,7}-\d{2}-\d)', raw_cas)
-                if not cas_list:
-                    if any(k in raw_cas for k in ["비밀", "영업", "Secret", "Proprietary", "빈칸"]):
-                        cas_list = ["영업비밀"]
-                    else: continue
-
-                # 함유량 매핑 (다중 CAS 대응)
-                content_parts = [c.strip() for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
-                loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else "미기재%"] * len(cas_list)
-
-                for cas, cv in zip(cas_list, loop_content):
-                    odl_components.append({"cas_no": cas, "content": cv})
-        
-        if odl_components:
-            used_engine = "ODL-V16"
-            if log_func: log_func(f" ├─ [ODL] {len(odl_components)}개 성분 검출 성공")
+        odl_components = extract_components_odl_robust(odl_doc, target_pages)
     except Exception as e:
-        if log_func: log_func(f" ⚠️ [ODL] 오류 발생 (AI로 전환): {e}")
-
-    # 4. AI Sniper (Gemini) - ODL 실패 시
-    ai_res = None
-    if not odl_components:
-        if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
-        ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper, log_func=log_func)
-        used_engine = "Gemini-Flash"
-
-        # [Gatekeeper] 유효 CAS 전멸 방어
-        if ai_res:
-            components = ai_res.get("구성성분", [])
-            pure_cas_count = sum(1 for c in components if re.match(r'^\d{1,7}-\d{2}-\d$', str(c.get("cas_no", ""))))
-            if pure_cas_count == 0:
-                if log_func: log_func(" ⚠️ [Gatekeeper] 유효 CAS 전멸 -> Fallback (Bulldozer) 가동")
-                ai_res = None
-
-    # 5. AI Bulldozer (GPT-4o-mini) - Sniper 실패 시
-    if not odl_components and not ai_res:
-        if log_func: log_func(" 🟡 1차 엔진 추출 불가 판단. 2차 입체 복구 요원(GPT-4o-mini) 투입!")
-        ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
-        used_engine = "GPT-4o-mini"
-
-    # 6. 최종 데이터 조립 및 품질 관리
-    final_components = []
-    if odl_components:
-        final_components = odl_components
-    elif ai_res:
-        final_components = ai_res.get("구성성분", [])
+        if log_func: log_func(f" ⚠️ ODL 파싱 오류: {e}")
+        odl_components = []
+    # ------------------------------------------------------------------
+    
+    # ODL이 유효한 CAS를 단 1개라도 찾았다면? 게임 끝.
+    pure_odl_cas = sum(1 for c in odl_components if re.search(r'\d-\d', str(c.get("cas", "") or c.get("cas_no", ""))))
+    
+    if pure_odl_cas > 0:
+        if log_func: log_func(f" 🟢 ODL 2D 정밀 추출 성공 ({len(odl_components)}건). AI 비전 스캔을 생략합니다.")
+        ai_res = {"구성성분": odl_components, "교정_사유": "ODL 2D 정밀 추출 완료"}
+        used_engine = "ODL-Regex"
+        is_ai_extracted = False
     else:
-        used_engine = "Regex-Fallback"
-        final_components = fallback_text_extraction(section3_text, log_func=log_func)
+        # 2. ODL 실패 시 (스캔본 등) -> 제미나이(Flash) 투입
+        if log_func: log_func(f" 🟡 ODL 탐지 실패. [Step 2] AI 비전 스나이퍼({alias}) 투입!")
+        ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper, log_func)
+        used_engine = "Gemini-Flash"
+        is_ai_extracted = True
+        
+        if ai_res and "구성성분" in ai_res:
+            pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
+        else:
+            pure_cas_count = 0
+            
+        # 3. 불도저(GPT) 적출: 제미나이마저 실패하면 더 이상 대안을 찾지 않고 수동 검토로 넘김
+        if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
+            if log_func: log_func(" ├─ [Step 3] AI Bulldozer (GPT-4o-mini) 입체 복구 투입...")
+            ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
+            used_engine = "GPT-4o-mini"
+            is_ai_extracted = True
+            
+            if ai_res and "구성성분" in ai_res:
+                pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
+            else:
+                pure_cas_count = 0
+                
+            if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
+                if log_func: log_func(" ❌ AI 엔진마저 추출 실패 (수동 검토 대상)")
+                return {
+                    "error": "전체 추출 실패 (수동 검토 필요)",
+                    "제품명": hybrid_pn,
+                    "신호등": "🔴"
+                }
 
-    # 제품명 및 다중 모델 판별
-    product_name = hybrid_pn
-    is_multi_model = product_name.count(',') >= 2 or len(product_name) > 60
-
-    # Local Grounding 텍스트 준비
+    # ====================================================================
+    # 데이터 조립 및 정제 (투트랙 검증)
+    components = ai_res.get("구성성분", [])
+    reason = ai_res.get("교정_사유", "사유 없음")
+    
     local_grounding_text = str(first_page_text)
     try:
         doc_g = fitz.open(pdf_path)
         for p_idx in pages:
             if p_idx != 0: local_grounding_text += "\n" + _get_sorted_and_normalized_text(doc_g[p_idx])
         doc_g.close()
-    except: local_grounding_text += "\n" + str(section3_text)
-
-    refined_comps, has_invalid_cas = final_quality_control(final_components, local_grounding_text, log_func)
+    except Exception:
+        local_grounding_text += "\n" + str(section3_text)
+    
+    # 🚨 is_ai_extracted 플래그를 넘겨 ODL은 환각 검사를 면제받음
+    refined_comps, has_invalid_cas = final_quality_control(components, local_grounding_text, is_ai=is_ai_extracted, log_func=log_func)
+    
     comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
-
     if not comp_parts:
-        if log_func: log_func(" ❌ 모든 엔진 추출 실패 (수동 검토 대상)")
-        return {"error": "AI 추출 완전 실패 (수동 검토 필요)", "제품명": product_name, "신호등": "🔴"}
+        if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
+        return {"error": "AI 추출 완전 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
 
     comp_str = "; ".join(comp_parts)
+    product_name = hybrid_pn
     target_substances = ""
     
     # 예외 레지스트리 적용
@@ -834,19 +878,19 @@ def process_pdf(pdf_path, log_func=None):
     for ext_key, ext_data in EXCEPTION_REGISTRY.items():
         if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
             product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
-            is_multi_model = True; break
+            break
 
     # 반환 객체 구성
     gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "odl"
     
     res_obj = {
         "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
-        "교정_사유": "다중 모델 또는 예외 규칙 적용" if is_multi_model else "추출 및 검증 완료",
-        "신호등": "🟡" if is_multi_model or has_invalid_cas or not product_name else "🟢",
+        "교정_사유": reason,
+        "신호등": "🟡" if has_invalid_cas or not product_name else "🟢",
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V16] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [V17] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
