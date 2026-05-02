@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.18"
+VERSION = "15.8.20"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -92,49 +92,53 @@ EXCEPTION_REGISTRY = {
 }
 
 def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
-    """[V15.8.8] 쿨다운 레지스트리 연동: 429 키는 60초 블랙리스트, 살아있는 키 자동 배정"""
+    """[V15.8.20] 쿨다운 레지스트리 + 지수적 백오프(Exponential Backoff) 연동"""
     current_sniper = initial_sniper
     
     for attempt in range(max_retries):
         if not current_sniper:
-            raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
+            raise ValueError("🚨 전용 스나이퍼가 배정되지 않았습니다.")
             
-        api_key = current_sniper["key"]
+        # 🚨 [V15.8.20] 쿨다운 상태 확인 (429 에러 등으로 인한 일시 차단 체크)
+        now = time.time()
         alias = current_sniper["alias"]
+        if alias in _sniper_cooldown and now < _sniper_cooldown[alias]:
+            if log_func: log_func(f"  ⏳ {alias}는 현재 쿨다운 중입니다. 스나이퍼를 자동 전환합니다.")
+            current_sniper = get_next_sniper()
+            continue
+
+        api_key = current_sniper["key"]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
-            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
+            # 🚨 [V15.8.20] 지수적 백오프 (IP 차단 방지용 스마트 대기)
+            if attempt > 0:
+                wait_time = 1.0 + attempt # [V15.8.20] 지수적 백오프: 1.0초 + 시도 횟수만큼 점진적 증가
+                if log_func: log_func(f"  🛡️ {alias} 재시도 준비 중... ({wait_time}초 대기)")
+                time.sleep(wait_time)
+
+            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=45)
             
             if response.status_code != 200:
-                error_msg = response.text
-                if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code}): {error_msg[:60]}...")
-                
-                # [V15.8.8] 429면 해당 키를 60초 블랙리스트
                 if response.status_code == 429:
-                    mark_sniper_cooldown(current_sniper, cooldown_sec=60)
-                elif response.status_code == 503:
-                    mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+                    if log_func: log_func(f"  ⚠️ {alias}가 429(Too Many Requests)를 반환했습니다. 60초 쿨다운 적용.")
+                    mark_sniper_cooldown(current_sniper, 60)
                 
-                # 쿨다운 레지스트리가 알아서 살아있는 키를 골라줌
-                current_sniper = get_next_sniper()
-                if current_sniper:
-                    if log_func: log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환")
-                continue
-                    
+                next_sniper = get_next_sniper()
+                if next_sniper:
+                    current_sniper = next_sniper
+                    continue
+            
             return response.json()
             
-        except requests.exceptions.RequestException as e:
-            if log_func: log_func(f"  🔴 {alias} 네트워크 끊김: {str(e)[:60]}")
-            # [V15.8.9] 대기하지 않고 즉시 해당 키 블랙리스트 후 무조건 스와핑
-            mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+        except Exception as e:
+            # 🚨 [V15.8.20] 네트워크 단절 시에도 지수적 백오프 적용
+            if log_func: log_func(f"  📡 {alias} 네트워크 오류: {str(e)[:50]}")
+            time.sleep(1.0 + attempt)
             current_sniper = get_next_sniper()
-            if current_sniper and log_func:
-                log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환 (통신 단절 돌파)")
-            time.sleep(1) # 아주 짧은 숨 고르기
             continue
             
-    raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
+    raise Exception("🚨 1차 엔진(Sniper)이 모든 재시도에 실패했습니다. 2차 불도저(GPT) 긴급 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
     """[V15.8.2] 족쇄 해제 & 공란(Blank) 반환 패치"""
@@ -202,17 +206,17 @@ SYSTEM_PROMPT_TEXT = load_system_prompt()
 PROMPT_GEMINI_FLASH = """
 당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS 표 이미지만 보고 데이터를 추출하세요.
 
-[🔥 1차 엔진 5대 절대 원칙]
-1. 🚨 엄격한 수평(Y-axis) 1:1 매칭: 표에 선이 없거나 칸이 넓어 성분명, CAS 번호, 함유량이 어긋나 있더라도, 반드시 같은 행(Row)의 문맥을 추적하여 1:1로 매칭하라. 한 물질의 CAS가 2줄로 쪼개져 있다면 병합하라.
-2. 🚨 환각 금지(가장 중요): 표에 '함유량'이나 '%'가 명시된 컬럼이 없을 경우, 절대 옆에 있는 '분자량'이나 '녹는점' 같은 무관한 숫자를 함유량으로 둔갑시켜 추출하지 마라.
-3. 🚨 결측치 처리: CAS 칸이 비어있거나 '영업비밀', '비공개' 등이면 가차 없이 폐기하라. 반대로 CAS는 있는데 함유량 칸이 비어있거나 '-' 처리되어 있다면 함유량을 '미기재%'로 출력하라. 단, '잔량', 'balance' 등으로 명시된 경우만 'Rem.%'로 출력하라.
-4. 🚨 1% 부등호 조작 금지: 원본에 '0.1-1' 이라 적혀 있으면 '0.1~1%'로 출력하라. 임의로 '<1%'처럼 부등호를 지어내는 환각을 절대 금지한다.
-5. 포맷 통일: 함유량 숫자 뒤에는 반드시 '%'를 붙여라.
+[🔥 1차 엔진 절대 원칙]
+1. 🚨 시스템 프롬프트(System Prompt)의 '시각 추출 절대 원칙'을 100% 최우선으로 복종하라.
+2. 🚨 Y축 행 밀림 절대 금지: CAS 칸이 비어있거나 기호(-)만 있다면 해당 행의 함유량을 위/아래의 다른 CAS에 섞지 마라. 반드시 "cas_no": "빈칸"으로 독립된 객체를 생성하여 Y축 1:1 매칭을 유지하라.
+3. 🚨 환각 금지: 표에 '함유량'이나 '%'가 명시된 컬럼의 숫자만 추출하라.
+4. 🚨 부등호 범위 조작 금지: 원본에 '0.1-1' 이면 '0.1~1%'로, '>=95 - <=100' 이면 '>=95 - <=100' 눈에 보이는 그대로 추출하라.
 
 JSON 출력 포맷:
 {
   "구성성분": [
-    {"cas_no": "123-45-6", "content": "10~20%"}
+    {"cas_no": "123-45-6", "content": "10~20%"},
+    {"cas_no": "빈칸", "content": "36~46%"}
   ],
   "교정_사유": "시각 추출 완료"
 }
@@ -374,10 +378,11 @@ def _normalize_single_content(content_str):
         p1, n1, p2, n2 = weird_range.groups()
         if p1 and p2: return f"{n1}~{n2}%"
         
-    range_m = re.match(r'^([<>≤≥]?)([0-9.]+)[%]*[-~]([<>≤≥]?)([0-9.]+)[%]*$', v)
+    # [V15.8.19 수정] 양쪽 숫자가 모두 있는 범위(Range)의 경우 모든 부등호를 강제 제거 (예: >=95-<=100 -> 95~100%)
+    range_m = re.match(r'^([<>≤≥]*)([0-9.]+)[%]*[-~]([<>≤≥]*)([0-9.]+)[%]*$', v)
     if range_m:
         p1, n1, p2, n2 = range_m.groups()
-        return f"{n1}~{p2}{n2}%"
+        return f"{n1}~{n2}%"
         
     if "Rem" in v:
         return "Rem.%" if "%" not in v else v
@@ -693,6 +698,7 @@ def process_pdf(pdf_path, log_func=None):
     # 4. 스마트 Gatekeeper (황색불 판별)
     needs_gpt = False
     valid_components = []
+    pure_cas_count = 0 # 🚨 [V15.8.20] 순수 CAS 카운터 도입
 
     if not ai_res or "구성성분" not in ai_res:
         needs_gpt = True # 구조 붕괴
@@ -701,23 +707,28 @@ def process_pdf(pdf_path, log_func=None):
             cas = str(comp.get("cas_no", "")).strip()
             content_str = str(comp.get("content", "")).replace(" ", "") # 공백만 제거 (최소 정제)
             
-            # [필터링] 영업비밀성 키워드면 1차에서도 버림
-            if not cas or any(kw in cas for kw in ["영업비밀", "비공개", "승인번호", "미기재", "Secret"]):
+            # [V15.8.19 필터링] "빈칸" 키워드 추가하여 Gatekeeper 통과 허용
+            if not cas or any(kw in str(cas) for kw in ["영업비밀", "비공개", "승인번호", "미기재", "Secret", "빈칸"]):
+                valid_components.append(comp) # Y축 유지를 위해 살려둠
                 continue
 
-            # [롤백] 1차 엔진(Gemini)은 엄격한 기준 적용 (혼합 표기면 폐기하고 2차로 넘김)
-            cas_clean = re.sub(r'^0+', '', cas) # 앞의 0 제거
-            is_valid_cas = re.match(r'^\d{1,7}-\d{2}-\d$', cas_clean)
-            
-            if not is_valid_cas:
-                needs_gpt = True # CAS 규격이 깨졌으면 1차 엔진의 시각 오류로 간주, GPT 호출!
-                continue
-                
+            # [V15.8.19 롤백 해제] 다중 CAS 완벽 허용
+            found_cases = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(cas))
+            if not found_cases:
+                needs_gpt = True # 순수 CAS가 1개도 없으면 시각 오류로 간주, GPT 호출!
+                break
+
             # [황색불 조건] 함유량 오류
             if not re.search(r'\d', content_str) and "Rem" not in content_str:
                 needs_gpt = True 
                 break
+                
+            pure_cas_count += len(found_cases)
             valid_components.append(comp)
+
+        # 🚨 [V15.8.20 핵심 방어] 유효 CAS가 단 1개도 없다면 1차 엔진 완전 실패(빈칸 도배)로 간주
+        if not needs_gpt and pure_cas_count == 0:
+            needs_gpt = True
         
         # [V15.8.3] 누락 탐지기: 전체 문서가 아닌 '표가 있는 페이지의 텍스트'만으로 비교!
         if len(valid_components) == 0:
