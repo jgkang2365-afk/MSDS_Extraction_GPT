@@ -212,13 +212,13 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.6.3] 자가검증 완벽 통과 및 수치 환각 방어 보강 (안티 보정판)"""
+    """[V17.2.7] 대청소 통합본 (안티 PR 완벽 수용 + 자가검증 통과)"""
     orig_raw = str(content_str).strip()
     
-    # 괄호 안의 불필요한 설명(max, 최대 등) 제거
+    # 1. 괄호 안의 불필요한 설명 제거
     v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', orig_raw, flags=re.I)
     
-    # 기호 및 키워드 치환
+    # 2. 기호 및 키워드 치환
     v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
     v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
@@ -227,42 +227,46 @@ def _normalize_single_content(content_str):
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
 
-    # 공백/단위 제거
+    # 3. 공백/단위 제거
     v = v.replace(" ", "")
     v = re.sub(r'(?i)proprietary|secret', '', v)
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 일반 범위, ± 범위 및 단일 수치 처리 (🚨 알파벳/한글이 섞인 오탐 완전 방어)
+    # 4. 연산 및 정규식 추출 (🚨 안티 PR: 알파벳 필터 내부로 통폐합)
     if not re.search(r'[a-zA-Z가-힣]', v): 
-        # 1. ± 범위 처리 (🚨 앵커 추가 및 보호 블록 내부로 이동)
-        pm_match = re.search(r'^([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)$', v)
+        
+        # ① ± 범위 처리 (🚨 안티 PR: 앵커 적용으로 찌꺼기 방어)
+        pm_match = re.search(r'^([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)[%]*$', v)
         if pm_match:
             try:
                 val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-                if val <= 100:
+                if val <= 100: 
                     n1, n2 = sorted([val-pm, val+pm])
                     return f"{n1:g}~{n2:g}%"
             except: pass
 
-        # 2. 일반 범위 패턴
+        # ② 일반 범위 처리 (숫자~숫자)
         range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
         if range_m:
             p1, n1, sep, p2, n2 = range_m.groups()
             if sep or (p1 and p2):
                 try:
                     f1, f2 = float(n1), float(n2)
-                    if f1 <= 100 and f2 <= 100:
+                    if f1 <= 100 and f2 <= 100: # 🚨 K-308의 545% 초고수치 차단
                         if f1 > f2:
                             n1, n2 = n2, n1
                             p1, p2 = p2, p1 
+                        
+                        # 🚨 자가검증 통과: 양방향 부등호(≥95≤100)는 부등호를 지우고 범위로
                         if p1 and p2 and not sep:
                             return f"{n1}~{n2}%"
+                            
                         res = f"{p1}{n1}~{p2}{n2}"
                         return res if '%' in res else res + '%'
                 except: pass
 
-        # 3. 단일 수치 패턴 (🚨 앵커 ^ $ 유지)
+        # ③ 단일 수치 처리 (앵커 적용)
         single_m = re.search(r'^([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*$', v)
         if single_m:
             p, n = single_m.groups()
@@ -433,7 +437,8 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.6.3] 세포 분열(__SPLIT__) 및 숫자 오탐지 완벽 방어 (보정판)"""
+    """[V17.2.7] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
+    # 🚨 줄바꿈을 __SPLIT__으로 치환하여 동거 데이터 구출 준비
     cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
@@ -460,7 +465,7 @@ def parse_row_robust_v2(row):
 
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                # 🚨 하이픈(-)과 소수점(.)을 다시 추가하여 45-50, 0.5 등을 Strong으로 보호
+                # 🚨 [안티 PR 반영] 하이픈(-)과 소수점(.)을 복구하여 45-50 등을 Strong으로 사수!
                 if any(k in c for k in ['%', '~', '-', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
                     if not strong_content: strong_content = _clean_content_odl(c)
                 else:
@@ -489,7 +494,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.6.3" 
+            "engine": "ODL-v2.7_CleanSlate" 
         })
     return final_comps
 
