@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.2.9.6"
+VERSION = "17.2.9.7"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -212,7 +212,7 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.9.5] 실드 역전: 유효 패턴 감지 시 글자 수 상관없이 무조건 추출 허용"""
+    """[V17.2.9.7] 종결판: 긴 줄표(–, —), 모든 물결표 및 공백 범위 완벽 대응"""
     orig_raw = str(content_str).strip()
     
     # 🚨 PDF의 긴 줄표(–, —)를 일반 하이픈(-)으로 통일
@@ -238,12 +238,11 @@ def _normalize_single_content(content_str):
     
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 🚨 [V17.2.9.5] 하이재킹 차단 로직 전면 개편 (패턴 보호 우선)
+    # 🚨 [V17.2.9.7] 하이재킹 차단 로직 (긴 줄표 –,— 포함 모든 변이 수용)
     letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
-    # %, <, >, ≤, ≥ 및 모든 물결표 변이(∼, ～)가 있거나 숫자 사이의 기호(-, /, ~, ∼, ～)가 있으면 '유효 패턴'으로 인정
-    valid_pattern = any(sym in v for sym in ['%', '∼', '～', '<', '>', '≤', '≥']) or re.search(r'\d\s*[-/~∼～]\s*\d', v)
+    # %, <, >, ≤, ≥, 모든 물결표(∼, ～) 및 숫자 사이의 모든 기호(-, –, —, /, ~, ∼, ～) 수용
+    valid_pattern = any(sym in v for sym in ['%', '∼', '～', '–', '—', '<', '>', '≤', '≥']) or re.search(r'\d\s*[-–—/~∼～]\s*\d', v)
     
-    # 🚨 확실한 수치 패턴이 있다면 글자가 많아도(Water 등) 하이재킹으로 보지 않음
     if len(letters) > 2 and not valid_pattern:
         return "미기재%"
 
@@ -275,7 +274,8 @@ def _normalize_single_content(content_str):
             if float(s_pct.group(2)) <= 100: return f"{s_pct.group(1)}{s_pct.group(2)}%"
 
     # ③ 일반 범위 및 단일 수치 (🚨 소수점 파편화 방지를 위한 sep 조건부 필수화)
-    range_m = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)', v)
+    # 🚨 [V17.2.9.7] 긴 줄표(–, —) 포함 범위 정규식
+    range_m = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-–—~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)', v)
     if range_m:
         groups = range_m.groups()
         p1, n1, sep = groups[0] or "", groups[1], groups[2] or ""
@@ -482,8 +482,8 @@ def parse_row_robust_v2(row):
 
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                # 🚨 [V17.2.9.6] ODL 기호 인식 범위 확장 (모든 물결표 변이 추가)
-                if any(k in c for k in ['%', '~', '∼', '～', '-', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
+                # 🚨 [V17.2.9.7] ODL 기호 인식 범위 확장 (긴 줄표 –, — 추가)
+                if any(k in c for k in ['%', '~', '∼', '～', '-', '–', '—', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
                     if not strong_content: strong_content = _clean_content_odl(norm_c)
                 else:
                     try:
@@ -533,7 +533,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V17.2.9.6] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [V17.2.9.7] 엔진 가동: {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -640,7 +640,7 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.9.6] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [V17.2.9.7] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
@@ -649,6 +649,6 @@ def self_test_regression():
     assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
     assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
     assert _normalize_single_content("≤ 0.1") == "≤0.1%", "회귀 오류: 소수점 파편화 방지 실패"
-    print("[OK] V17.2.9.6 엔진 자가 검증 완료.")
+    print("[OK] V17.2.9.7 엔진 자가 검증 완료.")
 
 self_test_regression()
