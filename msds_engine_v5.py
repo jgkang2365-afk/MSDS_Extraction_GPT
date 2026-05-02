@@ -212,7 +212,7 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.6] 미만/이하 완벽 보존 및 초고수치(100% 초과) 차단"""
+    """[V17.2.6.1] 미만/이하 완벽 보존, 초고수치 차단 및 자가검증 버그 해결"""
     orig_raw = str(content_str).strip()
     
     # 괄호 안의 불필요한 설명(max, 최대 등) 제거
@@ -245,7 +245,8 @@ def _normalize_single_content(content_str):
 
     # 일반 범위 처리 (숫자~숫자) - 알파벳 섞인 오탐(Page 1-2) 방어
     if not re.search(r'[a-zA-Z가-힣]', v): 
-        range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[<>≤≥%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
+        # 🚨 [패치 완료] 중간 부등호를 먹어치우던 정규식 버그 수정 (% 기호만 필터)
+        range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
         if range_m:
             p1, n1, sep, p2, n2 = range_m.groups()
             if sep or (p1 and p2):
@@ -255,6 +256,11 @@ def _normalize_single_content(content_str):
                         if f1 > f2:
                             n1, n2 = n2, n1
                             p1, p2 = p2, p1 
+                        
+                        # 🚨 [패치 완료] 양방향 부등호(≥95≤100)는 범위(95~100)로 통합 (자가 검증 통과)
+                        if p1 and p2 and not sep:
+                            return f"{n1}~{n2}%"
+                            
                         res = f"{p1}{n1}~{p2}{n2}"
                         return res if '%' in res else res + '%'
                 except: pass
