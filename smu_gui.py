@@ -370,13 +370,16 @@ class ExtractionWorker(QThread):
                     cached_version = cached_data.get("engine_version", "unknown")
                     
                     # [핵심] 버전이 다르거나, 수동 데이터가 없는데 AI 결과가 불완전한 경우 재추출
+                    use_cache = True
                     if cached_version != engine.VERSION:
                         self.update_log_signal.emit(f"[*] [{fn}] 엔진 버전 변경 감지 ({cached_version} -> {engine.VERSION}): 재추출을 수행합니다.")
+                        use_cache = False
                     elif not manual and (cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", "")):
                         self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과 감지: API 재호출을 시도합니다.")
-                    else:
+                        use_cache = False
+                    
+                    if use_cache:
                         self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
-                        
                         # [V11.6 로직 유지] manual_data 금고 확인 및 최우선 덮어쓰기
                         final_product = manual.get("product_name", cached_data.get("product_name", "미확인"))
                         final_content = manual.get("raw_content", cached_data.get("raw_content", ""))
@@ -608,19 +611,6 @@ class ValidationWorker(QThread):
                         else: percentage = 100.0 
                         
                         is_ge_1 = (percentage >= 1.0)
-                        
-                        if is_ge_1:
-                            res_work_subjects.append(clean_name)
-                        else:
-                            # [V9.3] 주님 지령: <1% 성분은 반드시 측정 비대상[물질명(함유량%)] 형식으로 묶음
-                            res_work_non_subjects.append(f"{clean_name}({range_val})")
-
-                # [버그 수정] KOSHA 검색에서 제외되었던 영업비밀 등을 1차 결과(전체)에 다시 합류시킴
-                if preserved_non_cas:
-                    res_1st_list.extend(preserved_non_cas)
-
-                # 측정대상 포맷팅 결합
-                subj_str = "; ".join(res_work_subjects)
                 non_subj_str = f"측정 비대상[{'; '.join(res_work_non_subjects)}]" if res_work_non_subjects else ""
                 final_work_str = "; ".join(filter(None, [subj_str, non_subj_str]))
 

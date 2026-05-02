@@ -63,7 +63,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 def verify_cas_number(cas_string):
-    """[V17.2.9.1] CAS 번호 체크디지트 검증 코어"""
+    """[V17.3.0.2] CAS 번호 체크디지트 검증 코어"""
     if not cas_string: return False
     
     # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
@@ -86,7 +86,7 @@ def verify_cas_number(cas_string):
         return False
 
 def _get_sorted_and_normalized_text(page):
-    """[V17.2.9.1] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    """[V17.3.0.2] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
     blocks = page.get_text("blocks")
     # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
     blocks.sort(key=lambda b: (b[1], b[0]))
@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.0"
+VERSION = "17.3.0.2"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -212,10 +212,10 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.9.8] 부등호 정밀 복구: 0.1~<1% 등 측정 대상 기준 보존 최적화"""
+    """[V17.3.0.2] 부등호 정밀 복구: 0.1~<1% 등 측정 대상 기준 보존 최적화"""
     orig_raw = str(content_str).strip()
     
-    # 🚨 [V17.2.9.8] 부등호 변환을 노이즈 제거보다 먼저 실행 (데이터 유실 방지)
+    # 🚨 [V17.3.0.2] 부등호 변환을 노이즈 제거보다 먼저 실행 (데이터 유실 방지)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', orig_raw)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
@@ -241,13 +241,13 @@ def _normalize_single_content(content_str):
     
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 🚨 [V17.3.0.0] CAS Residue Defense: 모든 형태의 관리번호 패턴을 제거 (기존번호 포함)
+    # 🚨 [V17.3.0.2] CAS Residue Defense: 모든 형태의 관리번호 패턴을 제거 (기존번호 포함)
     letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
     # v에서 CAS-like 패턴을 임시 제거하여 순수 기호만으로 패턴 확인
     v_for_pattern = re.sub(r'\d+-\d+-\d+', '', v)
     valid_pattern = any(sym in v_for_pattern for sym in ['%', '∼', '～', '–', '—', '<', '>', '≤', '≥', '~']) or re.search(r'\d\s*[-–—/~∼～]\s*\d', v_for_pattern)
 
-    # 🚨 [V17.2.9.9] Shield-Inversion: 유효한 수치 패턴이 감지되면 노이즈 필터링 우회
+    # 🚨 [V17.3.0.2] Shield-Inversion: 유효한 수치 패턴이 감지되면 노이즈 필터링 우회
     is_strong_value = re.search(r'\d+(?:\.\d+)?\s*[%~∼～\-–—/<>=≤≥]', v_for_pattern)
     
     if len(letters) > 2 and not valid_pattern and not is_strong_value:
@@ -281,7 +281,8 @@ def _normalize_single_content(content_str):
             if float(s_pct.group(2)) <= 100: return f"{s_pct.group(1)}{s_pct.group(2)}%"
 
     # ③ 일반 범위 및 단일 수치 (🚨 소수점 파편화 방지를 위한 sep 조건부 필수화)
-    # 🚨 [V17.2.9.7] 긴 줄표(–, —) 포함 범위 정규식
+    # 🚨 [V17.3.0.2] 긴 줄표(–, —) 포함 범위 정규식
+    # 🚨 [V17.3.0.1] 정규식 보강: 숫자와 부등호/구분자 사이의 결합을 더 꼼꼼하게 캡처
     range_m = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-–—~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)', v)
     if range_m:
         groups = range_m.groups()
@@ -292,10 +293,10 @@ def _normalize_single_content(content_str):
             f1, f2 = float(n1), float(n2)
             if f1 <= 100 and f2 <= 100:
                 if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
-                # 🚨 [V17.2.9.8] 0.1~<1% 형태 조립 시 부등호(p1, p2) 유실 방지 강화
-                if p1 and p2 and not sep: return f"{n1}~{n2}%"
+                # 🚨 [V17.3.0.1] 부등호(p1, p2) 유실 절대 방지: f-string 조립 강화
                 res = f"{p1}{n1}~{p2}{n2}"
-                return res if '%' in res else res + '%'
+                if '%' not in res: res += '%'
+                return res
         except: pass
 
     single_m = re.search(r'([<>≤≥]?)\s*(\d+\.?\d*|\.\d+)', v)
@@ -305,7 +306,7 @@ def _normalize_single_content(content_str):
     return "미기재%"
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
-    """[V17.2.1] Fuzzy Shield 3단계 적용 Grounding"""
+    """[V17.3.0.2] Fuzzy Shield 3단계 적용 Grounding"""
     refined_dict = {}  
     has_invalid = False
     norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
@@ -463,7 +464,7 @@ def _clean_content_odl(text):
     return text
 
 def parse_row_robust_v2(row):
-    """[V17.2.9] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
+    """[V17.3.0.2] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
     cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
@@ -474,7 +475,7 @@ def parse_row_robust_v2(row):
     cas_list, name_candidates = [], []
     strong_content, weak_content = None, None
 
-    # 🚨 [V17.3.0.0] Backward Scan: 함유량 칸은 보통 뒤쪽에 있으므로 역순 탐색하여 하이재킹 방지
+    # 🚨 [V17.3.0.2] Backward Scan: 함유량 칸은 보통 뒤쪽에 있으므로 역순 탐색하여 하이재킹 방지
     for raw_cell in reversed(cells):
         sub_cells = raw_cell.split('__SPLIT__')
         
@@ -482,7 +483,7 @@ def parse_row_robust_v2(row):
             c = c.strip()
             if not c: continue
 
-            # 🚨 [V17.3.0.0] 더 강력한 CAS/관리번호 제거 (자릿수 제한 해제)
+            # 🚨 [V17.3.0.2] 더 강력한 CAS/관리번호 제거 (자릿수 제한 해제)
             found_cas = re.findall(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', c)
             if found_cas:
                 cas_list.extend(found_cas)
@@ -543,7 +544,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V17.2.9.8] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [{VERSION}] 엔진 가동: {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -650,7 +651,7 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.9.8] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
@@ -662,6 +663,6 @@ def self_test_regression():
     assert _normalize_single_content("Ethylene Glycol 50-60%") == "50~60%", "회귀 오류: Shield-Inversion 작동 실패"
     assert _normalize_single_content("0.1~1미만") == "0.1~<1%", "회귀 오류: 미만(Below) 변환 유실"
     assert _normalize_single_content("0.1 - 1") == "0.1~1%", "회귀 오류: 하이픈 범위 표준화 실패"
-    print("[OK] V17.3.0.0 엔진 자가 검증 완료.")
+    print("[OK] V17.3.0.2 엔진 자가 검증 완료.")
 
 self_test_regression()
