@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "17.1.0"
+VERSION = "17.1.1"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -386,17 +386,15 @@ def _normalize_single_content(content_str):
     # 위 규격에 아무것도 맞지 않는 찌꺼기는 무조건 환각 처리
     return "미기재%"
 
-def final_quality_control(components, full_text, log_func=None):
-    """[V15.8.17] 다중 CAS 분리 + 정밀 Grounding(하이픈 보존) + 중복 제거(De-dup) 통합 엔진"""
-    refined_dict = {}  # [V15.8.14] 중복 제거를 위한 딕셔너리 사용
+def final_quality_control(components, full_text, is_ai=True, log_func=None): # 👈 is_ai 파라미터 복구!
+    """[V17 최종] 다중 CAS 분리 + 정밀 Grounding(환각 즉결 처형) 통합 엔진"""
+    refined_dict = {}  
     has_invalid = False
     
-    # 🚨 [V15.8.17 수정] 하이픈(-)은 제거하지 마라! 전화번호가 CAS 번호로 둔갑하는 대참사 방지
     norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
     
     for comp in components:
         raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
-
         cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', raw_cas_field)
         
         if not cas_list and any(w in raw_cas_field for w in ["영업비밀", "비공개", "Secret"]):
@@ -409,8 +407,6 @@ def final_quality_control(components, full_text, log_func=None):
         content_parts = [_normalize_single_content(c) for c in content_parts_raw if c.strip()]
 
         page_val = comp.get("page", "")
-        
-        # 1:1 매칭 또는 Fallback(첫 번째 함유량 복제)
         loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
         
         for cas_raw, cv in zip(cas_list, loop_content):
@@ -419,32 +415,42 @@ def final_quality_control(components, full_text, log_func=None):
                 has_invalid = True
                 continue
                 
-            # 🚨 [V15.8.18 수정] CAS 2-Step Grounding (Strict -> Soft)
-            if norm_text:
-                # 1단계: 하이픈 보존 엄격 매칭 (Strict Match)
+            # 🚨 [V17 핵심] AI가 추출한 데이터일 경우에만 환각(Grounding) 검사 실시
+            if is_ai and norm_text:
                 if cas not in norm_text:
-                    # 2단계: OCR 텍스트 깨짐 대응을 위한 하이픈 제거 유연 매칭 (Soft Match)
                     cas_no_hyphen = cas.replace('-', '')
                     norm_text_no_hyphen = norm_text.replace('-', '')
                     
                     if cas_no_hyphen not in norm_text_no_hyphen:
-                        if log_func: log_func(f" ⚠️ [Grounding 경고] 텍스트 미발견 (환각 의심되나 시각 추출 우선 보존): {cas}")
+                        if log_func: log_func(f" ⚠️ [Grounding 방어] 환각 CAS 원천 차단 및 폐기: {cas}")
                         has_invalid = True
+                        continue # 🚨 [복구 완료] 자비 없음! 엑셀 진입 즉시 차단!
 
             if cv:
-                # 🚨 [V15.8.14 핵심] 중복 제거 (De-duplication)
                 if cas not in refined_dict:
                     refined_dict[cas] = {"cas": cas, "content": cv, "page": page_val}
 
-    refined = list(refined_dict.values()) # 딕셔너리를 다시 리스트로 변환
+    refined = list(refined_dict.values()) 
 
-    try:
-        check_omission(full_text, refined)
-    except ValueError as e:
-        if log_func: log_func(f" 🟡 [누락 감지] {e}")
-        has_invalid = True 
+    # 누락 감지도 AI 추출물에 한해서만 에러 로깅 (ODL은 누락 감지 패스)
+    if is_ai:
+        try:
+            check_omission(full_text, refined)
+        except ValueError as e:
+            if log_func: log_func(f" 🟡 [누락 감지] {e}")
+            has_invalid = True 
         
     return refined, has_invalid
+
+    
+
+
+    
+
+        
+
+        
+
 
 
 
