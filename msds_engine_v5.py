@@ -212,61 +212,61 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.5] 미만/이하 키워드 및 범위 정규식 완벽 보존"""
+    """[V17.2.6] 미만/이하 완벽 보존 및 초고수치(100% 초과) 차단"""
     orig_raw = str(content_str).strip()
     
-    # 1. 기초 정제
-    v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', orig_raw)
+    # 괄호 안의 불필요한 설명(max, 최대 등) 제거
+    v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', orig_raw, flags=re.I)
+    
+    # 기호 및 키워드 치환
+    v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
     v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
-    
-    # 2. 한글/영문 키워드를 기호로 선치환 (누락 방지)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
 
-    # 3. 불필요한 단위 및 공백 제거
+    # 공백/단위 제거
     v = v.replace(" ", "")
-    v = re.sub(r'(?i)\(w/w\)|\(v/v\)|\(w/v\)|\(weight/weight\)|proprietary|secret', '', v)
+    v = re.sub(r'(?i)proprietary|secret', '', v)
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 4. ± 기호 연산
-    pm_match = re.match(r'^([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)\s*[%]*$', v)
+    # ± 범위 처리
+    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
         try:
             val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            n1, n2 = sorted([val-pm, val+pm])
-            return f"{n1:g}~{n2:g}%"
+            if val <= 100: # 100% 초과 초고수치 차단
+                n1, n2 = sorted([val-pm, val+pm])
+                return f"{n1:g}~{n2:g}%"
         except: pass
 
-    # 5. 🚨 [V17.2.5 핵심] 변태적인 범위 패턴 방어 (예: 0.1~<1)
-    # 기호(<,≤등)가 숫자 앞, 뒤, 가운데 어디에 붙어있든 유연하게 캡처하도록 변경
-    range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
-    if range_m:
-        p1, n1, sep, p2, n2 = range_m.groups()
-        if not sep and not (p1 and p2):
-            pass 
-        else:
-            try:
-                if float(n1) > float(n2):
-                    n1, n2 = n2, n1
-                    p1, p2 = p2, p1 
-                if p1 and p2: return f"{n1}~{n2}%"
-                res = f"{p1}{n1}~{p2}{n2}"
-                return res if '%' in res else res + '%'
-            except: pass
+    # 일반 범위 처리 (숫자~숫자) - 알파벳 섞인 오탐(Page 1-2) 방어
+    if not re.search(r'[a-zA-Z가-힣]', v): 
+        range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[<>≤≥%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
+        if range_m:
+            p1, n1, sep, p2, n2 = range_m.groups()
+            if sep or (p1 and p2):
+                try:
+                    f1, f2 = float(n1), float(n2)
+                    if f1 <= 100 and f2 <= 100: # 🚨 K-308 545% 차단
+                        if f1 > f2:
+                            n1, n2 = n2, n1
+                            p1, p2 = p2, p1 
+                        res = f"{p1}{n1}~{p2}{n2}"
+                        return res if '%' in res else res + '%'
+                except: pass
 
-    # 6. 단일 수치 패턴 (부등호 포함)
-    single_m = re.search(r'^([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*$', v)
+    # 단일 수치 처리
+    single_m = re.search(r'([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*', v)
     if single_m:
         p, n = single_m.groups()
-        return f"{p}{n}%"
+        if float(n) <= 100: # 🚨 100% 초과 차단
+            return f"{p}{n}%"
 
     if "Rem" in v: return "Rem.%"
-    return "미기재%"
-        
     return "미기재%"
 
 
@@ -430,45 +430,43 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.5] 세포 분열(Cell Mitosis) 도입 - 동거 데이터 학살 방지"""
-    # 🚨 줄바꿈을 공백으로 바꾸지 않고 '|' 같은 특수 기호로 임시 보존하여 정보 경계선 유지
-    cells = [re.sub(r'\s*\n\s*', ' | ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
+    """[V17.2.6] 세포 분열(__SPLIT__) 및 숫자 오탐지 완벽 방어"""
+    cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
-    cell_lower_set = {re.sub(r'[\s\(\)\.%\|]', '', c.lower()) for c in cells}
+    cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in cells}
     if cell_lower_set.intersection(header_keywords): return None
 
     cas_list, name_candidates = [], []
     strong_content, weak_content = None, None
 
     for raw_cell in cells:
-        # 한 셀 안에 '|' 기준으로 여러 정보가 뭉쳐있을 수 있으므로 쪼개서 각각 검사
-        sub_cells = raw_cell.split('|')
+        sub_cells = raw_cell.split('__SPLIT__')
         
         for c in sub_cells:
             c = c.strip()
             if not c: continue
 
-            # 1. CAS 검출
             found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
             if found_cas:
                 cas_list.extend(found_cas)
-                # CAS와 함량이 붙어있는 최악의 경우를 위해 찌꺼기를 다시 함량 검사기로 보냄
                 c_remain = re.sub(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', '', c).strip()
                 if not c_remain: continue
                 c = c_remain
 
-            # 2. 함량 검출
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                if any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', '.', 'Rem', '잔량', 'balance']):
+                if any(k in c for k in ['%', '~', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
                     if not strong_content: strong_content = _clean_content_odl(c)
                 else:
-                    if not weak_content: weak_content = _clean_content_odl(c)
+                    try:
+                        clean_weak = float(re.sub(r'[^\d.]', '', norm_c))
+                        if clean_weak <= 100 and not weak_content: 
+                            weak_content = _clean_content_odl(c)
+                    except: pass
                 continue
 
-            # 3. 물질명 후보 (문자열 길이 완화)
             if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
                 name_candidates.append(c)
 
@@ -487,7 +485,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.5" # DNA 꼬리표 업데이트
+            "engine": "ODL-v2.6" 
         })
     return final_comps
 
