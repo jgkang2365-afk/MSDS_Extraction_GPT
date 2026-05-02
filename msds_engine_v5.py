@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.2"
+VERSION = "17.3.0.4"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -212,96 +212,52 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.3.0.2] 부등호 정밀 복구: 0.1~<1% 등 측정 대상 기준 보존 최적화"""
-    orig_raw = str(content_str).strip()
-    
-    # 🚨 [V17.3.0.2] 부등호 변환을 노이즈 제거보다 먼저 실행 (데이터 유실 방지)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', orig_raw)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
+    """[V17.3.0.4] 부등호 정밀 복구 및 단위(g) 환각 방지"""
+    raw = str(content_str).strip()
+    if not raw: return "미기재%"
 
-    # 🚨 PDF의 긴 줄표(–, —)를 일반 하이픈(-)으로 통일
-    v = re.sub(r'[–—]', '-', v)
-    v = re.sub(r'(\d),(\d)', r'\1.\2', v)
-    
-    # 노이즈 제거 (이제 부등호로 변환된 미만/이하는 안전함)
-    v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', v, flags=re.I)
-    v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
-    v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
-    v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
-
-    v = v.replace(" ", "")
-    v = re.sub(r'(?i)proprietary|secret', '', v)
-    
-    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug|g$|g[^a-z])', v): return "미기재%"
-    
-    # 🚨 하이재킹 방어막에 걸리기 전에 Rem.% 먼저 대피! (필수)
-    if "Rem" in v: return "Rem.%"
-    
-    v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
-
-    # 🚨 [V17.3.0.2] CAS Residue Defense: 모든 형태의 관리번호 패턴을 제거 (기존번호 포함)
-    letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
-    # v에서 CAS-like 패턴을 임시 제거하여 순수 기호만으로 패턴 확인
-    v_for_pattern = re.sub(r'\d+-\d+-\d+', '', v)
-    valid_pattern = any(sym in v_for_pattern for sym in ['%', '∼', '～', '–', '—', '<', '>', '≤', '≥', '~']) or re.search(r'\d\s*[-–—/~∼～]\s*\d', v_for_pattern)
-
-    # 🚨 [V17.3.0.2] Shield-Inversion: 유효한 수치 패턴이 감지되면 노이즈 필터링 우회
-    is_strong_value = re.search(r'\d+(?:\.\d+)?\s*[%~∼～\-–—/<>=≤≥]', v_for_pattern)
-    
-    if len(letters) > 2 and not valid_pattern and not is_strong_value:
+    # 🚨 [V17.3.0.4] 단위(g, mg 등)가 포함된 수치는 함유량으로 인정하지 않음 (환각 방지)
+    # 단, % 기호가 있거나 Rem, Balance 같은 키워드는 허용
+    if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
         return "미기재%"
 
-    # ① ± 범위
-    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)[%]*', v)
+    # 1. 기초 정규화 (전각 -> 반각, 텍스트 -> 부등호)
+    v = raw.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|from|以上)', r'≥\1', v)
+    v = v.replace(" ", "")
+
+    # 2. 특수 키워드 (잔량 등)
+    if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
+    
+    # 3. ± 범위 처리
+    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
         try:
             val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            if val <= 100: return f"{sorted([val-pm, val+pm])[0]:g}~{sorted([val-pm, val+pm])[1]:g}%"
+            f1, f2 = val - pm, val + pm
+            return f"{f1:g}~{f2:g}%"
         except: pass
 
-    # ② 명시적 '%' 포함 수치 최우선 추출 (범위 로직 고도화 적용)
-    if '%' in v:
-        r_pct = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)\s*%', v)
-        if r_pct:
-            groups = r_pct.groups()
-            p1, n1, sep = groups[0] or "", groups[1], groups[2] or ""
-            p2 = (groups[3] or "") if groups[2] else (groups[4] or "")
-            n2 = groups[5]
-            try:
-                f1, f2 = float(n1), float(n2)
-                if f1 <= 100 and f2 <= 100:
-                    if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
-                    if p1 and p2 and not sep: return f"{n1}~{n2}%"
-                    return f"{p1}{n1}~{p2}{n2}%"
-            except: pass
-        s_pct = re.search(r'([<>≤≥]?)\s*(\d+\.?\d*|\.\d+)\s*%', v)
-        if s_pct:
-            if float(s_pct.group(2)) <= 100: return f"{s_pct.group(1)}{s_pct.group(2)}%"
-
-    # ③ 일반 범위 및 단일 수치 (🚨 소수점 파편화 방지를 위한 sep 조건부 필수화)
-    # 🚨 [V17.3.0.2] 긴 줄표(–, —) 포함 범위 정규식
-    # 🚨 [V17.3.0.1] 정규식 보강: 숫자와 부등호/구분자 사이의 결합을 더 꼼꼼하게 캡처
-    range_m = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-–—~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)', v)
-    if range_m:
-        groups = range_m.groups()
-        p1, n1, sep = groups[0] or "", groups[1], groups[2] or ""
-        p2 = (groups[3] or "") if groups[2] else (groups[4] or "")
-        n2 = groups[5]
+    # 4. 범위 및 단일 수치 추출 (부등호 포함)
+    parts = re.findall(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)', v)
+    
+    if len(parts) >= 2:
+        p1, n1 = parts[0]
+        p2, n2 = parts[1]
         try:
             f1, f2 = float(n1), float(n2)
-            if f1 <= 100 and f2 <= 100:
-                if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
-                # 🚨 [V17.3.0.1] 부등호(p1, p2) 유실 절대 방지: f-string 조립 강화
-                res = f"{p1}{n1}~{p2}{n2}"
-                if '%' not in res: res += '%'
-                return res
+            if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1
+            if p1 == "≥" and p2 == "≤": return f"{n1}~{n2}%"
+            return f"{p1}{n1}~{p2}{n2}%"
         except: pass
-
-    single_m = re.search(r'([<>≤≥]?)\s*(\d+\.?\d*|\.\d+)', v)
-    if single_m:
-        if float(single_m.group(2)) <= 100: return f"{single_m.group(1)}{single_m.group(2)}%"
+    elif len(parts) == 1:
+        p, n = parts[0]
+        try:
+            if float(n) <= 100: return f"{p}{n}%"
+        except: pass
 
     return "미기재%"
 
@@ -494,7 +450,7 @@ def parse_row_robust_v2(row):
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
                 # 🚨 [V17.2.9.7] ODL 기호 인식 범위 확장 (긴 줄표 –, — 추가)
-                if any(k in c for k in ['%', '~', '∼', '～', '-', '–', '—', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
+                if any(k in c for k in ['%', '~', '∼', '～', '-', '–', '—', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상']):
                     if not strong_content: strong_content = _clean_content_odl(norm_c)
                 else:
                     try:
@@ -657,12 +613,53 @@ def process_pdf(pdf_path, log_func=None):
 analyze_msds = process_pdf
 
 def self_test_regression():
-    assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
-    assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
-    assert _normalize_single_content("≤ 0.1") == "≤0.1%", "회귀 오류: 소수점 파편화 방지 실패"
-    assert _normalize_single_content("Ethylene Glycol 50-60%") == "50~60%", "회귀 오류: Shield-Inversion 작동 실패"
-    assert _normalize_single_content("0.1~1미만") == "0.1~<1%", "회귀 오류: 미만(Below) 변환 유실"
-    assert _normalize_single_content("0.1 - 1") == "0.1~1%", "회귀 오류: 하이픈 범위 표준화 실패"
-    print("[OK] V17.3.0.2 엔진 자가 검증 완료.")
+    print(f"--- [V{VERSION}] 엔진 자가 검증 시작 ---")
+    
+    # 1. 부등호 및 범위 표준화 테스트
+    test_cases = [
+        ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
+        ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
+        ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
+        ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),
+        ("≤ 0.1", "≤0.1%", "특수 부등호 및 공백 처리 실패"),
+        ("≥95%≤100%", "95~100%", "양방향 부등호(Full Range) 표준화 실패"),
+        ("1 ~ 5미만", "1~<5%", "한글 부등호 포함 범위 처리 실패"),
+        ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
+        ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
+        ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
+    ]
+    
+    # 2. 단위 및 노이즈 필터링 테스트 (Hallucination 방지)
+    noise_cases = [
+        ("77.08g", "미기재%", "단위(g) 환각 필터 작동 실패"),
+        ("100 mg/kg", "미기재%", "단위(mg/kg) 환각 필터 작동 실패"),
+        ("Ethylene Glycol 50-60%", "50~60%", "Shield-Inversion(텍스트 혼입) 처리 실패"),
+        ("95-100% (wt)", "95~100%", "부가 텍스트(wt) 처리 실패")
+    ]
+    
+    # 3. 특수 키워드 테스트
+    keyword_cases = [
+        ("Rem.", "Rem.%", "Rem. 키워드 표준화 실패"),
+        ("balance", "Rem.%", "balance 키워드 표준화 실패"),
+        ("잔량", "Rem.%", "한글 '잔량' 키워드 표준화 실패")
+    ]
 
-self_test_regression()
+    all_tests = test_cases + noise_cases + keyword_cases
+    fail_count = 0
+    
+    for input_str, expected, msg in all_tests:
+        actual = _normalize_single_content(input_str)
+        if actual != expected:
+            print(f" [FAIL] 입력: '{input_str}' -> 결과: '{actual}' (기대값: '{expected}') | 사유: {msg}")
+            fail_count += 1
+        else:
+            print(f" [PASS] '{input_str}' -> '{actual}'")
+
+    if fail_count > 0:
+        print(f"--- [!] 검증 실패: {fail_count}건의 오류 발견 ---")
+        sys.exit(1)
+    else:
+        print(f"--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
+
+if __name__ == "__main__":
+    self_test_regression()

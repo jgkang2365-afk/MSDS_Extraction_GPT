@@ -611,6 +611,12 @@ class ValidationWorker(QThread):
                         else: percentage = 100.0 
                         
                         is_ge_1 = (percentage >= 1.0)
+                        if is_ge_1:
+                            res_work_subjects.append(f"{clean_name}({range_val})")
+                        else:
+                            res_work_non_subjects.append(f"{clean_name}({range_val})")
+
+                subj_str = "; ".join(res_work_subjects)
                 non_subj_str = f"측정 비대상[{'; '.join(res_work_non_subjects)}]" if res_work_non_subjects else ""
                 final_work_str = "; ".join(filter(None, [subj_str, non_subj_str]))
 
