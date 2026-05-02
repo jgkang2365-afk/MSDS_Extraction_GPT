@@ -550,9 +550,11 @@ class ValidationWorker(QThread):
                     range_val = cas_to_content.get(cas, c.get("content", ""))
                     
                     # [V27.5 영문명/기호 완벽 보존 로직 복제]
+                    # [V15.8.18 수정] 과도한 명칭 훼손 방지 (글로벌 명칭 및 모델명, 공백 보존)
                     if re.search(r'[가-힣]', name):
-                        name_no_eng = re.sub(r'\s*\([^가-힣]*\)', '', name)
-                        clean_name = name_no_eng.replace(" ", "").strip()
+                        # 괄호 안의 영문을 지우되, (주), (사) 같은 회사명이나 필수 기호는 보존
+                        name_no_eng = re.sub(r'\s*\([A-Za-z\s\d,]+\)$', '', name)
+                        clean_name = name_no_eng.strip() # replace(" ", "") 절대 금지! 공백 보존!
                     else:
                         clean_name = name.strip()
                         
@@ -2085,23 +2087,17 @@ class SMUGUI(QMainWindow):
             self._resizing_rows = False
 
     def _clean_comp_name(self, name):
-        """[Part 21] 성분명 정제: 한글명(영문명) -> 한글명(띄어쓰기 제거) 로직"""
+        """[V15.8.18 수정] 성분명 보수적 정제: 한글명(영문명) 꼬리만 자르고 내부 공백은 보존"""
         if not name: return ""
         name = str(name).strip()
         
-        # 1. 한글명(영문명) 패턴에서 영문명 제거
-        match = re.match(r'^([가-힣\s\d\w\-\,\.\/]+)\s*[\(\[].*?[\)\]]', name)
+        # 문장 끝에 붙은 영문 괄호만 제거하고 내부 띄어쓰기는 철저히 살림
+        match = re.match(r'^([가-힣\s\d\w\-\,\.\/]+)\s*\([A-Za-z\s\d,]+\)$', name)
         if match:
             korean_part = match.group(1).strip()
-            if any(ord('가') <= ord(char) <= ord('힣') for char in korean_part):
-                return korean_part.replace(" ", "")
+            return korean_part # replace(" ", "") 폭력적 공백 제거 폐기
         
-        # 2. 한글 패턴이 명확한 경우 전체 공백 제거
-        if any(ord('가') <= ord(char) <= ord('힣') for char in name):
-            name = re.sub(r'\s*[\(\[].*?[\)\]]', '', name).strip()
-            return name.replace(" ", "")
-            
-        return name
+        return name.strip()
 
     # [V15.5.4] GUI-side character substitution logic (assassin) removed to preserve data integrity.
     # Raw data from the engine is now displayed As-is.

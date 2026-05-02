@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.17"
+VERSION = "15.8.18"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -423,11 +423,17 @@ def final_quality_control(components, full_text, log_func=None):
                 has_invalid = True
                 continue
                 
-            # 🚨 [V15.8.17 수정] CAS Grounding 검증 (하이픈이 유지된 순수 CAS로만 대조)
+            # 🚨 [V15.8.18 수정] CAS 2-Step Grounding (Strict -> Soft)
             if norm_text:
+                # 1단계: 하이픈 보존 엄격 매칭 (Strict Match)
                 if cas not in norm_text:
-                    if log_func: log_func(f" ⚠️ [Grounding 경고] 텍스트 미발견 (환각 의심되나 시각 추출 우선 보존): {cas}")
-                    has_invalid = True
+                    # 2단계: OCR 텍스트 깨짐 대응을 위한 하이픈 제거 유연 매칭 (Soft Match)
+                    cas_no_hyphen = cas.replace('-', '')
+                    norm_text_no_hyphen = norm_text.replace('-', '')
+                    
+                    if cas_no_hyphen not in norm_text_no_hyphen:
+                        if log_func: log_func(f" ⚠️ [Grounding 경고] 텍스트 미발견 (환각 의심되나 시각 추출 우선 보존): {cas}")
+                        has_invalid = True
 
             if cv:
                 # 🚨 [V15.8.14 핵심] 중복 제거 (De-duplication)
