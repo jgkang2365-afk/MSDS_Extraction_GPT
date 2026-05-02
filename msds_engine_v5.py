@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.2.9.7"
+VERSION = "17.2.9.8"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -212,21 +212,24 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.9.7] 종결판: 긴 줄표(–, —), 모든 물결표 및 공백 범위 완벽 대응"""
+    """[V17.2.9.8] 부등호 정밀 복구: 0.1~<1% 등 측정 대상 기준 보존 최적화"""
     orig_raw = str(content_str).strip()
     
+    # 🚨 [V17.2.9.8] 부등호 변환을 노이즈 제거보다 먼저 실행 (데이터 유실 방지)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', orig_raw)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
+
     # 🚨 PDF의 긴 줄표(–, —)를 일반 하이픈(-)으로 통일
-    v = re.sub(r'[–—]', '-', orig_raw)
+    v = re.sub(r'[–—]', '-', v)
     v = re.sub(r'(\d),(\d)', r'\1.\2', v)
     
+    # 노이즈 제거 (이제 부등호로 변환된 미만/이하는 안전함)
     v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', v, flags=re.I)
     v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
     v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
 
     v = v.replace(" ", "")
     v = re.sub(r'(?i)proprietary|secret', '', v)
@@ -285,6 +288,7 @@ def _normalize_single_content(content_str):
             f1, f2 = float(n1), float(n2)
             if f1 <= 100 and f2 <= 100:
                 if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
+                # 🚨 [V17.2.9.8] 0.1~<1% 형태 조립 시 부등호(p1, p2) 유실 방지 강화
                 if p1 and p2 and not sep: return f"{n1}~{n2}%"
                 res = f"{p1}{n1}~{p2}{n2}"
                 return res if '%' in res else res + '%'
@@ -533,7 +537,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V17.2.9.7] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [V17.2.9.8] 엔진 가동: {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -640,7 +644,7 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.9.7] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [V17.2.9.8] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
@@ -649,6 +653,6 @@ def self_test_regression():
     assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
     assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
     assert _normalize_single_content("≤ 0.1") == "≤0.1%", "회귀 오류: 소수점 파편화 방지 실패"
-    print("[OK] V17.2.9.7 엔진 자가 검증 완료.")
+    print("[OK] V17.2.9.8 엔진 자가 검증 완료.")
 
 self_test_regression()
