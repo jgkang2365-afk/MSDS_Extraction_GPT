@@ -62,6 +62,39 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
     if sniper:
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
+def verify_cas_number(cas_string):
+    """[V17.2.3] CAS 번호 체크디지트 검증 코어"""
+    if not cas_string: return False
+    
+    # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
+    if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "-"]):
+        return True
+        
+    # 순수 숫자와 하이픈만 추출
+    clean_cas = re.sub(r'[^0-9-]', '', cas_string).strip()
+    parts = clean_cas.split('-')
+    
+    if len(parts) != 3: return False
+    
+    try:
+        check_digit = int(parts[2])
+        digits = parts[0] + parts[1]
+        # 체크디지트 계산 공식 적용
+        total = sum(int(digit) * i for i, digit in enumerate(reversed(digits), 1))
+        return (total % 10) == check_digit
+    except:
+        return False
+
+def _get_sorted_and_normalized_text(page):
+    """[V17.2.3] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    blocks = page.get_text("blocks")
+    # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
+    blocks.sort(key=lambda b: (b[1], b[0]))
+    text_list = []
+    for b in blocks:
+        text_list.append(unicodedata.normalize("NFKC", b[4]))
+    return "\n".join(text_list)
+
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
