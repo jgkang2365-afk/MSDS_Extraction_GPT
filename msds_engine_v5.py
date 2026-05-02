@@ -65,7 +65,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.2.1"
+VERSION = "17.2.3"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -152,83 +152,104 @@ PROMPT_GEMINI_FLASH = """
 5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
 """
 
-PROMPT_GPT_FALLBACK = """
-당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 복사하세요. 
+PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
 
-[🔥 불도저 단순 추출 절대 원칙]
-1. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 제외하라.
-2. 생각 금지: 부등호(<, >, ≤, ≥)를 임의로 범위(~)로 바꾸거나, 그 반대로 조작하지 마세요. 
-3. 다중 CAS 통합: 한 칸에 여러 CAS가 뭉쳐 있으면 슬래시(/)로 묶어서 한 줄로 퍼 오세요.
+[🔥 불도저 단순 추출 4대 원칙]
+1. 생각 금지: % 기호 붙이기, 부등호 교정, '잔량'을 'Rem.%'로 바꾸기 등 어떠한 가공이나 번역도 하지 마세요. 후속 엔진이 알아서 합니다. 표에 적힌 글씨를 그대로 타이핑하세요.
+2. 영업비밀 및 공란 통과: CAS 번호 칸에 번호가 없고 '영업비밀', '-', '비공개' 등이 적혀있다면, 버리지 말고 그 글자를 그대로 `cas_no`에 적어오세요.
+3. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
 4. 페이지 트래킹: 각 성분이 발견된 이미지의 실제 페이지 번호를 'page' 필드에 기재하세요.
 
-JSON 출력 포맷:
-{
-  "구성성분": [
-    {"cas_no": "123-45-6 / 789-01-2", "content": "10 미만", "page": "3"}
-  ],
-  "교정_사유": "원본 텍스트 무가공 복사"
-}
-"""
+[🔥 2차 엔진 절대 원칙]
+1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
+2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 동원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
+3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
+   🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
+   [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
+   [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
 
-def _get_sorted_and_normalized_text(page):
-    try:
-        blocks = page.get_text("blocks")
-        blocks.sort(key=lambda b: (b[1], b[0]))
-        text = "\n".join([b[4] for b in blocks if len(b) >= 5])
-        return unicodedata.normalize('NFKC', text)
-    except:
-        return unicodedata.normalize('NFKC', page.get_text())
-
-def verify_cas_number(cas_string):
-    if not cas_string or re.search(r'[가-힣a-zA-Z]', cas_string) or cas_string.strip() == "-": return True
-    clean_cas = re.sub(r'[^0-9-]', '', cas_string)
-    parts = clean_cas.split('-')
-    if len(parts) != 3: return False
-    try:
-        check_digit = int(parts[2])
-        digits = parts[0] + parts[1]
-        total = sum(int(digit) * i for i, digit in enumerate(reversed(digits), 1))
-        return (total % 10) == check_digit
-    except: return False
+4. 🚨 페이지 트래킹: 각 성분이 발견된 페이지 번호를 'page' 필드에 기재하라.
+ 
+ JSON 출력 포맷:
+ {
+   "구성성분": [
+     {"cas_no": "123-45-6 / 영업비밀", "content": "10 미만", "page": "3"}
+   ],
+   "교정_사유": "단순 무식 원본 텍스트 복사 및 심층 복구 완료"
+ }"""
 
 def _normalize_single_content(content_str):
+    """[V17.2.3] 개별 함유량 정제 및 오름차순(min~max) 강제 교정"""
     content_str = str(content_str).strip()
+    
     content_str = re.sub(r'([\d\.]+)\s*(<)', r'>\1', content_str)
     content_str = re.sub(r'([\d\.]+)\s*(>)', r'<\1', content_str)
-    content_str = re.sub(r'(?i)잔량|balance|remainder|残量', 'Rem.', content_str)
+    content_str = re.sub(r'(?i)잔량|balance|remainder|残량', 'Rem.', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', content_str)
     content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', content_str)
 
-    if re.search(r'\d$', content_str): content_str += '%'
+    if re.search(r'\d$', content_str):
+        content_str += '%'
+
     v = content_str.replace(" ", "")
     v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
     v = re.sub(r'(?i)\(w/w\)|\(v/v\)|\(w/v\)|\(weight/weight\)|proprietary|secret', '', v)
-    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
+    
+    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v):
+        return "미기재%"
 
     v = v.replace('＜', '<').replace('＞', '>')
     v = v.replace('<=', '≤').replace('>=', '≥')
     v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
 
+    # 🚨 [V17.2.2 추가] ± 기호 처리 (예: 10±2 -> 8~12)
+    pm_match = re.match(r'^([0-9.]+)[±\+-]+([0-9.]+)%?$', v)
+    if pm_match:
+        try:
+            val, pm = float(pm_match.group(1)), float(pm_match.group(2))
+            # 작은수~큰수 자동 정렬 적용
+            min_val, max_val = sorted([val-pm, val+pm])
+            return f"{min_val:g}~{max_val:g}%"
+        except: pass
+
     weird_range = re.match(r'^([≥>]*)([0-9.]+)(?:%?)([≤<]*)([0-9.]+)(?:%?)$', v)
     if weird_range:
         p1, n1, p2, n2 = weird_range.groups()
-        if p1 and p2: return f"{n1}~{n2}%"
+        if p1 and p2: 
+            # 🚨 [V17.2.3 교정] 숫자가 뒤집혀 있으면(예: 8~0) 강제 스왑
+            try:
+                if float(n1) > float(n2):
+                    n1, n2 = n2, n1
+            except ValueError: pass
+            return f"{n1}~{n2}%"
         
     range_m = re.match(r'^([<>≤≥]*)([0-9.]+)[%]*[-~]([<>≤≥]*)([0-9.]+)[%]*$', v)
     if range_m:
         p1, n1, p2, n2 = range_m.groups()
         p1_clean = p1.replace('≥', '').replace('>', '').replace('≤', '').replace('<', '')
         p2_clean = p2.replace('≤', '').replace('≥', '').replace('>', '') 
+        
+        # 🚨 [V17.2.3 교정] 숫자가 뒤집혀 있으면(예: 8~0) 강제 스왑
+        try:
+            if float(n1) > float(n2):
+                n1, n2 = n2, n1
+                p1_clean, p2_clean = p2_clean, p1_clean # 붙어있던 부등호도 위치를 같이 바꿔줌
+        except ValueError: pass
+        
         return f"{p1_clean}{n1}~{p2_clean}{n2}%"
         
-    if "Rem" in v: return "Rem.%" if "%" not in v else v
+    if "Rem" in v:
+        return "Rem.%" if "%" not in v else v
+        
     single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', v)
     if single_m:
         p, n = single_m.groups()
         return f"{p}{n}%"
+        
     return "미기재%"
+
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
     """[V17.2.1] Fuzzy Shield 3단계 적용 Grounding"""
@@ -390,25 +411,40 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
+    """[V17.2.2] 강/약 함량 판별기 도입 및 EC/KE번호 하이재킹 완벽 차단"""
     cells = [re.sub(r'\s+', ' ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
-    # 🚨 [수술 4] 헤더 방어막 특수문자 제거 정규식 강화
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
     cell_lower_set = {re.sub(r'[\s\(\)\.%]', '', c.lower()) for c in cells}
     if cell_lower_set.intersection(header_keywords): return None
 
-    cas_list, content, name_candidates = [], None, []
+    cas_list, name_candidates = [], []
+    strong_content = None # 확실한 함량 (%, ~, <, 소수점 등 포함)
+    weak_content = None   # 불확실한 함량 (단순 정수, 인덱스 번호일 가능성)
 
     for c in cells:
+        # 1. CAS 검출
         found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
         if found_cas:
             cas_list.extend(found_cas)
-            continue
-        if re.search(r'\d', c) and (any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', 'Rem']) or len(c) <= 7):
-            if not content and not re.match(r'^\d{4}[./-]\d{2}[./-]\d{2}$', c):
-                content = _clean_content_odl(c)
+            # CAS와 함량이 한 칸에 뭉쳐있는 엣지 케이스 방어
+            c_remain = re.sub(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', '', c).strip()
+            if not c_remain:
                 continue
+            c = c_remain # 남은 찌꺼기로 함량 검사 속행
+
+        # 2. 🚨 [핵심] 함량 검출: 수문장(정규화 함수)을 통과한 진짜 함량만 받음
+        norm_c = _normalize_single_content(c)
+        if norm_c != "미기재%":
+            # EC번호 등은 정규화 함수에서 미기재%로 걸러져 이곳에 진입하지 못함!
+            if any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', '.', 'Rem', '잔량', 'balance']):
+                if not strong_content: strong_content = _clean_content_odl(c)
+            else:
+                if not weak_content: weak_content = _clean_content_odl(c)
+            continue
+
+        # 3. 물질명 후보
         if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
             name_candidates.append(c)
 
@@ -419,13 +455,16 @@ def parse_row_robust_v2(row):
         valid_names = [n for n in name_candidates if len(n) < 50]
         name = max(valid_names, key=len) if valid_names else name_candidates[0]
 
+    # Strong(확실한 함량)이 우선, 없으면 Weak(정수), 다 없으면 미기재%
+    final_content = strong_content or weak_content or "미기재%"
+
     final_comps = []
     for cas in cas_list:
         final_comps.append({
             "name": name,
             "cas_no": cas,
-            "content": content or "미기재%",
-            "engine": "ODL-v2.1" # 🚨 [수술 5] DNA 꼬리표 부착 (ODL)
+            "content": final_content,
+            "engine": "ODL-v2.2"
         })
     return final_comps
 
@@ -449,7 +488,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V17.2.1] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [V17.2.3] 엔진 가동: {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -555,7 +594,7 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.1] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [V17.2.3] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
@@ -563,6 +602,6 @@ analyze_msds = process_pdf
 def self_test_regression():
     assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
     assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
-    print("[OK] V17.2.1 엔진 자가 검증 완료.")
+    print("[OK] V17.2.3 엔진 자가 검증 완료.")
 
 self_test_regression()

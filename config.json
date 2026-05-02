@@ -18,5 +18,10 @@
     "sheet_name": "화학물질입력_양식",
     "start_row": "3",
     "start_num": "1",
-    "pdf_paths": []
+    "pdf_paths": [
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/011_1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf"
+    ]
 }
