@@ -1,11 +1,11 @@
-# Implementation Plan: V15.8.7 Heart Surgery (Sniper Sync)
+# Implementation Plan: V17.3.0.0 Precision Extraction - COMPLETED
 
-## Phase 1: Heart Surgery (msds_engine_v5.py)
-- [ ] `process_pdf` 내 스나이퍼 호출 지점 3개소 수정
-    - [ ] 1. `extract_section3_images` 전
-    - [ ] 2. `extract_product_name_hybrid` 전
-    - [ ] 3. `call_gemini_2_5_flash` 전 (재확인)
+## Phase 1: Engine Core Repair (msds_engine_v5.py) - ✅ Done
+- [x] Version bump to `17.3.0.0`
+- [x] Refine `_normalize_single_content` for range assembly and residue filtering
+- [x] Update `parse_row_robust_v2` with liberal CAS removal and backward cell scanning
+- [x] Add precision test cases to `self_test_regression`
 
-## Phase 2: Verification
-- [ ] `py_compile msds_engine_v5.py`
-- [ ] 런타임 변수 충돌 여부 확인
+## Phase 2: Verification - ✅ Done
+- [x] Run engine self-test with new cases
+- [x] Verify fix for "3~98%" and "1.2%" issues

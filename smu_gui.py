@@ -363,14 +363,17 @@ class ExtractionWorker(QThread):
                 if not f_hash:  # [V8.3] 해시 생성 보장 (Fallback)
                     f_hash = f"fallback_{i}_{fn}"
                 
+                # [V17.2.9.9] 캐시 체크 로직 강화: 파일 해시 + 엔진 버전 동기화 확인
                 if f_hash and getattr(self, 'cache', None) and f_hash in self.cache:
                     cached_data = self.cache[f_hash]
                     manual = cached_data.get("manual_data", {})
+                    cached_version = cached_data.get("engine_version", "unknown")
                     
-                    # [V11.7 핵심 로직] 수동 데이터가 없고(not manual), 과거에 AI가 실패했던 경우에만 재시도!
-                    if not manual and (cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", "")):
-                        self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과(AI 뻗음 등) 감지: API 재호출을 시도합니다.")
-                        # continue 안 함 -> AI 엔진 재가동
+                    # [핵심] 버전이 다르거나, 수동 데이터가 없는데 AI 결과가 불완전한 경우 재추출
+                    if cached_version != engine.VERSION:
+                        self.update_log_signal.emit(f"[*] [{fn}] 엔진 버전 변경 감지 ({cached_version} -> {engine.VERSION}): 재추출을 수행합니다.")
+                    elif not manual and (cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", "")):
+                        self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과 감지: API 재호출을 시도합니다.")
                     else:
                         self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
                         
@@ -406,7 +409,8 @@ class ExtractionWorker(QThread):
                     "measure_target": ext_res.get("측정대상", ""), 
                     "full_path": path, 
                     "page": ext_res.get("page", 1), 
-                    "used_engine": ext_res.get("used_engine", "regex")
+                    "used_engine": ext_res.get("used_engine", "regex"),
+                    "engine_version": engine.VERSION # [V17.2.9.9] 버전 낙인 찍기
                 }
                 
                 # [NEW] 캐시에 저장 요청

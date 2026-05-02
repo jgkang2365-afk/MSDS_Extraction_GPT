@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.2.9.8"
+VERSION = "17.3.0.0"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -241,12 +241,16 @@ def _normalize_single_content(content_str):
     
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 🚨 [V17.2.9.7] 하이재킹 차단 로직 (긴 줄표 –,— 포함 모든 변이 수용)
+    # 🚨 [V17.3.0.0] CAS Residue Defense: 모든 형태의 관리번호 패턴을 제거 (기존번호 포함)
     letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
-    # %, <, >, ≤, ≥, 모든 물결표(∼, ～) 및 숫자 사이의 모든 기호(-, –, —, /, ~, ∼, ～) 수용
-    valid_pattern = any(sym in v for sym in ['%', '∼', '～', '–', '—', '<', '>', '≤', '≥']) or re.search(r'\d\s*[-–—/~∼～]\s*\d', v)
+    # v에서 CAS-like 패턴을 임시 제거하여 순수 기호만으로 패턴 확인
+    v_for_pattern = re.sub(r'\d+-\d+-\d+', '', v)
+    valid_pattern = any(sym in v_for_pattern for sym in ['%', '∼', '～', '–', '—', '<', '>', '≤', '≥', '~']) or re.search(r'\d\s*[-–—/~∼～]\s*\d', v_for_pattern)
+
+    # 🚨 [V17.2.9.9] Shield-Inversion: 유효한 수치 패턴이 감지되면 노이즈 필터링 우회
+    is_strong_value = re.search(r'\d+(?:\.\d+)?\s*[%~∼～\-–—/<>=≤≥]', v_for_pattern)
     
-    if len(letters) > 2 and not valid_pattern:
+    if len(letters) > 2 and not valid_pattern and not is_strong_value:
         return "미기재%"
 
     # ① ± 범위
@@ -470,17 +474,19 @@ def parse_row_robust_v2(row):
     cas_list, name_candidates = [], []
     strong_content, weak_content = None, None
 
-    for raw_cell in cells:
+    # 🚨 [V17.3.0.0] Backward Scan: 함유량 칸은 보통 뒤쪽에 있으므로 역순 탐색하여 하이재킹 방지
+    for raw_cell in reversed(cells):
         sub_cells = raw_cell.split('__SPLIT__')
         
         for c in sub_cells:
             c = c.strip()
             if not c: continue
 
-            found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
+            # 🚨 [V17.3.0.0] 더 강력한 CAS/관리번호 제거 (자릿수 제한 해제)
+            found_cas = re.findall(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', c)
             if found_cas:
                 cas_list.extend(found_cas)
-                c_remain = re.sub(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', '', c).strip()
+                c_remain = re.sub(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', '', c).strip()
                 if not c_remain: continue
                 c = c_remain
 
@@ -653,6 +659,9 @@ def self_test_regression():
     assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
     assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
     assert _normalize_single_content("≤ 0.1") == "≤0.1%", "회귀 오류: 소수점 파편화 방지 실패"
-    print("[OK] V17.2.9.8 엔진 자가 검증 완료.")
+    assert _normalize_single_content("Ethylene Glycol 50-60%") == "50~60%", "회귀 오류: Shield-Inversion 작동 실패"
+    assert _normalize_single_content("0.1~1미만") == "0.1~<1%", "회귀 오류: 미만(Below) 변환 유실"
+    assert _normalize_single_content("0.1 - 1") == "0.1~1%", "회귀 오류: 하이픈 범위 표준화 실패"
+    print("[OK] V17.3.0.0 엔진 자가 검증 완료.")
 
 self_test_regression()
