@@ -212,10 +212,10 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.4.1] 마이너스 수치 오류 해결 및 키워드(미만/이하) 완벽 보존 (버그 수정판)"""
+    """[V17.2.5] 미만/이하 키워드 및 범위 정규식 완벽 보존"""
     orig_raw = str(content_str).strip()
     
-    # 1. 기초 정제: 일본식 역순 부등호 및 잔량 표기 통일
+    # 1. 기초 정제
     v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', orig_raw)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
     v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
@@ -232,7 +232,7 @@ def _normalize_single_content(content_str):
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 4. ± 기호 연산 (오름차순 보장) - [패치] 단일 하이픈(-)은 범위로 양보
+    # 4. ± 기호 연산
     pm_match = re.match(r'^([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)\s*[%]*$', v)
     if pm_match:
         try:
@@ -241,27 +241,25 @@ def _normalize_single_content(content_str):
             return f"{n1:g}~{n2:g}%"
         except: pass
 
-    # 5. 범위 패턴 (숫자 ~ 숫자) 추출 - [패치] 구분자가 없는 양방향 부등호(≥95≤100) 지원 및 앵커(^) 적용
-    range_m = re.match(r'^([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*$', v)
+    # 5. 🚨 [V17.2.5 핵심] 변태적인 범위 패턴 방어 (예: 0.1~<1)
+    # 기호(<,≤등)가 숫자 앞, 뒤, 가운데 어디에 붙어있든 유연하게 캡처하도록 변경
+    range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*', v)
     if range_m:
         p1, n1, sep, p2, n2 = range_m.groups()
-        # 구분자가 없고 양쪽 모두 부등호가 없는 경우는 범위가 아님 (단일 수치 오인 방지)
         if not sep and not (p1 and p2):
             pass 
         else:
             try:
                 if float(n1) > float(n2):
                     n1, n2 = n2, n1
-                    p1, p2 = p2, p1
-                # 자가 검증 대응: 양방향 부등호가 모두 있는 경우 부등호를 떼고 범위로 리턴
-                if p1 and p2:
-                    return f"{n1}~{n2}%"
+                    p1, p2 = p2, p1 
+                if p1 and p2: return f"{n1}~{n2}%"
                 res = f"{p1}{n1}~{p2}{n2}"
                 return res if '%' in res else res + '%'
             except: pass
 
-    # 6. 단일 수치 패턴 (부등호 포함) - [패치] 앵커(^) 적용으로 단위(g) 환각 차단
-    single_m = re.match(r'^([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*$', v)
+    # 6. 단일 수치 패턴 (부등호 포함)
+    single_m = re.search(r'^([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*$', v)
     if single_m:
         p, n = single_m.groups()
         return f"{p}{n}%"
@@ -432,42 +430,47 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.2] 강/약 함량 판별기 도입 및 EC/KE번호 하이재킹 완벽 차단"""
-    cells = [re.sub(r'\s+', ' ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
+    """[V17.2.5] 세포 분열(Cell Mitosis) 도입 - 동거 데이터 학살 방지"""
+    # 🚨 줄바꿈을 공백으로 바꾸지 않고 '|' 같은 특수 기호로 임시 보존하여 정보 경계선 유지
+    cells = [re.sub(r'\s*\n\s*', ' | ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
-    cell_lower_set = {re.sub(r'[\s\(\)\.%]', '', c.lower()) for c in cells}
+    cell_lower_set = {re.sub(r'[\s\(\)\.%\|]', '', c.lower()) for c in cells}
     if cell_lower_set.intersection(header_keywords): return None
 
     cas_list, name_candidates = [], []
-    strong_content = None # 확실한 함량 (%, ~, <, 소수점 등 포함)
-    weak_content = None   # 불확실한 함량 (단순 정수, 인덱스 번호일 가능성)
+    strong_content, weak_content = None, None
 
-    for c in cells:
-        # 1. CAS 검출
-        found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
-        if found_cas:
-            cas_list.extend(found_cas)
-            # CAS와 함량이 한 칸에 뭉쳐있는 엣지 케이스 방어
-            c_remain = re.sub(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', '', c).strip()
-            if not c_remain:
+    for raw_cell in cells:
+        # 한 셀 안에 '|' 기준으로 여러 정보가 뭉쳐있을 수 있으므로 쪼개서 각각 검사
+        sub_cells = raw_cell.split('|')
+        
+        for c in sub_cells:
+            c = c.strip()
+            if not c: continue
+
+            # 1. CAS 검출
+            found_cas = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', c)
+            if found_cas:
+                cas_list.extend(found_cas)
+                # CAS와 함량이 붙어있는 최악의 경우를 위해 찌꺼기를 다시 함량 검사기로 보냄
+                c_remain = re.sub(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', '', c).strip()
+                if not c_remain: continue
+                c = c_remain
+
+            # 2. 함량 검출
+            norm_c = _normalize_single_content(c)
+            if norm_c != "미기재%":
+                if any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', '.', 'Rem', '잔량', 'balance']):
+                    if not strong_content: strong_content = _clean_content_odl(c)
+                else:
+                    if not weak_content: weak_content = _clean_content_odl(c)
                 continue
-            c = c_remain # 남은 찌꺼기로 함량 검사 속행
 
-        # 2. 🚨 [핵심] 함량 검출: 수문장(정규화 함수)을 통과한 진짜 함량만 받음
-        norm_c = _normalize_single_content(c)
-        if norm_c != "미기재%":
-            # EC번호 등은 정규화 함수에서 미기재%로 걸러져 이곳에 진입하지 못함!
-            if any(k in c for k in ['%', '~', '-', '<', '>', '≤', '≥', '.', 'Rem', '잔량', 'balance']):
-                if not strong_content: strong_content = _clean_content_odl(c)
-            else:
-                if not weak_content: weak_content = _clean_content_odl(c)
-            continue
-
-        # 3. 물질명 후보
-        if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
-            name_candidates.append(c)
+            # 3. 물질명 후보 (문자열 길이 완화)
+            if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
+                name_candidates.append(c)
 
     if not cas_list: return None
 
@@ -476,7 +479,6 @@ def parse_row_robust_v2(row):
         valid_names = [n for n in name_candidates if len(n) < 50]
         name = max(valid_names, key=len) if valid_names else name_candidates[0]
 
-    # Strong(확실한 함량)이 우선, 없으면 Weak(정수), 다 없으면 미기재%
     final_content = strong_content or weak_content or "미기재%"
 
     final_comps = []
@@ -485,7 +487,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.2"
+            "engine": "ODL-v2.5" # DNA 꼬리표 업데이트
         })
     return final_comps
 
