@@ -79,7 +79,17 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.10"
+VERSION = "15.8.15"
+
+# [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
+EXCEPTION_REGISTRY = {
+    "CR-13_SERIES": {
+        "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
+        "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
+        "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
+        "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
+    }
+}
 
 def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
     """[V15.8.8] 쿨다운 레지스트리 연동: 429 키는 60초 블랙리스트, 살아있는 키 자동 배정"""
@@ -94,7 +104,7 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
-            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=40)
+            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
             
             if response.status_code != 200:
                 error_msg = response.text
@@ -212,18 +222,20 @@ JSON 출력 포맷:
 PROMPT_GPT_FALLBACK = """
 당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
 
-[🔥 불도저 단순 추출 4대 원칙]
-1. 생각 금지: % 기호 붙이기, 부등호 교정, '잔량'을 'Rem.%'로 바꾸기 등 어떠한 가공이나 번역도 하지 마세요. 후속 엔진이 알아서 합니다. 표에 적힌 글씨를 그대로 타이핑하세요.
-2. 영업비밀 및 공란 통과: CAS 번호 칸에 번호가 없고 '영업비밀', '-', '비공개' 등이 적혀있다면, 버리지 말고 그 글자를 그대로 `cas_no`에 적어오세요.
-3. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
-4. 페이지 트래킹: 각 성분이 발견된 이미지의 실제 페이지 번호를 'page' 필드에 기재하세요.
+[🔥 불도저 단순 추출 5대 원칙]
+1. 생각 금지: 부등호 교정, % 기호 붙이기, '잔량' 번역 등 어떠한 가공도 하지 마세요. 표에 적힌 글씨를 그대로 타이핑하세요.
+2. 영업비밀 및 공란 통과: CAS 번호 칸에 '영업비밀', '-', '비공개' 등이 적혀있다면 그 글자를 그대로 적으세요.
+3. 🚨 Y축(행) 절대 유지: CAS 번호 칸이 아예 비어있더라도 절대 그 행을 건너뛰지 말고 "cas_no": "빈칸"으로 명시하여 구조를 유지하세요.
+4. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
+5. 페이지 트래킹: 각 성분이 발견된 이미지의 실제 페이지 번호를 'page' 필드에 기재하세요.
 
 JSON 출력 포맷:
 {
   "구성성분": [
-    {"cas_no": "123-45-6 / 영업비밀", "content": "10 미만", "page": "3"}
+    {"cas_no": "123-45-6 / 영업비밀", "content": "10 미만", "page": "3"},
+    {"cas_no": "빈칸", "content": "20~30", "page": "3"}
   ],
-  "교정_사유": "단순 무식 원본 텍스트 복사 완료"
+  "교정_사유": "원본 텍스트 무가공 복사 및 Y축 유지 완료"
 }
 """
 
@@ -291,6 +303,17 @@ def clean_junk_from_name(name):
 
 
 # [엔진 내장] CAS 검증
+# [V15.8.13] 텍스트 좌표 정렬 및 전각 문자(Full-width) 반각화 클렌저
+def _get_sorted_and_normalized_text(page):
+    try:
+        blocks = page.get_text("blocks")
+        # Y좌표(위치) 우선, X좌표(왼쪽) 순으로 정렬하여 시각적 문맥 보존
+        blocks.sort(key=lambda b: (b[1], b[0]))
+        text = "\n".join([b[4] for b in blocks if len(b) >= 5])
+        return unicodedata.normalize('NFKC', text) # 전각 숫자, 부등호 완벽 치환
+    except:
+        return unicodedata.normalize('NFKC', page.get_text())
+
 def verify_cas_number(cas_string):
     if not cas_string or re.search(r'[가-힣a-zA-Z]', cas_string) or cas_string.strip() == "-": return True
     clean_cas = re.sub(r'[^0-9-]', '', cas_string)
@@ -310,19 +333,35 @@ def clean_number(n_str):
         return str(f)
     except: return n_str
 
-def _normalize_single_content(raw):
-    """[V15.8.9] 개별 함유량 정제 및 물리적 방어망"""
-    v = raw.strip().replace(" ", "")
+def _normalize_single_content(content_str):
+    """[V15.8.12] 개별 함유량 정제 및 물리적 방어망"""
+    content_str = str(content_str).strip()
+    
+    # [V15.8.12] GPT의 가공 업무를 파이썬 기계 정제기로 100% 이관
+    # 1. 일본식 역순 부등호 교정 (예: "99.0 <" -> ">99.0", "98.0 >" -> "<98.0")
+    content_str = re.sub(r'([\d\.]+)\s*(<)', r'>\1', content_str)
+    content_str = re.sub(r'([\d\.]+)\s*(>)', r'<\1', content_str)
+    
+    # [V15.8.15] 다국어(한/영/일) 잔량 및 부등호 키워드 글로벌 정규화
+    content_str = re.sub(r'(?i)잔량|balance|remainder|残量', 'Rem.', content_str)
+    
+    # 3. 숫자로 끝나는 경우 % 기호 강제 부착 방어막
+    if re.search(r'\d$', content_str):
+        content_str += '%'
+
+    v = content_str.replace(" ", "")
     v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
     
-    # [방어막 1] 알파벳(g, mg, ml 등)이 포함되어 있으면 분자량 환각으로 간주하고 폐기
-    if re.search(r'[a-zA-Z]', v.replace("Rem", "")):
+    # [V15.8.13] (w/w) 등 유효 알파벳 허용 및 방어막 1 적용
+    v = re.sub(r'(?i)\(w/w\)|\(v/v\)|\(w/v\)|\(weight/weight\)|proprietary|secret', '', v)
+    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v):
         return "미기재%"
 
-    v = re.sub(r'([0-9.]+)(?:%?)미만(?:%?)', r'<\1', v)
-    v = re.sub(r'([0-9.]+)(?:%?)이하(?:%?)', r'≤\1', v)
-    v = re.sub(r'([0-9.]+)(?:%?)초과(?:%?)', r'>\1', v)
-    v = re.sub(r'([0-9.]+)(?:%?)이상(?:%?)', r'≥\1', v)
+    # [V15.8.15] 다국어 부등호 정밀 치환 (Below, Less than, 未満 등)
+    v = re.sub(r'(?i)([0-9.]+)(?:%?)(미만|below|less than|未満)', r'<\1', v)
+    v = re.sub(r'(?i)([0-9.]+)(?:%?)(이하|up to|以下)', r'≤\1', v)
+    v = re.sub(r'(?i)([0-9.]+)(?:%?)(초과|more than|over|超)', r'>\1', v)
+    v = re.sub(r'(?i)([0-9.]+)(?:%?)(이상|above|以上)', r'≥\1', v)
     v = v.replace('＜', '<').replace('＞', '>')
     v = v.replace('<=', '≤').replace('>=', '≥')
     v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
@@ -350,53 +389,59 @@ def _normalize_single_content(raw):
     return "미기재%"
 
 def final_quality_control(components, full_text, log_func=None):
-    """[V15.8.8] 지능형 다중 CAS ↔ 함유량 1:1 매칭 분리"""
-    refined = []
+    """[V15.8.14] 다중 CAS 분리 + Grounding(환각 방어) + 중복 제거(De-dup) 통합 엔진"""
+    refined_dict = {}  # [V15.8.14] 중복 제거를 위한 딕셔너리 사용
     has_invalid = False
+    
+    # [V15.8.14] 데드 코드 부활: 문서 전체 텍스트에서 공백/하이픈 제거한 순수 문자열 (Grounding용)
     norm_text = re.sub(r'[\s\-]', '', full_text).upper() if full_text else ""
+    
     for comp in components:
-        raw_cas_field = str(comp.get("cas_no", "")).strip()
+        raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
 
-        # 1. CAS 번호부터 싹쓸이
-        # [V15.8.11 핵심 수술] 앞뒤로 숫자나 하이픈이 연속된 색인번호 꼬리 자르기 방지
         cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', raw_cas_field)
-        # 2. 번호가 아예 없고 '영업비밀'만 적힌 경우만 거름
+        
         if not cas_list and any(w in raw_cas_field for w in ["영업비밀", "비공개", "Secret"]):
             continue
         if not cas_list:
             continue
 
-        # 3. 함유량 원본 추출
         raw_content = str(comp.get("content", "")).strip()
-
-        # [V15.8.8 핵심] 함유량도 슬래시(/)로 분리하여 CAS와 1:1 매칭
         content_parts_raw = re.split(r'\s*/\s*', raw_content)
         content_parts = [_normalize_single_content(c) for c in content_parts_raw if c.strip()]
 
-        # CAS 번호 당 하나씩 정제 데이터 생성
         page_val = comp.get("page", "")
-        if len(cas_list) == len(content_parts):
-            for cas_raw, cv in zip(cas_list, content_parts):
-                cas = re.sub(r'^0+', '', cas_raw)
-                if not verify_cas_number(cas):
+        
+        # 1:1 매칭 또는 Fallback(첫 번째 함유량 복제)
+        loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
+        
+        for cas_raw, cv in zip(cas_list, loop_content):
+            cas = re.sub(r'^0+', '', cas_raw)
+            if not verify_cas_number(cas):
+                has_invalid = True
+                continue
+                
+            # 🚨 [V15.8.14 핵심] CAS Grounding 검증 (문서에 실제 존재하는지 확인)
+            if norm_text:
+                cas_no_hyphen = cas.replace('-', '')
+                if cas_no_hyphen not in norm_text:
+                    if log_func: log_func(f" ⚠️ [Grounding 방어] 문서에 존재하지 않는 환각 CAS 탐지 및 폐기: {cas}")
                     has_invalid = True
-                    continue
-                if cv:
-                    refined.append({"cas": cas, "content": cv, "page": page_val})
-        else:
-            fallback_content = content_parts[0] if content_parts else ""
-            for cas_raw in cas_list:
-                cas = re.sub(r'^0+', '', cas_raw)
-                if not verify_cas_number(cas):
-                    has_invalid = True
-                    continue
-                if fallback_content:
-                    refined.append({"cas": cas, "content": fallback_content, "page": page_val})
+                    continue # 가짜 CAS는 버린다!
+
+            if cv:
+                # 🚨 [V15.8.14 핵심] 중복 제거 (De-duplication)
+                if cas not in refined_dict:
+                    refined_dict[cas] = {"cas": cas, "content": cv, "page": page_val}
+
+    refined = list(refined_dict.values()) # 딕셔너리를 다시 리스트로 변환
+
     try:
         check_omission(full_text, refined)
     except ValueError as e:
         if log_func: log_func(f" 🟡 [누락 감지] {e}")
         has_invalid = True 
+        
     return refined, has_invalid
 
 
@@ -411,8 +456,8 @@ def find_section3_pages(doc):
     pages = []
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # 2번 또는 3번 항 시작 지점 탐색
-        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', text, re.I):
+        # [V15.8.14] 탐지 키워드 대폭 확장 (성분, INGREDIENTS 등 추가)
+        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS|CHARACTERIZATION)', text, re.I):
             pages.append(i)
         # 3번 또는 4번 항이 나오면 해당 페이지까지 포함 후 탐색 종료
         if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
@@ -463,8 +508,8 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         raw_text = ""
         for p_idx in pages:
             page = doc[p_idx]
-            raw_text += page.get_text("text") + "\n"
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+            raw_text += _get_sorted_and_normalized_text(page) + "\n"
+            pix = page.get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
             b64_img = base64.b64encode(pix.tobytes("png")).decode("utf-8")
             images.append({"mimeType": "image/png", "data": b64_img})
             if len(images) >= 3: break
@@ -535,13 +580,18 @@ def check_omission(original_text, extracted_data):
     original_cas_count = len(valid_original_cas)
     
     # 2. 추출 데이터도 중복으로 찢어진 행을 감안해 고유 CAS 종류만 카운트
-    if isinstance(extracted_data, list):
-        # [V15.8.10 핵심 수술] 'cas'와 'cas_no' Key를 모두 포용하여 자폭 버그 해결
-        extracted_cas_set = set([c.get("cas") or c.get("cas_no") for c in extracted_data if c.get("cas") or c.get("cas_no")])
-        extracted_cas_count = len(extracted_cas_set)
-    else:
-        extracted_cas_set = set([c.get("cas_no") for c in extracted_data.get("구성성분", []) if c.get("cas_no")])
-        extracted_cas_count = len(extracted_cas_set)
+    # [V15.8.12 보완] 묶여서 추출된 다중 CAS 문자열 안에서도 정규식으로 개별 CAS를 발라내어 카운트
+    extracted_cas_set = set()
+    raw_list = extracted_data if isinstance(extracted_data, list) else extracted_data.get("구성성분", [])
+    for c in raw_list:
+        val = str(c.get("cas") or c.get("cas_no") or "")
+        # 추출된 문자열에서도 정규식으로 진짜 CAS만 골라내어 세기
+        found = cas_pattern.findall(val)
+        for f in found:
+            if verify_cas_number(f):
+                extracted_cas_set.add(f)
+    
+    extracted_cas_count = len(extracted_cas_set)
     
     if extracted_cas_count < original_cas_count:
         raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{extracted_cas_count}). 2차 불도저(GPT) 요원 투입!")
@@ -575,7 +625,7 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     }
 
     try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=40)
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload, timeout=60)
         if response.status_code == 200:
             result = response.json()
             text_response = result["choices"][0]["message"]["content"]
@@ -605,10 +655,10 @@ def process_pdf(pdf_path, log_func=None):
     full_text_for_grounding = ""
     try:
         doc = fitz.open(pdf_path)
-        first_page_text = doc[0].get_text() if len(doc) > 0 else ""
+        first_page_text = _get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
         
         for page in doc:
-            full_text_for_grounding += page.get_text()
+            full_text_for_grounding += _get_sorted_and_normalized_text(page)
             
         pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
         cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
@@ -699,8 +749,10 @@ def process_pdf(pdf_path, log_func=None):
     components = final_ai_result.get("구성성분", [])
     reason = final_ai_result.get("교정_사유", "사유 없음")
     
-    # 🚨 [V15.6] 중앙 통제실(후행 교정기)로 데이터 일괄 세탁
-    refined_comps, has_invalid_cas = final_quality_control(components, full_text_for_grounding, log_func)
+    # 🚨 [V15.8.15] Local Grounding: 멀티 문서 혼입 방지를 위해 1페이지+섹션3 텍스트만 환각 검증에 사용
+    local_grounding_text = str(first_page_text) + "\n" + str(section3_text_for_omission)
+    
+    refined_comps, has_invalid_cas = final_quality_control(components, local_grounding_text, log_func)
     
     comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
 
@@ -715,18 +767,19 @@ def process_pdf(pdf_path, log_func=None):
     comp_str = "; ".join(comp_parts)
     target_substances = "" # 🚨 측정대상 변수 추가
 
-    # ----------------------------------------------------
-    # 🚨 [V15.3] 특정 다중 모델 용접봉(CR-13 시리즈) 하드코딩 예외 처리
-    if "연강용 피복아크 용접봉" in hybrid_pn and "CS-200" in hybrid_pn and "CR-13" in hybrid_pn:
-        hybrid_pn = "용접재료(연강용 피복아크 용접봉) CR-13"
-        comp_str = "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
-        
-        # 🚨 주님 지시: 측정대상 텍스트 강제 고정!
-        target_substances = "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄"
-        
-        is_multi_model = True 
-        if log_func: log_func(" ⚠️ [하드코딩 예외] CR-13 감지! 제품명, 성분, 측정대상 강제 치환 완료")
-    # ----------------------------------------------------
+    # 🚨 [V15.8.15] 퍼지(Fuzzy) 트리거 매칭 (대소문자, 공백, 하이픈 무시)
+    raw_search_pool = str(hybrid_pn) + " " + str(first_page_text)[:500]
+    norm_search_pool = re.sub(r'[\s\-]', '', raw_search_pool).upper() # 압축 비교를 위한 정규화
+    
+    for ext_key, ext_data in EXCEPTION_REGISTRY.items():
+        # 트리거들도 공백/하이픈 제거 후 대문자로 비교
+        if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
+            hybrid_pn = ext_data["target_pn"]
+            comp_str = ext_data["components"]
+            target_substances = ext_data["target_substances"]
+            is_multi_model = True 
+            if log_func: log_func(f" ⚠️ [예외 감지] {ext_key} 규칙 적용 (Fuzzy 매칭 성공)")
+            break
 
     # 🚨 [V15.2 핵심] AI 추출은 무사히 끝났으나, 다중 모델이므로 🟡황색불로 강제 변경!
     if is_multi_model:
