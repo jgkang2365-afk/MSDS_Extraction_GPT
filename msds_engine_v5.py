@@ -63,7 +63,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 def verify_cas_number(cas_string):
-    """[V17.2.8] CAS 번호 체크디지트 검증 코어"""
+    """[V17.2.9.1] CAS 번호 체크디지트 검증 코어"""
     if not cas_string: return False
     
     # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
@@ -86,7 +86,7 @@ def verify_cas_number(cas_string):
         return False
 
 def _get_sorted_and_normalized_text(page):
-    """[V17.2.8] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    """[V17.2.9.1] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
     blocks = page.get_text("blocks")
     # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
     blocks.sort(key=lambda b: (b[1], b[0]))
@@ -212,16 +212,16 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.8] 알파벳 가드 완화, 쉼표(,) 소수점 치환 통합본"""
+    """[V17.2.9.1] 최종 마스터피스: 화학물질명 하이재킹 완벽 차단 및 구출"""
     orig_raw = str(content_str).strip()
     
-    # 🚨 [V17.2.8 추가] 유럽식 쉼표(,)를 소수점(.)으로 치환 (단, 앞뒤가 숫자인 경우만)
+    # 1. 유럽식 쉼표 치환
     v = re.sub(r'(\d),(\d)', r'\1.\2', orig_raw)
     
-    # 1. 괄호 안의 불필요한 설명 제거
+    # 2. 괄호 설명 제거
     v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', v, flags=re.I)
     
-    # 2. 기호 및 키워드 치환
+    # 3. 기호 치환
     v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
     v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
@@ -230,55 +230,62 @@ def _normalize_single_content(content_str):
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
     v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
 
-    # 3. 공백/단위 제거
     v = v.replace(" ", "")
     v = re.sub(r'(?i)proprietary|secret', '', v)
     
-    # 🚨 환각 1차 방어: 특정 단위가 명시적으로 있으면 즉시 기각
+    # 단위 환각 방어
     if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug|g$|g[^a-z])', v): return "미기재%"
-    
+    if "Rem" in v: return "Rem.%"
     v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    # 🚨 [V17.2.8 수정] 기존의 무식한 알파벳/한글 초토화 필터 삭제
-    # 대신, 정규식이 알아서 숫자 범위만 기가 막히게 발라냄 (물 80% -> 80% 추출)
+    # 🚨 [핵심 방어막] 화학물질명 하이재킹 차단
+    # 명시적 기호(%, ~, <, >, ≤, ≥)가 없는데 알파벳/한글이 많다면 화학명(e.g., 1,2-dichloroethane)이므로 즉시 기각
+    letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
+    has_explicit_symbol = any(sym in v for sym in ['%', '~', '<', '>', '≤', '≥'])
+    if len(letters) > 2 and not has_explicit_symbol:
+        return "미기재%"
 
-    # ① ± 범위 처리
+    # ① ± 범위
     pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)[%]*', v)
     if pm_match:
         try:
             val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            if val <= 100: 
-                n1, n2 = sorted([val-pm, val+pm])
-                return f"{n1:g}~{n2:g}%"
+            if val <= 100: return f"{sorted([val-pm, val+pm])[0]:g}~{sorted([val-pm, val+pm])[1]:g}%"
         except: pass
 
-    # ② 일반 범위 처리 (숫자~숫자) - 알파벳 사이에 낀 오탐(Page 1-2) 방어를 위해 정규식 강화
-    range_m = re.search(r'(?<![a-zA-Z가-힣])([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*(?![a-zA-Z가-힣])', v)
-    if range_m:
-        p1, n1, sep, p2, n2 = range_m.groups()
-        if sep or (p1 and p2):
+    # ② 명시적 '%' 포함 수치 최우선 추출 (물질명 내 숫자 원천 배제)
+    if '%' in v:
+        r_pct = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)\s*%', v)
+        if r_pct:
+            p1, n1, sep, p2, n2 = r_pct.groups()
             try:
                 f1, f2 = float(n1), float(n2)
-                if f1 <= 100 and f2 <= 100: # K-308 초고수치 차단
-                    if f1 > f2:
-                        n1, n2 = n2, n1
-                        p1, p2 = p2, p1 
-                    
-                    if p1 and p2 and not sep:
-                        return f"{n1}~{n2}%"
-                        
-                    res = f"{p1}{n1}~{p2}{n2}"
-                    return res if '%' in res else res + '%'
+                if f1 <= 100 and f2 <= 100:
+                    if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
+                    if p1 and p2 and not sep: return f"{n1}~{n2}%"
+                    return f"{p1}{n1}~{p2}{n2}%"
             except: pass
+        s_pct = re.search(r'([<>≤≥]?)\s*(\d*\.?\d+)\s*%', v)
+        if s_pct:
+            if float(s_pct.group(2)) <= 100: return f"{s_pct.group(1)}{s_pct.group(2)}%"
 
-    # ③ 단일 수치 처리
-    single_m = re.search(r'(?<![a-zA-Z가-힣])([<>≤≥]?)\s*(\d*\.?\d+)\s*[%]*(?![a-zA-Z가-힣])', v)
+    # ③ 일반 범위 및 단일 수치
+    range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~∼～/]?)\s*([<>≤≥]*)\s*(\d*\.?\d+)', v)
+    if range_m:
+        p1, n1, sep, p2, n2 = range_m.groups()
+        try:
+            f1, f2 = float(n1), float(n2)
+            if f1 <= 100 and f2 <= 100:
+                if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
+                if p1 and p2 and not sep: return f"{n1}~{n2}%"
+                res = f"{p1}{n1}~{p2}{n2}"
+                return res if '%' in res else res + '%'
+        except: pass
+
+    single_m = re.search(r'([<>≤≥]?)\s*(\d*\.?\d+)', v)
     if single_m:
-        p, n = single_m.groups()
-        if float(n) <= 100:
-            return f"{p}{n}%"
+        if float(single_m.group(2)) <= 100: return f"{single_m.group(1)}{single_m.group(2)}%"
 
-    if "Rem" in v: return "Rem.%"
     return "미기재%"
 
 
@@ -442,8 +449,7 @@ def _clean_content_odl(text):
     return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.7] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
-    # 🚨 줄바꿈을 __SPLIT__으로 치환하여 동거 데이터 구출 준비
+    """[V17.2.9] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
     cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
@@ -470,7 +476,6 @@ def parse_row_robust_v2(row):
 
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                # 🚨 [안티 PR 반영] 하이픈(-)과 소수점(.)을 복구하여 45-50 등을 Strong으로 사수!
                 if any(k in c for k in ['%', '~', '-', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
                     if not strong_content: strong_content = _clean_content_odl(c)
                 else:
@@ -499,7 +504,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.7_CleanSlate" 
+            "engine": "ODL-v2.9_Final" 
         })
     return final_comps
 
@@ -523,7 +528,7 @@ def process_pdf(pdf_path, log_func=None):
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V17.2.8] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" 🚀 [V17.2.9.1] 엔진 가동: {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -629,7 +634,7 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.8] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ✅ [V17.2.9.1] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
@@ -637,6 +642,6 @@ analyze_msds = process_pdf
 def self_test_regression():
     assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
     assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
-    print("[OK] V17.2.8 엔진 자가 검증 완료.")
+    print("[OK] V17.2.9.1 엔진 자가 검증 완료.")
 
 self_test_regression()

@@ -4,7 +4,7 @@
         "product_name": "순&수 우드스테인 BASE",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(미기재%); 57-55-6(미기재%); 112945-52-5(미기재%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+        "raw_content": "7732-18-5(미기재%); 57-55-6(미기재%); 112945-52-5(미기재%); 330-54-1(3.4%); 10605-21-7(2%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
         "page": 1,
@@ -15,7 +15,7 @@
         "product_name": "프로스테인 네오-PC100(크리어)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(미기재%); 96-29-7(미기재%)",
+        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(2%); 100-41-4(1~6%); 41556-26-7(1.2%); 96-29-7(2%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
         "page": 1,
@@ -31,82 +31,5 @@
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/008_싸이클오일).pdf",
         "page": 1,
         "used_engine": "bulldozer"
-    },
-    "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
-        "f_hash": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
-        "product_name": "블루우드스테인(Blue wood stain) [자단]",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "616-38-6(미기재%); 64742-47-8(미기재%); 8001-26-1(미기재%); 68152-57-8(미기재%); 108-65-6(미기재%); 13586-82-8(미기재%); 8008-20-6(미기재%); 68002-82-4(미기재%); 63800-37-3(미기재%); 115-77-5(미기재%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(≤0.1%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(미기재%); 51274-00-1(미기재%); 1333-86-4(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
-        "page": 1,
-        "used_engine": "odl"
-    },
-    "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483": {
-        "f_hash": "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483",
-        "product_name": "구리스카트리지(Universal lithium grease)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "8002-05-9(≥80%); 106-14-9(미기재%); 57-11-4(≤5%); 1310-66-3(≤2%); 128-37-0(≤2%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/010_세신 카트리지 구리스 MSDS-한글판-CG400.pdf",
-        "page": 1,
-        "used_engine": "odl"
-    },
-    "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42": {
-        "f_hash": "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42",
-        "product_name": "BENTONE GEL® ISD V",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "108-32-7(2.5~10%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/015_Bentone Gel ISD V _ MSDS (KO).pdf",
-        "page": 1,
-        "used_engine": "flash"
-    },
-    "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6": {
-        "f_hash": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
-        "product_name": "수산화나트륨",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/021_Sodium Hydroxide(NaOH).pdf",
-        "page": 1,
-        "used_engine": "flash"
-    },
-    "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b": {
-        "f_hash": "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b",
-        "product_name": "Formic acid, OPTIMA LC/MS Grade (99.5%)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64-18-6(99~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/026_Formic Acid.pdf",
-        "page": 1,
-        "used_engine": "odl"
-    },
-    "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c": {
-        "f_hash": "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c",
-        "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)",
-        "measure_target": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/031_용접봉CR-13 CSW-0001_MSDS_용접재료(연강용 피복아크 용접봉)_(국문)v5_2023.08.22 (2).pdf",
-        "page": 1,
-        "used_engine": "odl"
-    },
-    "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e": {
-        "f_hash": "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e",
-        "product_name": "K-308",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7439-89-6(55~65%); 7440-47-3(17~20%); 7440-02-0(8~10%); 7631-86-9(1~2%); 13463-67-7(5~7%); 7439-96-5(1~2%); 1314-23-4(1~2%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/032_용접봉_코리아나_논가스와이어_(K-308)MSDS.pdf",
-        "page": 1,
-        "used_engine": "odl"
     }
 }
