@@ -4,32 +4,32 @@
         "product_name": "순&수 우드스테인 BASE",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(미기재%); 57-55-6(미기재%); 112945-52-5(미기재%); 330-54-1(3.4%); 10605-21-7(2%)",
+        "raw_content": "7732-18-5(미기재%); 57-55-6(미기재%); 112945-52-5(미기재%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
         "page": 1,
         "used_engine": "odl"
     },
-    "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
-        "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
-        "product_name": "프로스테인 네오-PC100(크리어)",
+    "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
+        "f_hash": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
+        "product_name": "블루우드스테인(Blue wood stain) [자단]",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(2%); 100-41-4(1~6%); 41556-26-7(1.2%); 96-29-7(2%)",
+        "raw_content": "616-38-6(미기재%); 64742-47-8(미기재%); 8001-26-1(미기재%); 68152-57-8(미기재%); 108-65-6(1~5%); 13586-82-8(0.1~1%); 8008-20-6(0.1~1%); 68002-82-4(16~18%); 63800-37-3(3~98%); 115-77-5(0.1~1%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(3~98%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(1~3%); 51274-00-1(1~2%); 1333-86-4(0.1~1%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
         "page": 1,
         "used_engine": "odl"
     },
-    "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d": {
-        "f_hash": "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d",
-        "product_name": "MOLIV 2T",
+    "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483": {
+        "f_hash": "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483",
+        "product_name": "구리스카트리지(Universal lithium grease)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "64742-54-7(80~90%)",
+        "raw_content": "8002-05-9(≥80%); 106-14-9(0~8%); 57-11-4(≤5%); 1310-66-3(≤2%); 128-37-0(≤2%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/008_싸이클오일).pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/010_세신 카트리지 구리스 MSDS-한글판-CG400.pdf",
         "page": 1,
-        "used_engine": "bulldozer"
+        "used_engine": "odl"
     }
 }

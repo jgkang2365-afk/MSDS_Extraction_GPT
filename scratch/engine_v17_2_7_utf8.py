@@ -1,4 +1,4 @@
-import os
+﻿import os
 import base64
 import sys
 import re
@@ -12,7 +12,7 @@ from opendataloader.pdf import PDFParser
 import msds_utils_v3
 from dotenv import load_dotenv
 
-# .env 파일 로드
+# .env ?뚯씪 濡쒕뱶
 load_dotenv(override=True)
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -27,14 +27,14 @@ api_keys_raw = [
 valid_snipers = []
 for i, key in enumerate(api_keys_raw, 1):
     if key:
-        valid_snipers.append({"alias": f"스나이퍼-{i}", "key": key})
+        valid_snipers.append({"alias": f"?ㅻ굹?댄띁-{i}", "key": key})
 
 if not valid_snipers:
     legacy_key = os.getenv("MSDS_GOOGLE_API_KEY")
     if legacy_key:
-        valid_snipers = [{"alias": "스나이퍼-L", "key": legacy_key}]
+        valid_snipers = [{"alias": "?ㅻ굹?댄띁-L", "key": legacy_key}]
     else:
-        print("경고: 장전된 구글 API 키가 없습니다! .env를 확인하세요.")
+        print("寃쎄퀬: ?μ쟾??援ш? API ?ㅺ? ?놁뒿?덈떎! .env瑜??뺤씤?섏꽭??")
 
 sniper_pool = cycle(valid_snipers) if valid_snipers else None
 _sniper_cooldown = {} 
@@ -63,14 +63,14 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 def verify_cas_number(cas_string):
-    """[V17.2.9.1] CAS 번호 체크디지트 검증 코어"""
+    """[V17.2.3] CAS 踰덊샇 泥댄겕?붿???寃利?肄붿뼱"""
     if not cas_string: return False
     
-    # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
-    if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-"]):
+    # ?슚 [以묒슂] '?곸뾽鍮꾨?'?대굹 '-' ?깆? 寃利앹쓣 ?듦낵?쒖폒???섎?濡??덉쇅 泥섎━
+    if any(k in cas_string for k in ["?곸뾽鍮꾨?", "鍮꾧났媛?, "Secret", "Proprietary", "-"]):
         return True
         
-    # 순수 숫자와 하이픈만 추출
+    # ?쒖닔 ?レ옄? ?섏씠?덈쭔 異붿텧
     clean_cas = re.sub(r'[^0-9-]', '', cas_string).strip()
     parts = clean_cas.split('-')
     
@@ -79,16 +79,16 @@ def verify_cas_number(cas_string):
     try:
         check_digit = int(parts[2])
         digits = parts[0] + parts[1]
-        # 체크디지트 계산 공식 적용
+        # 泥댄겕?붿???怨꾩궛 怨듭떇 ?곸슜
         total = sum(int(digit) * i for i, digit in enumerate(reversed(digits), 1))
         return (total % 10) == check_digit
     except:
         return False
 
 def _get_sorted_and_normalized_text(page):
-    """[V17.2.9.1] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    """[V17.2.3] PyMuPDF ?섏씠吏?먯꽌 ?띿뒪?몃? ?쎄린 ?쒖꽌?濡??뺣젹 諛??뺢퇋?뷀븯??異붿텧"""
     blocks = page.get_text("blocks")
-    # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
+    # y醫뚰몴 -> x醫뚰몴 ?쒖쑝濡??뺣젹 (?쎄린 ?쒖꽌)
     blocks.sort(key=lambda b: (b[1], b[0]))
     text_list = []
     for b in blocks:
@@ -96,15 +96,15 @@ def _get_sorted_and_normalized_text(page):
     return "\n".join(text_list)
 
 if not OPENAI_API_KEY:
-    print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
+    print("寃쎄퀬: .env ?뚯씪??OPENAI_API_KEY媛 ?놁뒿?덈떎.")
 
-VERSION = "17.2.9.6"
+VERSION = "17.2.3"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
-        "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
-        "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
-        "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
+        "triggers": ["?곌컯???쇰났?꾪겕 ?⑹젒遊?, "CS-200", "CR-13"],
+        "target_pn": "?⑹젒?щ즺(?곌컯???쇰났?꾪겕 ?⑹젒遊? CR-13",
+        "target_substances": "?⑹젒?? ?고솕泥?遺꾩쭊, ??; 留앷컙 諛?洹?臾닿린?뷀빀臾? ?댁궛?뷀떚???,
         "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
     }
 }
@@ -113,7 +113,7 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
     current_sniper = initial_sniper
     for attempt in range(max_retries):
         if not current_sniper:
-            raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
+            raise ValueError("?슚 ?꾨떞 ?ㅻ굹?댄띁媛 諛곗젙?섏? ?딆븯?듬땲??")
             
         api_key = current_sniper["key"]
         alias = current_sniper["alias"]
@@ -122,7 +122,7 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
         try:
             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
             if response.status_code != 200:
-                if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code})")
+                if log_func: log_func(f"  ?뵶 {alias} ?ш꺽 ?ㅽ뙣(HTTP {response.status_code})")
                 if response.status_code == 429: mark_sniper_cooldown(current_sniper, 60)
                 elif response.status_code == 503: mark_sniper_cooldown(current_sniper, 30)
                 
@@ -137,31 +137,31 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
             time.sleep(backoff_time)
             current_sniper = get_next_sniper()
             continue
-    raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
+    raise Exception(f"?슚 {max_retries}???곗냽 ?ш꺽 ?ㅽ뙣. 遺덈룄?(GPT) ?ъ엯!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
-    if not current_sniper or not image_list: return "", "실패"
+    if not current_sniper or not image_list: return "", "?ㅽ뙣"
     first_page_img = image_list[0]
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
     prompt = """
-    너는 MSDS의 제품명을 정확히 확정 짓는 전문 판독관이다. 
-    1. [구역 격리]: "1. 화학제품과 회사에 관한 정보" 항목을 찾고 그 아래부터 "2. 유해성·위험성" 전까지만 읽어라.
-    2. [핵심 타격]: '가. 제품명', '상품명', '품명' 등의 레이블이 가리키는 [순수 제품명]만 정확히 추출하라. 
-    불필요한 텍스트는 제거하고 오직 '제품명' 문자열만 딱 한 줄로 출력하라. 못 찾겠으면 아무것도 출력하지 마라.
+    ?덈뒗 MSDS???쒗뭹紐낆쓣 ?뺥솗???뺤젙 吏볥뒗 ?꾨Ц ?먮룆愿?대떎. 
+    1. [援ъ뿭 寃⑸━]: "1. ?뷀븰?쒗뭹怨??뚯궗??愿???뺣낫" ??ぉ??李얘퀬 洹??꾨옒遺??"2. ?좏빐?굿룹쐞?섏꽦" ?꾧퉴吏留??쎌뼱??
+    2. [?듭떖 ?寃?: '媛. ?쒗뭹紐?, '?곹뭹紐?, '?덈챸' ?깆쓽 ?덉씠釉붿씠 媛由ы궎??[?쒖닔 ?쒗뭹紐?留??뺥솗??異붿텧?섎씪. 
+    遺덊븘?뷀븳 ?띿뒪?몃뒗 ?쒓굅?섍퀬 ?ㅼ쭅 '?쒗뭹紐? 臾몄옄?대쭔 ????以꾨줈 異쒕젰?섎씪. 紐?李얘쿋?쇰㈃ ?꾨Т寃껊룄 異쒕젰?섏? 留덈씪.
     """
     payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
         result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
         if result:
             pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공: {pn_ai[:30]}")
+            if pn_ai and not any(k in pn_ai for k in ["誘몄텛異?, "?뺤씤"]) and not re.search(r'[PH]\d{3}', pn_ai):
+                if log_func: log_func(f" ?쒋? [?쒗뭹紐??ㅼ틪] ??鍮꾩쟾 ?ㅻ굹?댄븨 ?깃났: {pn_ai[:30]}")
                 return pn_ai.replace('\n', ' ').strip(), "Vision"
     except Exception as e:
         pass
-    return "", "실패"
+    return "", "?ㅽ뙣"
 
 def load_system_prompt():
     prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_system_v5.txt')
@@ -169,135 +169,115 @@ def load_system_prompt():
         with open(prompt_path, 'r', encoding='utf-8') as f:
             return f.read().strip()
     except Exception:
-        return "당신은 MSDS 데이터 추출 전문가입니다."
+        return "?뱀떊? MSDS ?곗씠??異붿텧 ?꾨Ц媛?낅땲??"
 
 SYSTEM_PROMPT_TEXT = load_system_prompt()
 
-# 🚨 [수술 1] 찌꺼기 프롬프트 정리 (정책 동기화: CAS 없으면 추출 거부)
+# ?슚 [?섏닠 1] 李뚭볼湲??꾨＼?꾪듃 ?뺣━ (?뺤콉 ?숆린?? CAS ?놁쑝硫?異붿텧 嫄곕?)
 PROMPT_GEMINI_FLASH = """
-당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS 표 이미지만 보고 데이터를 추출하세요.
+?뱀떊? 1李?怨좎냽 ?쒓컖 異붿텧湲?Sniper)?낅땲?? 泥⑤???MSDS ???대?吏留?蹂닿퀬 ?곗씠?곕? 異붿텧?섏꽭??
 
-[🔥 1차 엔진 절대 원칙]
-1. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 행 전체를 제외하라.
-2. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
-3. 환각 금지: 표에 없는 숫자를 지어내지 마라. CAS는 있는데 함유량 칸이 비어있다면 함유량을 '미기재%'로 출력하라.
-4. 부등호 범위 조작 금지: 원본에 '0.1-1' 이면 '0.1~1%'로, 눈에 보이는 그대로 추출하라.
-5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
+[?뵦 1李??붿쭊 ?덈? ?먯튃]
+1. ?좏슚??CAS 踰덊샇(?뺤떇: ?レ옄-?レ옄-?レ옄)媛 ?녿뒗 ?깅텇(?곸뾽鍮꾨?, -, 鍮덉뭏 ??? ?듭?濡?異붿텧?섏? 留먭퀬 臾댁“嫄????꾩껜瑜??쒖쇅?섎씪.
+2. ?ㅼ쨷 CAS ?⑥씪 臾몄옄?댄솕: ??????щ윭 CAS媛 ?덈떎硫??щ옒??/)濡?臾띠뼱??異붿텧?섎씪.
+3. ?섍컖 湲덉?: ?쒖뿉 ?녿뒗 ?レ옄瑜?吏?대궡吏 留덈씪. CAS???덈뒗???⑥쑀??移몄씠 鍮꾩뼱?덈떎硫??⑥쑀?됱쓣 '誘멸린??'濡?異쒕젰?섎씪.
+4. 遺?깊샇 踰붿쐞 議곗옉 湲덉?: ?먮낯??'0.1-1' ?대㈃ '0.1~1%'濡? ?덉뿉 蹂댁씠??洹몃?濡?異붿텧?섎씪.
+5. ?⑥쑀???щ㎎: 紐⑤뱺 ?⑥쑀???ㅼ뿉??諛섎뱶??'%'瑜?遺숈뿬??
 """
 
-PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
+PROMPT_GPT_FALLBACK = """?뱀떊? ?뚭눼???쒕? 湲곸뼱紐⑥쑝??2李?遺덈룄?(Bulldozer)?낅땲?? 泥⑤????대?吏???쒖뿉???곗씠?곕? '?덉뿉 蹂댁씠??洹몃?濡? ?⑥닚 臾댁떇?섍쾶 蹂듭궗?섏꽭?? 
 
-[🔥 불도저 단순 추출 4대 원칙]
-1. 생각 금지: % 기호 붙이기, 부등호 교정, '잔량'을 'Rem.%'로 바꾸기 등 어떠한 가공이나 번역도 하지 마세요. 후속 엔진이 알아서 합니다. 표에 적힌 글씨를 그대로 타이핑하세요.
-2. 영업비밀 및 공란 통과: CAS 번호 칸에 번호가 없고 '영업비밀', '-', '비공개' 등이 적혀있다면, 버리지 말고 그 글자를 그대로 `cas_no`에 적어오세요.
-3. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
-4. 페이지 트래킹: 각 성분이 발견된 이미지의 실제 페이지 번호를 'page' 필드에 기재하세요.
+[?뵦 遺덈룄? ?⑥닚 異붿텧 4? ?먯튃]
+1. ?앷컖 湲덉?: % 湲고샇 遺숈씠湲? 遺?깊샇 援먯젙, '?붾웾'??'Rem.%'濡?諛붽씀湲????대뼚??媛怨듭씠??踰덉뿭???섏? 留덉꽭?? ?꾩냽 ?붿쭊???뚯븘???⑸땲?? ?쒖뿉 ?곹엺 湲?⑤? 洹몃?濡???댄븨?섏꽭??
+2. ?곸뾽鍮꾨? 諛?怨듬? ?듦낵: CAS 踰덊샇 移몄뿉 踰덊샇媛 ?녾퀬 '?곸뾽鍮꾨?', '-', '鍮꾧났媛? ?깆씠 ?곹??덈떎硫? 踰꾨━吏 留먭퀬 洹?湲?먮? 洹몃?濡?`cas_no`???곸뼱?ㅼ꽭??
+3. ?ㅼ쨷 CAS ?듯빀: ??移몄뿉 CAS 踰덊샇媛 ?щ윭 媛?萸됱퀜 ?덉쑝硫??됱쓣 ?섎늻吏 留먭퀬, ?꾩뼱?곌린???щ옒??/)濡?臾띠뼱????以꾨줈 ?????ㅼ꽭??
+4. ?섏씠吏 ?몃옒?? 媛??깅텇??諛쒓껄???대?吏???ㅼ젣 ?섏씠吏 踰덊샇瑜?'page' ?꾨뱶??湲곗옱?섏꽭??
 
-[🔥 2차 엔진 절대 원칙]
-1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
-2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 동원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
-3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
-   🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
-   [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
-   [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
+[?뵦 2李??붿쭊 ?덈? ?먯튃]
+1. 怨듦컙 吏媛?蹂듦뎄: ?쒖쓽 ?좎씠 ?щ챸?섍굅?? 誘몄꽭?섍쾶 ??댁죱嫄곕굹, 鍮꾨?移??ㅼ쨷 蹂묓빀???덈뜑?쇰룄 ?쒖쓽 ?꾩껜?곸씤 留λ씫???낆껜?곸쑝濡??쎌뼱 CAS? ?⑥쑀?됱쓣 留ㅼ묶?섏꽭??
+2. ?슚 ?덈? ?먭린 諛??쒓컖???⑺듃 二쇱쓽: ?쒖뿉 紐낆떆???レ옄濡???CAS 踰덊샇(?뺤떇: ?レ옄-?レ옄-?レ옄)留?異붿텧?섎씪. ?뷀븰 臾쇱쭏紐낆씠??臾몃㎘??蹂닿퀬 ?ㅺ? ?꾨뒗 ?뷀븰 吏?앹쓣 ?숈썝?섏뿬 ?ㅼ〈?섎뒗 CAS 踰덊샇瑜??좎텛?섍굅??吏?대궡??Hallucination) ?됱쐞???덈? 湲덉??쒕떎. ?덉뿉 紐낇솗??蹂댁씠??踰덊샇媛 ?녾굅??'?곸뾽鍮꾨?', '鍮꾧났媛?, '-' ?깆씠?쇰㈃ 媛李??놁씠 洹??됱쓣 異붿텧 ??곸뿉???먭린?섎씪.
+3. ?슚 ?щ㎎ ?듭씪 諛??섍컖 諛⑹?: 異붿텧???⑥쑀???レ옄 ?ㅼ뿉??諛섎뱶??'%' 湲고샇瑜?遺숈뿬?? ?? ?먮낯 ?쒖뿉 ?⑥쑀?됱씠 ?レ옄媛 ?꾨땶 '?붾웾', '?섎㉧吏', 'balance', '?곷웾' ?깆쑝濡??쒓린?섏뼱 ?덈떎硫? ?덈? 蹂몄씤 留덉쓬?濡??レ옄(?? 10%)瑜?吏?대궡嫄곕굹 怨꾩궛?댁꽌 ?곸? 留덈씪. 臾댁“嫄??곷Ц ??뚮Ц?먮? 留욎떠 'Rem.%' ?쇰뒗 臾몄옄??洹몃?濡?異쒕젰?섎씪.
+   ?슚 遺?깊샇 ?쇱넀 ?덈? 湲덉?: ?먮낯 ?쒖쓽 ?⑥쑀?됱뿉 遺?깊샇(<, ?????띿뒪??誘몃쭔, ?댄븯)媛 ?ы븿?섏뼱 ?덈떎硫? ?대? ?덈? 臾쇨껐??~) 踰붿쐞 湲고샇濡?諛붽씀吏 留덈씪.
+   [?щ컮瑜??덉떆]: ?먮낯??'<1' ?대㈃ '<1%'濡?異쒕젰, ?먮낯??'??' ?대㈃ '??%'濡?異쒕젰.
+   [?섎せ???덉떆]: ?먮낯??'<1' ?몃뜲 '~1%'濡?蹂議고븯??異쒕젰 (?덈? 湲덉?).
 
-4. 🚨 페이지 트래킹: 각 성분이 발견된 페이지 번호를 'page' 필드에 기재하라.
+4. ?슚 ?섏씠吏 ?몃옒?? 媛??깅텇??諛쒓껄???섏씠吏 踰덊샇瑜?'page' ?꾨뱶??湲곗옱?섎씪.
  
- JSON 출력 포맷:
+ JSON 異쒕젰 ?щ㎎:
  {
-   "구성성분": [
-     {"cas_no": "123-45-6 / 영업비밀", "content": "10 미만", "page": "3"}
+   "援ъ꽦?깅텇": [
+     {"cas_no": "123-45-6 / ?곸뾽鍮꾨?", "content": "10 誘몃쭔", "page": "3"}
    ],
-   "교정_사유": "단순 무식 원본 텍스트 복사 및 심층 복구 완료"
+   "援먯젙_?ъ쑀": "?⑥닚 臾댁떇 ?먮낯 ?띿뒪??蹂듭궗 諛??ъ링 蹂듦뎄 ?꾨즺"
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.9.5] 실드 역전: 유효 패턴 감지 시 글자 수 상관없이 무조건 추출 허용"""
+    """[V17.2.7] ?泥?냼 ?듯빀蹂?(?덊떚 PR ?꾨꼍 ?섏슜 + ?먭?寃利??듦낵)"""
     orig_raw = str(content_str).strip()
     
-    # 🚨 PDF의 긴 줄표(–, —)를 일반 하이픈(-)으로 통일
-    v = re.sub(r'[–—]', '-', orig_raw)
-    v = re.sub(r'(\d),(\d)', r'\1.\2', v)
+    # 1. 愿꾪샇 ?덉쓽 遺덊븘?뷀븳 ?ㅻ챸 ?쒓굅
+    v = re.sub(r'\((?:max|理쒕?|?댄븯|誘몃쭔|w/w|v/v|w/v)[^\)]*\)', '', orig_raw, flags=re.I)
     
-    v = re.sub(r'\((?:max|최대|이하|미만|w/w|v/v|w/v)[^\)]*\)', '', v, flags=re.I)
+    # 2. 湲고샇 諛??ㅼ썙??移섑솚
     v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', v)
     v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
-    v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
+    v = re.sub(r'(?i)?붾웾|balance|remainder|餘뗫웾|?섎㉧吏', 'Rem.', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(誘몃쭔|below|less\s*than|?ゆ?)', r'<\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(?댄븯|up\s*to|餓δ툔)', r'??1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(珥덇낵|more\s*than|over|擁?', r'>\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(?댁긽|above|餓δ툓)', r'??1', v)
 
+    # 3. 怨듬갚/?⑥쐞 ?쒓굅
     v = v.replace(" ", "")
     v = re.sub(r'(?i)proprietary|secret', '', v)
-    
-    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug|g$|g[^a-z])', v): return "미기재%"
-    
-    # 🚨 하이재킹 방어막에 걸리기 전에 Rem.% 먼저 대피! (필수)
-    if "Rem" in v: return "Rem.%"
-    
-    v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|쨉g|ug)', v): return "誘멸린??"
+    v = v.replace('竊?, '<').replace('竊?, '>').replace('<=', '??).replace('>=', '??)
 
-    # 🚨 [V17.2.9.5] 하이재킹 차단 로직 전면 개편 (패턴 보호 우선)
-    letters = re.sub(r'[^a-zA-Z가-힣]', '', v)
-    # %, <, >, ≤, ≥ 및 모든 물결표 변이(∼, ～)가 있거나 숫자 사이의 기호(-, /, ~, ∼, ～)가 있으면 '유효 패턴'으로 인정
-    valid_pattern = any(sym in v for sym in ['%', '∼', '～', '<', '>', '≤', '≥']) or re.search(r'\d\s*[-/~∼～]\s*\d', v)
-    
-    # 🚨 확실한 수치 패턴이 있다면 글자가 많아도(Water 등) 하이재킹으로 보지 않음
-    if len(letters) > 2 and not valid_pattern:
-        return "미기재%"
-
-    # ① ± 범위
-    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)[%]*', v)
-    if pm_match:
-        try:
-            val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            if val <= 100: return f"{sorted([val-pm, val+pm])[0]:g}~{sorted([val-pm, val+pm])[1]:g}%"
-        except: pass
-
-    # ② 명시적 '%' 포함 수치 최우선 추출 (범위 로직 고도화 적용)
-    if '%' in v:
-        r_pct = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)\s*%', v)
-        if r_pct:
-            groups = r_pct.groups()
-            p1, n1, sep = groups[0] or "", groups[1], groups[2] or ""
-            p2 = (groups[3] or "") if groups[2] else (groups[4] or "")
-            n2 = groups[5]
+    # 4. ?곗궛 諛??뺢퇋??異붿텧 (?슚 ?덊떚 PR: ?뚰뙆踰??꾪꽣 ?대?濡??듯룓??
+    if not re.search(r'[a-zA-Z媛-??', v): 
+        
+        # ??짹 踰붿쐞 泥섎━ (?슚 ?덊떚 PR: ?듭빱 ?곸슜?쇰줈 李뚭볼湲?諛⑹뼱)
+        pm_match = re.search(r'^([0-9.]+)\s*(?:짹|\+\s*-\s*|\+/?-)\s*([0-9.]+)[%]*$', v)
+        if pm_match:
             try:
-                f1, f2 = float(n1), float(n2)
-                if f1 <= 100 and f2 <= 100:
-                    if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
-                    if p1 and p2 and not sep: return f"{n1}~{n2}%"
-                    return f"{p1}{n1}~{p2}{n2}%"
+                val, pm = float(pm_match.group(1)), float(pm_match.group(2))
+                if val <= 100: 
+                    n1, n2 = sorted([val-pm, val+pm])
+                    return f"{n1:g}~{n2:g}%"
             except: pass
-        s_pct = re.search(r'([<>≤≥]?)\s*(\d+\.?\d*|\.\d+)\s*%', v)
-        if s_pct:
-            if float(s_pct.group(2)) <= 100: return f"{s_pct.group(1)}{s_pct.group(2)}%"
 
-    # ③ 일반 범위 및 단일 수치 (🚨 소수점 파편화 방지를 위한 sep 조건부 필수화)
-    range_m = re.search(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)\s*[%]*\s*(?:([-~∼～/])\s*([<>≤≥]*)|([<>≤≥]+))\s*(\d+\.?\d*|\.\d+)', v)
-    if range_m:
-        groups = range_m.groups()
-        p1, n1, sep = groups[0] or "", groups[1], groups[2] or ""
-        p2 = (groups[3] or "") if groups[2] else (groups[4] or "")
-        n2 = groups[5]
-        try:
-            f1, f2 = float(n1), float(n2)
-            if f1 <= 100 and f2 <= 100:
-                if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1 
-                if p1 and p2 and not sep: return f"{n1}~{n2}%"
-                res = f"{p1}{n1}~{p2}{n2}"
-                return res if '%' in res else res + '%'
-        except: pass
+        # ???쇰컲 踰붿쐞 泥섎━ (?レ옄~?レ옄)
+        range_m = re.search(r'([<>?ㅲ돟]*)\s*(\d*\.?\d+)\s*[%]*\s*([-~?쇽퐵/]?)\s*([<>?ㅲ돟]*)\s*(\d*\.?\d+)\s*[%]*', v)
+        if range_m:
+            p1, n1, sep, p2, n2 = range_m.groups()
+            if sep or (p1 and p2):
+                try:
+                    f1, f2 = float(n1), float(n2)
+                    if f1 <= 100 and f2 <= 100: # ?슚 K-308??545% 珥덇퀬?섏튂 李⑤떒
+                        if f1 > f2:
+                            n1, n2 = n2, n1
+                            p1, p2 = p2, p1 
+                        
+                        # ?슚 ?먭?寃利??듦낵: ?묐갑??遺?깊샇(??5??00)??遺?깊샇瑜?吏?곌퀬 踰붿쐞濡?                        if p1 and p2 and not sep:
+                            return f"{n1}~{n2}%"
+                            
+                        res = f"{p1}{n1}~{p2}{n2}"
+                        return res if '%' in res else res + '%'
+                except: pass
 
-    single_m = re.search(r'([<>≤≥]?)\s*(\d+\.?\d*|\.\d+)', v)
-    if single_m:
-        if float(single_m.group(2)) <= 100: return f"{single_m.group(1)}{single_m.group(2)}%"
+        # ???⑥씪 ?섏튂 泥섎━ (?듭빱 ?곸슜)
+        single_m = re.search(r'^([<>?ㅲ돟]?)\s*(\d*\.?\d+)\s*[%]*$', v)
+        if single_m:
+            p, n = single_m.groups()
+            if float(n) <= 100:
+                return f"{p}{n}%"
 
-    return "미기재%"
+    if "Rem" in v: return "Rem.%"
+    return "誘멸린??"
+
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
-    """[V17.2.1] Fuzzy Shield 3단계 적용 Grounding"""
+    """[V17.2.1] Fuzzy Shield 3?④퀎 ?곸슜 Grounding"""
     refined_dict = {}  
     has_invalid = False
     norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
@@ -311,7 +291,7 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
         raw_content = str(comp.get("content", "")).strip()
         content_parts = [_normalize_single_content(c) for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
         page_val = comp.get("page", "")
-        origin_engine = comp.get("engine", "Unknown") # DNA 꼬리표 유지
+        origin_engine = comp.get("engine", "Unknown") # DNA 瑗щ━???좎?
         
         loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
         
@@ -322,22 +302,22 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
                 continue
                 
             if is_ai and norm_text:
-                # 1단계: 엄격 매칭 (Strict)
+                # 1?④퀎: ?꾧꺽 留ㅼ묶 (Strict)
                 if cas not in norm_text:
-                    # 2단계: 하이픈 제거 매칭 (Soft)
+                    # 2?④퀎: ?섏씠???쒓굅 留ㅼ묶 (Soft)
                     cas_no_hyphen = cas.replace('-', '')
                     norm_text_no_hyphen = norm_text.replace('-', '')
                     
                     if cas_no_hyphen not in norm_text_no_hyphen:
-                        # 🚨 [수술 2] 3단계: Fuzzy Shield (OCR 노이즈 강제 치환 매칭)
+                        # ?슚 [?섏닠 2] 3?④퀎: Fuzzy Shield (OCR ?몄씠利?媛뺤젣 移섑솚 留ㅼ묶)
                         fuzzy_trans = str.maketrans('SOIlBZsbo', '501182560')
                         fuzzy_text = norm_text_no_hyphen.translate(fuzzy_trans)
                         fuzzy_cas = cas_no_hyphen.translate(fuzzy_trans)
                         
                         if fuzzy_cas not in fuzzy_text:
-                            if log_func: log_func(f" ⚠️ [Grounding 방어] 3단계 퍼지 쉴드 붕괴. 환각 CAS 영구 폐기: {cas}")
+                            if log_func: log_func(f" ?좑툘 [Grounding 諛⑹뼱] 3?④퀎 ?쇱? ?대뱶 遺뺢눼. ?섍컖 CAS ?곴뎄 ?먭린: {cas}")
                             has_invalid = True
-                            continue # 퍼지도 실패하면 사살!
+                            continue # ?쇱????ㅽ뙣?섎㈃ ?ъ궡!
 
             if cv:
                 if cas not in refined_dict:
@@ -347,7 +327,7 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
     if is_ai:
         try: check_omission(full_text, refined)
         except ValueError as e:
-            if log_func: log_func(f" 🟡 [누락 감지] {e}")
+            if log_func: log_func(f" ?윞 [?꾨씫 媛먯?] {e}")
             has_invalid = True 
         
     return refined, has_invalid
@@ -356,9 +336,9 @@ def find_section3_pages(doc):
     pages = []
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS)', text, re.I):
+        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:援ъ꽦|?깅텇|?⑥쑀|COMPOSITION|INGREDIENTS)', text, re.I):
             if i not in pages: pages.append(i)
-        if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
+        if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:?묎툒|?좏빐???꾪뿕??FIRST|HAZARDS)', text, re.I):
             if i not in pages: pages.append(i)
             break 
     return pages
@@ -368,20 +348,20 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         doc = fitz.open(pdf_path)
         pages = find_section3_pages(doc)
         
-        # 🚨 [수술 3] 지연 정찰(Lazy Recon) 트랩: 텍스트로 못 찾으면 스캔본으로 간주하고 비전 정찰 투입
+        # ?슚 [?섏닠 3] 吏???뺤같(Lazy Recon) ?몃옪: ?띿뒪?몃줈 紐?李얠쑝硫??ㅼ틪蹂몄쑝濡?媛꾩＜?섍퀬 鍮꾩쟾 ?뺤같 ?ъ엯
         if not pages:
-            if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 가동...")
+            if log_func: log_func(" ?뵇 ?띿뒪???먯? ?ㅽ뙣 (?먮뒗 ?ㅼ틪蹂?. 鍮꾩쟾 ?뺤같蹂?Recon) 媛??..")
             recon_images = []
             for i in range(min(5, len(doc))):
                 pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
                 recon_images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
             
-            recon_res = call_gemini_2_5_flash(recon_images, prompt="이 이미지들 중 '2. 구성성분' 또는 '3. 구성성분' 표가 있는 페이지 번호(0부터 시작)를 찾아라. JSON응답: {\"page_index\": 숫자}", current_sniper=current_sniper, log_func=log_func)
+            recon_res = call_gemini_2_5_flash(recon_images, prompt="???대?吏??以?'2. 援ъ꽦?깅텇' ?먮뒗 '3. 援ъ꽦?깅텇' ?쒓? ?덈뒗 ?섏씠吏 踰덊샇(0遺???쒖옉)瑜?李얠븘?? JSON?묐떟: {\"page_index\": ?レ옄}", current_sniper=current_sniper, log_func=log_func)
             page_idx = int(recon_res.get("page_index", -1)) if recon_res else -1
                 
             if 0 <= page_idx < len(doc):
                 pages = [page_idx, page_idx + 1] if page_idx + 1 < len(doc) else [page_idx]
-                if log_func: log_func(f" 🎯 정찰병이 페이지를 찾았습니다: {pages}번 바인딩")
+                if log_func: log_func(f" ?렞 ?뺤같蹂묒씠 ?섏씠吏瑜?李얠븯?듬땲?? {pages}踰?諛붿씤??)
             else:
                 doc.close()
                 return [], "", []
@@ -391,16 +371,16 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             if p_idx >= len(doc): continue
             page = doc[p_idx]
             raw_text += _get_sorted_and_normalized_text(page) + "\n"
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
             images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
             if len(images) >= 3: break
             
         doc.close()
         
         section3_text_only = raw_text
-        start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
+        start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:援ъ꽦|COMPOSITION)', raw_text, re.I)
         if start_m:
-            end_m = re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I)
+            end_m = re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:?묎툒|?좏빐???꾪뿕??FIRST|HAZARDS)', raw_text[start_m.end():], re.I)
             section3_text_only = raw_text[start_m.start():start_m.end() + end_m.start()] if end_m else raw_text[start_m.start():]
 
         return images, section3_text_only, pages 
@@ -430,12 +410,12 @@ def check_omission(original_text, extracted_data):
     original_cas_count = len(valid_original_cas)
     
     extracted_cas_set = set()
-    for c in (extracted_data if isinstance(extracted_data, list) else extracted_data.get("구성성분", [])):
+    for c in (extracted_data if isinstance(extracted_data, list) else extracted_data.get("援ъ꽦?깅텇", [])):
         found = cas_pattern.findall(str(c.get("cas") or c.get("cas_no") or ""))
         extracted_cas_set.update([f for f in found if verify_cas_number(f)])
     
     if len(extracted_cas_set) < original_cas_count:
-        raise ValueError(f"스나이퍼 누락 발생 (원본:{original_cas_count} vs 추출:{len(extracted_cas_set)}). 2차 요원 투입!")
+        raise ValueError(f"?ㅻ굹?댄띁 ?꾨씫 諛쒖깮 (?먮낯:{original_cas_count} vs 異붿텧:{len(extracted_cas_set)}). 2李??붿썝 ?ъ엯!")
 
 def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     if not image_list or not OPENAI_API_KEY: return None
@@ -451,15 +431,16 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     return None
 
 def _clean_content_odl(text):
-    if any(k in str(text).lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
-    return text
+    t = text.replace(" ", "")
+    if any(k in t.lower() for k in ["balance", "?붾웾", "rem"]): return "Rem.%"
+    return t
 
 def parse_row_robust_v2(row):
-    """[V17.2.9] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
-    cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
+    """[V17.2.7] ?泥?냼 ?듯빀蹂?(?명룷 遺꾩뿴 諛??섏씠???뚯닔??蹂듦뎄)"""
+    # ?슚 以꾨컮轅덉쓣 __SPLIT__?쇰줈 移섑솚?섏뿬 ?숆굅 ?곗씠??援ъ텧 以鍮?    cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
     if len(cells) < 2: return None
 
-    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
+    header_keywords = {"cas", "casno", "cas踰덊샇", "cas-no", "?⑥쑀??, "?⑤웾", "content", "援ъ꽦?깅텇", "?뷀븰臾쇱쭏紐?, "substance", "臾쇱쭏紐?, "紐낆묶"}
     cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in cells}
     if cell_lower_set.intersection(header_keywords): return None
 
@@ -481,15 +462,15 @@ def parse_row_robust_v2(row):
                 c = c_remain
 
             norm_c = _normalize_single_content(c)
-            if norm_c != "미기재%":
-                # 🚨 [V17.2.9.6] ODL 기호 인식 범위 확장 (모든 물결표 변이 추가)
-                if any(k in c for k in ['%', '~', '∼', '～', '-', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance']):
-                    if not strong_content: strong_content = _clean_content_odl(norm_c)
+            if norm_c != "誘멸린??":
+                # ?슚 [?덊떚 PR 諛섏쁺] ?섏씠??-)怨??뚯닔??.)??蹂듦뎄?섏뿬 45-50 ?깆쓣 Strong?쇰줈 ?ъ닔!
+                if any(k in c for k in ['%', '~', '-', '.', '<', '>', '??, '??, 'Rem', '?붾웾', 'balance']):
+                    if not strong_content: strong_content = _clean_content_odl(c)
                 else:
                     try:
                         clean_weak = float(re.sub(r'[^\d.]', '', norm_c))
                         if clean_weak <= 100 and not weak_content: 
-                            weak_content = _clean_content_odl(norm_c)
+                            weak_content = _clean_content_odl(c)
                     except: pass
                 continue
 
@@ -503,7 +484,7 @@ def parse_row_robust_v2(row):
         valid_names = [n for n in name_candidates if len(n) < 50]
         name = max(valid_names, key=len) if valid_names else name_candidates[0]
 
-    final_content = strong_content or weak_content or "미기재%"
+    final_content = strong_content or weak_content or "誘멸린??"
 
     final_comps = []
     for cas in cas_list:
@@ -511,7 +492,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.9_Final" 
+            "engine": "ODL-v2.7_CleanSlate" 
         })
     return final_comps
 
@@ -528,12 +509,14 @@ def extract_components_odl_robust(odl_doc, target_pages):
                 if parsed_comps: components.extend(parsed_comps)
     return components
 
+# ?슚 [?섏닠 6] ?몃え?녿뒗 ?곕뱶 肄붾뱶(fallback_text_extraction) ?꾨꼍 ?뚭컖 ?꾨즺!
+
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
     current_sniper = get_next_sniper()
-    alias = current_sniper["alias"] if current_sniper else "알수없음"
+    alias = current_sniper["alias"] if current_sniper else "?뚯닔?놁쓬"
     
-    if log_func: log_func(f" 🚀 [V17.2.9.6] 엔진 가동: {os.path.basename(pdf_path)}")
+    if log_func: log_func(f" ?? [V17.2.3] ?붿쭊 媛?? {os.path.basename(pdf_path)}")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -563,48 +546,47 @@ def process_pdf(pdf_path, log_func=None):
         odl_doc = parser.parse(pdf_path)
         odl_components = extract_components_odl_robust(odl_doc, target_pages)
     except Exception as e:
-        if log_func: log_func(f" ⚠️ ODL 파싱 오류: {e}")
+        if log_func: log_func(f" ?좑툘 ODL ?뚯떛 ?ㅻ쪟: {e}")
         odl_components = []
     
     pure_odl_cas = sum(1 for c in odl_components if re.search(r'\d-\d', str(c.get("cas", "") or c.get("cas_no", ""))))
-    # 🚨 [패치 핵심 1] ODL 함량 유효성 검증 복구 (2.5 Flash 시대에 맞춰 필수)
-    valid_odl_contents = sum(1 for c in odl_components if str(c.get("content", "")) not in ["", "미기재%"])
     
-    # 🚨 ODL이 CAS와 함량을 모두 정상적으로 찾았을 때만 성공으로 인정 (스마트 폴백)
-    if pure_odl_cas > 0 and valid_odl_contents > 0:
-        if log_func: log_func(f" 🟢 ODL 정밀 추출 성공 ({len(odl_components)}건). AI 생략.")
-        ai_res = {"구성성분": odl_components, "교정_사유": "ODL 정밀 추출 완료"}
+    # ?슚 吏???뺤같 ?곌퀎: ODL???꾨Т寃껊룄 紐?李얠븯?붾뜲 target_pages???덉뿀?ㅻ㈃ ?ㅼ틪蹂??뺣쪧 ?믪쓬
+    if pure_odl_cas > 0:
+        if log_func: log_func(f" ?윟 ODL ?뺣? 異붿텧 ?깃났 ({len(odl_components)}嫄?. AI ?앸왂.")
+        ai_res = {"援ъ꽦?깅텇": odl_components, "援먯젙_?ъ쑀": "ODL ?뺣? 異붿텧 ?꾨즺"}
         used_engine = "ODL-Regex"
         is_ai_extracted = False
     else:
-        if log_func: log_func(f" 🟡 ODL 탐지 0건 또는 함량 누락. AI 비전 스나이퍼({alias}) 투입!")
-        # 🚨 [패치 핵심 2] 프롬프트는 2.5 Flash의 파편화 인식에 대응하도록 재전달
+        if log_func: log_func(f" ?윞 ODL ?먯? 0嫄????놁쓬/?ㅼ틪蹂?. AI 鍮꾩쟾 ?ㅻ굹?댄띁({alias}) ?ъ엯!")
         ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper, log_func)
-        used_engine = "Gemini-2.5-Flash"
+        used_engine = "Gemini-Flash"
         is_ai_extracted = True
         
-        if ai_res and "구성성분" in ai_res:
-            for c in ai_res["구성성분"]: c["engine"] = used_engine
-            pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
+        # ?슚 [?섏닠 5] DNA 瑗щ━??遺李?(Gemini)
+        if ai_res and "援ъ꽦?깅텇" in ai_res:
+            for c in ai_res["援ъ꽦?깅텇"]: c["engine"] = used_engine
+            pure_cas_count = sum(1 for c in ai_res.get("援ъ꽦?깅텇", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
         else: pure_cas_count = 0
             
-        if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
-            if log_func: log_func(" ├─ [Step 3] AI Bulldozer (GPT-4o-mini) 복구 투입...")
+        if not ai_res or "援ъ꽦?깅텇" not in ai_res or pure_cas_count == 0:
+            if log_func: log_func(" ?쒋? [Step 3] AI Bulldozer (GPT-4o-mini) 蹂듦뎄 ?ъ엯...")
             ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
             used_engine = "GPT-4o-mini"
             is_ai_extracted = True
             
-            if ai_res and "구성성분" in ai_res:
-                for c in ai_res["구성성분"]: c["engine"] = used_engine
-                pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
+            # ?슚 [?섏닠 5] DNA 瑗щ━??遺李?(GPT)
+            if ai_res and "援ъ꽦?깅텇" in ai_res:
+                for c in ai_res["援ъ꽦?깅텇"]: c["engine"] = used_engine
+                pure_cas_count = sum(1 for c in ai_res.get("援ъ꽦?깅텇", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
             else: pure_cas_count = 0
                 
-            if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
-                if log_func: log_func(" ❌ AI 엔진마저 추출 실패 (수동 검토 대상)")
-                return {"error": "전체 추출 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
+            if not ai_res or "援ъ꽦?깅텇" not in ai_res or pure_cas_count == 0:
+                if log_func: log_func(" ??AI ?붿쭊留덉? 異붿텧 ?ㅽ뙣 (?섎룞 寃?????")
+                return {"error": "?꾩껜 異붿텧 ?ㅽ뙣 (?섎룞 寃???꾩슂)", "?쒗뭹紐?: hybrid_pn, "?좏샇??: "?뵶"}
 
-    components = ai_res.get("구성성분", [])
-    reason = ai_res.get("교정_사유", "사유 없음")
+    components = ai_res.get("援ъ꽦?깅텇", [])
+    reason = ai_res.get("援먯젙_?ъ쑀", "?ъ쑀 ?놁쓬")
     
     local_grounding_text = str(first_page_text)
     try:
@@ -618,8 +600,8 @@ def process_pdf(pdf_path, log_func=None):
     
     comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
     if not comp_parts:
-        if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
-        return {"error": "AI 추출 완전 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
+        if log_func: log_func(" ???좏슚???깅텇 ?곗씠?곌? 議댁옱?섏? ?딆쓬")
+        return {"error": "AI 異붿텧 ?꾩쟾 ?ㅽ뙣 (?섎룞 寃???꾩슂)", "?쒗뭹紐?: hybrid_pn, "?좏샇??: "?뵶"}
 
     comp_str = "; ".join(comp_parts)
     product_name = hybrid_pn
@@ -634,21 +616,20 @@ def process_pdf(pdf_path, log_func=None):
     gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "odl"
     
     res_obj = {
-        "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
-        "교정_사유": reason,
-        "신호등": "🟡" if has_invalid_cas or not product_name else "🟢",
+        "援ъ꽦?깅텇": comp_str, "?쒗뭹紐?: product_name, "痢≪젙???: target_substances,
+        "援먯젙_?ъ쑀": reason,
+        "?좏샇??: "?윞" if has_invalid_cas or not product_name else "?윟",
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [V17.2.9.6] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    if log_func: log_func(f" ??[V17.2.3] ?꾨즺 (?붿쭊: {used_engine}, ?뚯슂?쒓컙: {time.time()-start_time:.2f}珥?")
     return res_obj
 
 analyze_msds = process_pdf
 
 def self_test_regression():
-    assert _normalize_single_content("≥95%≤100%") == "95~100%", "회귀 오류: 양방향 부등호 파괴"
-    assert _normalize_single_content("77.08g") == "미기재%", "회귀 오류: 단위(g) 환각 필터 파괴"
-    assert _normalize_single_content("≤ 0.1") == "≤0.1%", "회귀 오류: 소수점 파편화 방지 실패"
-    print("[OK] V17.2.9.6 엔진 자가 검증 완료.")
+    assert _normalize_single_content("??5%??00%") == "95~100%", "?뚭? ?ㅻ쪟: ?묐갑??遺?깊샇 ?뚭눼"
+    assert _normalize_single_content("77.08g") == "誘멸린??", "?뚭? ?ㅻ쪟: ?⑥쐞(g) ?섍컖 ?꾪꽣 ?뚭눼"
+    print("[OK] V17.2.3 ?붿쭊 ?먭? 寃利??꾨즺.")
 
 self_test_regression()
