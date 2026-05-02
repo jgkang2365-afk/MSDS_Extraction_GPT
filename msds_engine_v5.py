@@ -79,7 +79,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다. 2차 Fallback 엔진이 작동하지 않습니다.")
 
-VERSION = "15.8.20"
+VERSION = "16.0.0"
 
 # [V15.8.13] 예외 처리 레지스트리 (스파게티 코드 방지용 플러그인 구조)
 EXCEPTION_REGISTRY = {
@@ -97,48 +97,51 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
     
     for attempt in range(max_retries):
         if not current_sniper:
-            raise ValueError("🚨 전용 스나이퍼가 배정되지 않았습니다.")
+            raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
             
-        # 🚨 [V15.8.20] 쿨다운 상태 확인 (429 에러 등으로 인한 일시 차단 체크)
-        now = time.time()
-        alias = current_sniper["alias"]
-        if alias in _sniper_cooldown and now < _sniper_cooldown[alias]:
-            if log_func: log_func(f"  ⏳ {alias}는 현재 쿨다운 중입니다. 스나이퍼를 자동 전환합니다.")
-            current_sniper = get_next_sniper()
-            continue
-
         api_key = current_sniper["key"]
+        alias = current_sniper["alias"]
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
         
         try:
-            # 🚨 [V15.8.20] 지수적 백오프 (IP 차단 방지용 스마트 대기)
-            if attempt > 0:
-                wait_time = 1.0 + attempt # [V15.8.20] 지수적 백오프: 1.0초 + 시도 횟수만큼 점진적 증가
-                if log_func: log_func(f"  🛡️ {alias} 재시도 준비 중... ({wait_time}초 대기)")
-                time.sleep(wait_time)
-
-            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=45)
+            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
             
             if response.status_code != 200:
-                if response.status_code == 429:
-                    if log_func: log_func(f"  ⚠️ {alias}가 429(Too Many Requests)를 반환했습니다. 60초 쿨다운 적용.")
-                    mark_sniper_cooldown(current_sniper, 60)
+                error_msg = response.text
+                if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code}): {error_msg[:60]}...")
                 
-                next_sniper = get_next_sniper()
-                if next_sniper:
-                    current_sniper = next_sniper
-                    continue
-            
+                if response.status_code == 429:
+                    mark_sniper_cooldown(current_sniper, cooldown_sec=60)
+                elif response.status_code == 503:
+                    mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+                
+                # 🚨 [V15.8.20] 지수적 백오프 (IP 차단 방지용 스마트 대기)
+                backoff_time = 1.0 + attempt
+                if log_func: log_func(f"  ⏳ [Back-off] 서버 안정화를 위해 {backoff_time}초 대기 중...")
+                time.sleep(backoff_time)
+                
+                current_sniper = get_next_sniper()
+                if current_sniper:
+                    if log_func: log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환")
+                continue
+                    
             return response.json()
             
-        except Exception as e:
+        except requests.exceptions.RequestException as e:
+            if log_func: log_func(f"  🔴 {alias} 네트워크 끊김: {str(e)[:60]}")
+            mark_sniper_cooldown(current_sniper, cooldown_sec=30)
+            
             # 🚨 [V15.8.20] 네트워크 단절 시에도 지수적 백오프 적용
-            if log_func: log_func(f"  📡 {alias} 네트워크 오류: {str(e)[:50]}")
-            time.sleep(1.0 + attempt)
+            backoff_time = 1.0 + attempt
+            if log_func: log_func(f"  ⏳ [Back-off] 네트워크 복구를 위해 {backoff_time}초 대기 중...")
+            time.sleep(backoff_time)
+            
             current_sniper = get_next_sniper()
+            if current_sniper and log_func:
+                log_func(f"  🔄 [{current_sniper['alias']}](으)로 자동 전환 (통신 단절 돌파)")
             continue
             
-    raise Exception("🚨 1차 엔진(Sniper)이 모든 재시도에 실패했습니다. 2차 불도저(GPT) 긴급 투입!")
+    raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
     """[V15.8.2] 족쇄 해제 & 공란(Blank) 반환 패치"""
@@ -649,29 +652,68 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
         if log_func: log_func(f" 🔴 불도저(GPT) 통신 에러: {str(e)[:50]}")
         return None
 
+def fallback_text_extraction(section3_text, log_func=None):
+    """
+    [🔥 V16 Fallback 제한] 전체 텍스트(full_text) 탐색 절대 금지. 
+    반드시 격리된 section3_text 내부에서만 정규식을 돌려야 함.
+    """
+    if log_func: log_func(" ├─ [Fallback] 정규식 기반 격리 탐색 가동...")
+    
+    fallback_components = []
+    if not section3_text or not section3_text.strip():
+        return fallback_components
+        
+    # CAS 정규식 (±50자 이내 함유량 탐색)
+    cas_pattern = re.compile(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])')
+    found_cas = list(cas_pattern.finditer(section3_text))
+    
+    seen_cas = set()
+    for m in found_cas:
+        cas = m.group(1)
+        if cas in seen_cas or not verify_cas_number(cas): continue
+        seen_cas.add(cas)
+        
+        # 탐색 범위를 ±50자 이내로 대폭 축소 (환각 방지)
+        start_idx = max(0, m.start() - 50)
+        end_idx = min(len(section3_text), m.end() + 50)
+        context = section3_text[start_idx:end_idx]
+        
+        # 함유량 탐색 (간단한 숫자/% 패턴)
+        content_m = re.search(r'(\d+(?:\.\d+)?\s*(?:%|~|≤|≥|<|>|이하|이상|미만|초과|Rem|balance)[^;,\n]*)', context)
+        content_raw = content_m.group(1).strip() if content_m else "미기재%"
+        content = _normalize_single_content(content_raw)
+        
+        fallback_components.append({
+            "cas_no": cas,
+            "content": content
+        })
+        
+    return fallback_components
+
 def process_pdf(pdf_path, log_func=None):
+    """
+    [V16] Multi-Stage Extraction Pipeline
+    1. ODL 2D Row-Based (Rule-based)
+    2. Gemini Flash (AI Sniper)
+    3. GPT-4o-mini (AI Bulldozer)
+    4. Regex (Isolated Fallback)
+    """
     start_time = time.time()
     
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
-    if log_func: log_func(f" 🚀 [V15.8.17 Vision-Only] 분석 시작 ➡️ 담당: {alias}")
+    if log_func: log_func(f" 🚀 [V16.0.0] 엔진 가동: {os.path.basename(pdf_path)}")
 
-    # [V15.8.3] 배선 교체: 이미지와 국소 텍스트를 동시에 받음 (1 PDF = 1 스나이퍼 원칙)
-    image_list, section3_text_for_omission, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
-    if not image_list:
-        if log_func: log_func(" ❌ Section 3 이미지를 찾을 수 없습니다.")
-        return {"error": "AI 추출 완전 실패 (수동 검토 필요)"}
-
-    # 2. 제품명 하이브리드 스캔 및 전체 텍스트 추출 (Grounding용)
+    # 1. 시각적/텍스트적 컨텍스트 확보
+    image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
+    
+    # 2. 제품명 하이브리드 스캔 (1페이지 기반)
     full_text_for_grounding = ""
     try:
         doc = fitz.open(pdf_path)
         first_page_text = _get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
-        
-        for page in doc:
-            full_text_for_grounding += _get_sorted_and_normalized_text(page)
-            
+        for page in doc: full_text_for_grounding += _get_sorted_and_normalized_text(page)
         pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
         cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
         doc.close()
@@ -679,175 +721,133 @@ def process_pdf(pdf_path, log_func=None):
         cover_img = image_list 
         first_page_text = ""
         full_text_for_grounding = ""
-    
-    # [V15.8.7 복원] 1 PDF = 1 스나이퍼 원칙: 진입 시 배정된 스나이퍼를 계속 사용
+        
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
-    hybrid_pn = re.sub(r'^[\s\-_*:#=|]+', '', hybrid_pn)
-    is_multi_model = False
-    
-    if hybrid_pn.count(',') >= 2 or len(hybrid_pn) > 60:
-        is_multi_model = True
+    # 3. ODL 2D Row-Based Extraction (제1엔진)
+    odl_components = []
+    used_engine = "None"
+    try:
+        if log_func: log_func(" ├─ [Step 1] ODL 2D Row-Based 엔진 가동...")
+        parser = PDFParser()
+        odl_doc = parser.parse(pdf_path)
+        target_tables = []
+        if odl_doc and odl_doc.pages:
+            for p_idx in pages:
+                if p_idx < len(odl_doc.pages):
+                    for el in odl_doc.pages[p_idx].elements:
+                        if getattr(el, 'type', '') == "TABLE": target_tables.append(el)
 
-    # 3. 1차 스나이퍼(Flash) 투입 (진입 시 배정된 스나이퍼 재사용)
-    if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
-    # [V15.8.5] 누락되었던 log_func 파라미터 강제 주입!
-    ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper, log_func=log_func)
-    used_engine = "Gemini-Flash"
+        # ====================================================================
+        # [🔥 V16 ODL 2D Row-Based Extraction (문자열 변환 절대 금지!)]
+        # ====================================================================
+        for table in target_tables:
+            for row in table.rows:
+                # 1. 셀 텍스트를 리스트 구조로 보존 (join 금지)
+                cells = [cell.text.strip() for cell in row.cells if cell.text]
+                if len(cells) < 2: continue
 
-    # 4. 스마트 Gatekeeper (황색불 판별)
-    needs_gpt = False
-    valid_components = []
-    pure_cas_count = 0 # 🚨 [V15.8.20] 순수 CAS 카운터 도입
+                # 2. [핵심] 2D 좌표(Index) 1:1 매핑
+                raw_name = cells[0]
+                raw_cas = cells[1] if len(cells) > 1 else ""
+                raw_content = cells[2] if len(cells) > 2 else ""
 
-    if not ai_res or "구성성분" not in ai_res:
-        needs_gpt = True # 구조 붕괴
-    else:
-        for comp in ai_res.get("구성성분", []):
-            cas = str(comp.get("cas_no", "")).strip()
-            content_str = str(comp.get("content", "")).replace(" ", "") # 공백만 제거 (최소 정제)
-            
-            # [V15.8.19 필터링] "빈칸" 키워드 추가하여 Gatekeeper 통과 허용
-            if not cas or any(kw in str(cas) for kw in ["영업비밀", "비공개", "승인번호", "미기재", "Secret", "빈칸"]):
-                valid_components.append(comp) # Y축 유지를 위해 살려둠
-                continue
+                # 헤더 스킵
+                if any(k in raw_name for k in ["CAS", "화학물질", "물질명", "구성성분"]): continue
 
-            # [V15.8.19 롤백 해제] 다중 CAS 완벽 허용
-            found_cases = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(cas))
-            if not found_cases:
-                needs_gpt = True # 순수 CAS가 1개도 없으면 시각 오류로 간주, GPT 호출!
-                break
+                # CAS 추출
+                cas_list = re.findall(r'(\d{1,7}-\d{2}-\d)', raw_cas)
+                if not cas_list:
+                    if any(k in raw_cas for k in ["비밀", "영업", "Secret", "Proprietary", "빈칸"]):
+                        cas_list = ["영업비밀"]
+                    else: continue
 
-            # [황색불 조건] 함유량 오류
-            if not re.search(r'\d', content_str) and "Rem" not in content_str:
-                needs_gpt = True 
-                break
-                
-            pure_cas_count += len(found_cases)
-            valid_components.append(comp)
+                # 함유량 매핑 (다중 CAS 대응)
+                content_parts = [c.strip() for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
+                loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else "미기재%"] * len(cas_list)
 
-        # 🚨 [V15.8.20 핵심 방어] 유효 CAS가 단 1개도 없다면 1차 엔진 완전 실패(빈칸 도배)로 간주
-        if not needs_gpt and pure_cas_count == 0:
-            needs_gpt = True
+                for cas, cv in zip(cas_list, loop_content):
+                    odl_components.append({"cas_no": cas, "content": cv})
         
-        # [V15.8.3] 누락 탐지기: 전체 문서가 아닌 '표가 있는 페이지의 텍스트'만으로 비교!
-        if len(valid_components) == 0:
-            needs_gpt = True
-        else:
-            try:
-                # full_text_for_grounding 대신 section3_text_for_omission 사용!
-                check_omission(section3_text_for_omission, valid_components)
-            except ValueError as e:
-                if log_func: log_func(f" 🟡 {e}")
-                needs_gpt = True
+        if odl_components:
+            used_engine = "ODL-V16"
+            if log_func: log_func(f" ├─ [ODL] {len(odl_components)}개 성분 검출 성공")
+    except Exception as e:
+        if log_func: log_func(f" ⚠️ [ODL] 오류 발생 (AI로 전환): {e}")
 
-    # 5. 2차 복구 요원(GPT) 투입
-    if needs_gpt:
+    # 4. AI Sniper (Gemini) - ODL 실패 시
+    ai_res = None
+    if not odl_components:
+        if log_func: log_func(f" 🎯 1차 고속 스나이퍼({alias}) 투입")
+        ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper=current_sniper, log_func=log_func)
+        used_engine = "Gemini-Flash"
+
+        # [Gatekeeper] 유효 CAS 전멸 방어
+        if ai_res:
+            components = ai_res.get("구성성분", [])
+            pure_cas_count = sum(1 for c in components if re.match(r'^\d{1,7}-\d{2}-\d$', str(c.get("cas_no", ""))))
+            if pure_cas_count == 0:
+                if log_func: log_func(" ⚠️ [Gatekeeper] 유효 CAS 전멸 -> Fallback (Bulldozer) 가동")
+                ai_res = None
+
+    # 5. AI Bulldozer (GPT-4o-mini) - Sniper 실패 시
+    if not odl_components and not ai_res:
         if log_func: log_func(" 🟡 1차 엔진 추출 불가 판단. 2차 입체 복구 요원(GPT-4o-mini) 투입!")
-        ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK)
+        ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
         used_engine = "GPT-4o-mini"
-        
-        # GPT마저 실패하거나 유효 성분이 0개면 깔끔하게 포기 (대안 찾지 마!)
-        if not ai_res or not ai_res.get("구성성분") or len(ai_res.get("구성성분", [])) == 0:
-            if log_func: log_func(" ❌ 모든 AI 엔진 추출 실패 (수동 검토 대상)")
-            return {
-                "error": "AI 추출 완전 실패 (수동 검토 필요)",
-                "제품명": hybrid_pn,
-                "신호등": "🔴"
-            }
 
-    final_ai_result = ai_res
+    # 6. 최종 데이터 조립 및 품질 관리
+    final_components = []
+    if odl_components:
+        final_components = odl_components
+    elif ai_res:
+        final_components = ai_res.get("구성성분", [])
+    else:
+        used_engine = "Regex-Fallback"
+        final_components = fallback_text_extraction(section3_text, log_func=log_func)
 
-    # 6. 데이터 조립 및 Phase 3 단순 후처리 (공백 제거)
-    product_name = hybrid_pn # 1페이지에서 스나이핑한 진짜 제품명 강제 적용
+    # 제품명 및 다중 모델 판별
+    product_name = hybrid_pn
+    is_multi_model = product_name.count(',') >= 2 or len(product_name) > 60
 
-    
-    # [수정] AI가 찾은 제품명을 인위적으로 정제하지 않음
-    
-    components = final_ai_result.get("구성성분", [])
-    reason = final_ai_result.get("교정_사유", "사유 없음")
-    
-    # 🚨 [V15.8.17 수정] Local Grounding 범위 확장: 조각난 section3_text가 아니라, 표가 발견된 '페이지 전체 텍스트'를 결합
+    # Local Grounding 텍스트 준비
     local_grounding_text = str(first_page_text)
     try:
         doc_g = fitz.open(pdf_path)
         for p_idx in pages:
-            if p_idx != 0: # 1페이지 중복 합침 방지
-                local_grounding_text += "\n" + _get_sorted_and_normalized_text(doc_g[p_idx])
+            if p_idx != 0: local_grounding_text += "\n" + _get_sorted_and_normalized_text(doc_g[p_idx])
         doc_g.close()
-    except Exception:
-        local_grounding_text += "\n" + str(section3_text_for_omission)
-    
-    refined_comps, has_invalid_cas = final_quality_control(components, local_grounding_text, log_func)
-    
+    except: local_grounding_text += "\n" + str(section3_text)
+
+    refined_comps, has_invalid_cas = final_quality_control(final_components, local_grounding_text, log_func)
     comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
 
     if not comp_parts:
-        if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
-        return {
-            "error": "AI 추출 완전 실패 (수동 검토 필요)",
-            "제품명": hybrid_pn,
-            "신호등": "🔴"
-        }
+        if log_func: log_func(" ❌ 모든 엔진 추출 실패 (수동 검토 대상)")
+        return {"error": "AI 추출 완전 실패 (수동 검토 필요)", "제품명": product_name, "신호등": "🔴"}
 
     comp_str = "; ".join(comp_parts)
-    target_substances = "" # 🚨 측정대상 변수 추가
-
-    # 🚨 [V15.8.15] 퍼지(Fuzzy) 트리거 매칭 (대소문자, 공백, 하이픈 무시)
-    raw_search_pool = str(hybrid_pn) + " " + str(first_page_text)[:500]
-    norm_search_pool = re.sub(r'[\s\-]', '', raw_search_pool).upper() # 압축 비교를 위한 정규화
+    target_substances = ""
     
+    # 예외 레지스트리 적용
+    norm_search_pool = re.sub(r'[\s\-]', '', product_name + " " + first_page_text[:500]).upper()
     for ext_key, ext_data in EXCEPTION_REGISTRY.items():
-        # 트리거들도 공백/하이픈 제거 후 대문자로 비교
         if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
-            hybrid_pn = ext_data["target_pn"]
-            comp_str = ext_data["components"]
-            target_substances = ext_data["target_substances"]
-            is_multi_model = True 
-            if log_func: log_func(f" ⚠️ [예외 감지] {ext_key} 규칙 적용 (Fuzzy 매칭 성공)")
-            break
+            product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
+            is_multi_model = True; break
 
-    # 🚨 [V15.2 핵심] AI 추출은 무사히 끝났으나, 다중 모델이므로 🟡황색불로 강제 변경!
-    if is_multi_model:
-        return {
-            "구성성분": comp_str,
-            "제품명": hybrid_pn,
-            "측정대상": target_substances, # 👈 강제 삽입!
-            "교정_사유": "다중 모델(시리즈) 문서 감지 또는 표준 예외 치환",
-            "신호등": "🟡",
-            "used_engine": "flash" if used_engine == "Gemini-Flash" else "bulldozer" # 👈 GUI 규격에 맞게 변환하여 추가!
-        }
-
-    # 정상 단일 모델일 경우
-    tag = f"[{used_engine}-PASS]"
-    gui_engine_name = "flash" if used_engine == "Gemini-Flash" else "bulldozer" # 👈 공통 변수 추가
+    # 반환 객체 구성
+    gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "odl"
     
-    # [V15.8.2 패치] 제품명이 공란('')인 경우 수동 확인을 위해 황색불(🟡) 반환
-    if not hybrid_pn:
-        return {
-            "구성성분": comp_str,
-            "제품명": "",
-            "측정대상": target_substances,
-            "교정_사유": "제품명 추출 실패 - 수동 확인 요망",
-            "신호등": "🟡",
-            "used_engine": gui_engine_name
-        }
-
-    # [V15.5 추가] 가짜 CAS가 탐지된 경우 초록불(🟢) 차단 및 황색불(🟡) 강제 전환
-    final_signal = "🟢"
-    final_reason = reason
-    if has_invalid_cas:
-        final_signal = "🟡"
-        final_reason = f"{reason} (⚠️ 일부 부적절한 CAS 포맷 감지 및 제외됨)"
-
-    return {
-        "구성성분": comp_str,
-        "제품명": hybrid_pn,
-        "측정대상": target_substances,
-        "교정_사유": final_reason,
-        "신호등": final_signal,
-        "used_engine": gui_engine_name # 👈 추가!
+    res_obj = {
+        "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
+        "교정_사유": "다중 모델 또는 예외 규칙 적용" if is_multi_model else "추출 및 검증 완료",
+        "신호등": "🟡" if is_multi_model or has_invalid_cas or not product_name else "🟢",
+        "used_engine": gui_engine_name
     }
+    
+    if log_func: log_func(f" ✅ [V16] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    return res_obj
 
 # [V7.0] GUI 호환성을 위한 별칭 설정
 analyze_msds = process_pdf
