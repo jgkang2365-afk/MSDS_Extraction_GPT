@@ -212,74 +212,57 @@ PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도�
  }"""
 
 def _normalize_single_content(content_str):
-    """[V17.2.3] 개별 함유량 정제 및 오름차순(min~max) 강제 교정"""
-    content_str = str(content_str).strip()
+    """[V17.2.4.1] 마이너스 수치 오류 해결 및 키워드(미만/이하) 완벽 보존 (버그 수정판)"""
+    orig_raw = str(content_str).strip()
     
-    content_str = re.sub(r'([\d\.]+)\s*(<)', r'>\1', content_str)
-    content_str = re.sub(r'([\d\.]+)\s*(>)', r'<\1', content_str)
-    content_str = re.sub(r'(?i)잔량|balance|remainder|残량', 'Rem.', content_str)
-    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', content_str)
-    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', content_str)
-    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', content_str)
-    content_str = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', content_str)
+    # 1. 기초 정제: 일본식 역순 부등호 및 잔량 표기 통일
+    v = re.sub(r'([\d\.]+)\s*(<)', r'>\1', orig_raw)
+    v = re.sub(r'([\d\.]+)\s*(>)', r'<\1', v)
+    v = re.sub(r'(?i)잔량|balance|remainder|残량|나머지', 'Rem.', v)
+    
+    # 2. 한글/영문 키워드를 기호로 선치환 (누락 방지)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
+    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|以上)', r'≥\1', v)
 
-    if re.search(r'\d$', content_str):
-        content_str += '%'
-
-    v = content_str.replace(" ", "")
-    v = re.sub(r'\([^)]*[A-Za-z가-힣][^)]*\)', '', v)
+    # 3. 불필요한 단위 및 공백 제거
+    v = v.replace(" ", "")
     v = re.sub(r'(?i)\(w/w\)|\(v/v\)|\(w/v\)|\(weight/weight\)|proprietary|secret', '', v)
-    
-    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v):
-        return "미기재%"
+    if re.search(r'(?i)(mg/m3|mg/l|g/l|ppm|kg|ml|µg|ug)', v): return "미기재%"
+    v = v.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
 
-    v = v.replace('＜', '<').replace('＞', '>')
-    v = v.replace('<=', '≤').replace('>=', '≥')
-    v = re.sub(r'\.0+(?=[^\d]|$)', '', v)
-
-    # 🚨 [V17.2.2 추가] ± 기호 처리 (예: 10±2 -> 8~12)
-    pm_match = re.match(r'^([0-9.]+)[±\+-]+([0-9.]+)%?$', v)
+    # 4. ± 기호 연산 (오름차순 보장) - [패치] 단일 하이픈(-)은 범위로 양보
+    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
         try:
             val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            # 작은수~큰수 자동 정렬 적용
-            min_val, max_val = sorted([val-pm, val+pm])
-            return f"{min_val:g}~{max_val:g}%"
+            n1, n2 = sorted([val-pm, val+pm])
+            return f"{n1:g}~{n2:g}%"
         except: pass
 
-    weird_range = re.match(r'^([≥>]*)([0-9.]+)(?:%?)([≤<]*)([0-9.]+)(?:%?)$', v)
-    if weird_range:
-        p1, n1, p2, n2 = weird_range.groups()
-        if p1 and p2: 
-            # 🚨 [V17.2.3 교정] 숫자가 뒤집혀 있으면(예: 8~0) 강제 스왑
-            try:
-                if float(n1) > float(n2):
-                    n1, n2 = n2, n1
-            except ValueError: pass
-            return f"{n1}~{n2}%"
-        
-    range_m = re.match(r'^([<>≤≥]*)([0-9.]+)[%]*[-~]([<>≤≥]*)([0-9.]+)[%]*$', v)
+    # 5. 범위 패턴 (숫자 ~ 숫자) 추출 - [패치] 마침표 단독 인식 방지 (숫자 필수)
+    range_m = re.search(r'([<>≤≥]*)\s*(\d*\.?\d+)\s*[-~∼～/]\s*([<>≤≥]*)\s*(\d*\.?\d+)', v)
     if range_m:
         p1, n1, p2, n2 = range_m.groups()
-        p1_clean = p1.replace('≥', '').replace('>', '').replace('≤', '').replace('<', '')
-        p2_clean = p2.replace('≤', '').replace('≥', '').replace('>', '') 
-        
-        # 🚨 [V17.2.3 교정] 숫자가 뒤집혀 있으면(예: 8~0) 강제 스왑
         try:
+            # 🚨 [V17.2.4 핵심] 숫자만 비교해서 뒤집혀 있으면 스왑
             if float(n1) > float(n2):
                 n1, n2 = n2, n1
-                p1_clean, p2_clean = p2_clean, p1_clean # 붙어있던 부등호도 위치를 같이 바꿔줌
-        except ValueError: pass
-        
-        return f"{p1_clean}{n1}~{p2_clean}{n2}%"
-        
-    if "Rem" in v:
-        return "Rem.%" if "%" not in v else v
-        
-    single_m = re.match(r'^([<>≤≥]?)([0-9.]+)%?$', v)
+                p1, p2 = p2, p1 # 부등호도 따라감
+            # 깨끗하게 조립 (불필요한 부등호 중복 제거)
+            res = f"{p1}{n1}~{p2}{n2}"
+            return res if '%' in res else res + '%'
+        except: pass
+
+    # 6. 단일 수치 패턴 (부등호 포함) - [패치] 마침표 단독 인식 방지 (숫자 필수)
+    single_m = re.search(r'([<>≤≥]?)\s*(\d*\.?\d+)', v)
     if single_m:
         p, n = single_m.groups()
         return f"{p}{n}%"
+
+    if "Rem" in v: return "Rem.%"
+    return "미기재%"
         
     return "미기재%"
 
