@@ -447,11 +447,16 @@ def parse_row_robust_v2(row):
                 if not c_remain: continue
                 c = c_remain
 
+            # 🚨 [V17.3.0.5] 줄바꿈 유실 방지: 개별 줄에 기호가 없더라도 셀 전체에 부등호가 있다면 합쳐서 재분석
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                # 🚨 [V17.2.9.7] ODL 기호 인식 범위 확장 (긴 줄표 –, — 추가)
                 if any(k in c for k in ['%', '~', '∼', '～', '-', '–', '—', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상']):
-                    if not strong_content: strong_content = _clean_content_odl(norm_c)
+                    if not strong_content:
+                        # [패치] 숫자와 기호가 줄바꿈으로 분리된 경우(예: 0.1~1 \n 미만) 보정
+                        merged_text = raw_cell.replace('__SPLIT__', ' ')
+                        if any(k in merged_text for k in ['<', '>', '≤', '≥', '미만', '이하', '초과', '이상']) and not any(k in c for k in ['<', '>', '≤', '≥', '미만', '이하', '초과', '이상']):
+                            norm_c = _normalize_single_content(merged_text)
+                        strong_content = _clean_content_odl(norm_c)
                 else:
                     try:
                         clean_weak = float(re.sub(r'[^\d.]', '', norm_c))
