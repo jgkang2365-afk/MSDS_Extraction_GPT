@@ -65,13 +65,15 @@ def format_content(content, log_callback=None):
     if len(valid_nums) >= 2:
         v1, v2 = float(valid_nums[0]), float(valid_nums[1])
         if v1 > v2: v1, v2 = v2, v1
-        # 정수면 소수점 제거 (95.0 -> 95)
         v1_str = int(v1) if v1.is_integer() else v1
         v2_str = int(v2) if v2.is_integer() else v2
-        return f"{v1_str} ~ {v2_str}{suffix}"
+        
+        # [수정] 범위형에서도 미만(<) 기호 보존
+        v2_prefix = "<" if any(c in content_str for c in ["<", "미만", "below", "less"]) else ""
+        return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
     
-    # 수학 기호(≤, ≥) 완벽 인식
-    prefix = "< " if any(c in content_str for c in ["<", "이하", "미만", "≤", "=<"]) else ("> " if any(c in content_str for c in [">", "이상", "초과", "≥", "=>"]) else "")
+    # 수학 기호(≤, ≥) 완벽 인식 (공백 제거)
+    prefix = "<" if any(c in content_str for c in ["<", "이하", "미만", "≤", "=<"]) else (">" if any(c in content_str for c in [">", "이상", "초과", "≥", "=>"]) else "")
     v1 = float(valid_nums[0])
     v1_str = int(v1) if v1.is_integer() else v1
     return f"{prefix}{v1_str}{suffix}"

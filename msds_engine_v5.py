@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.4"
+VERSION = "17.3.0.5"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
