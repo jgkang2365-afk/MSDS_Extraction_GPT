@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.5"
+VERSION = "17.3.0.6"
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
@@ -561,25 +561,23 @@ def process_pdf(pdf_path, log_func=None):
         used_engine = "Gemini-2.5-Flash"
         is_ai_extracted = True
         
-        if ai_res and "구성성분" in ai_res:
-            for c in ai_res["구성성분"]: c["engine"] = used_engine
-            pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
-        else: pure_cas_count = 0
-            
-        if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
-            if log_func: log_func(" ├─ [Step 3] AI Bulldozer (GPT-4o-mini) 복구 투입...")
+        # 🚨 [지원군 모드] 스나이퍼(Gemini)가 응답 실패(None)인 경우에만 불도저(GPT) 복구 투입
+        if ai_res is None:
+            if log_func: log_func(f" ⚠️ {alias} 사망. 비상 지원군(GPT-4o-mini) 복구 투입...")
             ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
             used_engine = "GPT-4o-mini"
             is_ai_extracted = True
             
-            if ai_res and "구성성분" in ai_res:
-                for c in ai_res["구성성분"]: c["engine"] = used_engine
-                pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
-            else: pure_cas_count = 0
-                
-            if not ai_res or "구성성분" not in ai_res or pure_cas_count == 0:
-                if log_func: log_func(" ❌ AI 엔진마저 추출 실패 (수동 검토 대상)")
-                return {"error": "전체 추출 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
+        # 결과 분석 (스나이퍼 또는 불도저의 결과)
+        if ai_res and "구성성분" in ai_res:
+            for c in ai_res["구성성분"]: c["engine"] = used_engine
+            pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
+        else:
+            pure_cas_count = 0
+            
+        if not ai_res or "구성성분" not in ai_res:
+            if log_func: log_func(" ❌ AI 엔진(지원군 포함) 추출 실패 (수동 검토 대상)")
+            return {"error": "전체 추출 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
 
     components = ai_res.get("구성성분", [])
     reason = ai_res.get("교정_사유", "사유 없음")
