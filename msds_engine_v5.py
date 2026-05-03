@@ -221,14 +221,13 @@ def _normalize_single_content(content_str):
     if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
         return "미기재%"
 
-    # 1. 기초 정규화 (전각 -> 반각)
-    v = raw.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    # 1. 기초 정규화 (공백 제거 및 전각 -> 반각)
+    v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
     
-    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (≤, ≥ 포함)
-    sym_less = "<" if any(k in v for k in ["<", "미만", "below", "less"]) else ("≤" if any(k in v for k in ["≤", "이하"]) else "")
-    sym_more = ">" if any(k in v for k in [">", "초과", "over"]) else ("≥" if any(k in v for k in ["≥", "이상"]) else "")
-    
-    v = v.replace(" ", "")
+    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (OCR 오인식 '맊' 등 대응)
+    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚]|up\s*to)', v, re.I) else "")
+    sym_more = ">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else ("≥" if re.search(r'(≥|이\s*상|above|from)', v, re.I) else "")
+
 
     # 2. 특수 키워드 (잔량 등)
     if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"

@@ -1,12 +1,12 @@
 {
-    "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac": {
-        "f_hash": "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac",
-        "product_name": "순&수 우드스테인 BASE",
+    "f6607ca0e99d2160d30ad97cfcbd1777e76aba45bf0accae81062cdc719d545e": {
+        "f_hash": "f6607ca0e99d2160d30ad97cfcbd1777e76aba45bf0accae81062cdc719d545e",
+        "product_name": "보통 휘발유 (Regular Unleaded Gasoline)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+        "raw_content": "86290-81-5(<86%); 71-43-2(0.1~0.7%); 1634-04-4(11%); 108-88-3(1~10%); 1330-20-7(2~4%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/MSDS/농업환경국-청소행정과-목천매립장/1. 보통휘발유(Regular Unleaded Gasoline) (2).pdf",
         "page": 1,
         "used_engine": "odl",
         "engine_version": "17.3.0.5"
@@ -19,18 +19,6 @@
         "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.0.5"
-    },
-    "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
-        "f_hash": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
-        "product_name": "블루우드스테인(Blue wood stain) [자단]",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "616-38-6(45~50%); 64742-47-8(20~25%); 8001-26-1(15~25%); 68152-57-8(5~10%); 108-65-6(1~5%); 13586-82-8(0.1~1%); 8008-20-6(0.1~1%); 68002-82-4(0.1~1%); 63800-37-3(0.1~1%); 115-77-5(0.1~1%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(≤0.1%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(1~3%); 51274-00-1(1~2%); 1333-86-4(0.1~1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
         "page": 1,
         "used_engine": "odl",
         "engine_version": "17.3.0.5"
