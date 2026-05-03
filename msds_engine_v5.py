@@ -221,12 +221,13 @@ def _normalize_single_content(content_str):
     if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
         return "미기재%"
 
-    # 1. 기초 정규화 (전각 -> 반각, 텍스트 -> 부등호)
+    # 1. 기초 정규화 (전각 -> 반각)
     v = raw.replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(미만|below|less\s*than|未満)', r'<\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이하|up\s*to|以下)', r'≤\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(초과|more\s*than|over|超)', r'>\1', v)
-    v = re.sub(r'(?i)([0-9.]+)\s*(?:%?)\s*(이상|above|from|以上)', r'≥\1', v)
+    
+    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (≤, ≥ 포함)
+    sym_less = "<" if any(k in v for k in ["<", "미만", "below", "less"]) else ("≤" if any(k in v for k in ["≤", "이하"]) else "")
+    sym_more = ">" if any(k in v for k in [">", "초과", "over"]) else ("≥" if any(k in v for k in ["≥", "이상"]) else "")
+    
     v = v.replace(" ", "")
 
     # 2. 특수 키워드 (잔량 등)
@@ -237,26 +238,32 @@ def _normalize_single_content(content_str):
     if pm_match:
         try:
             val, pm = float(pm_match.group(1)), float(pm_match.group(2))
-            f1, f2 = val - pm, val + pm
-            return f"{f1:g}~{f2:g}%"
+            return f"{val-pm:g}~{val+pm:g}%"
         except: pass
 
-    # 4. 범위 및 단일 수치 추출 (부등호 포함)
-    parts = re.findall(r'([<>≤≥]*)\s*(\d+\.?\d*|\.\d+)', v)
+    # 4. 수치 추출 및 부등호 결합
+    nums = re.findall(r'(\d+\.?\d*|\.\d+)', v)
     
-    if len(parts) >= 2:
-        p1, n1 = parts[0]
-        p2, n2 = parts[1]
+    if len(nums) >= 2:
         try:
-            f1, f2 = float(n1), float(n2)
-            if f1 > f2: n1, n2 = n2, n1; p1, p2 = p2, p1
-            if p1 == "≥" and p2 == "≤": return f"{n1}~{n2}%"
-            return f"{p1}{n1}~{p2}{n2}%"
+            f1, f2 = float(nums[0]), float(nums[1])
+            if f1 > f2: f1, f2 = f2, f1
+            n1_s, n2_s = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
+            
+            # [규칙] ≥A ≤B 형태는 표준 범위 A~B%로 변환
+            if sym_more == "≥" and sym_less == "≤": return f"{n1_s}~{n2_s}%"
+            
+            # 범위형 부등호 결합 (미만 기호 보존)
+            p2 = sym_less if sym_less else ""
+            return f"{n1_s}~{p2}{n2_s}%"
         except: pass
-    elif len(parts) == 1:
-        p, n = parts[0]
+    elif len(nums) == 1:
         try:
-            if float(n) <= 100: return f"{p}{n}%"
+            f1 = float(nums[0])
+            if f1 <= 100:
+                n1_s = int(f1) if f1.is_integer() else f1
+                prefix = sym_less if sym_less else (sym_more if sym_more else "")
+                return f"{prefix}{n1_s}%"
         except: pass
 
     return "미기재%"
