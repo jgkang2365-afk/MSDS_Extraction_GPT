@@ -14,13 +14,16 @@
         "월취급량": "",
         "단위": ""
     },
-    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/연무마이스터고등학교/연무마이스터고(견적서-26년도)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/[행정자치국]행정지원과_조리실(본청)_화학물질.xlsx",
     "sheet_name": "화학물질입력_양식",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf"
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/001_마일드 102 GHS MSDS (7).pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/002_마일드 302 GHS MSDS (1).pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/003_마일드 503 GHS MSDS.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/004_유한락스 주방용 GHS MSDS.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/005_퍼크린 오븐제로엠 GHS MSDS (4).pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/006_퍼크린 중성세제 GHS MSDS (3).pdf"
     ]
 }

@@ -2278,17 +2278,20 @@ class SMUGUI(QMainWindow):
             if bg_color: item_measure.setBackground(bg_color)
             self.table.setItem(row, 4, item_measure)
 
-            # 4. 2차 결과 (1% 필터링 반영)
-            final_reg2_str = manual.get("reg2", ";\n".join(final_res2)) # 공백 제거
+            # 4. 2차 결과 (1% 필터링 반영) - [V17.3.1.0] GUI 줄바꿈 강제 (가독성 최적화)
+            raw_reg2 = manual.get("reg2", ";\n".join(final_res2))
+            final_reg2_str = ";\n".join([p.strip() for p in raw_reg2.replace(';\n', ';').replace('\n', ';').split(';') if p.strip()])
             item_reg2 = QTableWidgetItem(final_reg2_str)
             if bg_color: item_reg2.setBackground(bg_color)
             self.table.setItem(row, 5, item_reg2)
 
-            # 5. 1차 결과 (1% 필터링 반영)
-            final_reg1_str = manual.get("reg1", ";\n".join(final_res1)) # 공백 제거
+            # 5. 1차 결과 (1% 필터링 반영) - [V17.3.1.0] GUI 줄바꿈 강제
+            raw_reg1 = manual.get("reg1", ";\n".join(final_res1))
+            final_reg1_str = ";\n".join([p.strip() for p in raw_reg1.replace(';\n', ';').replace('\n', ';').split(';') if p.strip()])
             item_reg1 = QTableWidgetItem(final_reg1_str)
             if bg_color: item_reg1.setBackground(bg_color)
             self.table.setItem(row, 6, item_reg1)
+
             
             # 기타 열 배경색 맞춤
             for c_idx in [1, 7]:
