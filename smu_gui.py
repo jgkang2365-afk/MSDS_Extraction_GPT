@@ -1964,6 +1964,14 @@ class SMUGUI(QMainWindow):
             "추출된 데이터를 확인/수정한 후 [2단계 검증]을 진행하세요."
         )
         QMessageBox.information(self, "추출 완료 리포트", summary)
+        
+        # [V17.3.0.8] 마스터 DB 로드 에러 사후 안내 (주님 지침: 1단계 종료 후 일괄 보고)
+        if hasattr(engine, 'MES_MASTER_LOAD_ERROR') and engine.MES_MASTER_LOAD_ERROR:
+             QMessageBox.critical(self, "마스터 DB 로드 실패", 
+                                f"[시스템 주의] 성분 명칭 보정용 마스터 DB를 불러오지 못했습니다.\n\n"
+                                f"사유: {engine.MES_MASTER_LOAD_ERROR}\n\n"
+                                f"조치: DB 파일이 없어도 추출은 계속되나, 명칭이 부정확할 수 있습니다.")
+
 
     def on_validation_result(self, res_data):
         """[V10.2] 하이브리드 검증 결과 처리 (신호등 🔵 마킹 및 검수 큐잉 포함)"""

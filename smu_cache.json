@@ -214,5 +214,77 @@
         "page": 1,
         "used_engine": "odl",
         "engine_version": "17.3.0.5"
+    },
+    "10b831e6d8aa438c77c8d7d974609cb39fea576c84bdfa238da735b9891ff781": {
+        "f_hash": "10b831e6d8aa438c77c8d7d974609cb39fea576c84bdfa238da735b9891ff781",
+        "product_name": "마일드 102",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(90~95%); 7758-29-4(0.1~5%); 497-19-8(0.1~5%); 68515-73-1(0.1~5%); 110615-47-9(0.1~5%); 64-17-5(0.1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/001_마일드 102 GHS MSDS (7).pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
+    },
+    "dceb90befa3a532ecc0ee3a79b5c02d885deba05886744df950aece4b84ad3fe": {
+        "f_hash": "dceb90befa3a532ecc0ee3a79b5c02d885deba05886744df950aece4b84ad3fe",
+        "product_name": "마일드 302",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(86~91%); 9003-11-6(5~10%); 126-92-1(0.1~5%); 166736-08-9(0.1~5%); 6132-04-3(0.1~5%); 6915-15-7(0.1~5%); 532-32-1(0.1~5%); 64-17-5(0.1~5%); 64-02-8(0.1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/002_마일드 302 GHS MSDS (1).pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
+    },
+    "39d8e687ef9ea743d980d7d6d899aa30afd709302e5c07f77e031c49252a2d19": {
+        "f_hash": "39d8e687ef9ea743d980d7d6d899aa30afd709302e5c07f77e031c49252a2d19",
+        "product_name": "마일드 503",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "144-55-8(60~70%); 7758-29-4(20~30%); 497-19-8(1~5%); 68411-30-3(1~5%); 527-07-1(1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/003_마일드 503 GHS MSDS.pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
+    },
+    "f236027eeaf7ede0f7253a8987d598b1248c87b653c8e0ba20071a431061839e": {
+        "f_hash": "f236027eeaf7ede0f7253a8987d598b1248c87b653c8e0ba20071a431061839e",
+        "product_name": "유한락스 주방용",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7681-52-9(4~6%); 1310-73-2(<1%); 7732-18-5(93.5~95.9%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/004_유한락스 주방용 GHS MSDS.pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
+    },
+    "8d3717ca5f1e97bd10cc310d412918236aef09f6acfef95a56b9d37ea79ba1e9": {
+        "f_hash": "8d3717ca5f1e97bd10cc310d412918236aef09f6acfef95a56b9d37ea79ba1e9",
+        "product_name": "퍼크린 오븐제로엠",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(81~89%); 1310-73-2(0.1~0.95%); 1310-58-3(0.1~0.95%); 584-08-7(1~9%); 7758-29-4(0.1~5%); 1300-72-7(0.1~5%); 527-07-1(0.1~5%); 9004-82-4(0.1~5%); 69011-36-5(0.1~5%); 112-34-5(0.1~5%); 61789-40-0(0.1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/005_퍼크린 오븐제로엠 GHS MSDS (4).pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
+    },
+    "f86b450c64ffe9095281a99c8605bdf0a0ed6ca6e1ffc8aa332e65e796ce46d9": {
+        "f_hash": "f86b450c64ffe9095281a99c8605bdf0a0ed6ca6e1ffc8aa332e65e796ce46d9",
+        "product_name": "퍼크린 중성세제",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(82~87%); 9004-82-4(0.1~5%); 68411-30-3(5~10%); 61789-40-0(0.1~5%); 532-32-1(0.1~5%); 7447-40-7(0.1~5%); 57-13-6(0.1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/006_퍼크린 중성세제 GHS MSDS (3).pdf",
+        "page": 1,
+        "used_engine": "odl",
+        "engine_version": "17.3.0.6"
     }
 }

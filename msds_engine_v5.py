@@ -98,7 +98,32 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.6"
+VERSION = "17.3.0.8"
+
+# [V17.3.0.8] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
+MES_MASTER_MAP = {}
+MES_MASTER_LOAD_ERROR = None
+try:
+    master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
+    if not os.path.exists(master_path):
+        MES_MASTER_LOAD_ERROR = f"마스터 데이터 파일이 존재하지 않습니다: {master_path}"
+    else:
+        with open(master_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+            if not items_list:
+                MES_MASTER_LOAD_ERROR = "JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다."
+            else:
+                for info in items_list:
+                    cas_raw = str(info.get("CAS번호", "")).strip()
+                    cas = re.sub(r'^0+', '', cas_raw)
+                    std_name = info.get("물질명") or info.get("상용명")
+                    if cas and std_name:
+                        MES_MASTER_MAP[cas] = std_name.strip()
+except Exception as e:
+    MES_MASTER_LOAD_ERROR = f"마스터 DB 초기화 중 오류 발생: {e}"
+
+
 
 EXCEPTION_REGISTRY = {
     "CR-13_SERIES": {
