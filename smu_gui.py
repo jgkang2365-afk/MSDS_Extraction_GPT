@@ -181,21 +181,21 @@ class FileDropArea(QLabel):
 
 class MultiLineDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
-        if index.column() == 3: # CAS 원본 열
+        if index.column() in [3, 4, 5, 6]: # [V17.3.1.1] CAS, 측정대상, 1/2차 결과 모두 멀티라인 편집 지원
             editor = QTextEdit(parent)
             editor.setAcceptRichText(False)
             return editor
         return super().createEditor(parent, option, index)
 
     def setEditorData(self, editor, index):
-        if index.column() == 3:
+        if index.column() in [3, 4, 5, 6]:
             value = index.model().data(index, Qt.EditRole)
             editor.setPlainText(str(value))
         else:
             super().setEditorData(editor, index)
 
     def setModelData(self, editor, model, index):
-        if index.column() == 3:
+        if index.column() in [3, 4, 5, 6]:
             model.setData(index, editor.toPlainText(), Qt.EditRole)
         else:
             super().setModelData(editor, model, index)
@@ -238,8 +238,8 @@ class HTMLDelegate(QStyledItemDelegate):
             else:
                 html_parts.append(escaped_p)
         
-        # [수정] 강제 개행(<br>)을 제거하고 세미콜론과 공백(; )으로 연결하여 가로 흐름 최적화 (수직 팽창 방지)
-        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{'; '.join(html_parts)}</body></html>"
+        # [V17.3.1.1] 주님 지침 반영: 가로 흐름 대신 수직 개행(;<br>)을 사용하여 성분별 가독성 극대화
+        final_html = f"<html><body style='font-family:Malgun Gothic; font-size:9pt;'>{';<br>'.join(html_parts)}</body></html>"
         
         doc = QTextDocument()
         doc.setDefaultFont(option.font)
