@@ -2387,7 +2387,14 @@ class SMUGUI(QMainWindow):
                     elif key == "순번/No": val = td.get("no")
                     
                     if val is not None:
+                        # [V17.3.0.9] 주님 지침: GUI는 편집용(줄바꿈), 엑셀은 최종용(한 줄)으로 저장
+                        if key in ["CAS 원본", "1차 결과(전체)", "2차 결과(규제)"]:
+                            val = str(val).replace('\n', ' ').replace('\r', '').strip()
+                            # 연속된 공백 제거 (깔끔한 세미콜론 정렬용)
+                            val = re.sub(r'\s{2,}', ' ', val)
+                        
                         ws.Cells(curr_row, c_idx).Value = val
+
 
                 saved_count += 1
 
