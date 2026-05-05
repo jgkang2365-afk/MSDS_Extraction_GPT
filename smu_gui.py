@@ -925,6 +925,12 @@ class SMUGUI(QMainWindow):
         lbl_log = QLabel("시스템 분석 로그")
         lbl_log.setStyleSheet("font-size: 11px; font-weight: bold; color: #666;")
         log_h_layout.addWidget(lbl_log)
+        
+        # [NEW] 진행 상황 텍스트 표시 라벨
+        self.lbl_extraction_progress = QLabel("")
+        self.lbl_extraction_progress.setStyleSheet("font-size: 11px; font-weight: bold; color: #0078d4; margin-left: 15px;")
+        log_h_layout.addWidget(self.lbl_extraction_progress)
+        
         log_h_layout.addStretch()
 
         self.btn_clear_log = QToolButton()
@@ -1390,6 +1396,8 @@ class SMUGUI(QMainWindow):
             if "pdf_paths" in config:
                 self.pdf_paths = config["pdf_paths"]
                 if self.pdf_paths:
+                    # [V17.3.1.2] 로드 즉시 정렬 강제 (정렬 무결성 확보)
+                    self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
                     self.log(f"[*] 이전 세션에서 {len(self.pdf_paths)}개의 PDF 목록을 불러왔습니다.")
                     self.update_file_count_display()
                     
@@ -1402,6 +1410,10 @@ class SMUGUI(QMainWindow):
             return
             
         self.log("[*] 테이블 데이터를 복구 중입니다...")
+        
+        # [V17.3.1.2] 복구 전 정렬 상태 강제 확인
+        self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
+        
         self.table.blockSignals(True)
         self.table.setRowCount(0)
         
@@ -1610,6 +1622,8 @@ class SMUGUI(QMainWindow):
             
             if new_files:
                 self.pdf_paths.extend(new_files)
+                # [V17.3.1.2] 추가 즉시 정렬 (뒤죽박죽 방지)
+                self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
                 self.update_file_count_display()
                 self.log(f"[*] {len(new_files)}개의 PDF 파일이 추가되었습니다.")
 
@@ -1635,6 +1649,8 @@ class SMUGUI(QMainWindow):
             
             if new_files:
                 self.pdf_paths.extend(new_files)
+                # [V17.3.1.2] 폴더 로드 시에도 즉시 정렬 강제
+                self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
                 self.update_file_count_display()
                 self.log(f"[*] 폴더에서 {len(new_files)}개의 PDF 파일이 일괄 추가되었습니다. (중복 제외)")
             else:
@@ -1665,6 +1681,7 @@ class SMUGUI(QMainWindow):
                     current_set.add(f)
                     new_count += 1
             
+            self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
             self.update_file_count_display()
             self.log(f"[*] 드래그 앤 드롭으로 {new_count}개의 PDF 파일이 추가되었습니다. (총 {len(self.pdf_paths)}개)")
 
@@ -1910,6 +1927,8 @@ class SMUGUI(QMainWindow):
         self.worker = ExtractionWorker(self.core, self.pdf_paths, cache=self.cache)
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
+        # [NEW] 진행 상황 텍스트 업데이트 연결
+        self.worker.progress_signal.connect(lambda v: self.lbl_extraction_progress.setText(f"진행 중: {int(v/100*len(self.pdf_paths))}/{len(self.pdf_paths)}건 ({v}%)"))
         self.worker.result_signal.connect(self.add_result_to_table)
         self.worker.cache_update_signal.connect(self.update_cache) # [NEW] 캐시 업데이트 연동
         self.worker.finished_signal.connect(self.on_extraction_finished)
@@ -1940,6 +1959,8 @@ class SMUGUI(QMainWindow):
         self.worker = ValidationWorker(self, self.core, table_data) # [Task 2] self(GUI) 전달 추가
         self.worker.log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
+        # [NEW] 진행 상황 텍스트 업데이트 연결
+        self.worker.progress_signal.connect(lambda v: self.lbl_extraction_progress.setText(f"검증 중: {int(v/100*len(table_data))}/{len(table_data)}건 ({v}%)"))
         self.worker.result_signal.connect(self.on_validation_result) 
         self.worker.finished_signal.connect(self.on_validation_finished)
         self.worker.start()
@@ -1950,6 +1971,7 @@ class SMUGUI(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_step1.setEnabled(True)
         self.btn_step2.setEnabled(True)
+        self.lbl_extraction_progress.setText(f"추출 완료: {len(self.pdf_paths)}건") # [NEW] 완료 표시
         self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
         
         summary = (
@@ -2014,6 +2036,7 @@ class SMUGUI(QMainWindow):
         self.btn_stop.setEnabled(False)
         self.btn_step1.setEnabled(True)
         self.btn_step2.setEnabled(True)
+        self.lbl_extraction_progress.setText(f"검증 완료: {self.table.rowCount()}건") # [NEW] 완료 표시
         self.log("[*] 2단계 API 검증 작업이 완료되었습니다.")
         QMessageBox.information(self, "완료", "2단계 API 검증이 완료되었습니다.")
 
@@ -2148,10 +2171,14 @@ class SMUGUI(QMainWindow):
             if bg_color: item_seq.setBackground(bg_color)
             self.table.setItem(row, 0, item_seq)
 
-            # 2. No (파일명 앞 숫자 추출)
+            # 2. No (파일명 앞 숫자 추출 및 3자리 제로 패딩 강제 - 정렬 무결성)
             fn = data.get("filename", "")
             match_no = re.match(r"^(\d+)", fn)
-            no_val = match_no.group(1) if match_no else "999" # 번호 없으면 뒤로
+            if match_no:
+                no_val = f"{int(match_no.group(1)):03d}"
+            else:
+                no_val = "999"
+            
             item_no = QTableWidgetItem(no_val)
             item_no.setTextAlignment(Qt.AlignCenter)
             if bg_color: item_no.setBackground(bg_color)

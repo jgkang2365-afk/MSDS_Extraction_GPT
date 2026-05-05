@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.9"
+VERSION = "17.3.1.0"
 
 # [V17.3.0.8] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -248,10 +248,12 @@ def _normalize_single_content(content_str):
 
     # 1. 기초 정규화 (공백 제거 및 전각 -> 반각)
     v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    # [V17.3.1.0] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
+    v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
     
     # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (OCR 오인식 '맊' 등 대응)
-    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to)', v, re.I) else "")
-    sym_more = ">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else ("≥" if re.search(r'(≥|이\s*상|above|from)', v, re.I) else "")
+    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
+    sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
 
 
     # 2. 특수 키워드 (잔량 등)
@@ -462,7 +464,7 @@ def parse_row_robust_v2(row):
     cas_list, name_candidates = [], []
     strong_content, weak_content = None, None
 
-    # 🚨 [V17.3.0.2] Backward Scan: 함유량 칸은 보통 뒤쪽에 있으므로 역순 탐색하여 하이재킹 방지
+    # [V17.3.1.0] 엔진 버전 업그레이드 (함유량 우선순위 필터 강화)
     for raw_cell in reversed(cells):
         sub_cells = raw_cell.split('__SPLIT__')
         
@@ -470,7 +472,7 @@ def parse_row_robust_v2(row):
             c = c.strip()
             if not c: continue
 
-            # 🚨 [V17.3.0.2] 더 강력한 CAS/관리번호 제거 (자릿수 제한 해제)
+            # ... CAS 탐색 로직 동일 ...
             found_cas = re.findall(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', c)
             if found_cas:
                 cas_list.extend(found_cas)
@@ -478,17 +480,24 @@ def parse_row_robust_v2(row):
                 if not c_remain: continue
                 c = c_remain
 
-            # 🚨 [V17.3.0.5] 줄바꿈 유실 방지: 개별 줄에 기호가 없더라도 셀 전체에 부등호가 있다면 합쳐서 재분석
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                if any(k in c for k in ['%', '~', '∼', '～', '-', '–', '—', '.', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상']):
-                    if not strong_content:
-                        # [패치] 숫자와 기호가 줄바꿈으로 분리된 경우(예: 0.1~1 \n 미만) 보정
-                        merged_text = raw_cell.replace('__SPLIT__', ' ')
-                        if any(k in merged_text for k in ['<', '>', '≤', '≥', '미만', '이하', '초과', '이상']) and not any(k in c for k in ['<', '>', '≤', '≥', '미만', '이하', '초과', '이상']):
-                            norm_c = _normalize_single_content(merged_text)
-                        strong_content = _clean_content_odl(norm_c)
+                # 🚨 [V17.3.1.0] 함유량 우선순위 지능형 필터 (주님 지침 반영: % 우선 및 회귀 방지)
+                is_percent = '%' in c
+                is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
+                is_range = '-' in c or '–' in c or '—' in c
+
+                # 1. % 기호가 있으면 무조건 최우선 (기존 Strong Content 덮어쓰기 허용)
+                if is_percent:
+                    strong_content = _clean_content_odl(norm_c)
+                # 2. %는 없지만 부등호나 물결표가 있으면 차선순위
+                elif not strong_content and is_symbol:
+                    strong_content = _clean_content_odl(norm_c)
+                # 3. 단순 하이픈(-)의 경우 괄호가 없을 때만 후보로 인정 (ENCS 번호 하이재킹 방지)
+                elif not strong_content and is_range and '(' not in c:
+                    strong_content = _clean_content_odl(norm_c)
                 else:
+                    # 4. 기호가 아예 없는 경우 (99.0 등) Weak Content로 분류하여 마지막에 채택
                     try:
                         clean_weak = float(re.sub(r'[^\d.]', '', norm_c))
                         if clean_weak <= 100 and not weak_content: 
@@ -506,6 +515,7 @@ def parse_row_robust_v2(row):
         valid_names = [n for n in name_candidates if len(n) < 50]
         name = max(valid_names, key=len) if valid_names else name_candidates[0]
 
+    # 최종 함유량 결정 (Strong -> Weak -> 미기재)
     final_content = strong_content or weak_content or "미기재%"
 
     final_comps = []
@@ -514,7 +524,7 @@ def parse_row_robust_v2(row):
             "name": name,
             "cas_no": cas,
             "content": final_content,
-            "engine": "ODL-v2.9_Final" 
+            "engine": "ODL-v3.0_Priority" 
         })
     return final_comps
 
@@ -661,6 +671,8 @@ def self_test_regression():
         ("1 ~ 5미만", "1~<5%", "한글 부등호 포함 범위 처리 실패"),
         ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
         ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
+        ("min. 99.5%", "≥99.5%", "min. 약어 표준화 실패"),
+        ("max 10", "≤10%", "max 약어 표준화 실패"),
         ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
     ]
     
