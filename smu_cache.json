@@ -21,7 +21,7 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/1. Potassium phosphate monobasic(7778-77-0)_R11_대정.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.1.0"
     },
     "12e67536a1a9f4b60332a9cc0ab8126d0ca7f7bee9120c8bdff344b112699c62": {
         "f_hash": "12e67536a1a9f4b60332a9cc0ab8126d0ca7f7bee9120c8bdff344b112699c62",
@@ -33,7 +33,7 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/2. N-20 Sodium thiosulfate solution_삼전 (1).pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.1.0"
     },
     "5487ca404194852dd3183b364ebff8e6943fd63acd31b20de7d1a24651e3d2c1": {
         "f_hash": "5487ca404194852dd3183b364ebff8e6943fd63acd31b20de7d1a24651e3d2c1",
@@ -57,7 +57,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "140-22-7(≥85%)"
+        }
     },
     "a79d93e6812b7a6eeb33dfc6d041649aebb83409a818d9ec34c791ffbb43868c": {
         "f_hash": "a79d93e6812b7a6eeb33dfc6d041649aebb83409a818d9ec34c791ffbb43868c",
@@ -138,7 +141,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/11. 4-Aminoantipyrine_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "83-07-8(99%)"
+        }
     },
     "3133d806176ca906a4fc3204f669432fa4f1d7edd46c03cf8fc06e7827b3fdc8": {
         "f_hash": "3133d806176ca906a4fc3204f669432fa4f1d7edd46c03cf8fc06e7827b3fdc8",
@@ -150,7 +156,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/12. 47%Sulfuric Acid (Sulfuric Acid (1+2)).pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7732-18-5(52~54%);\n7664-93-9(46~48%)"
+        }
     },
     "7f291165447ad8c8c62866b8e2d1a07acbd2a36f0ddc6839122729779c5b204f": {
         "f_hash": "7f291165447ad8c8c62866b8e2d1a07acbd2a36f0ddc6839122729779c5b204f",
@@ -174,7 +183,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/14. 64%Sulfuric Acid (Sulfuric Acid (1+1)).pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7664-93-9(61~65%);\n7732-18-5(35~39%)"
+        }
     },
     "5694dbfeab08eef4634016978208701e562249883c7668ffab1cc95a099cb650": {
         "f_hash": "5694dbfeab08eef4634016978208701e562249883c7668ffab1cc95a099cb650",
@@ -186,7 +198,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/15. Acetic Acid_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "64-19-7(>99%)"
+        }
     },
     "76691562c1aae8a40e3af2aea216f11d62058814373a525b47e978a396acd2a1": {
         "f_hash": "76691562c1aae8a40e3af2aea216f11d62058814373a525b47e978a396acd2a1",
@@ -270,7 +285,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/22. Ammonium Chloride_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "12125-02-9(99.5%)"
+        }
     },
     "67d05a24e48dbec7880afb7eee08738ede210c71333f0f7ec6b8379392adec50": {
         "f_hash": "67d05a24e48dbec7880afb7eee08738ede210c71333f0f7ec6b8379392adec50",
@@ -306,7 +324,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/25. Ammonium Sulfate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7783-20-2(99%)"
+        }
     },
     "7cc2fe586377d99d68604ecd6bb02c9396422debac0b0958e0bdb68a49f384d2": {
         "f_hash": "7cc2fe586377d99d68604ecd6bb02c9396422debac0b0958e0bdb68a49f384d2",
@@ -330,7 +351,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/27. Amidosulfuric acid.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "5329-14-6(1~99.5%)"
+        }
     },
     "e6f1d1cf2dd7ecd6f8fff16e9acabd40b77d9436f493979d78fe44f6d9208828": {
         "f_hash": "e6f1d1cf2dd7ecd6f8fff16e9acabd40b77d9436f493979d78fe44f6d9208828",
@@ -342,7 +366,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/28. Bis[(+)-tartarto] diantimonate(Ⅲ) Dipotassium Trihydrate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "28300-74-5(99.5%)"
+        }
     },
     "9aa3a21f38471c62baba4a837cf3e07372110636507616dcaca9e88a250cc566": {
         "f_hash": "9aa3a21f38471c62baba4a837cf3e07372110636507616dcaca9e88a250cc566",
@@ -390,7 +417,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/34. Citric Acid Monohydrate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "5949-29-1(99.5%)"
+        }
     },
     "0f86ffc92bbbc90f87bb7d67ac7fb3a09b93ef7f8988f6b8931e0c636fea6205": {
         "f_hash": "0f86ffc92bbbc90f87bb7d67ac7fb3a09b93ef7f8988f6b8931e0c636fea6205",
@@ -426,7 +456,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/37. D(+)-Glucose_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "50-99-7(>98%)"
+        }
     },
     "09795283e150a7b02af7c96c61b4e314ba33d9eced7ef346c8e534eaff39d8ff": {
         "f_hash": "09795283e150a7b02af7c96c61b4e314ba33d9eced7ef346c8e534eaff39d8ff",
@@ -462,7 +495,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/45. Disodium Hydrogen phosphate _wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7558-79-4(99%)"
+        }
     },
     "c4aa3da34d8cb886da37ef4ca23e100ed609b7d1afdadd6a45de71ae082476c7": {
         "f_hash": "c4aa3da34d8cb886da37ef4ca23e100ed609b7d1afdadd6a45de71ae082476c7",
@@ -498,7 +534,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/52. Ethanol_wako (1).pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "64-17-5(99.5%)"
+        }
     },
     "d0f235d7ef36ccf8ceb2bb0e08bbd5e195d73992a04ae6d7270fb25009c9186f": {
         "f_hash": "d0f235d7ef36ccf8ceb2bb0e08bbd5e195d73992a04ae6d7270fb25009c9186f",
@@ -546,7 +585,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/56. Glycerol_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "56-81-5(99.5%)"
+        }
     },
     "ddc146eaff18816ef35281f2abc9c666238ea135f61efd93f92827cb7a5149db": {
         "f_hash": "ddc146eaff18816ef35281f2abc9c666238ea135f61efd93f92827cb7a5149db",
@@ -570,7 +612,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/59 Hydrochloric acid_junsei.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7647-01-0(35~37%);\n7732-18-5(미기재%)"
+        }
     },
     "d175a2456886376005b9946ff09852a2e7ff567e05b2787d0f2c33374fe54629": {
         "f_hash": "d175a2456886376005b9946ff09852a2e7ff567e05b2787d0f2c33374fe54629",
@@ -594,7 +639,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/61. Hydroxylammonium Chloride(=Hydroxylamine Hydrochloride).pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "5470-11-1(1~97%)"
+        }
     },
     "76d966a8daab045209ccbf35c3c673698ce1981f5868caec04b3a2aeb10f9318": {
         "f_hash": "76d966a8daab045209ccbf35c3c673698ce1981f5868caec04b3a2aeb10f9318",
@@ -630,7 +678,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/64. Isopropyl alcohol_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "67-63-0(>99.5%)"
+        }
     },
     "1354328d1c2ef26e9b4577dd66b6584558ddc1a12887304bdd623b2a9abf6cbc": {
         "f_hash": "1354328d1c2ef26e9b4577dd66b6584558ddc1a12887304bdd623b2a9abf6cbc",
@@ -654,7 +705,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/67. L-cysteine_MPbio.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "52-90-4(미기재%)"
+        }
     },
     "c6f8ce1ca8bac42cefe71e536e214758c9cb73dc9a7310b1ad99274aeb5019e4": {
         "f_hash": "c6f8ce1ca8bac42cefe71e536e214758c9cb73dc9a7310b1ad99274aeb5019e4",
@@ -738,7 +792,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/76. Manganese(Ⅱ) Sulfate Pentahydrate_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "13465-27-5(>98%);\n7785-87-7(>98%)"
+        }
     },
     "e9be03b340aa24c0c9fb5e33ec4322d7eca85da60749d47ad08aa266dd0e129d": {
         "f_hash": "e9be03b340aa24c0c9fb5e33ec4322d7eca85da60749d47ad08aa266dd0e129d",
@@ -834,7 +891,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/84. N,N-Dimethylformamide_wako (1).pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "68-12-2(99.5%)"
+        }
     },
     "27236324c6286a73952152ef72be7ea37afd05f547f282c0c884486203a021b5": {
         "f_hash": "27236324c6286a73952152ef72be7ea37afd05f547f282c0c884486203a021b5",
@@ -894,7 +954,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/90. Nitric Acid (1.38)_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7697-37-2(60~62%);\n7732-18-5(38~40%)"
+        }
     },
     "0c4de85acff35f9d8e5226deb0a129e507478836c5c906e058effadbfea61b4a": {
         "f_hash": "0c4de85acff35f9d8e5226deb0a129e507478836c5c906e058effadbfea61b4a",
@@ -1005,7 +1068,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/99. Potassium Dihydrogen Phosphate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7778-77-0(99.5%)"
+        }
     },
     "f3085d5550378f261f9513e658b5d95040317da3a3ef075061a97e9ab22e5d0c": {
         "f_hash": "f3085d5550378f261f9513e658b5d95040317da3a3ef075061a97e9ab22e5d0c",
@@ -1059,7 +1125,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/103. Potassium Iodide_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7681-11-0(>99.5%)"
+        }
     },
     "00b581c5f7524d3a131f0f56099660b78d36dc96243ba4487d8da4354a9bc8a3": {
         "f_hash": "00b581c5f7524d3a131f0f56099660b78d36dc96243ba4487d8da4354a9bc8a3",
@@ -1107,7 +1176,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/107. Potassium Permanganate Soiution_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7732-18-5(95%);\n7722-64-7(4.6~5.4%)"
+        }
     },
     "572fabee00986db79588caaa4e4cf6ac7fefc9778d7dd96e87b0d86d52083859": {
         "f_hash": "572fabee00986db79588caaa4e4cf6ac7fefc9778d7dd96e87b0d86d52083859",
@@ -1119,7 +1191,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/108. Potassium Peroxodisulfate (=Potassium Persulfate)_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7727-21-1(97%)"
+        }
     },
     "5620c5b2cacc7ad3a754b6587476fa4cd6194d70121dc92e0d96da67e61159e2": {
         "f_hash": "5620c5b2cacc7ad3a754b6587476fa4cd6194d70121dc92e0d96da67e61159e2",
@@ -1206,7 +1281,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/117. Sodium 4-Pyridinecarboxylate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "16887-79-9(97%)"
+        }
     },
     "416359c7795369c76ff43f3d770e47ed764b29c032e93f2061e8a54f8d381755": {
         "f_hash": "416359c7795369c76ff43f3d770e47ed764b29c032e93f2061e8a54f8d381755",
@@ -1218,7 +1296,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/118. Sodium Dodecyl sulfate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "151-21-3(95%)"
+        }
     },
     "ab4d8e9d6ea53d90e7369340c75fa76a6468d1dd833e0672e030f461a3b8533f": {
         "f_hash": "ab4d8e9d6ea53d90e7369340c75fa76a6468d1dd833e0672e030f461a3b8533f",
@@ -1278,7 +1359,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/123. Sodium chloride_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7647-14-5(99.5%)"
+        }
     },
     "50cfd3fe9a6b8d734fe452693a5215f646a801f9cfd533274f0a8f0433f095dc": {
         "f_hash": "50cfd3fe9a6b8d734fe452693a5215f646a801f9cfd533274f0a8f0433f095dc",
@@ -1290,7 +1374,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/124. Sodium chloride_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7647-14-5(>99.5%)"
+        }
     },
     "6facd85bb0e12a5a70741fea81d0f4032655838a22dc341a7153375ee95f7a16": {
         "f_hash": "6facd85bb0e12a5a70741fea81d0f4032655838a22dc341a7153375ee95f7a16",
@@ -1326,7 +1413,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/127. Sodium hydrogen carbonate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "144-55-8(99.5~100.3%)"
+        }
     },
     "7d5029d8f31376cc41c4dcac2c315b90fd5e51b09c4f1b34643303b07b0ac6cc": {
         "f_hash": "7d5029d8f31376cc41c4dcac2c315b90fd5e51b09c4f1b34643303b07b0ac6cc",
@@ -1350,7 +1440,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/129. Sodium hydroxide(1310-73-2)_YAKURI.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "1310-73-2(99%)"
+        }
     },
     "51f2d3626a7e7a1dcce35fd4b748d7d62503347957d534b9510add83b1d066be": {
         "f_hash": "51f2d3626a7e7a1dcce35fd4b748d7d62503347957d534b9510add83b1d066be",
@@ -1374,7 +1467,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/131. Sodium hypochlorite_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7681-52-9(>8%);\n7732-18-5(미기재%)"
+        }
     },
     "ee528218030ef571777fe32085045ef0dabe07ef534871b989ca69572302f27b": {
         "f_hash": "ee528218030ef571777fe32085045ef0dabe07ef534871b989ca69572302f27b",
@@ -1398,7 +1494,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/133. Sodium Oxalate_junsei.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "62-76-0(>99%)"
+        }
     },
     "51ab55e564813373678f5a39f9b8cf4b1c98dd1a9364731b862845d25cb7f195": {
         "f_hash": "51ab55e564813373678f5a39f9b8cf4b1c98dd1a9364731b862845d25cb7f195",
@@ -1422,7 +1521,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/135. Sodium pentacyanonitrosyl ferrate(Ⅲ) dihydrate_junsei.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "13755-38-9(>99%);\n14402-89-2(>99%)"
+        }
     },
     "a3478315741e01ee4db19cdd83b21962810a71ea4a514d8342d0f5bcca984ba6": {
         "f_hash": "a3478315741e01ee4db19cdd83b21962810a71ea4a514d8342d0f5bcca984ba6",
@@ -1434,7 +1536,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/136. Sodium salicylate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "54-21-7(99.5%)"
+        }
     },
     "6424ec16a6b0063be2be16a04dec6766e26e948a10d58a3385afa7edd8a341ab": {
         "f_hash": "6424ec16a6b0063be2be16a04dec6766e26e948a10d58a3385afa7edd8a341ab",
@@ -1446,7 +1551,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/137. Sodium sulfate_junsei (1).pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "7757-82-6(>99%)"
+        }
     },
     "c2e4fcee0b7b68202c2de5d391a6ddb4c3abeffc1a05e098dc5246add34a22c1": {
         "f_hash": "c2e4fcee0b7b68202c2de5d391a6ddb4c3abeffc1a05e098dc5246add34a22c1",
@@ -1470,7 +1578,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/139. Sodium tetraborate decahydrate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "1303-96-4(99.5~101%)"
+        }
     },
     "45225a75f595692b5e4f96a7a0ec13bafad519e14df86d14e39b991030285387": {
         "f_hash": "45225a75f595692b5e4f96a7a0ec13bafad519e14df86d14e39b991030285387",
@@ -1494,7 +1605,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/141. Sodium thiosulfate pentahydrate _wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "10102-17-7(99%)"
+        }
     },
     "dcf266bcc8a08ce3ba5771767f00728a23b54ce10b57e46e516d6f9ad079d127": {
         "f_hash": "dcf266bcc8a08ce3ba5771767f00728a23b54ce10b57e46e516d6f9ad079d127",
@@ -1530,7 +1644,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/145. Starch, soluble(9005-84-9)_R11_대정.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "9005-84-9(100%)"
+        }
     },
     "ae5fa42bfb51fae1c43fe084a89e76f2814703164cf7ba54d7e898db8e077159": {
         "f_hash": "ae5fa42bfb51fae1c43fe084a89e76f2814703164cf7ba54d7e898db8e077159",
@@ -1590,7 +1707,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/151. Trisodium citrate Dihydrate_wako.pdf",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "6132-04-3(99%)"
+        }
     },
     "f6fe03eb30bafda30e164bdbd8158e2b50068839014bc419b33a416f35362aa2": {
         "f_hash": "f6fe03eb30bafda30e164bdbd8158e2b50068839014bc419b33a416f35362aa2",
@@ -1662,7 +1782,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/166. Paraffin, liquid(8012-95-1)_R10_대정.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "8012-95-1(100%)"
+        }
     },
     "bc36eb57d02c0920ddf642794f33ef63a2b1faf929b8b35981c3d40ddb39f3c0": {
         "f_hash": "bc36eb57d02c0920ddf642794f33ef63a2b1faf929b8b35981c3d40ddb39f3c0",
@@ -1710,7 +1833,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/171. (±)-Geosmin and 2-Methylisoborneol Solution.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "67-56-1(95~100%)"
+        }
     },
     "c5ff07feb1713d56ca326640344fad2efe9c90d2c4104554a3c423382a9bdced": {
         "f_hash": "c5ff07feb1713d56ca326640344fad2efe9c90d2c4104554a3c423382a9bdced",
@@ -1782,7 +1908,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/177. 1.4-Dioxane_Accu.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "123-91-1(0.01%);\n67-56-1(99.99%)"
+        }
     },
     "43535c9e3cd48e3609aa13c78417c6b0af5b2976a81ccb31f0d24f389314fc93": {
         "f_hash": "43535c9e3cd48e3609aa13c78417c6b0af5b2976a81ccb31f0d24f389314fc93",
@@ -1794,7 +1923,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/178. 2-Bromo-1-Chloropropane_Accu.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "3017-95-6(0.02%);\n67-56-1(99.98%)"
+        }
     },
     "77194679db9770ee2becef82db2be34f0c240ea13e5724e01a18ac71cf25f5d9": {
         "f_hash": "77194679db9770ee2becef82db2be34f0c240ea13e5724e01a18ac71cf25f5d9",
@@ -1830,7 +1962,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/181. Total Inorganic Carbon  Standard (TIC)- 1000 ppm.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "972-99-1(0.01%);\n75-05-8(99.99%)"
+        }
     },
     "b4df0c370b6ee055f7df28aa8b2ceb00557bdc97b60c6e79380613f4da7c7a60": {
         "f_hash": "b4df0c370b6ee055f7df28aa8b2ceb00557bdc97b60c6e79380613f4da7c7a60",
@@ -1998,7 +2133,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/195. Decafluorobiphenyl E8209-100A_GP.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "67-64-1(99.99%);\n434-90-2(0.01%)"
+        }
     },
     "318e23e8aee33d1ba76636fa95ce48e570819f3fffb73bae58242c608296ea64": {
         "f_hash": "318e23e8aee33d1ba76636fa95ce48e570819f3fffb73bae58242c608296ea64",
@@ -2094,7 +2232,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/203.. Formaldehyde,  100ppm_Accu_ALR-115S-W.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "50-00-0(0.01%);\n7732-18-5(99.99%)"
+        }
     },
     "e47fde45a21a09d29e9f61852f95ea0ff3ff471cbe84e4c4183aa7659527cb8d": {
         "f_hash": "e47fde45a21a09d29e9f61852f95ea0ff3ff471cbe84e4c4183aa7659527cb8d",
@@ -2106,7 +2247,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/204. Formaldehyde,  1000ppm_Accu _M-8315-02.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "50-00-0(0.01%);\n7732-18-5(99.99%)"
+        }
     },
     "e944dea3707a435f7cb1b358e21c4ee56c6ddcd2f5c5ea5f4c4b25c350480fbc": {
         "f_hash": "e944dea3707a435f7cb1b358e21c4ee56c6ddcd2f5c5ea5f4c4b25c350480fbc",
@@ -2190,7 +2334,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/211. Microcystin-LR_Enzo_ALX-350-012_EU_EN.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "101043-37-2(미기재%)"
+        }
     },
     "5625c2f80b0321fb349ddc5ea1f7bd375786ccd1a65a87ef19ffdf44f5776dbe": {
         "f_hash": "5625c2f80b0321fb349ddc5ea1f7bd375786ccd1a65a87ef19ffdf44f5776dbe",
@@ -2286,7 +2433,10 @@
         "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/219. Phenol(페놀)_Accu_WC-PHEN-10X-1.pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.0.9"
+        "engine_version": "17.3.0.9",
+        "manual_data": {
+            "raw_content": "108-95-2(0.1);\n7732-18-5(99.9%)"
+        }
     },
     "20b8178e52dc239c1302b870d510ead50f407b4591cb6c6104e9fc5ce3b451ce": {
         "f_hash": "20b8178e52dc239c1302b870d510ead50f407b4591cb6c6104e9fc5ce3b451ce",

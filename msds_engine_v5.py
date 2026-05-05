@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.1.0"
+VERSION = "17.3.1.2"
 
 # [V17.3.0.8] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -251,10 +251,16 @@ def _normalize_single_content(content_str):
     # [V17.3.1.0] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
     v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
     
-    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (OCR 오인식 '맊' 등 대응)
-    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
-    sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
+    # 🚨 [V17.3.1.1] 후위 부등호 감지 및 반전 (일본식 표현 대응: 99 < -> >99)
+    # 숫자 뒤에 부등호가 오는지 체크
+    has_trailing_less = re.search(r'\d\s*(<|미\s*[만맊먄]|below|less)$', v, re.I)
+    has_trailing_more = re.search(r'\d\s*(>|초\s*과|more|over)$', v, re.I)
+    has_trailing_le = re.search(r'\d\s*(≤|이\s*[하핚내]|up\s*to|max)$', v, re.I)
+    has_trailing_ge = re.search(r'\d\s*(≥|이\s*상|above|from|min|\+)$', v, re.I)
 
+    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분
+    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
+    sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min|\+)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
 
     # 2. 특수 키워드 (잔량 등)
     if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
@@ -267,15 +273,32 @@ def _normalize_single_content(content_str):
             return f"{val-pm:g}~{val+pm:g}%"
         except: pass
 
-    # 4. 수치 추출 및 부등호 결합
+    # 4. 숫자 추출
     nums = re.findall(r'(\d+\.?\d*|\.\d+)', v)
-    
+    if not nums: return raw # 숫자 없으면 원본 반환
+
+    # 🚨 [V17.3.1.1] 후위 부등호 감지 및 반전 (일본식 표현 대응)
+    # 단일 수치(len(nums)==1)일 때만 수치 뒤 부등호를 반전시켜 해석
+    if len(nums) == 1:
+        if has_trailing_less: sym_less, sym_more = "", ">"
+        elif has_trailing_le: sym_less, sym_more = "", "≥"
+        elif has_trailing_more: sym_less, sym_more = "<", ""
+        elif has_trailing_ge: sym_less, sym_more = "≤", ""
+    else:
+        # 범위형일 때는 후위 부등호가 반전 대상이 아님
+        pass
+
+    # 4. 수치 추출 및 부등호 결합
     if len(nums) >= 2:
         try:
             f1, f2 = float(nums[0]), float(nums[1])
             if f1 > f2: f1, f2 = f2, f1
             n1_s, n2_s = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
             
+            # [V17.3.1.2] 사용자 요청: 복수 수치가 모두 '이상' 기호(+)와 결합된 경우, 최솟값 기준 단일 '이상'으로 통합
+            if sym_more and not sym_less and ("+" in v or "min" in v.lower()):
+                return f"{sym_more}{n1_s}%"
+
             # [규칙] ≥A ≤B 형태는 표준 범위 A~B%로 변환
             if sym_more == "≥" and sym_less == "≤": return f"{n1_s}~{n2_s}%"
             
@@ -673,6 +696,9 @@ def self_test_regression():
         ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
         ("min. 99.5%", "≥99.5%", "min. 약어 표준화 실패"),
         ("max 10", "≤10%", "max 약어 표준화 실패"),
+        ("99.0 <", ">99%", "일본식 후위 부등호 처리 실패"),
+        ("98.0 +%", "≥98%", "플러스(+) 기호 이상(More than) 처리 실패"),
+        ("(GR) 99.0 +% (EP) 98.0 +%", "≥98%", "복합 등급 함량 하한선 통합 실패"),
         ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
     ]
     
