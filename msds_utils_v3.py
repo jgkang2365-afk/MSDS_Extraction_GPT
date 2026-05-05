@@ -73,7 +73,12 @@ def format_content(content, log_callback=None):
         return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
     
     # 수학 기호(≤, ≥) 완벽 인식 (공백 제거)
-    prefix = "<" if any(c in content_str for c in ["<", "이하", "미만", "≤", "=<"]) else (">" if any(c in content_str for c in [">", "이상", "초과", "≥", "=>"]) else "")
+    # 수학 기호(≤, ≥) 및 키워드 정밀 인식
+    if any(c in content_str for c in ["<", "미만", "below"]): prefix = "<"
+    elif any(c in content_str for c in ["≤", "=<", "이하", "이내", "upto"]): prefix = "≤"
+    elif any(c in content_str for c in [">", "초과", "over"]): prefix = ">"
+    elif any(c in content_str for c in ["≥", "=>", "이상", "above"]): prefix = "≥"
+    else: prefix = ""
     v1 = float(valid_nums[0])
     v1_str = int(v1) if v1.is_integer() else v1
     return f"{prefix}{v1_str}{suffix}"

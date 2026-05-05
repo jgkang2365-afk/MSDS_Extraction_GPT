@@ -98,7 +98,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.0.8"
+VERSION = "17.3.0.9"
 
 # [V17.3.0.8] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -206,9 +206,9 @@ PROMPT_GEMINI_FLASH = """
 1. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 행 전체를 제외하라.
 2. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
 3. 환각 금지: 표에 없는 숫자를 지어내지 마라. CAS는 있는데 함유량 칸이 비어있다면 함유량을 '미기재%'로 출력하라.
-4. 부등호 범위 조작 금지: 원본에 '0.1-1' 이면 '0.1~1%'로, 눈에 보이는 그대로 추출하라.
-5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
-"""
+    4. 부등호 및 텍스트 보존: 원본에 '이내', '이하', '미만' 등의 텍스트가 있다면 이를 임의로 수정하거나 생략하지 말고 보이는 그대로 추출하라.
+    5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
+    """
 
 PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
 
@@ -250,7 +250,7 @@ def _normalize_single_content(content_str):
     v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
     
     # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분 (OCR 오인식 '맊' 등 대응)
-    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚]|up\s*to)', v, re.I) else "")
+    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to)', v, re.I) else "")
     sym_more = ">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else ("≥" if re.search(r'(≥|이\s*상|above|from)', v, re.I) else "")
 
 
@@ -652,6 +652,7 @@ def self_test_regression():
     # 1. 부등호 및 범위 표준화 테스트
     test_cases = [
         ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
+        ("0.01이내", "≤0.01%", "이내(Within) 변환 유실"),
         ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
         ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
         ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),

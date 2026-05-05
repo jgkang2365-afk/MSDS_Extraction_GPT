@@ -1,26 +1,14 @@
 {
-    "10b831e6d8aa438c77c8d7d974609cb39fea576c84bdfa238da735b9891ff781": {
-        "f_hash": "10b831e6d8aa438c77c8d7d974609cb39fea576c84bdfa238da735b9891ff781",
-        "product_name": "마일드 102",
+    "dad506040d30abc22e05b023d040808e64550f43a4829f6ffcb7069e44318d66": {
+        "f_hash": "dad506040d30abc22e05b023d040808e64550f43a4829f6ffcb7069e44318d66",
+        "product_name": "돌핀그린세제",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(90~95%); 7758-29-4(0.1~5%); 497-19-8(0.1~5%); 68515-73-1(0.1~5%); 110615-47-9(0.1~5%); 64-17-5(0.1~5%)",
+        "raw_content": "7732-18-5(90.1~96%); 1310-58-3(3~4.9%); 7758-29-4(1~5%); 915-67-3(≤0.01%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/001_마일드 102 GHS MSDS (7).pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/23. 맑은물사업본부-관리과-조리실/002.GHS돌핀그린세제MSDS.pdf",
         "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.0.8"
-    },
-    "dceb90befa3a532ecc0ee3a79b5c02d885deba05886744df950aece4b84ad3fe": {
-        "f_hash": "dceb90befa3a532ecc0ee3a79b5c02d885deba05886744df950aece4b84ad3fe",
-        "product_name": "마일드 302",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7732-18-5(86~91%); 9003-11-6(5~10%); 126-92-1(0.1~5%); 166736-08-9(0.1~5%); 6132-04-3(0.1~5%); 6915-15-7(0.1~5%); 532-32-1(0.1~5%); 64-17-5(0.1~5%); 64-02-8(0.1~5%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/1. [행정자치국]행정지원과_조리실(본청)/002_마일드 302 GHS MSDS (1).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.0.8"
+        "used_engine": "flash",
+        "engine_version": "17.3.0.9"
     }
 }
