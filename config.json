@@ -14,14 +14,13 @@
         "월취급량": "",
         "단위": ""
     },
-    "excel_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/맑은물사업본부-급수과-수질실험실/MSDS/★ 맑은물사업본부_급수과_수질실험실_양식(26상).xlsm",
-    "sheet_name": "",
+    "excel_path": "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/25~26. 맑은물사업본부-급수과-용곡,병천정수장/★ 맑은물사업본부_급수과_용곡 및 병천 정수장_양식(26상).xlsm",
+    "sheet_name": "화학물질입력_양식",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/24. 맑은물사업본부-급수과-수질실험실/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
-        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/24. 맑은물사업본부-급수과-수질실험실/10. 3-Methyl-1-phenyl-5-pyrazolone_wako.pdf",
-        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/24. 맑은물사업본부-급수과-수질실험실/11. 4-Aminoantipyrine_wako.pdf",
-        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/24. 맑은물사업본부-급수과-수질실험실/34. Citric Acid Monohydrate_wako.pdf"
+        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/25~26. 맑은물사업본부-급수과-용곡,병천정수장/1.MSDS PAC1종_용곡.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/25~26. 맑은물사업본부-급수과-용곡,병천정수장/2. MSDS_차아염소산나트륨_용곡.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/천안시청 MSDS 2/천안시청 MSDS 2/25~26. 맑은물사업본부-급수과-용곡,병천정수장/3. MSDS_차아염소산나트륨_병천.pdf"
     ]
 }

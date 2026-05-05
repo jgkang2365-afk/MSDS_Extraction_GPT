@@ -63,7 +63,7 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 def verify_cas_number(cas_string):
-    """[V17.3.0.2] CAS 번호 체크디지트 검증 코어"""
+    """[V17.3.1.6] CAS 번호 체크디지트 검증 코어"""
     if not cas_string: return False
     
     # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
@@ -86,7 +86,7 @@ def verify_cas_number(cas_string):
         return False
 
 def _get_sorted_and_normalized_text(page):
-    """[V17.3.0.2] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    """[V17.3.1.6] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
     blocks = page.get_text("blocks")
     # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
     blocks.sort(key=lambda b: (b[1], b[0]))
@@ -98,9 +98,9 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.1.2"
+VERSION = "17.3.1.6"
 
-# [V17.3.0.8] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
+# [V17.3.1.6] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
 MES_MASTER_LOAD_ERROR = None
 try:
@@ -318,7 +318,7 @@ def _normalize_single_content(content_str):
     return "미기재%"
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
-    """[V17.3.0.2] Fuzzy Shield 3단계 적용 Grounding"""
+    """[V17.3.1.6] Fuzzy Shield 3단계 적용 Grounding"""
     refined_dict = {}  
     has_invalid = False
     norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
@@ -362,7 +362,21 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
 
             if cv:
                 if cas not in refined_dict:
-                    refined_dict[cas] = {"cas": cas, "content": cv, "page": page_val, "engine": origin_engine}
+                    refined_dict[cas] = {
+                        "cas": cas, 
+                        "name": comp.get("name", ""), 
+                        "content": cv, 
+                        "page": page_val, 
+                        "engine": origin_engine
+                    }
+                else:
+                    # [V17.3.1.6] 중복 데이터 발생 시 함량 우선순위 보정
+                    # 기존 데이터가 '미기재%'인데 새로 들어온 데이터에 함량이 있다면 덮어쓰기
+                    if refined_dict[cas]["content"] == "미기재%" and cv != "미기재%":
+                        refined_dict[cas]["content"] = cv
+                        # 이름 정보가 보강되었다면 업데이트
+                        if not refined_dict[cas].get("name") and comp.get("name"):
+                            refined_dict[cas]["name"] = comp.get("name")
 
     refined = list(refined_dict.values()) 
     if is_ai:
@@ -476,7 +490,7 @@ def _clean_content_odl(text):
     return text
 
 def parse_row_robust_v2(row, priority_col_idx=-1):
-    """[V17.3.1.5] 열 우선순위(priority_col_idx) 반영 로직"""
+    """[V17.3.1.6] 열 우선순위(priority_col_idx) 반영 로직"""
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
     raw_cells = [c.text or "" for c in row.cells]
     cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in raw_cells}
@@ -517,7 +531,7 @@ def parse_row_robust_v2(row, priority_col_idx=-1):
                 c = c_remain
 
             norm_c = _normalize_single_content(c)
-            if norm_c != "미기재%":
+            if norm_c != "미기재%" and re.search(r'\d', norm_c):
                 # 🚨 [V17.3.1.2] 함유량 우선순위 서열 (주님 지침 반영)
                 is_percent = '%' in c
                 is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) 
@@ -588,8 +602,26 @@ def extract_components_odl_robust(odl_doc, target_pages):
                     if found_pct: break # 진짜 함량 열이 있는 헤더를 찾았으면 중단
             
             for row in table.rows:
+                row_texts = [c.text or "" for c in row.cells]
+                print(f"DEBUG_ODL_ROW: {row_texts}") # [V17.3.1.6] ODL 원본 데이터 확인용
+                
                 parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
-                if parsed_comps: components.extend(parsed_comps)
+                
+                # [V17.3.1.6] 행 분리 보정 (Row Buffer) 로직 주입
+                if parsed_comps:
+                    components.extend(parsed_comps)
+                elif components and components[-1]["content"] == "미기재%":
+                    # 현재 행에서 함량 데이터(숫자 등)만 있는지 탐색 (분리된 파편 행 대응)
+                    row_raw_texts = [c.text for c in row.cells if c.text]
+                    for txt in row_raw_texts:
+                        norm = _normalize_single_content(txt)
+                        if norm != "미기재%" and re.search(r'\d', norm):
+                            # 직전 행의 성분들 중 함량이 비어있는 것들에 대해 소급 적용
+                            idx = len(components) - 1
+                            while idx >= 0 and components[idx]["content"] == "미기재%":
+                                components[idx]["content"] = norm
+                                idx -= 1
+                            break
     return components
 
 def process_pdf(pdf_path, log_func=None):
