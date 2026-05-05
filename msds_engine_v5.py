@@ -475,27 +475,40 @@ def _clean_content_odl(text):
     if any(k in str(text).lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
     return text
 
-def parse_row_robust_v2(row):
-    """[V17.3.0.2] 대청소 통합본 (세포 분열 및 하이픈/소수점 복구)"""
-    cells = [re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip() for c in row.cells if (c.text or "").strip()]
-    if len(cells) < 2: return None
-
-    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭"}
-    cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in cells}
+def parse_row_robust_v2(row, priority_col_idx=-1):
+    """[V17.3.1.5] 열 우선순위(priority_col_idx) 반영 로직"""
+    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
+    raw_cells = [c.text or "" for c in row.cells]
+    cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in raw_cells}
     if cell_lower_set.intersection(header_keywords): return None
+
+    # [V17.3.1.5] 열 우선순위(priority_col_idx) 반영 로직
+    # cells를 (index, cell_text) 튜플 리스트로 변환
+    indexed_cells = []
+    for i, c in enumerate(row.cells):
+        text = re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip()
+        if text: indexed_cells.append((i, text))
+    
+    if len(indexed_cells) < 2: return None
+
+    # 우선순위 열이 있다면 리스트의 맨 앞으로 보내서 먼저 처리되게 함
+    if priority_col_idx >= 0:
+        indexed_cells.sort(key=lambda x: 0 if x[0] == priority_col_idx else 1)
+    else:
+        # 우선순위 열이 없으면 기존처럼 뒤에서부터(CAS 우선 탐색 위해)
+        indexed_cells.reverse()
 
     cas_list, name_candidates = [], []
     strong_content, weak_content = None, None
 
-    # [V17.3.1.0] 엔진 버전 업그레이드 (함유량 우선순위 필터 강화)
-    for raw_cell in reversed(cells):
+    for col_idx, raw_cell in indexed_cells:
         sub_cells = raw_cell.split('__SPLIT__')
         
         for c in sub_cells:
             c = c.strip()
             if not c: continue
 
-            # ... CAS 탐색 로직 동일 ...
+            # CAS 번호 탐색
             found_cas = re.findall(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', c)
             if found_cas:
                 cas_list.extend(found_cas)
@@ -505,30 +518,28 @@ def parse_row_robust_v2(row):
 
             norm_c = _normalize_single_content(c)
             if norm_c != "미기재%":
-                # 🚨 [V17.3.1.0] 함유량 우선순위 지능형 필터 (주님 지침 반영: % 우선 및 회귀 방지)
+                # 🚨 [V17.3.1.2] 함유량 우선순위 서열 (주님 지침 반영)
                 is_percent = '%' in c
+                is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) 
                 is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
-                is_range = '-' in c or '–' in c or '—' in c
+                is_range = ('-' in c or '–' in c or '—' in c) and not re.search(r'[a-zA-Z가-힣]', c)
 
-                # 1. % 기호가 있으면 무조건 최우선 (기존 Strong Content 덮어쓰기 허용)
-                if is_percent:
-                    strong_content = _clean_content_odl(norm_c)
-                # 2. %는 없지만 부등호나 물결표가 있으면 차선순위
-                elif not strong_content and is_symbol:
-                    strong_content = _clean_content_odl(norm_c)
-                # 3. 단순 하이픈(-)의 경우 괄호가 없을 때만 후보로 인정 (ENCS 번호 하이재킹 방지)
-                elif not strong_content and is_range and '(' not in c:
+                # 1. % 기호가 있거나 순수 숫자(99.0)면 무조건 최우선 (Strong Content)
+                if is_percent or is_pure_num:
+                    if not strong_content or is_percent:
+                        strong_content = _clean_content_odl(norm_c)
+                # 2. %는 없지만 확실한 부등호나 범위 기호가 있는 경우 (차선순위)
+                elif not strong_content and (is_symbol or is_range):
                     strong_content = _clean_content_odl(norm_c)
                 else:
-                    # 4. 기호가 아예 없는 경우 (99.0 등) Weak Content로 분류하여 마지막에 채택
                     try:
-                        clean_weak = float(re.sub(r'[^\d.]', '', norm_c))
-                        if clean_weak <= 100 and not weak_content: 
+                        clean_val = float(re.sub(r'[^\d.]', '', norm_c))
+                        if clean_val <= 100 and not weak_content: 
                             weak_content = _clean_content_odl(norm_c)
                     except: pass
                 continue
 
-            if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c):
+            if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c) and col_idx != priority_col_idx:
                 name_candidates.append(c)
 
     if not cas_list: return None
@@ -555,12 +566,29 @@ def extract_components_odl_robust(odl_doc, target_pages):
     components = []
     if not target_pages or not odl_doc or not odl_doc.pages: return components
 
+    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
+    
     for p_idx in target_pages:
         if p_idx >= len(odl_doc.pages): continue
         tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
         for table in tables:
+            # [V17.3.1.5] 테이블별 % 열 인덱스 사전 탐색 (정밀화)
+            priority_col_idx = -1
             for row in table.rows:
-                parsed_comps = parse_row_robust_v2(row)
+                row_texts = [c.text or "" for c in row.cells]
+                row_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts}
+                # 키워드가 존재하고, 그 중 하나라도 %를 포함해야 진짜 데이터 헤더로 인정
+                if row_lower_set.intersection(header_keywords):
+                    found_pct = False
+                    for i, t in enumerate(row_texts):
+                        if '%' in t:
+                            priority_col_idx = i
+                            found_pct = True
+                            break
+                    if found_pct: break # 진짜 함량 열이 있는 헤더를 찾았으면 중단
+            
+            for row in table.rows:
+                parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
                 if parsed_comps: components.extend(parsed_comps)
     return components
 
