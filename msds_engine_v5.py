@@ -62,10 +62,18 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
     if sniper:
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
-def verify_cas_number(cas_string):
-    """[V17.3.1.6] CAS 번호 체크디지트 검증 코어"""
+def verify_cas_number(cas_string, grounding_text=None):
+    """[V17.3.1.21] CAS 번호 검증 (Grounding 우선 원칙: 문서에 적혀 있으면 체크섬 무관하게 통과)"""
     if not cas_string: return False
     
+    # 🚨 [V17.3.2.2] 날짜 형식(YYYY-MM-DD)인 경우 CAS로 인정하지 않음 (오탐 방지)
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', cas_string):
+        return False
+
+    # 🚨 [V17.3.1.21] 문서 원본(Grounding)에 이 번호가 그대로 있다면, 오타가 있어도 수용
+    if grounding_text and cas_string in grounding_text:
+        return True
+        
     # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
     if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-"]):
         return True
@@ -98,7 +106,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.1.6"
+VERSION = "17.3.2.11" # 회귀 방지 강화 (공간 로직 테스트 하네스 탑재)
 
 # [V17.3.1.6] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -203,12 +211,12 @@ PROMPT_GEMINI_FLASH = """
 당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS 표 이미지만 보고 데이터를 추출하세요.
 
 [🔥 1차 엔진 절대 원칙]
-1. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 행 전체를 제외하라.
-2. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
-3. 환각 금지: 표에 없는 숫자를 지어내지 마라. CAS는 있는데 함유량 칸이 비어있다면 함유량을 '미기재%'로 출력하라.
-    4. 부등호 및 텍스트 보존: 원본에 '이내', '이하', '미만' 등의 텍스트가 있다면 이를 임의로 수정하거나 생략하지 말고 보이는 그대로 추출하라.
-    5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
-    """
+1. 🚨 CAS 번호 정밀 판독: 숫자 하나라도 틀리면 환각으로 간주되어 폐기된다. 6과 8, 0과 8 등을 극도로 주의해서 판독하라.
+2. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 행 전체를 제외하라.
+3. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
+4. 부등호 및 텍스트 보존: 원본에 '이내', '이하', '미만' 등의 텍스트가 있다면 이를 임의로 수정하거나 생략하지 말고 보이는 그대로 추출하라.
+5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
+"""
 
 PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
 
@@ -336,29 +344,29 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
         
         loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
         
+        # 🚨 [V17.3.1.24] 문서 전체를 대조군으로 활용하여 누락/오타 성분 원천 방어 (노이즈 세척 포함)
+        full_text = full_text.replace('̻', '').replace('̸', '')
+        norm_text = re.sub(r'\s+', '', full_text).upper()
+        
         for cas_raw, cv in zip(cas_list, loop_content):
             cas = re.sub(r'^0+', '', cas_raw)
-            if not verify_cas_number(cas):
-                has_invalid = True
-                continue
+            
+            # 🚨 [V17.3.1.18] AI 환각 구출 작전: 체크섬 통과 전에 원본 텍스트와 대조하여 교정
+            if is_ai and not verify_cas_number(cas, grounding_text=full_text):
+                # 텍스트 원본에서 유효한 CAS들 추출
+                valid_text_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', full_text)
+                valid_text_cas = [v for v in valid_text_cas if verify_cas_number(v, grounding_text=full_text)]
                 
-            if is_ai and norm_text:
-                # 1단계: 엄격 매칭 (Strict)
-                if cas not in norm_text:
-                    # 2단계: 하이픈 제거 매칭 (Soft)
-                    cas_no_hyphen = cas.replace('-', '')
-                    norm_text_no_hyphen = norm_text.replace('-', '')
-                    
-                    if cas_no_hyphen not in norm_text_no_hyphen:
-                        # 🚨 [수술 2] 3단계: Fuzzy Shield (OCR 노이즈 강제 치환 매칭)
-                        fuzzy_trans = str.maketrans('SOIlBZsbo', '501182560')
-                        fuzzy_text = norm_text_no_hyphen.translate(fuzzy_trans)
-                        fuzzy_cas = cas_no_hyphen.translate(fuzzy_trans)
-                        
-                        if fuzzy_cas not in fuzzy_text:
-                            if log_func: log_func(f" ⚠️ [Grounding 방어] 3단계 퍼지 쉴드 붕괴. 환각 CAS 영구 폐기: {cas}")
-                            has_invalid = True
-                            continue # 퍼지도 실패하면 사살!
+                for v_cas in valid_text_cas:
+                    # 1글자만 틀린 경우 (AI 오타 방어)
+                    diff_count = sum(1 for a, b in zip(cas, v_cas) if a != b) if len(cas) == len(v_cas) else 99
+                    if diff_count <= 1:
+                        cas = v_cas
+                        break
+                else:
+                    if log_func: log_func(f" 🔴 [Fuzzy 방어] 3단계 퍼지 쉴드 붕괴. 환각 CAS 영구 폐기: {cas}")
+                    has_invalid = True
+                    continue 
 
             if cv:
                 if cas not in refined_dict:
@@ -370,13 +378,16 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
                         "engine": origin_engine
                     }
                 else:
-                    # [V17.3.1.6] 중복 데이터 발생 시 함량 우선순위 보정
-                    # 기존 데이터가 '미기재%'인데 새로 들어온 데이터에 함량이 있다면 덮어쓰기
-                    if refined_dict[cas]["content"] == "미기재%" and cv != "미기재%":
+                    # [V17.3.1.8] 함유량 업데이트 로직 강화: 기존 데이터가 없거나 미기재%인 경우 무조건 갱신
+                    is_current_empty = not refined_dict[cas]["content"] or refined_dict[cas]["content"] == "미기재%"
+                    if is_current_empty and cv and cv != "미기재%":
                         refined_dict[cas]["content"] = cv
-                        # 이름 정보가 보강되었다면 업데이트
-                        if not refined_dict[cas].get("name") and comp.get("name"):
-                            refined_dict[cas]["name"] = comp.get("name")
+                        if comp.get("name"): refined_dict[cas]["name"] = comp.get("name")
+                    # 페이지 정보도 더 앞쪽(보통 3번 항목이 앞임) 페이지로 유지
+                    try:
+                        if page_val and (not refined_dict[cas]["page"] or int(page_val) < int(refined_dict[cas]["page"])):
+                            refined_dict[cas]["page"] = page_val
+                    except: pass
 
     refined = list(refined_dict.values()) 
     if is_ai:
@@ -388,29 +399,103 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
     return refined, has_invalid
 
 def find_section3_pages(doc):
-    """[V17.3.1.7] 섹션 3이 여러 페이지에 걸쳐 나타나는 경우를 대비하여 중단 없이 탐색"""
+    """[V17.3.1.12] 섹션 탐색 조기 종료 가드 강화 (Page 번호 노이즈 차단)"""
     pages = []
     found_section3 = False
+    
+    # 섹션 4~9 종료 키워드 (행 시작 부분에 숫자와 함께 나타날 때만 인정)
+    exit_pattern = re.compile(r'^(?:SECTION\s*)?[4-9][\s.:]*(?:응급|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)', re.I | re.M)
+    
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # 섹션 3(구성성분) 탐지
-        if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS)', text, re.I):
-            if i not in pages: pages.append(i)
-            found_section3 = True
         
-        # 섹션 3을 찾은 이후, 섹션 4(응급조치)가 나오기 전까지의 모든 페이지는 잠재적 데이터 페이지
-        elif found_section3:
-            if re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
-                if i not in pages: pages.append(i)
-                # [수정] 여기서 break하지 않고, 혹시 모를 다음 페이지의 표 연장선을 위해 한 페이지 정도 더 여유를 두거나 루프를 지속
-                # 주님 지침에 따라 '건너뛰기' 방지를 위해 break를 제거하거나 조건을 완화합니다.
-                # 여기서는 섹션 4가 확실히 시작된 페이지까지 포함하고 종료합니다.
-                break 
-            else:
-                if i not in pages: pages.append(i)
+        # 1. 섹션 3 시작 확인
+        if not found_section3:
+            if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성성분|성분|성분\s?및\s?함량|COMPOSITION|INGREDIENTS)', text, re.I):
+                found_section3 = True
+        
+        if found_section3:
+            pages.append(i)
+            # 🚨 [V17.3.1.12] 조기 종료 가드: 단순 '위험' 단어 등이 아니라, 행의 시작에서 섹션 번호가 명확할 때만 중단
+            # 'Page 4 / 10' 같은 텍스트에 의한 오탐 방지를 위해 행 단위 스캔
+            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            for line in lines:
+                # 페이지 번호(Page 4...)는 제외하고 진짜 섹션 제목인 경우만
+                if exit_pattern.match(line) and "Page" not in line:
+                    return sorted(list(set(pages)))[:6]
                 
-    # 안전장치: 너무 많은 페이지가 잡히지 않도록 최대 5페이지로 제한 (필요시 확장 가능)
-    return sorted(list(set(pages)))[:5]
+    return sorted(list(set(pages)))[:6]
+
+def extract_from_text_regex(page, log_func=None):
+    """[V17.3.2.10] 경계 최적화 엔진 (헤더 노이즈 차단 및 % 우선순위 강화)"""
+    try:
+        words = page.get_text("words")
+    except: return []
+    
+    # 1. 헤더 경계선 찾기 (노이즈 차단용)
+    header_y = 0
+    header_keywords = ["화학물질명", "구성성분", "CAS NO", "함유량", "INGREDIENTS", "COMPOSITION"]
+    for w in words:
+        if any(k in w[4] for k in header_keywords):
+            header_y = max(header_y, w[3]) # 헤더 단어의 하단 좌표
+            
+    lines = {}
+    cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])')
+    # 함량 패턴 (V17.3.2.10)
+    cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*[^\d]*[:~∼～-][^\d]*\s*[<>≤≥~∼～-]?\s?\d+(?:\.\d+)?)?\s*%?)')
+
+    for w in words:
+        # 헤더 위쪽의 데이터(NFPA 등)는 무시
+        if w[3] < header_y - 10: continue
+        
+        y_mid = int((w[1] + w[3]) / 2)
+        found_l = next((l_y for l_y in lines.keys() if abs(l_y - y_mid) < 5), None)
+        if found_l is None:
+            found_l = y_mid
+            lines[found_l] = {"cas": [], "text_parts": []}
+        
+        txt = w[4]
+        lines[found_l]["text_parts"].append((w[0], txt))
+        if cas_pattern.search(txt) and verify_cas_number(txt):
+            lines[found_l]["cas"].append(txt)
+
+    sorted_y = sorted(lines.keys())
+    logical_rows = []
+    current_row = None
+    
+    for y in sorted_y:
+        line = lines[y]
+        line_text = " ".join([t[1] for t in sorted(line["text_parts"], key=lambda x: x[0])])
+        
+        if line["cas"]:
+            if current_row: logical_rows.append(current_row)
+            current_row = {"cas_list": line["cas"], "combined_text": line_text, "y_start": y}
+        else:
+            if current_row: current_row["combined_text"] += " " + line_text
+            else: current_row = {"cas_list": [], "combined_text": line_text, "y_start": y}
+
+    if current_row: logical_rows.append(current_row)
+
+    for i in range(len(logical_rows)):
+        if not logical_rows[i]["cas_list"] and i + 1 < len(logical_rows):
+            logical_rows[i+1]["combined_text"] = logical_rows[i]["combined_text"] + " " + logical_rows[i+1]["combined_text"]
+            logical_rows[i]["combined_text"] = ""
+
+    found = []
+    for row in logical_rows:
+        if not row["cas_list"] or not row["combined_text"]: continue
+        
+        all_conts = cont_pattern.findall(row["combined_text"])
+        content = "미기재%"
+        if all_conts:
+            # 🚨 [V17.3.2.10] % 기호가 있는 것을 압도적으로 우선, 그 다음은 길이
+            content = _normalize_single_content(max(all_conts, key=lambda x: ('%' in x, len(x))))
+            
+        for cas in row["cas_list"]:
+            if log_func: log_func(f"  [경계 최적화] CAS {cas} -> 함량 {content}")
+            found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "경계 최적화"})
+            
+    return found
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
     try:
@@ -512,15 +597,22 @@ def _clean_content_odl(text):
 def parse_row_robust_v2(row, priority_col_idx=-1):
     """[V17.3.1.6] 열 우선순위(priority_col_idx) 반영 로직"""
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
+    # [V17.3.1.8] 8번 항목(노출기준) 오인 방지를 위한 차단 키워드
+    noise_keywords = {"twa", "stel", "pel", "tlv", "mg/m", "mg/㎥", "노출기준", "exposure"}
+    
     raw_cells = [c.text or "" for c in row.cells]
     cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in raw_cells}
+    
+    # 헤더이거나 노출기준 데이터라면 스킵
     if cell_lower_set.intersection(header_keywords): return None
+    if any(k in "".join(raw_cells).lower() for k in noise_keywords): return None
 
     # [V17.3.1.5] 열 우선순위(priority_col_idx) 반영 로직
     # cells를 (index, cell_text) 튜플 리스트로 변환
     indexed_cells = []
     for i, c in enumerate(row.cells):
-        text = re.sub(r'\s*\n\s*', ' __SPLIT__ ', (c.text or "")).strip()
+        # 🚨 [V17.3.2.1] 두 줄 방어: 줄바꿈을 분할이 아닌 '공백'으로 통합하여 범위(1~10%) 유실 방지
+        text = re.sub(r'\s*\n\s*', ' ', (c.text or "")).strip()
         if text: indexed_cells.append((i, text))
     
     if len(indexed_cells) < 2: return None
@@ -536,45 +628,43 @@ def parse_row_robust_v2(row, priority_col_idx=-1):
     strong_content, weak_content = None, None
 
     for col_idx, raw_cell in indexed_cells:
-        sub_cells = raw_cell.split('__SPLIT__')
-        
-        for c in sub_cells:
-            c = c.strip()
-            if not c: continue
+        # 🚨 [V17.3.2.1] 통합된 셀 텍스트를 그대로 처리 (분할 루프 제거)
+        c = raw_cell.strip()
+        if not c: continue
 
-            # CAS 번호 탐색
-            found_cas = re.findall(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', c)
-            if found_cas:
-                cas_list.extend(found_cas)
-                c_remain = re.sub(r'(?<![\d-])(\d+-\d+-\d+)(?![\d-])', '', c).strip()
-                if not c_remain: continue
-                c = c_remain
+        # 🚨 [V17.3.2.3] CAS 정규식 엄격화 (날짜 4-2-2 차단)
+        found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)
+        if found_cas:
+            cas_list.extend(found_cas)
+            c_remain = re.sub(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', '', c).strip()
+            if not c_remain: continue
+            c = c_remain
 
-            norm_c = _normalize_single_content(c)
-            if norm_c != "미기재%" and re.search(r'\d', norm_c):
-                # 🚨 [V17.3.1.2] 함유량 우선순위 서열 (주님 지침 반영)
-                is_percent = '%' in c
-                is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) 
-                is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
-                is_range = ('-' in c or '–' in c or '—' in c) and not re.search(r'[a-zA-Z가-힣]', c)
+        norm_c = _normalize_single_content(c)
+        if norm_c != "미기재%" and re.search(r'\d', norm_c):
+            # 🚨 [V17.3.1.2] 함유량 우선순위 서열 (주님 지침 반영)
+            is_percent = '%' in c
+            is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) 
+            is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
+            is_range = ('-' in c or '–' in c or '—' in c) and not re.search(r'[a-zA-Z가-힣]', c)
 
-                # 1. % 기호가 있거나 순수 숫자(99.0)면 무조건 최우선 (Strong Content)
-                if is_percent or is_pure_num:
-                    if not strong_content or is_percent:
-                        strong_content = _clean_content_odl(norm_c)
-                # 2. %는 없지만 확실한 부등호나 범위 기호가 있는 경우 (차선순위)
-                elif not strong_content and (is_symbol or is_range):
+            # 1. % 기호가 있거나 순수 숫자(99.0)면 무조건 최우선 (Strong Content)
+            if is_percent or is_pure_num:
+                if not strong_content or is_percent:
                     strong_content = _clean_content_odl(norm_c)
-                else:
-                    try:
-                        clean_val = float(re.sub(r'[^\d.]', '', norm_c))
-                        if clean_val <= 100 and not weak_content: 
-                            weak_content = _clean_content_odl(norm_c)
-                    except: pass
-                continue
+            # 2. %는 없지만 확실한 부등호나 범위 기호가 있는 경우 (차선순위)
+            elif not strong_content and (is_symbol or is_range):
+                strong_content = _clean_content_odl(norm_c)
+            else:
+                try:
+                    clean_val = float(re.sub(r'[^\d.]', '', norm_c))
+                    if clean_val <= 100 and not weak_content: 
+                        weak_content = _clean_content_odl(norm_c)
+                except: pass
+            continue
 
-            if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c) and col_idx != priority_col_idx:
-                name_candidates.append(c)
+        if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c) and col_idx != priority_col_idx:
+            name_candidates.append(c)
 
     if not cas_list: return None
 
@@ -596,52 +686,69 @@ def parse_row_robust_v2(row, priority_col_idx=-1):
         })
     return final_comps
 
-def extract_components_odl_robust(odl_doc, target_pages):
+def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None):
     components = []
     if not target_pages or not odl_doc or not odl_doc.pages: return components
 
     header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
     
+    # 텍스트 기반 추출을 위해 원본 문서 열기
+    try:
+        fitz_doc = fitz.open(pdf_path)
+    except:
+        fitz_doc = None
+
     for p_idx in target_pages:
         if p_idx >= len(odl_doc.pages): continue
+        
+        page_items = []
+        # 1. 테이블 기반 추출
         tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
         for table in tables:
-            # [V17.3.1.5] 테이블별 % 열 인덱스 사전 탐색 (정밀화)
             priority_col_idx = -1
             for row in table.rows:
                 row_texts = [c.text or "" for c in row.cells]
                 row_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts}
-                # 키워드가 존재하고, 그 중 하나라도 %를 포함해야 진짜 데이터 헤더로 인정
                 if row_lower_set.intersection(header_keywords):
-                    found_pct = False
                     for i, t in enumerate(row_texts):
                         if '%' in t:
                             priority_col_idx = i
-                            found_pct = True
                             break
-                    if found_pct: break # 진짜 함량 열이 있는 헤더를 찾았으면 중단
+                    if priority_col_idx >= 0: break
             
             for row in table.rows:
-                row_texts = [c.text or "" for c in row.cells]
-                print(f"DEBUG_ODL_ROW: {row_texts}") # [V17.3.1.6] ODL 원본 데이터 확인용
-                
                 parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
-                
-                # [V17.3.1.6] 행 분리 보정 (Row Buffer) 로직 주입
                 if parsed_comps:
-                    components.extend(parsed_comps)
-                elif components and components[-1]["content"] == "미기재%":
-                    # 현재 행에서 함량 데이터(숫자 등)만 있는지 탐색 (분리된 파편 행 대응)
+                    page_items.extend(parsed_comps)
+                elif page_items and page_items[-1]["content"] == "미기재%":
                     row_raw_texts = [c.text for c in row.cells if c.text]
                     for txt in row_raw_texts:
                         norm = _normalize_single_content(txt)
                         if norm != "미기재%" and re.search(r'\d', norm):
-                            # 직전 행의 성분들 중 함량이 비어있는 것들에 대해 소급 적용
-                            idx = len(components) - 1
-                            while idx >= 0 and components[idx]["content"] == "미기재%":
-                                components[idx]["content"] = norm
+                            idx = len(page_items) - 1
+                            while idx >= 0 and page_items[idx]["content"] == "미기재%":
+                                page_items[idx]["content"] = norm
                                 idx -= 1
                             break
+        
+        # 2. 텍스트 기반 보완 (좌표 기반 행 복원)
+        if fitz_doc:
+            text_comps = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func)
+            
+            # [V17.3.1.17] 최종 병합: ODL 결과에 Regex 보조장치의 함량을 덧씌우거나 누락 성분 추가
+            for tc in text_comps:
+                target_cas = tc["cas_no"]
+                existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
+                if existing_item:
+                    if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                        existing_item["content"] = tc["content"]
+                        existing_item["engine"] = "Regex-Recovery"
+                else:
+                    page_items.append(tc)
+                    
+        components.extend(page_items)
+
+    if fitz_doc: fitz_doc.close()
     return components
 
 def process_pdf(pdf_path, log_func=None):
@@ -677,24 +784,43 @@ def process_pdf(pdf_path, log_func=None):
     try:
         parser = PDFParser()
         odl_doc = parser.parse(pdf_path)
-        odl_components = extract_components_odl_robust(odl_doc, target_pages)
+        odl_components = extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=log_func)
     except Exception as e:
         if log_func: log_func(f" ⚠️ ODL 파싱 오류: {e}")
         odl_components = []
     
-    pure_odl_cas = sum(1 for c in odl_components if re.search(r'\d-\d', str(c.get("cas", "") or c.get("cas_no", ""))))
-    # 🚨 [패치 핵심 1] ODL 함량 유효성 검증 복구 (2.5 Flash 시대에 맞춰 필수)
-    valid_odl_contents = sum(1 for c in odl_components if str(c.get("content", "")) not in ["", "미기재%"])
+    # 🚨 [V17.3.1.10] ODL 추출 결과의 완전성 검증 (누락 체크)
+    # 텍스트 원본에 존재하는 CAS 번호 목록과 대조
+    expected_cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', section3_text)
+    # [V17.3.1.22] 진행률 판단 시에도 문서 원본(section3_text) 대조하여 오타 CAS 수용
+    unique_expected_cas = set(c for c in expected_cas_list if verify_cas_number(c, grounding_text=section3_text))
+    found_cas_set = set(str(c.get("cas_no", "")) for c in odl_components if verify_cas_number(str(c.get("cas_no", "")), grounding_text=section3_text))
     
-    # 🚨 ODL이 CAS와 함량을 모두 정상적으로 찾았을 때만 성공으로 인정 (스마트 폴백)
-    if pure_odl_cas > 0 and valid_odl_contents > 0:
-        if log_func: log_func(f" 🟢 ODL 정밀 추출 성공 ({len(odl_components)}건). AI 생략.")
+    is_omitted = any(cas not in found_cas_set for cas in unique_expected_cas)
+    valid_odl_contents = sum(1 for c in odl_components if str(c.get("content", "")) not in ["", "미기재%"])
+    all_have_content = (valid_odl_contents == len(odl_components)) if odl_components else False
+    
+    # 🚨 ODL+보조장치가 모든 CAS를 찾았고, 함량도 완벽할 때만 AI 생략
+    if not is_omitted and all_have_content and len(odl_components) > 0:
+        if log_func: log_func(f" 🔍 [Raw ODL Search] {len(odl_components)}건 발견 (보조장치 가동 전)")
+        # [Debug] ODL이 찾은 원본 리스트 출력
+        for idx, c in enumerate(odl_components, 1):
+            if log_func: log_func(f"   └─ {idx}. {c.get('cas_no')} | {c.get('content')} | {c.get('name')[:15]}")
+        
+        if log_func: log_func(f" 🟢 ODL+보조장치 정밀 추출 성공 ({len(odl_components)}건). AI 생략.")
         ai_res = {"구성성분": odl_components, "교정_사유": "ODL 정밀 추출 완료"}
         used_engine = "ODL-Regex"
         is_ai_extracted = False
     else:
-        if log_func: log_func(f" 🟡 ODL 탐지 0건 또는 함량 누락. AI 비전 스나이퍼({alias}) 투입!")
-        # 🚨 [패치 핵심 2] 프롬프트는 2.5 Flash의 파편화 인식에 대응하도록 재전달
+        reason_msg = "누락 감지" if is_omitted else "함량 미기재"
+        if not odl_components: reason_msg = "탐지 실패"
+        
+        if log_func: 
+            if is_omitted:
+                log_func(f" 🟡 ODL 추출 누락 (텍스트:{len(unique_expected_cas)} vs 추출:{len(found_cas_set)}). AI 비전 스나이퍼({alias}) 투입!")
+            else:
+                log_func(f" 🟡 ODL 결과 불완전 ({reason_msg}). AI 비전 스나이퍼({alias}) 투입!")
+        
         ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper, log_func)
         used_engine = "Gemini-2.5-Flash"
         is_ai_extracted = True
@@ -728,7 +854,9 @@ def process_pdf(pdf_path, log_func=None):
         doc_g.close()
     except: local_grounding_text += "\n" + str(section3_text)
     
-    refined_comps, has_invalid_cas = final_quality_control(components, local_grounding_text, is_ai=is_ai_extracted, log_func=log_func)
+    # 🚨 [V17.3.1.23] 특정 구역이 아닌 문서 전체(full_text_for_grounding)를 대조군으로 전달
+    grounding_pool = full_text_for_grounding if full_text_for_grounding else local_grounding_text
+    refined_comps, has_invalid_cas = final_quality_control(components, grounding_pool, is_ai=is_ai_extracted, log_func=log_func)
     
     comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
     if not comp_parts:
@@ -750,7 +878,7 @@ def process_pdf(pdf_path, log_func=None):
     res_obj = {
         "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
         "교정_사유": reason,
-        "신호등": "🟡" if has_invalid_cas or not product_name else "🟢",
+        "신호등": "🟡" if (has_invalid_cas or is_ai_extracted or not product_name) else "🟢",
         "used_engine": gui_engine_name
     }
     
@@ -760,59 +888,74 @@ def process_pdf(pdf_path, log_func=None):
 analyze_msds = process_pdf
 
 def self_test_regression():
-    print(f"--- [V{VERSION}] 엔진 자가 검증 시작 ---")
-    
-    # 1. 부등호 및 범위 표준화 테스트
-    test_cases = [
-        ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
-        ("0.01이내", "≤0.01%", "이내(Within) 변환 유실"),
-        ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
-        ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
-        ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),
-        ("≤ 0.1", "≤0.1%", "특수 부등호 및 공백 처리 실패"),
-        ("≥95%≤100%", "95~100%", "양방향 부등호(Full Range) 표준화 실패"),
-        ("1 ~ 5미만", "1~<5%", "한글 부등호 포함 범위 처리 실패"),
-        ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
-        ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
-        ("min. 99.5%", "≥99.5%", "min. 약어 표준화 실패"),
-        ("max 10", "≤10%", "max 약어 표준화 실패"),
-        ("99.0 <", ">99%", "일본식 후위 부등호 처리 실패"),
-        ("98.0 +%", "≥98%", "플러스(+) 기호 이상(More than) 처리 실패"),
-        ("(GR) 99.0 +% (EP) 98.0 +%", "≥98%", "복합 등급 함량 하한선 통합 실패"),
-        ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
-    ]
-    
-    # 2. 단위 및 노이즈 필터링 테스트 (Hallucination 방지)
-    noise_cases = [
-        ("77.08g", "미기재%", "단위(g) 환각 필터 작동 실패"),
-        ("100 mg/kg", "미기재%", "단위(mg/kg) 환각 필터 작동 실패"),
-        ("Ethylene Glycol 50-60%", "50~60%", "Shield-Inversion(텍스트 혼입) 처리 실패"),
-        ("95-100% (wt)", "95~100%", "부가 텍스트(wt) 처리 실패")
-    ]
-    
-    # 3. 특수 키워드 테스트
-    keyword_cases = [
-        ("Rem.", "Rem.%", "Rem. 키워드 표준화 실패"),
-        ("balance", "Rem.%", "balance 키워드 표준화 실패"),
-        ("잔량", "Rem.%", "한글 '잔량' 키워드 표준화 실패")
-    ]
-
-    all_tests = test_cases + noise_cases + keyword_cases
+    """[V17.3.2.11] 회귀 방지 자가 진단 테스트 하네스 (공간 로직 검증 포함)"""
+    print(f"\n--- [{VERSION}] 회귀 방지 자가 진단 시작 ---")
     fail_count = 0
     
-    for input_str, expected, msg in all_tests:
-        actual = _normalize_single_content(input_str)
-        if actual != expected:
-            print(f" [FAIL] 입력: '{input_str}' -> 결과: '{actual}' (기대값: '{expected}') | 사유: {msg}")
+    # 0. 공간 로직 테스트 (Mock PDF Data)
+    class MockPage:
+        def __init__(self, words): self.words = words
+        def get_text(self, mode): return self.words
+
+    print(f"[*] 공간 행 합성(Spatial Row Synthesis) 테스트 가동...")
+    spatial_cases = [
+        {
+            "name": "013_아이생각 패턴 (헤더노이즈 + 2줄 함량)",
+            "words": [
+                (10, 10, 50, 20, "NFPA 지수 (0~4 단계)"), 
+                (10, 50, 100, 60, "화학물질명"), (200, 50, 300, 60, "함유량"), (400, 50, 500, 60, "CAS NO"),
+                (200, 100, 250, 110, "40 이상 ~"), 
+                (200, 115, 250, 125, "50 % 미만"), 
+                (400, 120, 500, 130, "7732-18-5"), 
+            ],
+            "expect": {"7732-18-5": "40~50%"}
+        },
+        {
+            "name": "다중 CAS 한 줄 배치",
+            "words": [
+                (10, 100, 100, 110, "10-20%"), 
+                (400, 100, 500, 110, "101-01-1, 102-02-2")
+            ],
+            "expect": {"101-01-1": "10~20%", "102-02-2": "10~20%"}
+        }
+    ]
+
+    for tc in spatial_cases:
+        page = MockPage(tc["words"])
+        results = extract_from_text_regex(page)
+        res_map = {r["cas_no"]: r["content"] for r in results}
+        passed = True
+        for cas, expected_cont in tc["expect"].items():
+            if res_map.get(cas) != expected_cont:
+                print(f" [FAIL] {tc['name']} | CAS {cas}: 결과 '{res_map.get(cas)}' (기대값: '{expected_cont}')")
+                passed = False
+                fail_count += 1
+        if passed: print(f" [PASS] {tc['name']}")
+
+    # 1. CAS 검증기 테스트
+    print(f"[*] CAS 검증기 테스트 가동...")
+    cas_tests = [("13463-67-7", True), ("2014-12-16", False), ("7732-18-5", True)]
+    for c_str, expected in cas_tests:
+        if verify_cas_number(c_str) != expected:
+            print(f" [FAIL] CAS: {c_str} -> 기대값 {expected} 실패")
             fail_count += 1
-        else:
-            print(f" [PASS] '{input_str}' -> '{actual}'")
+        else: print(f" [PASS] CAS: {c_str}")
+
+    # 2. 함유량 정규화 테스트
+    print(f"[*] 함유량 정규화 테스트 가동...")
+    norm_cases = [("40 이상 ~ 50% 미만", "40~50%"), ("1 ~ 5미만", "1~<5%"), ("Rem.", "Rem.%"), ("100 mg/kg", "미기재%")]
+    for in_s, exp_s in norm_cases:
+        act_s = _normalize_single_content(in_s)
+        if act_s != exp_s:
+            print(f" [FAIL] 입력: '{in_s}' -> 결과: '{act_s}' (기대값: '{exp_s}')")
+            fail_count += 1
+        else: print(f" [PASS] '{in_s}' -> '{act_s}'")
 
     if fail_count > 0:
-        print(f"--- [!] 검증 실패: {fail_count}건의 오류 발견 ---")
+        print(f"\n--- [!] 검증 실패: {fail_count}건의 회귀 결함 발견 ---")
         sys.exit(1)
     else:
-        print(f"--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
+        print(f"\n--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
 
 if __name__ == "__main__":
     self_test_regression()
