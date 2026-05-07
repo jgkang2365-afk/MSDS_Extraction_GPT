@@ -388,29 +388,15 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
     return refined, has_invalid
 
 def find_section3_pages(doc):
-    """[V17.3.1.7] 섹션 3이 여러 페이지에 걸쳐 나타나는 경우를 대비하여 중단 없이 탐색"""
     pages = []
-    found_section3 = False
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # 섹션 3(구성성분) 탐지
         if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS)', text, re.I):
             if i not in pages: pages.append(i)
-            found_section3 = True
-        
-        # 섹션 3을 찾은 이후, 섹션 4(응급조치)가 나오기 전까지의 모든 페이지는 잠재적 데이터 페이지
-        elif found_section3:
-            if re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
-                if i not in pages: pages.append(i)
-                # [수정] 여기서 break하지 않고, 혹시 모를 다음 페이지의 표 연장선을 위해 한 페이지 정도 더 여유를 두거나 루프를 지속
-                # 주님 지침에 따라 '건너뛰기' 방지를 위해 break를 제거하거나 조건을 완화합니다.
-                # 여기서는 섹션 4가 확실히 시작된 페이지까지 포함하고 종료합니다.
-                break 
-            else:
-                if i not in pages: pages.append(i)
-                
-    # 안전장치: 너무 많은 페이지가 잡히지 않도록 최대 5페이지로 제한 (필요시 확장 가능)
-    return sorted(list(set(pages)))[:5]
+        if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
+            if i not in pages: pages.append(i)
+            break 
+    return pages
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
     try:
@@ -442,21 +428,15 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             raw_text += _get_sorted_and_normalized_text(page) + "\n"
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
-            # [V17.3.1.7] 3페이지 제한 제거 (주님 지침: 정확한 롤백 및 누락 방지)
-            if len(images) >= 6: break 
+            if len(images) >= 3: break
             
         doc.close()
         
         section3_text_only = raw_text
         start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
         if start_m:
-            # [V17.3.1.7] 섹션 4 탐지 시 finditer를 사용하여 '가장 마지막' 섹션 4 위치를 찾아 데이터 유실 차단
-            ends = list(re.finditer(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I))
-            if ends:
-                last_end = ends[-1]
-                section3_text_only = raw_text[start_m.start():start_m.end() + last_end.start()]
-            else:
-                section3_text_only = raw_text[start_m.start():]
+            end_m = re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I)
+            section3_text_only = raw_text[start_m.start():start_m.end() + end_m.start()] if end_m else raw_text[start_m.start():]
 
         return images, section3_text_only, pages 
     except Exception:

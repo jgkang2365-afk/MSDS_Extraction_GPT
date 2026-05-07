@@ -98,30 +98,191 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.1.6"
+VERSION = "18.0.0.0"
 
-# [V17.3.1.6] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
-MES_MASTER_MAP = {}
+def is_measurement_target(content_str):
+    """
+    [V18.0.0.0] 함유량 임계값(1%) 판정 로직
+    - 1% 단일값, 0~1% (이상/이하 포함) : True (측정 대상)
+    - <1%, 0~<1% (미만 포함) : False (측정 비대상)
+    """
+    if not content_str or "미기재" in content_str:
+        return True # 보수적 접근 (미기재는 일단 포함)
+    
+    if any(k in content_str for k in ["Rem", "잔량", "balance"]):
+        return True
+        
+    # 숫자 추출 (부동소수점 포함)
+    nums = re.findall(r'(\d+\.?\d*)', content_str)
+    if not nums:
+        return True
+        
+    try:
+        max_val = max(float(n) for n in nums)
+        
+        # 미만(<) 또는 '미만' 텍스트 포함 여부 확인
+        # [V18.0.0.0] 주님 지침: <1%, 0~<1%는 비대상
+        is_less_than = "<" in content_str or "미만" in content_str
+        
+        if max_val < 1:
+            return False
+        if max_val == 1 and is_less_than:
+            return False
+        
+        return True
+    except:
+        return True
+
+
+# [V18.0.0.0] 정밀 매핑 엔진 (SubstanceMatcher)
+class SubstanceMatcher:
+    """MES 마스터 데이터와 추출된 성분을 정밀하게 매핑하는 엔진"""
+    def __init__(self, master_list):
+        self.master_list = master_list
+        # 빠른 조회를 위한 CAS 맵 (1:N 대응 가능하도록 리스트로 저장)
+        self.cas_map = {}
+        for item in self.master_list:
+            cas_raw = str(item.get("CAS번호", "")).strip()
+            if not cas_raw: continue
+            # 다중 CAS 대응 (예: "NaOH,KOH" 또는 "123-45-6; 789-01-2")
+            for cas in re.split(r'[,;/\s]+', cas_raw):
+                cas = cas.strip()
+                if not cas: continue
+                if cas not in self.cas_map: self.cas_map[cas] = []
+                self.cas_map[cas].append(item)
+
+    def parse_twa(self, twa_str):
+        """TWA 문자열에서 숫자와 단위를 분리 추출"""
+        if not twa_str or twa_str == "-": return None, None
+        match = re.search(r'(\d+(?:\.\d+)?)\s*(ppm|㎎/㎥|mg/m3|mg/m³)', str(twa_str), re.I)
+        if match:
+            val = float(match.group(1))
+            unit = match.group(2).replace('㎎/㎥', 'mg/m3').replace('mg/m³', 'mg/m3').lower()
+            return val, unit
+        return None, None
+
+    def convert_twa(self, val, from_unit, to_unit, mw):
+        """분자량(MW)을 이용한 TWA 단위 환산 로직 (mg/m3 = ppm * MW / 24.45)"""
+        if not val or not mw or from_unit == to_unit: return val
+        try:
+            mw = float(mw)
+            if from_unit == "ppm" and to_unit == "mg/m3":
+                return (val * mw) / 24.45
+            elif from_unit == "mg/m3" and to_unit == "ppm":
+                return (val * 24.45) / mw
+        except: pass
+        return val
+
+    def calculate_score(self, source, target):
+        """
+        매핑 점수 계산 (가중치 적용)
+        source: {cas, name, twa_val, twa_unit, legal_names}
+        target: master_item (dict)
+        """
+        score = 0
+        master_cas_raw = str(target.get("CAS번호", ""))
+        master_name = str(target.get("물질명", ""))
+        master_alias = str(target.get("상용명", ""))
+        master_mw = target.get("분자량") or 0
+        
+        # 1. CAS Exact Match (100점)
+        if source['cas'] and source['cas'] in master_cas_raw:
+            score += 100
+            
+        # 2. Section 15 Legal Name Match (70점 - 주님 지침 핵심)
+        if source.get('legal_names'):
+            for ln in source['legal_names']:
+                if ln in master_name or ln in master_alias:
+                    score += 70
+                    break
+        
+        # 3. TWA Comparison (30점 - 분자량 정밀 환산)
+        if source.get('twa_val') and target.get("노출기준(TWA)"):
+            m_val, m_unit = self.parse_twa(target.get("노출기준(TWA)"))
+            if m_val:
+                # 단위가 다르면 환산 후 비교
+                src_val_converted = self.convert_twa(source['twa_val'], source['twa_unit'], m_unit, master_mw)
+                diff_ratio = abs(src_val_converted - m_val) / (m_val or 1)
+                if diff_ratio < 0.1: # 10% 이내 오차 시 일치로 간주
+                    score += 30
+                    
+        # 4. Name Similarity (20점)
+        if source['name'] and (source['name'] in master_name or master_name in source['name']):
+            score += 20
+            
+        return score
+
+    def find_matches(self, cas, name, twa_val=None, twa_unit=None, legal_names=None):
+        """임계점 이상의 모든 마스터 항목 반환 (1:N 매핑 지원)"""
+        source = {
+            "cas": cas, "name": name, 
+            "twa_val": twa_val, "twa_unit": twa_unit, 
+            "legal_names": legal_names or []
+        }
+        
+        candidates = []
+        # 성능을 위해 CAS가 일치하는 항목부터 우선 탐색
+        potential_items = self.cas_map.get(cas, self.master_list) if cas else self.master_list
+        
+        for item in potential_items:
+            score = self.calculate_score(source, item)
+            if score >= 80: # 확정 임계점
+                candidates.append((item, score))
+        
+        # [V18.4] 물질명(name) 기반 자동 병합 로직 (TWA가 달라도 명칭이 같으면 병합)
+        unique_results = []
+        seen_base_names = set()
+        
+        # 점수 순으로 후보 정렬
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        for item, score in candidates:
+            name = str(item.get("물질명", "")).strip()
+            twa = str(item.get("노출기준(TWA)", "")).strip()
+            
+            # [특수 처리] 금홍석 명칭 보정
+            if "금홍석" in name:
+                if "(광물성분진, 이산화티타늄)" not in name:
+                    name = "금홍석(광물성분진, 이산화티타늄)"
+            
+            # 주님 지침: 동일 명칭이면 TWA와 상관없이 하나로 병합 (선택권 불필요)
+            norm_base = name.replace(" ", "").lower()
+            if norm_base not in seen_base_names:
+                # 선택 창에는 여전히 TWA를 보여주어 참고하시게 함
+                display_name = name
+                if twa and twa != "-":
+                    display_name = f"{name} ({twa})"
+                    
+                unique_results.append({
+                    "name": name,
+                    "display_name": display_name,
+                    "score": score,
+                    "master_item": item
+                })
+                seen_base_names.add(norm_base)
+        
+        return unique_results
+
+# 전역 매처 인스턴스
+SUBSTANCE_MATCHER = None
 MES_MASTER_LOAD_ERROR = None
+
 try:
     master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
     if not os.path.exists(master_path):
-        MES_MASTER_LOAD_ERROR = f"마스터 데이터 파일이 존재하지 않습니다: {master_path}"
+        MES_MASTER_LOAD_ERROR = f"마스터 데이터 파일 없음: {master_path}"
     else:
         with open(master_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
-            if not items_list:
-                MES_MASTER_LOAD_ERROR = "JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다."
+            m_data = json.load(f)
+            master_list = m_data.get("master_list", [])
+            if master_list:
+                SUBSTANCE_MATCHER = SubstanceMatcher(master_list)
+                # 하위 호환성을 위한 구형 맵 유지
+                MES_MASTER_MAP = {str(i.get("CAS번호")): (i.get("물질명") or i.get("상용명")) for i in master_list if i.get("CAS번호")}
             else:
-                for info in items_list:
-                    cas_raw = str(info.get("CAS번호", "")).strip()
-                    cas = re.sub(r'^0+', '', cas_raw)
-                    std_name = info.get("물질명") or info.get("상용명")
-                    if cas and std_name:
-                        MES_MASTER_MAP[cas] = std_name.strip()
+                MES_MASTER_LOAD_ERROR = "마스터 리스트가 비어있습니다."
 except Exception as e:
-    MES_MASTER_LOAD_ERROR = f"마스터 DB 초기화 중 오류 발생: {e}"
+    MES_MASTER_LOAD_ERROR = str(e)
 
 
 
@@ -367,7 +528,8 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
                         "name": comp.get("name", ""), 
                         "content": cv, 
                         "page": page_val, 
-                        "engine": origin_engine
+                        "engine": origin_engine,
+                        "is_target": is_measurement_target(cv) # [V18.0.0.0] 1% 판정 결과 주입
                     }
                 else:
                     # [V17.3.1.6] 중복 데이터 발생 시 함량 우선순위 보정
@@ -388,29 +550,15 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
     return refined, has_invalid
 
 def find_section3_pages(doc):
-    """[V17.3.1.7] 섹션 3이 여러 페이지에 걸쳐 나타나는 경우를 대비하여 중단 없이 탐색"""
     pages = []
-    found_section3 = False
     for i in range(len(doc)):
         text = doc[i].get_text("text")
-        # 섹션 3(구성성분) 탐지
         if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|성분|함유|COMPOSITION|INGREDIENTS)', text, re.I):
             if i not in pages: pages.append(i)
-            found_section3 = True
-        
-        # 섹션 3을 찾은 이후, 섹션 4(응급조치)가 나오기 전까지의 모든 페이지는 잠재적 데이터 페이지
-        elif found_section3:
-            if re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
-                if i not in pages: pages.append(i)
-                # [수정] 여기서 break하지 않고, 혹시 모를 다음 페이지의 표 연장선을 위해 한 페이지 정도 더 여유를 두거나 루프를 지속
-                # 주님 지침에 따라 '건너뛰기' 방지를 위해 break를 제거하거나 조건을 완화합니다.
-                # 여기서는 섹션 4가 확실히 시작된 페이지까지 포함하고 종료합니다.
-                break 
-            else:
-                if i not in pages: pages.append(i)
-                
-    # 안전장치: 너무 많은 페이지가 잡히지 않도록 최대 5페이지로 제한 (필요시 확장 가능)
-    return sorted(list(set(pages)))[:5]
+        if pages and re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', text, re.I):
+            if i not in pages: pages.append(i)
+            break 
+    return pages
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
     try:
@@ -442,21 +590,15 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
             raw_text += _get_sorted_and_normalized_text(page) + "\n"
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
-            # [V17.3.1.7] 3페이지 제한 제거 (주님 지침: 정확한 롤백 및 누락 방지)
-            if len(images) >= 6: break 
+            if len(images) >= 3: break
             
         doc.close()
         
         section3_text_only = raw_text
         start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
         if start_m:
-            # [V17.3.1.7] 섹션 4 탐지 시 finditer를 사용하여 '가장 마지막' 섹션 4 위치를 찾아 데이터 유실 차단
-            ends = list(re.finditer(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I))
-            if ends:
-                last_end = ends[-1]
-                section3_text_only = raw_text[start_m.start():start_m.end() + last_end.start()]
-            else:
-                section3_text_only = raw_text[start_m.start():]
+            end_m = re.search(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I)
+            section3_text_only = raw_text[start_m.start():start_m.end() + end_m.start()] if end_m else raw_text[start_m.start():]
 
         return images, section3_text_only, pages 
     except Exception:
@@ -755,6 +897,10 @@ def process_pdf(pdf_path, log_func=None):
     }
     
     if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    
+    # [V18.0.0.0] 주님 지시: 1% 미만 필터링이 적용된 최종 리스트를 별도 보관 (매핑용)
+    res_obj["refined_list"] = refined_comps 
+    
     return res_obj
 
 analyze_msds = process_pdf
