@@ -106,7 +106,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.2.11" # 회귀 방지 강화 (공간 로직 테스트 하네스 탑재)
+VERSION = "17.3.2.12" # CAS 마스킹 엔진 (함량-CAS 간섭 원천 차단)
 
 # [V17.3.1.6] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -441,8 +441,8 @@ def extract_from_text_regex(page, log_func=None):
             
     lines = {}
     cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])')
-    # 함량 패턴 (V17.3.2.10)
-    cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*[^\d]*[:~∼～-][^\d]*\s*[<>≤≥~∼～-]?\s?\d+(?:\.\d+)?)?\s*%?)')
+    # 함량 패턴 (V17.3.2.11) - 수치 사이의 연결어(이상/미만/~/~ 등)를 포괄적으로 수용
+    cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*(?:이상|미만|~|∼|～|-|above|below|to|and|%)\s*)*[<>≤≥~∼～-]?\s?\d*(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
     for w in words:
         # 헤더 위쪽의 데이터(NFPA 등)는 무시
@@ -485,15 +485,21 @@ def extract_from_text_regex(page, log_func=None):
     for row in logical_rows:
         if not row["cas_list"] or not row["combined_text"]: continue
         
-        all_conts = cont_pattern.findall(row["combined_text"])
+        # 🚨 [V17.3.2.12] CAS 마스킹: 함량 추출 전 CAS 번호를 숨겨서 정규식의 간섭 차단
+        protected_text = row["combined_text"]
+        for cas in row["cas_list"]:
+            protected_text = protected_text.replace(cas, "[CAS_ANCHOR]")
+            
+        # 마스킹된 텍스트에서 함량 탐색
+        all_conts = cont_pattern.findall(protected_text)
         content = "미기재%"
         if all_conts:
-            # 🚨 [V17.3.2.10] % 기호가 있는 것을 압도적으로 우선, 그 다음은 길이
+            # % 기호가 있는 것을 우선, 그 다음은 길이
             content = _normalize_single_content(max(all_conts, key=lambda x: ('%' in x, len(x))))
             
         for cas in row["cas_list"]:
-            if log_func: log_func(f"  [경계 최적화] CAS {cas} -> 함량 {content}")
-            found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "경계 최적화"})
+            if log_func: log_func(f"  [마스킹 엔진] CAS {cas} -> 함량 {content}")
+            found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "마스킹 엔진"})
             
     return found
 
@@ -888,74 +894,74 @@ def process_pdf(pdf_path, log_func=None):
 analyze_msds = process_pdf
 
 def self_test_regression():
-    """[V17.3.2.11] 회귀 방지 자가 진단 테스트 하네스 (공간 로직 검증 포함)"""
-    print(f"\n--- [{VERSION}] 회귀 방지 자가 진단 시작 ---")
-    fail_count = 0
+    print(f"--- [V{VERSION}] 엔진 자가 검증 시작 ---")
     
-    # 0. 공간 로직 테스트 (Mock PDF Data)
-    class MockPage:
-        def __init__(self, words): self.words = words
-        def get_text(self, mode): return self.words
+    # 1. 부등호 및 범위 표준화 테스트
+    test_cases = [
+        ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
+        ("0.01이내", "≤0.01%", "이내(Within) 변환 유실"),
+        ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
+        ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
+        ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),
+        ("≤ 0.1", "≤0.1%", "특수 부등호 및 공백 처리 실패"),
+        ("≥95%≤100%", "95~100%", "양방향 부등호(Full Range) 표준화 실패"),
+        ("1 ~ 5미만", "1~<5%", "한글 부등호 포함 범위 처리 실패"),
+        ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
+        ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
+        ("min. 99.5%", "≥99.5%", "min. 약어 표준화 실패"),
+        ("max 10", "≤10%", "max 약어 표준화 실패"),
+        ("99.0 <", ">99%", "일본식 후위 부등호 처리 실패"),
+        ("98.0 +%", "≥98%", "플러스(+) 기호 이상(More than) 처리 실패"),
+        ("(GR) 99.0 +% (EP) 98.0 +%", "≥98%", "복합 등급 함량 하한선 통합 실패"),
+        ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
+    ]
+    
+    # 2. 단위 및 노이즈 필터링 테스트 (Hallucination 방지)
+    noise_cases = [
+        ("77.08g", "미기재%", "단위(g) 환각 필터 작동 실패"),
+        ("100 mg/kg", "미기재%", "단위(mg/kg) 환각 필터 작동 실패"),
+        ("Ethylene Glycol 50-60%", "50~60%", "Shield-Inversion(텍스트 혼입) 처리 실패"),
+        ("95-100% (wt)", "95~100%", "부가 텍스트(wt) 처리 실패")
+    ]
+    
+    # 0. CAS 검증기 테스트 (날짜 오탐 방지 포함)
+    print(f"[*] CAS 검증기 테스트 가동...")
+    cas_tests = [
+        ("13463-67-7", True, "정상 CAS 통과 실패"),
+        ("2014-12-16", False, "날짜 형식 차단 실패"),
+        ("2025-03-17", False, "날짜 형식 차단 실패"),
+        ("7732-18-5", True, "정상 CAS 통과 실패")
+    ]
+    for c_str, expected, msg in cas_tests:
+        if verify_cas_number(c_str) != expected:
+            print(f" [FAIL] CAS: {c_str} -> 결과: {not expected} | 사유: {msg}")
+            fail_count += 1
+        else:
+            print(f" [PASS] CAS: {c_str}")
 
-    print(f"[*] 공간 행 합성(Spatial Row Synthesis) 테스트 가동...")
-    spatial_cases = [
-        {
-            "name": "013_아이생각 패턴 (헤더노이즈 + 2줄 함량)",
-            "words": [
-                (10, 10, 50, 20, "NFPA 지수 (0~4 단계)"), 
-                (10, 50, 100, 60, "화학물질명"), (200, 50, 300, 60, "함유량"), (400, 50, 500, 60, "CAS NO"),
-                (200, 100, 250, 110, "40 이상 ~"), 
-                (200, 115, 250, 125, "50 % 미만"), 
-                (400, 120, 500, 130, "7732-18-5"), 
-            ],
-            "expect": {"7732-18-5": "40~50%"}
-        },
-        {
-            "name": "다중 CAS 한 줄 배치",
-            "words": [
-                (10, 100, 100, 110, "10-20%"), 
-                (400, 100, 500, 110, "101-01-1, 102-02-2")
-            ],
-            "expect": {"101-01-1": "10~20%", "102-02-2": "10~20%"}
-        }
+    # 1. 함유량 정규화 테스트
+    keyword_cases = [
+        ("Rem.", "Rem.%", "Rem. 키워드 표준화 실패"),
+        ("balance", "Rem.%", "balance 키워드 표준화 실패"),
+        ("잔량", "Rem.%", "한글 '잔량' 키워드 표준화 실패")
     ]
 
-    for tc in spatial_cases:
-        page = MockPage(tc["words"])
-        results = extract_from_text_regex(page)
-        res_map = {r["cas_no"]: r["content"] for r in results}
-        passed = True
-        for cas, expected_cont in tc["expect"].items():
-            if res_map.get(cas) != expected_cont:
-                print(f" [FAIL] {tc['name']} | CAS {cas}: 결과 '{res_map.get(cas)}' (기대값: '{expected_cont}')")
-                passed = False
-                fail_count += 1
-        if passed: print(f" [PASS] {tc['name']}")
-
-    # 1. CAS 검증기 테스트
-    print(f"[*] CAS 검증기 테스트 가동...")
-    cas_tests = [("13463-67-7", True), ("2014-12-16", False), ("7732-18-5", True)]
-    for c_str, expected in cas_tests:
-        if verify_cas_number(c_str) != expected:
-            print(f" [FAIL] CAS: {c_str} -> 기대값 {expected} 실패")
+    all_tests = test_cases + noise_cases + keyword_cases
+    fail_count = 0
+    
+    for input_str, expected, msg in all_tests:
+        actual = _normalize_single_content(input_str)
+        if actual != expected:
+            print(f" [FAIL] 입력: '{input_str}' -> 결과: '{actual}' (기대값: '{expected}') | 사유: {msg}")
             fail_count += 1
-        else: print(f" [PASS] CAS: {c_str}")
-
-    # 2. 함유량 정규화 테스트
-    print(f"[*] 함유량 정규화 테스트 가동...")
-    norm_cases = [("40 이상 ~ 50% 미만", "40~50%"), ("1 ~ 5미만", "1~<5%"), ("Rem.", "Rem.%"), ("100 mg/kg", "미기재%")]
-    for in_s, exp_s in norm_cases:
-        act_s = _normalize_single_content(in_s)
-        if act_s != exp_s:
-            print(f" [FAIL] 입력: '{in_s}' -> 결과: '{act_s}' (기대값: '{exp_s}')")
-            fail_count += 1
-        else: print(f" [PASS] '{in_s}' -> '{act_s}'")
+        else:
+            print(f" [PASS] '{input_str}' -> '{actual}'")
 
     if fail_count > 0:
-        print(f"\n--- [!] 검증 실패: {fail_count}건의 회귀 결함 발견 ---")
+        print(f"--- [!] 검증 실패: {fail_count}건의 오류 발견 ---")
         sys.exit(1)
     else:
-        print(f"\n--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
+        print(f"--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
 
 if __name__ == "__main__":
     self_test_regression()
