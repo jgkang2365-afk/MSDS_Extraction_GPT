@@ -15,6 +15,14 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv(override=True)
 
+# [V17.3.3.7] 윈도우 터미널 인코딩 노이즈 방어 (UTF-8 강제)
+if sys.platform == 'win32':
+    try:
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+    except: pass
+
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 api_keys_raw = [
@@ -230,8 +238,10 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
         if result:
             pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {pn_ai[:30]}")
-                return pn_ai.replace('\n', ' ').strip(), "Vision"
+                # [V17.3.3.6] Lite 모델의 레이블 혼입(용도: 등) 방어 강화
+                cleaned_pn = msds_utils_v3.clean_candidate(pn_ai)
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {cleaned_pn[:30]}")
+                return cleaned_pn, "Vision"
     except Exception as e:
         pass
     return "", "실패"

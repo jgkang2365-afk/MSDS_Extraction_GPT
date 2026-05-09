@@ -86,15 +86,30 @@ def format_content(content, log_callback=None):
 def clean_candidate(text):
     if not text: return ""
     text = unicodedata.normalize('NFKC', text)
-    prefixes = [r'^제품\s*명\s*[:：]\s*', r'^물질\s*명\s*[:：]\s*', r'^상호명\s*[:：]\s*']
+    # [V4.1] '용도', '사용' 등 불필요한 레이블 노이즈 정밀 제거 추가
+    prefixes = [
+        r'^제품\s*명\s*[:：]\s*', r'^물질\s*명\s*[:：]\s*', r'^상호명\s*[:：]\s*',
+        r'^품명\s*[:：]\s*', r'^용도\s*[:：]\s*', r'^사용\s*[:：]\s*'
+    ]
     for p in prefixes: text = re.sub(p, '', text, flags=re.I)
+    # 선두의 특수기호 및 공백 제거
     text = re.sub(r'^[ \t:：·\-\.\s\(\)>【】\[\]]+', '', text)
     return text.strip()
 
 def normalize_text(text):
+    """[V4.1] 유니코드 정규화 및 중점(·) 등 노이즈 문자 치환"""
+    if not text: return ""
     try:
+        # 1. NFKC 정규화 (전각 -> 반각, 유사 기호 통합)
         t = unicodedata.normalize("NFKC", text)
-        replacements = {"∼": "~", "～": "~", "％": "%", "－": "-", "：": ":"}
-        for src, dst in replacements.items(): t = t.replace(src, dst)
+        
+        # 2. 인코딩 깨짐으로 오해받는 특수 중점 및 노이즈 치환
+        replacements = {
+            "∼": "~", "～": "~", "％": "%", "－": "-", "：": ":",
+            "·": " ", "・": " ", "•": " ", "": " " # 불렛 및 중점을 공백으로 치환
+        }
+        for src, dst in replacements.items(): 
+            t = t.replace(src, dst)
+            
         return t.strip()
     except Exception: return text
