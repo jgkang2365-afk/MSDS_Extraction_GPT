@@ -439,42 +439,72 @@ def find_section3_pages(doc):
 cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
 cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*(?:이상|미만|~|∼|～|-|above|below|to|and|%)\s*)*[<>≤≥~∼～-]?\s?\d*(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
-def extract_from_text_regex(table_rows, log_func=None):
-    """[V17.3.2.27] ODL 파싱 실패 시 정규식 기반 텍스트 추출 (보조장치)"""
+def extract_from_text_regex(page, log_func=None):
+    """[V17.3.3.3] Logical Row Synthesis: 2D 좌표 기반 행 복원 및 CAS 앵커링 추출"""
     if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
     found = []
     
-    for row in table_rows:
-        if not row["cas_list"] or not row["combined_text"]: continue
+    try:
+        # 1. 모든 단어를 좌표와 함께 추출
+        words = page.get_text("words") # (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+        if not words: return []
         
-        # [V17.3.2.25] CAS 마스킹: 함량 추출 전 CAS 번호를 숨겨서 정규식의 간섭 차단
-        protected_text = row["combined_text"]
-        for cas in row["cas_list"]:
-            protected_text = protected_text.replace(cas, "[CAS_ANCHOR]")
+        # 2. Y좌표 기준으로 단어 그룹화 (행 복원)
+        words.sort(key=lambda w: (w[1], w[0])) # y0, x0 순 정렬
+        
+        logical_rows = []
+        if words:
+            current_row_words = [words[0]]
+            for i in range(1, len(words)):
+                prev_w = words[i-1]
+                curr_w = words[i]
+                
+                # Y좌표 차이가 3.0 이하이면 동일 행으로 간주 (임계값 조절 가능)
+                if abs(curr_w[1] - prev_w[1]) <= 3.0:
+                    current_row_words.append(curr_w)
+                else:
+                    # 행 종료 및 정렬
+                    current_row_words.sort(key=lambda w: w[0]) # X좌표 순 정렬
+                    row_text = " ".join([w[4] for w in current_row_words])
+                    cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
+                    if cas_list:
+                        logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
+                    current_row_words = [curr_w]
             
-        # [V17.3.2.27] 괄호 내 노이즈 배제 원칙 강화
-        all_conts = cont_pattern.findall(protected_text)
-        content = "미기재%"
-        if all_conts:
-            # 괄호 밖에 있는 깨끗한 후보군 추출
-            outside_conts = []
-            for c in all_conts:
-                # 텍스트 내에서 해당 함량의 위치를 찾고, 그 주변이 괄호로 감싸여 있는지 확인
-                start_idx = protected_text.find(c)
-                prefix = protected_text[:start_idx]
-                suffix = protected_text[start_idx + len(c):]
-                # 열린 괄호가 닫힌 괄호보다 많으면 괄호 내부로 간주
-                if prefix.count('(') > prefix.count(')'):
-                    continue
-                outside_conts.append(c)
-            
-            target_list = outside_conts if outside_conts else all_conts
-            content = _normalize_single_content(target_list[-1])
-            
-        for cas in row["cas_list"]:
-            if log_func: log_func(f"  [마스킹 엔진] CAS {cas} -> 함량 {content}")
-            found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "마스킹 엔진"})
-            
+            # 마지막 행 처리
+            if current_row_words:
+                current_row_words.sort(key=lambda w: w[0])
+                row_text = " ".join([w[4] for w in current_row_words])
+                cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
+                if cas_list:
+                    logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
+
+        # 3. 마스킹 및 함량 추출 (기존 로직 유지)
+        for row in logical_rows:
+            protected_text = row["combined_text"]
+            for cas in row["cas_list"]:
+                protected_text = protected_text.replace(cas, "[CAS_ANCHOR]")
+                
+            all_conts = cont_pattern.findall(protected_text)
+            content = "미기재%"
+            if all_conts:
+                outside_conts = []
+                for c in all_conts:
+                    start_idx = protected_text.find(c)
+                    prefix = protected_text[:start_idx]
+                    if prefix.count('(') > prefix.count(')'): continue
+                    outside_conts.append(c)
+                
+                target_list = outside_conts if outside_conts else all_conts
+                content = _normalize_single_content(target_list[-1])
+                
+            for cas in row["cas_list"]:
+                if log_func: log_func(f"   [Regex-Recovery] CAS {cas} -> 함량 {content} (신뢰도: 고)")
+                found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "Regex-Recovery"})
+
+    except Exception as e:
+        if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
+        
     return found
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
