@@ -988,12 +988,21 @@ class SMUGUI(QMainWindow):
             self.log_view.append(f"[{timestamp}] {message}")
             self.log_view.ensureCursorVisible() # 자동 스크롤
             
-        # [무결점] 터미널 출력 시 cp949 인코딩 오류 방지 (이모지 등 필터링)
+        # [무결점] 터미널 출력 시 cp949 인코딩 오류 방지 (이모지 필터링 및 텍스트 태그 변환)
         try:
-            safe_msg = str(message).encode('cp949', errors='replace').decode('cp949')
+            # 터미널용 텍스트 변환 맵
+            tag_map = {
+                "🚀": "[START]", "✅": "[OK]", "❌": "[FAIL]", 
+                "⚠️": "[WARN]", "🎯": "[TARGET]", "🔍": "[SEARCH]",
+                "🟢": "[PASS]", "🟡": "[CHECK]", "🔴": "[ERROR]", "🔵": "[INFO]"
+            }
+            terminal_msg = str(message)
+            for emoji, tag in tag_map.items():
+                terminal_msg = terminal_msg.replace(emoji, tag)
+            
+            safe_msg = terminal_msg.encode('cp949', errors='replace').decode('cp949')
             print(f"[*] {safe_msg}")
         except:
-            # 최악의 경우 아스키 문자만 출력
             print(f"[*] {str(message).encode('ascii', errors='replace').decode('ascii')}")
 
 
@@ -2175,6 +2184,11 @@ class SMUGUI(QMainWindow):
                 if "[AUTO-PASS]" in raw_rel: traffic_val = "🟢"
                 elif "[AI-FIXED]" in raw_rel: traffic_val = "🟡"
                 else: traffic_val = "🔴"
+            
+            # [V17.3.3.2] 텍스트 형 신호등(green/yellow) 수신 시 이모지로 변환
+            if str(traffic_val).lower() == "green": traffic_val = "🟢"
+            elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
+            elif str(traffic_val).lower() == "red": traffic_val = "🔴"
             
             traffic_emoji = traffic_val[0] if traffic_val else "🔴"
             

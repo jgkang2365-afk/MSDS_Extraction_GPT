@@ -113,7 +113,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.2.30" # [V17.3.2.30] 프롬프트 관리 폴더(prompts/) 도입 버전
+VERSION = "17.3.3.2" # [V17.3.3.2] 하이브리드 안정화 및 GUI 동기화 강화 버전
 
 def load_prompt(prompt_type, version):
     """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
@@ -869,7 +869,8 @@ def process_pdf(pdf_path, log_func=None):
         "used_engine": gui_engine_name
     }
     
-    if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 소요시간: {time.time()-start_time:.2f}초)")
+    traffic_light = res_obj.get("신호등", "⚪")
+    if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 신호등: {traffic_light}, 소요시간: {time.time()-start_time:.2f}초)")
     return res_obj
 
 analyze_msds = process_pdf
