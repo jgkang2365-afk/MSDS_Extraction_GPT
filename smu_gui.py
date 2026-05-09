@@ -64,6 +64,10 @@ class PDFPreviewPanel(QScrollArea):
 
     def load_pdf(self, file_path):
         """[완전 해결] PNG 바이너리 변환 로드로 백지 현상 원천 차단"""
+        # [V17.3.2.11] 동일 파일 중복 로드 방지 (스크롤 튐 현상 해결)
+        if self.current_pdf_path == file_path:
+            return
+
         for i in reversed(range(self.layout.count())):
             item = self.layout.itemAt(i)
             if item.widget(): item.widget().deleteLater()
@@ -591,7 +595,10 @@ class ValidationWorker(QThread):
                     elif is_permit: prefix = "[허가]"
                     elif is_spec and not is_work: prefix = "[특검]"
 
-                    c_str = f"({range_val})" if range_val else ""
+                    # [V17.3.2.18] 함량 누락 시 '미기재%' 표시 형식 통합
+                    if not range_val or str(range_val).strip() == "":
+                        range_val = "미기재%"
+                    c_str = f"({range_val})"
                     
                     # [V9.1] 1차 결과: [접두사]물질명[CAS(함유량%)] 형식 엄수
                     res_1st_list.append(f"{prefix}{clean_name}[{cas}{c_str}]")
@@ -787,6 +794,7 @@ class SMUGUI(QMainWindow):
         self.results = []
         self.cache = {} 
         self.sidebar_slim = False
+        self.last_selected_row = -1 # [NEW] 동일 행 내 열 이동 시 미리보기 초기화 방지용
         self.init_ui()
         
         # [V7.5] 동기화 무결성 확보를 위한 초기화 순서 재배치
@@ -1290,6 +1298,13 @@ class SMUGUI(QMainWindow):
         """
         [V15.8.8] 테이블 행 클릭 시 해당 성분이 위치한 PDF 페이지로 자동 이동
         """
+        # [V17.3.2.11] 동일 행 내에서 이동 시 페이지 점프 방지 (지연 업데이트 체크)
+        if hasattr(self, 'last_selected_row') and self.last_selected_row == row:
+            return
+        
+        # [V17.3.2.11] 다음 이벤트 루프에서 행 번호 업데이트 (sync_pdf_preview와의 간섭 방지)
+        QTimer.singleShot(0, lambda: setattr(self, 'last_selected_row', row))
+
         try:
             target_pdf_path_item = self.table.item(row, COL_IDX_FILEPATH)
             if not target_pdf_path_item: return
@@ -1321,6 +1336,13 @@ class SMUGUI(QMainWindow):
         curr_row = self.table.currentRow()
         if curr_row < 0: return
         
+        # [V17.3.2.11] 동일 행 내 이동 시 중복 로드 방지 (지연 업데이트 체크)
+        if hasattr(self, 'last_selected_row') and self.last_selected_row == curr_row:
+            return
+        
+        # [V17.3.2.11] 다음 이벤트 루프에서 행 번호 업데이트
+        QTimer.singleShot(0, lambda: setattr(self, 'last_selected_row', curr_row))
+
         # 7번 열(파일명) 추출
         fn_item = self.table.item(curr_row, 7)
         if not fn_item: return

@@ -63,20 +63,27 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
 def verify_cas_number(cas_string, grounding_text=None):
-    """[V17.3.1.21] CAS 번호 검증 (Grounding 우선 원칙: 문서에 적혀 있으면 체크섬 무관하게 통과)"""
+    """[V17.3.2.25] CAS 번호 검증 (Grounding 우선 원칙: 문서에 적혀 있으면 체크섬 무관하게 통과)"""
     if not cas_string: return False
     
     # 🚨 [V17.3.2.2] 날짜 형식(YYYY-MM-DD)인 경우 CAS로 인정하지 않음 (오탐 방지)
     if re.match(r'^\d{4}-\d{2}-\d{2}$', cas_string):
         return False
 
-    # 🚨 [V17.3.1.21] 문서 원본(Grounding)에 이 번호가 그대로 있다면, 오타가 있어도 수용
+    # 🚨 [V17.3.2.25] 문서 원본(Grounding)에 이 번호가 그대로 있다면, 오타가 있어도 수용
     if grounding_text and cas_string in grounding_text:
         return True
         
     # 🚨 [중요] '영업비밀'이나 '-' 등은 검증을 통과시켜야 하므로 예외 처리
-    if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-"]):
+    if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-", "해당없음", "None"]):
         return True
+        
+    # 🚨 [V17.3.2.28] 문서 원본(Grounding) 대조 시 공백 제거 후 비교 (64742 - 54 - 7 대응)
+    if grounding_text:
+        clean_cas = cas_string.replace(" ", "")
+        clean_grounding = grounding_text.replace(" ", "")
+        if clean_cas in clean_grounding:
+            return True
         
     # 순수 숫자와 하이픈만 추출
     clean_cas = re.sub(r'[^0-9-]', '', cas_string).strip()
@@ -94,7 +101,7 @@ def verify_cas_number(cas_string, grounding_text=None):
         return False
 
 def _get_sorted_and_normalized_text(page):
-    """[V17.3.1.6] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    """[V17.3.2.25] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
     blocks = page.get_text("blocks")
     # y좌표 -> x좌표 순으로 정렬 (읽기 순서)
     blocks.sort(key=lambda b: (b[1], b[0]))
@@ -106,9 +113,48 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.2.12" # CAS 마스킹 엔진 (함량-CAS 간섭 원천 차단)
+VERSION = "17.3.2.30" # [V17.3.2.30] 프롬프트 관리 폴더(prompts/) 도입 버전
 
-# [V17.3.1.6] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
+def load_prompt(prompt_type, version):
+    """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
+    mapping = {
+        "vision_extractor": f"prompt_vision_extractor_{version}.txt",
+        "product_name": f"prompt_product_name_{version}.txt"
+    }
+    filename = mapping.get(prompt_type)
+    if not filename: raise ValueError(f"알 수 없는 프롬프트 타입: {prompt_type}")
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    # 🔍 탐색 순서 정의 (최신은 루트, 구버전은 archive)
+    search_paths = [
+        os.path.join(base_dir, filename),             # 1. 루트 (최신 버전 위치)
+        os.path.join(base_dir, "archive", filename)   # 2. 아카이브 폴더 (구버전 보관)
+    ]
+    
+    for path in search_paths:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read().strip()
+                
+    # 모든 경로에서 실패 시
+    print(f"\n[Version Lock Error] 프롬프트 파일({filename})을 찾을 수 없습니다.")
+    print(f"   현재 엔진 요구 버전: {version}")
+    print(f"   탐색한 경로:")
+    for p in search_paths:
+        print(f"     - {p}")
+    sys.exit(1)
+
+# 프롬프트 초기화 (지휘 체계 단일화)
+try:
+    VISION_EXTRACTOR_PROMPT = load_prompt("vision_extractor", VERSION)
+    PRODUCT_NAME_PROMPT = load_prompt("product_name", VERSION)
+    print(f"[*] 프롬프트 엔진 통폐합 및 버전 동기화 완료 (버전: {VERSION})")
+except Exception as e:
+    print(f"[ERROR] 프롬프트 로드 중 치명적 오류: {e}")
+    sys.exit(1)
+
+# [V17.3.2.25] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
 MES_MASTER_LOAD_ERROR = None
 try:
@@ -178,13 +224,7 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
-    prompt = """
-    너는 MSDS의 제품명을 정확히 확정 짓는 전문 판독관이다. 
-    1. [구역 격리]: "1. 화학제품과 회사에 관한 정보" 항목을 찾고 그 아래부터 "2. 유해성·위험성" 전까지만 읽어라.
-    2. [핵심 타격]: '가. 제품명', '상품명', '품명' 등의 레이블이 가리키는 [순수 제품명]만 정확히 추출하라. 
-    불필요한 텍스트는 제거하고 오직 '제품명' 문자열만 딱 한 줄로 출력하라. 못 찾겠으면 아무것도 출력하지 마라.
-    """
-    payload = {"contents": [{"parts": [{"text": prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
+    payload = {"contents": [{"parts": [{"text": PRODUCT_NAME_PROMPT}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
         result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
         if result:
@@ -196,77 +236,27 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
         pass
     return "", "실패"
 
-def load_system_prompt():
-    prompt_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'prompt_system_v5.txt')
-    try:
-        with open(prompt_path, 'r', encoding='utf-8') as f:
-            return f.read().strip()
-    except Exception:
-        return "당신은 MSDS 데이터 추출 전문가입니다."
-
-SYSTEM_PROMPT_TEXT = load_system_prompt()
-
-# 🚨 [수술 1] 찌꺼기 프롬프트 정리 (정책 동기화: CAS 없으면 추출 거부)
-PROMPT_GEMINI_FLASH = """
-당신은 1차 고속 시각 추출기(Sniper)입니다. 첨부된 MSDS 표 이미지만 보고 데이터를 추출하세요.
-
-[🔥 1차 엔진 절대 원칙]
-1. 🚨 CAS 번호 정밀 판독: 숫자 하나라도 틀리면 환각으로 간주되어 폐기된다. 6과 8, 0과 8 등을 극도로 주의해서 판독하라.
-2. 유효한 CAS 번호(형식: 숫자-숫자-숫자)가 없는 성분(영업비밀, -, 빈칸 등)은 억지로 추출하지 말고 무조건 행 전체를 제외하라.
-3. 다중 CAS 단일 문자열화: 한 셀에 여러 CAS가 있다면 슬래시(/)로 묶어서 추출하라.
-4. 부등호 및 텍스트 보존: 원본에 '이내', '이하', '미만' 등의 텍스트가 있다면 이를 임의로 수정하거나 생략하지 말고 보이는 그대로 추출하라.
-5. 함유량 포맷: 모든 함유량 뒤에는 반드시 '%'를 붙여라.
-"""
-
-PROMPT_GPT_FALLBACK = """당신은 파괴된 표를 긁어모으는 2차 불도저(Bulldozer)입니다. 첨부된 이미지의 표에서 데이터를 '눈에 보이는 그대로' 단순 무식하게 복사하세요. 
-
-[🔥 불도저 단순 추출 4대 원칙]
-1. 생각 금지: % 기호 붙이기, 부등호 교정, '잔량'을 'Rem.%'로 바꾸기 등 어떠한 가공이나 번역도 하지 마세요. 후속 엔진이 알아서 합니다. 표에 적힌 글씨를 그대로 타이핑하세요.
-2. 영업비밀 및 공란 통과: CAS 번호 칸에 번호가 없고 '영업비밀', '-', '비공개' 등이 적혀있다면, 버리지 말고 그 글자를 그대로 `cas_no`에 적어오세요.
-3. 다중 CAS 통합: 한 칸에 CAS 번호가 여러 개 뭉쳐 있으면 행을 나누지 말고, 띄어쓰기나 슬래시(/)로 묶어서 한 줄로 다 퍼 오세요.
-4. 페이지 트래킹: 각 성분이 발견된 이미지의 실제 페이지 번호를 'page' 필드에 기재하세요.
-
-[🔥 2차 엔진 절대 원칙]
-1. 공간 지각 복구: 표의 선이 투명하거나, 미세하게 틀어졌거나, 비대칭 다중 병합이 있더라도 표의 전체적인 맥락을 입체적으로 읽어 CAS와 함유량을 매칭하세요.
-2. 🚨 절대 폐기 및 시각적 팩트 주의: 표에 명시된 숫자로 된 CAS 번호(형식: 숫자-숫자-숫자)만 추출하라. 화학 물질명이나 문맥을 보고 네가 아는 화학 지식을 동원하여 실존하는 CAS 번호를 유추하거나 지어내는(Hallucination) 행위는 절대 금지한다. 눈에 명확히 보이는 번호가 없거나 '영업비밀', '비공개', '-' 등이라면 가차 없이 그 행을 추출 대상에서 폐기하라.
-3. 🚨 포맷 통일 및 환각 방지: 추출된 함유량 숫자 뒤에는 반드시 '%' 기호를 붙여라. 단, 원본 표에 함유량이 숫자가 아닌 '잔량', '나머지', 'balance', '적량' 등으로 표기되어 있다면, 절대 본인 마음대로 숫자(예: 10%)를 지어내거나 계산해서 적지 마라. 무조건 영문 대소문자를 맞춰 'Rem.%' 라는 문자열 그대로 출력하라.
-   🚨 부등호 훼손 절대 금지: 원본 표의 함유량에 부등호(<, ≤)나 텍스트(미만, 이하)가 포함되어 있다면, 이를 절대 물결표(~) 범위 기호로 바꾸지 마라.
-   [올바른 예시]: 원본이 '<1' 이면 '<1%'로 출력, 원본이 '≤1' 이면 '≤1%'로 출력.
-   [잘못된 예시]: 원본이 '<1' 인데 '~1%'로 변조하여 출력 (절대 금지).
-
-4. 🚨 페이지 트래킹: 각 성분이 발견된 페이지 번호를 'page' 필드에 기재하라.
- 
- JSON 출력 포맷:
- {
-   "구성성분": [
-     {"cas_no": "123-45-6 / 영업비밀", "content": "10 미만", "page": "3"}
-   ],
-   "교정_사유": "단순 무식 원본 텍스트 복사 및 심층 복구 완료"
- }"""
-
 def _normalize_single_content(content_str):
-    """[V17.3.0.4] 부등호 정밀 복구 및 단위(g) 환각 방지"""
+    """[V17.3.2.25] 부등호 정밀 복구 및 단위(g) 환각 방지"""
     raw = str(content_str).strip()
     if not raw: return "미기재%"
 
-    # 🚨 [V17.3.0.4] 단위(g, mg 등)가 포함된 수치는 함유량으로 인정하지 않음 (환각 방지)
-    # 단, % 기호가 있거나 Rem, Balance 같은 키워드는 허용
+    # 🚨 [V17.3.2.25] 단위(g, mg 등)가 포함된 수치는 함유량으로 인정하지 않음 (환각 방지)
     if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
         return "미기재%"
 
     # 1. 기초 정규화 (공백 제거 및 전각 -> 반각)
     v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
-    # [V17.3.1.0] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
+    # [V17.3.2.25] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
     v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
     
-    # 🚨 [V17.3.1.1] 후위 부등호 감지 및 반전 (일본식 표현 대응: 99 < -> >99)
-    # 숫자 뒤에 부등호가 오는지 체크
+    # 🚨 [V17.3.2.25] 후위 부등호 감지 및 반전 (일본식 표현 대응: 99 < -> >99)
     has_trailing_less = re.search(r'\d\s*(<|미\s*[만맊먄]|below|less)$', v, re.I)
     has_trailing_more = re.search(r'\d\s*(>|초\s*과|more|over)$', v, re.I)
     has_trailing_le = re.search(r'\d\s*(≤|이\s*[하핚내]|up\s*to|max)$', v, re.I)
     has_trailing_ge = re.search(r'\d\s*(≥|이\s*상|above|from|min|\+)$', v, re.I)
 
-    # 🚨 [V17.3.0.5] 전역 키워드 스캔: 기호 정밀 구분
+    # 🚨 [V17.3.2.25] 전역 키워드 스캔: 기호 정밀 구분
     sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
     sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min|\+)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
 
@@ -285,15 +275,13 @@ def _normalize_single_content(content_str):
     nums = re.findall(r'(\d+\.?\d*|\.\d+)', v)
     if not nums: return raw # 숫자 없으면 원본 반환
 
-    # 🚨 [V17.3.1.1] 후위 부등호 감지 및 반전 (일본식 표현 대응)
-    # 단일 수치(len(nums)==1)일 때만 수치 뒤 부등호를 반전시켜 해석
+    # 🚨 [V17.3.2.25] 후위 부등호 감지 및 반전 (일본식 표현 대응)
     if len(nums) == 1:
-        if has_trailing_less: sym_less, sym_more = "", ">"
-        elif has_trailing_le: sym_less, sym_more = "", "≥"
-        elif has_trailing_more: sym_less, sym_more = "<", ""
-        elif has_trailing_ge: sym_less, sym_more = "≤", ""
+        if re.search(r'\d\s*<$', v): sym_less, sym_more = "", ">"
+        elif re.search(r'\d\s*>$', v): sym_less, sym_more = "<", ""
+        elif re.search(r'\d\s*≤$', v): sym_less, sym_more = "", "≥"
+        elif re.search(r'\d\s*≥$', v): sym_less, sym_more = "≤", ""
     else:
-        # 범위형일 때는 후위 부등호가 반전 대상이 아님
         pass
 
     # 4. 수치 추출 및 부등호 결합
@@ -303,7 +291,7 @@ def _normalize_single_content(content_str):
             if f1 > f2: f1, f2 = f2, f1
             n1_s, n2_s = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
             
-            # [V17.3.1.2] 사용자 요청: 복수 수치가 모두 '이상' 기호(+)와 결합된 경우, 최솟값 기준 단일 '이상'으로 통합
+            # [V17.3.2.25] 사용자 요청: 복수 수치가 모두 '이상' 기호(+)와 결합된 경우, 최솟값 기준 단일 '이상'으로 통합
             if sym_more and not sym_less and ("+" in v or "min" in v.lower()):
                 return f"{sym_more}{n1_s}%"
 
@@ -326,32 +314,53 @@ def _normalize_single_content(content_str):
     return "미기재%"
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
-    """[V17.3.1.6] Fuzzy Shield 3단계 적용 Grounding"""
+    """[V17.3.2.25] Fuzzy Shield 3단계 적용 Grounding"""
     refined_dict = {}  
     has_invalid = False
     norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
     
     for comp in components:
         raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
-        cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', raw_cas_field)
-        
-        if not cas_list: continue
-
         raw_content = str(comp.get("content", "")).strip()
+        
+        # 🚨 [V17.3.2.29] 후처리 보정 Rule (Rule 1, 2, 4 통합 적용)
+        # Rule 4: 하나라도 유효한 CAS가 섞여 있는지 정규식으로 판별
+        has_any_valid_cas = bool(re.search(r'\d{2,7}-\d{2}-\d', raw_cas_field))
+        
+        if not has_any_valid_cas:
+            # Rule 1: 무효 CAS(해당없음, 영업비밀 등)의 경우 함유량 강제 제거 (GUI AUTO-PASS 보완)
+            raw_content = ""
+        elif not raw_content or raw_content.strip() in ["-", "", "None", "N/A"]:
+            # Rule 2: 유효 CAS가 존재함에도 함유량이 누락된 경우 '미기재%' 강제 할당
+            raw_content = "미기재%"
+
+        # 🚨 [V17.3.2.28] CAS 필드에서 공백을 제거한 뒤 정규식 적용 (64742 - 54 - 7 -> 64742-54-7)
+        clean_cas_field = re.sub(r'\s+', '', raw_cas_field)
+        cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', clean_cas_field)
+        
+        # 🚨 [V17.3.2.28] CAS 번호가 없더라도 '영업비밀', '해당없음' 등이 있다면 행 보존 (DNA 규칙 준수)
+        if not cas_list:
+            if any(k in raw_cas_field for k in ["영업비밀", "비공개", "해당없음", "-", "Secret", "Proprietary"]):
+                cas_list = [raw_cas_field] # 키워드 자체를 CAS로 취급하여 보존
+            else:
+                continue
+        
         content_parts = [_normalize_single_content(c) for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
+        # content_parts가 비어있을 경우(Rule 1 적용 등)를 대비한 보정
+        if not content_parts: content_parts = [""]
         page_val = comp.get("page", "")
         origin_engine = comp.get("engine", "Unknown") # DNA 꼬리표 유지
         
         loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
         
-        # 🚨 [V17.3.1.24] 문서 전체를 대조군으로 활용하여 누락/오타 성분 원천 방어 (노이즈 세척 포함)
+        # 🚨 [V17.3.2.25] 문서 전체를 대조군으로 활용하여 누락/오타 성분 원천 방어 (노이즈 세척 포함)
         full_text = full_text.replace('̻', '').replace('̸', '')
         norm_text = re.sub(r'\s+', '', full_text).upper()
         
         for cas_raw, cv in zip(cas_list, loop_content):
             cas = re.sub(r'^0+', '', cas_raw)
             
-            # 🚨 [V17.3.1.18] AI 환각 구출 작전: 체크섬 통과 전에 원본 텍스트와 대조하여 교정
+            # 🚨 [V17.3.2.25] AI 환각 구출 작전: 체크섬 통과 전에 원본 텍스트와 대조하여 교정
             if is_ai and not verify_cas_number(cas, grounding_text=full_text):
                 # 텍스트 원본에서 유효한 CAS들 추출
                 valid_text_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', full_text)
@@ -378,7 +387,7 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
                         "engine": origin_engine
                     }
                 else:
-                    # [V17.3.1.8] 함유량 업데이트 로직 강화: 기존 데이터가 없거나 미기재%인 경우 무조건 갱신
+                    # [V17.3.2.25] 함유량 업데이트 로직 강화: 기존 데이터가 없거나 미기재%인 경우 무조건 갱신
                     is_current_empty = not refined_dict[cas]["content"] or refined_dict[cas]["content"] == "미기재%"
                     if is_current_empty and cv and cv != "미기재%":
                         refined_dict[cas]["content"] = cv
@@ -399,7 +408,7 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
     return refined, has_invalid
 
 def find_section3_pages(doc):
-    """[V17.3.1.12] 섹션 탐색 조기 종료 가드 강화 (Page 번호 노이즈 차단)"""
+    """[V17.3.2.25] 섹션 탐색 조기 종료 가드 강화 (Page 번호 노이즈 차단)"""
     pages = []
     found_section3 = False
     
@@ -416,7 +425,7 @@ def find_section3_pages(doc):
         
         if found_section3:
             pages.append(i)
-            # 🚨 [V17.3.1.12] 조기 종료 가드: 단순 '위험' 단어 등이 아니라, 행의 시작에서 섹션 번호가 명확할 때만 중단
+            # 🚨 [V17.3.2.25] 조기 종료 가드: 단순 '위험' 단어 등이 아니라, 행의 시작에서 섹션 번호가 명확할 때만 중단
             # 'Page 4 / 10' 같은 텍스트에 의한 오탐 방지를 위해 행 단위 스캔
             lines = [l.strip() for l in text.split('\n') if l.strip()]
             for line in lines:
@@ -426,76 +435,41 @@ def find_section3_pages(doc):
                 
     return sorted(list(set(pages)))[:6]
 
-def extract_from_text_regex(page, log_func=None):
-    """[V17.3.2.10] 경계 최적화 엔진 (헤더 노이즈 차단 및 % 우선순위 강화)"""
-    try:
-        words = page.get_text("words")
-    except: return []
-    
-    # 1. 헤더 경계선 찾기 (노이즈 차단용)
-    header_y = 0
-    header_keywords = ["화학물질명", "구성성분", "CAS NO", "함유량", "INGREDIENTS", "COMPOSITION"]
-    for w in words:
-        if any(k in w[4] for k in header_keywords):
-            header_y = max(header_y, w[3]) # 헤더 단어의 하단 좌표
-            
-    lines = {}
-    cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])')
-    # 함량 패턴 (V17.3.2.11) - 수치 사이의 연결어(이상/미만/~/~ 등)를 포괄적으로 수용
-    cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*(?:이상|미만|~|∼|～|-|above|below|to|and|%)\s*)*[<>≤≥~∼～-]?\s?\d*(?:\.\d+)?\s*%?)', re.IGNORECASE)
+# [V17.3.2.28] 공용 정규식 패턴: CAS 번호 내 공백 허용 (\s* 추가)
+cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
+cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*(?:이상|미만|~|∼|～|-|above|below|to|and|%)\s*)*[<>≤≥~∼～-]?\s?\d*(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
-    for w in words:
-        # 헤더 위쪽의 데이터(NFPA 등)는 무시
-        if w[3] < header_y - 10: continue
-        
-        y_mid = int((w[1] + w[3]) / 2)
-        found_l = next((l_y for l_y in lines.keys() if abs(l_y - y_mid) < 5), None)
-        if found_l is None:
-            found_l = y_mid
-            lines[found_l] = {"cas": [], "text_parts": []}
-        
-        txt = w[4]
-        lines[found_l]["text_parts"].append((w[0], txt))
-        if cas_pattern.search(txt) and verify_cas_number(txt):
-            lines[found_l]["cas"].append(txt)
-
-    sorted_y = sorted(lines.keys())
-    logical_rows = []
-    current_row = None
-    
-    for y in sorted_y:
-        line = lines[y]
-        line_text = " ".join([t[1] for t in sorted(line["text_parts"], key=lambda x: x[0])])
-        
-        if line["cas"]:
-            if current_row: logical_rows.append(current_row)
-            current_row = {"cas_list": line["cas"], "combined_text": line_text, "y_start": y}
-        else:
-            if current_row: current_row["combined_text"] += " " + line_text
-            else: current_row = {"cas_list": [], "combined_text": line_text, "y_start": y}
-
-    if current_row: logical_rows.append(current_row)
-
-    for i in range(len(logical_rows)):
-        if not logical_rows[i]["cas_list"] and i + 1 < len(logical_rows):
-            logical_rows[i+1]["combined_text"] = logical_rows[i]["combined_text"] + " " + logical_rows[i+1]["combined_text"]
-            logical_rows[i]["combined_text"] = ""
-
+def extract_from_text_regex(table_rows, log_func=None):
+    """[V17.3.2.27] ODL 파싱 실패 시 정규식 기반 텍스트 추출 (보조장치)"""
+    if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
     found = []
-    for row in logical_rows:
+    
+    for row in table_rows:
         if not row["cas_list"] or not row["combined_text"]: continue
         
-        # 🚨 [V17.3.2.12] CAS 마스킹: 함량 추출 전 CAS 번호를 숨겨서 정규식의 간섭 차단
+        # [V17.3.2.25] CAS 마스킹: 함량 추출 전 CAS 번호를 숨겨서 정규식의 간섭 차단
         protected_text = row["combined_text"]
         for cas in row["cas_list"]:
             protected_text = protected_text.replace(cas, "[CAS_ANCHOR]")
             
-        # 마스킹된 텍스트에서 함량 탐색
+        # [V17.3.2.27] 괄호 내 노이즈 배제 원칙 강화
         all_conts = cont_pattern.findall(protected_text)
         content = "미기재%"
         if all_conts:
-            # % 기호가 있는 것을 우선, 그 다음은 길이
-            content = _normalize_single_content(max(all_conts, key=lambda x: ('%' in x, len(x))))
+            # 괄호 밖에 있는 깨끗한 후보군 추출
+            outside_conts = []
+            for c in all_conts:
+                # 텍스트 내에서 해당 함량의 위치를 찾고, 그 주변이 괄호로 감싸여 있는지 확인
+                start_idx = protected_text.find(c)
+                prefix = protected_text[:start_idx]
+                suffix = protected_text[start_idx + len(c):]
+                # 열린 괄호가 닫힌 괄호보다 많으면 괄호 내부로 간주
+                if prefix.count('(') > prefix.count(')'):
+                    continue
+                outside_conts.append(c)
+            
+            target_list = outside_conts if outside_conts else all_conts
+            content = _normalize_single_content(target_list[-1])
             
         for cas in row["cas_list"]:
             if log_func: log_func(f"  [마스킹 엔진] CAS {cas} -> 함량 {content}")
@@ -508,7 +482,7 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         doc = fitz.open(pdf_path)
         pages = find_section3_pages(doc)
         
-        # 🚨 [수술 3] 지연 정찰(Lazy Recon) 트랩: 텍스트로 못 찾으면 스캔본으로 간주하고 비전 정찰 투입
+        # 🚨 [V17.3.2.25] 지연 정찰(Lazy Recon) 트랩: 텍스트로 못 찾으면 스캔본으로 간주하고 비전 정찰 투입
         if not pages:
             if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 가동...")
             recon_images = []
@@ -555,8 +529,8 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
 
 def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None):
     if not image_list or not current_sniper: return None
-    final_prompt = prompt if prompt else PROMPT_GEMINI_FLASH
-    parts = [{"text": f"{SYSTEM_PROMPT_TEXT}\n\n{final_prompt}"}]
+    final_prompt = prompt if prompt else VISION_EXTRACTOR_PROMPT
+    parts = [{"text": final_prompt}]
     for img in image_list:
         parts.append({"inlineData": {"mimeType": "image/png", "data": img.get("data", "")}})
     payload = {"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}}
@@ -570,9 +544,9 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
 
 def check_omission(original_text, extracted_data):
     if not original_text: return 
-    cas_pattern = re.compile(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])')
+    # [V17.3.2.28] 누락 체크 시에도 공백 허용 패턴 사용 및 정규화 비교
     unique_cas_found = list(set(cas_pattern.findall(original_text)))
-    valid_original_cas = [cas for cas in unique_cas_found if verify_cas_number(cas)]
+    valid_original_cas = [re.sub(r'\s+', '', cas) for cas in unique_cas_found if verify_cas_number(cas, grounding_text=original_text)]
     original_cas_count = len(valid_original_cas)
     
     extracted_cas_set = set()
@@ -585,11 +559,11 @@ def check_omission(original_text, extracted_data):
 
 def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     if not image_list or not OPENAI_API_KEY: return None
-    final_prompt = prompt if prompt else PROMPT_GPT_FALLBACK
+    final_prompt = prompt if prompt else VISION_EXTRACTOR_PROMPT
     content_list = [{"type": "text", "text": final_prompt}]
     for img in image_list:
         content_list.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img.get('data', '')}"}})
-    payload = {"model": "gpt-4o-mini", "messages": [{"role": "system", "content": SYSTEM_PROMPT_TEXT}, {"role": "user", "content": content_list}], "temperature": 0.0, "response_format": {"type": "json_object"}}
+    payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": content_list}], "temperature": 0.0, "response_format": {"type": "json_object"}}
     try:
         response = requests.post("https://api.openai.com/v1/chat/completions", headers={"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}, json=payload, timeout=60)
         if response.status_code == 200: return json.loads(response.json()["choices"][0]["message"]["content"])
@@ -656,7 +630,14 @@ def parse_row_robust_v2(row, priority_col_idx=-1):
 
             # 1. % 기호가 있거나 순수 숫자(99.0)면 무조건 최우선 (Strong Content)
             if is_percent or is_pure_num:
-                if not strong_content or is_percent:
+                # [V17.3.2.27] 헤더 우선순위 잠금: 현재 열이 헤더에서 지정한 함유량 열(priority_col_idx)이라면 무조건 채택
+                # 다른 열(명칭 열 등)에서 나오는 데이터는 이 데이터가 없을 때만 차선책으로 사용
+                is_priority_cell = (col_idx == priority_col_idx)
+                
+                if is_priority_cell:
+                    strong_content = _clean_content_odl(norm_c)
+                    break # 우선순위 열에서 찾았다면 더 이상 다른 열을 볼 필요 없음 (잠금)
+                elif not strong_content:
                     strong_content = _clean_content_odl(norm_c)
             # 2. %는 없지만 확실한 부등호나 범위 기호가 있는 경우 (차선순위)
             elif not strong_content and (is_symbol or is_range):
@@ -741,7 +722,7 @@ def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None
         if fitz_doc:
             text_comps = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func)
             
-            # [V17.3.1.17] 최종 병합: ODL 결과에 Regex 보조장치의 함량을 덧씌우거나 누락 성분 추가
+            # [V17.3.2.25] 최종 병합: ODL 결과에 Regex 보조장치의 함량을 덧씌우거나 누락 성분 추가
             for tc in text_comps:
                 target_cas = tc["cas_no"]
                 existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
@@ -795,10 +776,10 @@ def process_pdf(pdf_path, log_func=None):
         if log_func: log_func(f" ⚠️ ODL 파싱 오류: {e}")
         odl_components = []
     
-    # 🚨 [V17.3.1.10] ODL 추출 결과의 완전성 검증 (누락 체크)
+    # 🚨 [V17.3.2.25] ODL 추출 결과의 완전성 검증 (누락 체크)
     # 텍스트 원본에 존재하는 CAS 번호 목록과 대조
     expected_cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', section3_text)
-    # [V17.3.1.22] 진행률 판단 시에도 문서 원본(section3_text) 대조하여 오타 CAS 수용
+    # [V17.3.2.25] 진행률 판단 시에도 문서 원본(section3_text) 대조하여 오타 CAS 수용
     unique_expected_cas = set(c for c in expected_cas_list if verify_cas_number(c, grounding_text=section3_text))
     found_cas_set = set(str(c.get("cas_no", "")) for c in odl_components if verify_cas_number(str(c.get("cas_no", "")), grounding_text=section3_text))
     
@@ -827,14 +808,14 @@ def process_pdf(pdf_path, log_func=None):
             else:
                 log_func(f" 🟡 ODL 결과 불완전 ({reason_msg}). AI 비전 스나이퍼({alias}) 투입!")
         
-        ai_res = call_gemini_2_5_flash(image_list, PROMPT_GEMINI_FLASH, current_sniper, log_func)
+        ai_res = call_gemini_2_5_flash(image_list, None, current_sniper, log_func)
         used_engine = "Gemini-2.5-Flash"
         is_ai_extracted = True
         
         # 🚨 [지원군 모드] 스나이퍼(Gemini)가 응답 실패(None)인 경우에만 불도저(GPT) 복구 투입
         if ai_res is None:
             if log_func: log_func(f" ⚠️ {alias} 사망. 비상 지원군(GPT-4o-mini) 복구 투입...")
-            ai_res = call_gpt_4o_mini(image_list, PROMPT_GPT_FALLBACK, log_func=log_func)
+            ai_res = call_gpt_4o_mini(image_list, None, log_func=log_func)
             used_engine = "GPT-4o-mini"
             is_ai_extracted = True
             
@@ -894,27 +875,54 @@ def process_pdf(pdf_path, log_func=None):
 analyze_msds = process_pdf
 
 def self_test_regression():
-    print(f"--- [V{VERSION}] 엔진 자가 검증 시작 ---")
+    """[V17.3.2.27] 부등호 및 함량 정규화 자가 검증 모듈"""
+    print(f"\n--- [{VERSION}] 엔진 자가 검증 시작 ---")
+    fail_count = 0
+    pass_count = 0
     
     # 1. 부등호 및 범위 표준화 테스트
     test_cases = [
         ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
-        ("0.01이내", "≤0.01%", "이내(Within) 변환 유실"),
+        ("0.01이내", "\u22640.01%", "이내(Within) 변환 실패"),
         ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
         ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
         ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),
-        ("≤ 0.1", "≤0.1%", "특수 부등호 및 공백 처리 실패"),
+        ("≤ 0.1", "\u22640.1%", "특수 부등호 및 공백 처리 실패"),
         ("≥95%≤100%", "95~100%", "양방향 부등호(Full Range) 표준화 실패"),
         ("1 ~ 5미만", "1~<5%", "한글 부등호 포함 범위 처리 실패"),
         ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
         ("< 5 ~ 1", "1~<5%", "부등호 포함 역순 정렬 및 귀속 실패"),
-        ("min. 99.5%", "≥99.5%", "min. 약어 표준화 실패"),
-        ("max 10", "≤10%", "max 약어 표준화 실패"),
+        ("min. 99.5%", "\u226599.5%", "min. 약어 표준화 실패"),
+        ("max 10", "\u226410%", "max 약어 표준화 실패"),
         ("99.0 <", ">99%", "일본식 후위 부등호 처리 실패"),
-        ("98.0 +%", "≥98%", "플러스(+) 기호 이상(More than) 처리 실패"),
-        ("(GR) 99.0 +% (EP) 98.0 +%", "≥98%", "복합 등급 함량 하한선 통합 실패"),
+        ("98.0 +%", "\u226598%", "플러스(+) 기호 이상(More than) 처리 실패"),
+        ("(GR) 99.0 +% (EP) 98.0 +%", "\u226598%", "복합 등급 함량 하한선 통합 실패"),
         ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
     ]
+    
+    # 2. 복합 컨텍스트(Row Context) 테스트 (V17.3.2.27)
+    print(f"[*] 행 컨텍스트(명칭 내 % 노이즈) 방어 테스트...")
+    row_text = "뷰테인(부타디엔 함량 0%) 106-97-8 11 ~ 14"
+    # 실제 엔진처럼 CAS 마스킹
+    protected_row = row_text.replace("106-97-8", "[CAS_ANCHOR]")
+    
+    all_conts = cont_pattern.findall(protected_row)
+    outside_conts = []
+    for c in all_conts:
+        start_idx = protected_row.find(c)
+        prefix = protected_row[:start_idx]
+        suffix = protected_row[start_idx+len(c):]
+        # 괄호 밸런스 체크 (괄호 안에 있으면 스킵)
+        if prefix.count('(') > prefix.count(')'): continue
+        outside_conts.append(c)
+    
+    row_res = _normalize_single_content(outside_conts[-1]) if outside_conts else "미기재%"
+    if row_res != "11~14%":
+        print(f" [FAIL] 행 컨텍스트 방어 실패: 결과 '{row_res}' (기대값 '11~14%')")
+        fail_count += 1
+    else:
+        print(f" [PASS] 행 컨텍스트 방어 성공 (0% 무시)")
+        pass_count += 1
     
     # 2. 단위 및 노이즈 필터링 테스트 (Hallucination 방지)
     noise_cases = [
@@ -924,16 +932,20 @@ def self_test_regression():
         ("95-100% (wt)", "95~100%", "부가 텍스트(wt) 처리 실패")
     ]
     
-    # 0. CAS 검증기 테스트 (날짜 오탐 방지 포함)
+    # 0. CAS 검증기 테스트 (날짜 오탐 방지 및 공백/키워드 대응)
     print(f"[*] CAS 검증기 테스트 가동...")
     cas_tests = [
         ("13463-67-7", True, "정상 CAS 통과 실패"),
         ("2014-12-16", False, "날짜 형식 차단 실패"),
         ("2025-03-17", False, "날짜 형식 차단 실패"),
-        ("7732-18-5", True, "정상 CAS 통과 실패")
+        ("7732-18-5", True, "정상 CAS 통과 실패"),
+        ("64742 - 54 - 7", True, "공백 포함 CAS 통과 실패"),
+        ("해당없음", True, "'해당없음' 키워드 통과 실패")
     ]
     for c_str, expected, msg in cas_tests:
-        if verify_cas_number(c_str) != expected:
+        # [V17.3.2.28] Grounding 시나리오 재현: 64742-54-7(추출값) vs 64742 - 54 - 7(문서 원본)
+        g_text = "기타 성분: 64742 - 54 - 7 함유" if "64742" in c_str else None
+        if verify_cas_number(c_str, grounding_text=g_text) != expected:
             print(f" [FAIL] CAS: {c_str} -> 결과: {not expected} | 사유: {msg}")
             fail_count += 1
         else:
@@ -951,7 +963,8 @@ def self_test_regression():
     
     for input_str, expected, msg in all_tests:
         actual = _normalize_single_content(input_str)
-        if actual != expected:
+        # [V17.3.2.25] 유니코드 기호(≤, ≥)의 환경별 표현 차이 방어를 위해 정규화 비교 수행
+        if unicodedata.normalize("NFKC", actual) != unicodedata.normalize("NFKC", expected):
             print(f" [FAIL] 입력: '{input_str}' -> 결과: '{actual}' (기대값: '{expected}') | 사유: {msg}")
             fail_count += 1
         else:
