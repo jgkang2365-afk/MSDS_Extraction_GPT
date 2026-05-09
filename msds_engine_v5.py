@@ -188,7 +188,7 @@ EXCEPTION_REGISTRY = {
     }
 }
 
-def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None):
+def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None, model="gemini-2.5-flash"):
     current_sniper = initial_sniper
     for attempt in range(max_retries):
         if not current_sniper:
@@ -196,7 +196,7 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
             
         api_key = current_sniper["key"]
         alias = current_sniper["alias"]
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         
         try:
             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
@@ -226,11 +226,11 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
 
     payload = {"contents": [{"parts": [{"text": PRODUCT_NAME_PROMPT}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
     try:
-        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
+        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
         if result:
             pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공: {pn_ai[:30]}")
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {pn_ai[:30]}")
                 return pn_ai.replace('\n', ' ').strip(), "Vision"
     except Exception as e:
         pass
@@ -520,7 +520,7 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
                 pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
                 recon_images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
             
-            recon_res = call_gemini_2_5_flash(recon_images, prompt="이 이미지들 중 '2. 구성성분' 또는 '3. 구성성분' 표가 있는 페이지 번호(0부터 시작)를 찾아라. JSON응답: {\"page_index\": 숫자}", current_sniper=current_sniper, log_func=log_func)
+            recon_res = call_gemini_2_5_flash(recon_images, prompt="이 이미지들 중 '2. 구성성분' 또는 '3. 구성성분' 표가 있는 페이지 번호(0부터 시작)를 찾아라. JSON응답: {\"page_index\": 숫자}", current_sniper=current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
             page_idx = int(recon_res.get("page_index", -1)) if recon_res else -1
                 
             if 0 <= page_idx < len(doc):
@@ -557,7 +557,7 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
     except Exception:
         return [], "", []
 
-def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None):
+def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log_func=None, model="gemini-2.5-flash"):
     if not image_list or not current_sniper: return None
     final_prompt = prompt if prompt else VISION_EXTRACTOR_PROMPT
     parts = [{"text": final_prompt}]
@@ -565,9 +565,9 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
         parts.append({"inlineData": {"mimeType": "image/png", "data": img.get("data", "")}})
     payload = {"contents": [{"parts": parts}], "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}}
     try:
-        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func)
+        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model=model)
         if result:
-            text_response = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+            text_response = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
             return json.loads(text_response)
     except: pass
     return None
