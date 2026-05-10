@@ -1,104 +1,4 @@
 {
-    "eae05d6a3f30d9bd0e38481766b51a99dfa5656c6e18b34798abb0ce4457c7d0": {
-        "f_hash": "eae05d6a3f30d9bd0e38481766b51a99dfa5656c6e18b34798abb0ce4457c7d0",
-        "product_name": "Shikimic acid",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "138-59-0(95~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/001_(-)SHIKIMIC ACID.PDF",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "f1430d78bd813955e62e48678a131857d16fc17db955b23e81758b436e1c7511": {
-        "f_hash": "f1430d78bd813955e62e48678a131857d16fc17db955b23e81758b436e1c7511",
-        "product_name": "보통 휘발유 (Regular Unleaded Gasoline)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "86290-81-5(<86%); 71-43-2(0.1~0.7%); 1634-04-4(11%); 108-88-3(1~10%); 1330-20-7(2~4%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/002_MSDS(보통휘발유(Regular Unleaded Gasoline)_SOIL)(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac": {
-        "f_hash": "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac",
-        "product_name": "순&수 우드스테인 BASE",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/003_MSDS(순앤수 우드스테인 BASE)(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
-        "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
-        "product_name": "프로스테인 네오-PC100(크리어)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~<1%); 96-29-7(0.1~<1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/004_MSDS(프로스테인)(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def": {
-        "f_hash": "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def",
-        "product_name": "아이생각수성내부프 (M-BASE)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7732-18-5(≥40%); 14807-96-6(≥20%); 1317-65-3(≥10%); 26636-08-8(≥1%); 92704-41-1(≥1%); 13463-67-7(≥1%); 471-34-1(≥1%); 57-55-6(≥1%); 108-01-0(≥0.1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/033_아이생각수성내부프로 (M-BASE)_GHS국문.pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "product_name": "",
-            "raw_content": ""
-        }
-    },
-    "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d": {
-        "f_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
-        "product_name": "사라롱",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "7732-18-5(60~70%); 1310-73-2(<1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/005_msds_사라퐁(O).pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8": {
-        "f_hash": "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8",
-        "product_name": "수피아 모이스처 핸드워시",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/006_수피아물비누-MSDS(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259": {
-        "f_hash": "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259",
-        "product_name": "더블유디-40",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(11~14%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/007_GHS MK WD-40 (REV30, 240722)(O).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
     "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d": {
         "f_hash": "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d",
         "product_name": "MOLIV 2T",
@@ -109,232 +9,6 @@
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/008_싸이클오일).pdf",
         "page": 1,
         "used_engine": "regex",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "product_name": ""
-        }
-    },
-    "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
-        "f_hash": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
-        "product_name": "블루우드스테인(Blue wood stain) [자단]",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "616-38-6(45~50%); 64742-47-8(20~25%); 8001-26-1(15~25%); 68152-57-8(5~10%); 108-65-6(1~5%); 13586-82-8(0.1~1%); 8008-20-6(0.1~1%); 68002-82-4(0.1~1%); 63800-37-3(0.1~1%); 115-77-5(0.1~1%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(≤0.1%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(1~3%); 51274-00-1(1~2%); 1333-86-4(0.1~1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/009_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483": {
-        "f_hash": "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483",
-        "product_name": "구리스카트리지(Universal lithium grease)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "8002-05-9(≥80%); 106-14-9(0~8%); 57-11-4(≤5%); 1310-66-3(≤2%); 128-37-0(≤2%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/010_세신 카트리지 구리스 MSDS-한글판-CG400.pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b": {
-        "f_hash": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
-        "product_name": "TECA-BIOMETM",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 30860-19-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.2%); 53238-83-8(0.01%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/011_1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "raw_content": "",
-            "product_name": ""
-        }
-    },
-    "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906": {
-        "f_hash": "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906",
-        "product_name": "SinoWhite NCA(CG)",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "98-92-0(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/012_[SFG] SinoWhite NCA(CG) MSDS Kor. (Rev.03) 2025-06-09.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f": {
-        "f_hash": "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f",
-        "product_name": "Snail Secretion Filtrate(HD2)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7732-18-5(5%); 6920-22-5(3%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/013_[래디안]달팽이점액여과물(HD2)_영문 GHS MSDS(240429)삼정-씨엔티드림_요청 조성비 서류.pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "ea2791d0cfa53f8f5796b2b3b8c59841cf788124535240340fd7f60d1cc11312": {
-        "f_hash": "ea2791d0cfa53f8f5796b2b3b8c59841cf788124535240340fd7f60d1cc11312",
-        "product_name": "3-Ethoxy-1,2-propanediol",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "1874-62-0(95~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/014_3-ETHOXY-1,2-PROPANEDIOL, 98%.PDF",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42": {
-        "f_hash": "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42",
-        "product_name": "BENTONE GEL® ISD V",
-        "reliability": "N/A",
-        "신호등": "🔴",
-        "raw_content": "",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/015_Bentone Gel ISD V _ MSDS (KO).pdf",
-        "page": 1,
-        "used_engine": "regex",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "product_name": ""
-        }
-    },
-    "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03": {
-        "f_hash": "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03",
-        "product_name": "Suncide EPH",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "122-99-6(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/016_[SFG] Suncide EPH MSDS Kor. (Rev.04) 2025-05-13.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a": {
-        "f_hash": "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a",
-        "product_name": "RED No. 227",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "3567-66-6(>85%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/017_RED(적색)227_MSDS(E)_190730.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "75f896ea835a6f945b7fe83499877831c23cb9f12138d5518200566e637c983d": {
-        "f_hash": "75f896ea835a6f945b7fe83499877831c23cb9f12138d5518200566e637c983d",
-        "product_name": "Iron Oxide Red 3AS",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "1309-37-1(97%); 2943-75-1(3%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/018_[K.S.PEARL] MSDS - Iron Oxide Red 3AS (KR).pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "70d6c9b1ee2ac5a23c09928a7ead3bf448908b98054fbd171ae024928bf9db3e": {
-        "f_hash": "70d6c9b1ee2ac5a23c09928a7ead3bf448908b98054fbd171ae024928bf9db3e",
-        "product_name": "SKIN CARE G28345",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "1222-05-5(10~20%); 54464-57-2(5~10%); 63500-71-0(0~5%); 10339-55-6(0~5%); 88-41-5(0~5%); 142-92-7(0~5%); 27606-09-3(0~5%); 18127-01-0(0~5%); 106-72-9(0~5%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/019_SKIN CARE G28345_MSDS_국문.pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "966fe572fcfe3a276c54f60c29e7436679d5f03777417edcab1f63b3e60c5f8e": {
-        "f_hash": "966fe572fcfe3a276c54f60c29e7436679d5f03777417edcab1f63b3e60c5f8e",
-        "product_name": "Frag-38571",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "105-87-3(5~10%); 1222-05-5(5~10%); 54464-57-2(5~10%); 121-33-5(0~5%); 110-27-0(0~5%); 105-95-3(0~5%); 32388-55-9(0~5%); 101-86-0(0~5%); 80-54-6(0~5%); 78-70-6(0~5%); 1205-17-0(0~5%); 151-05-3(0~5%); 140-11-4(0~5%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/020_GHS MSDS 38571 국문.pdf",
-        "page": 1,
-        "used_engine": "odl",
-        "engine_version": "17.3.3.2"
-    },
-    "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6": {
-        "f_hash": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
-        "product_name": "수산화나트륨[Sodium Hydroxide]",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/021_Sodium Hydroxide(NaOH).pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153": {
-        "f_hash": "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153",
-        "product_name": "Ammonium acetate",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "631-61-8(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/022_AMMONIUM ACETATE.PDF",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241": {
-        "f_hash": "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241",
-        "product_name": "Acetonitrile hypergrade for LC-MS LiChrosolv®",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "75-05-8(95~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/023_Acetonitrile.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5": {
-        "f_hash": "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5",
-        "product_name": "D-(+)-Gluconic acid δ-lactone",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "90-80-2(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/024_D-GLUCONIC ACID LACTONE.PDF",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9": {
-        "f_hash": "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9",
-        "product_name": "D-Sorbitol",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "50-70-4(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/025_D-Sorbitol.PDF",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "17.3.3.2"
-    },
-    "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b": {
-        "f_hash": "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b",
-        "product_name": "Formic acid, OPTIMA LC/MS Grade (99.5%)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64-18-6(99~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/026_Formic Acid.pdf",
-        "page": 1,
-        "used_engine": "odl",
         "engine_version": "17.3.3.2"
     },
     "fd6457e7d8d649cdf3ad5330fad7ac30cd89b5cb0e502491b7d8699f8448665c": {
@@ -342,27 +16,11 @@
         "product_name": "Hydrochloric acid",
         "reliability": "N/A",
         "신호등": "🟡",
-        "raw_content": "7647-01-0(35~<40%)",
+        "raw_content": "7647-01-0(35~40%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/027_HYDROCHLORIC ACID, 37%, A.C.S. REAGENT.PDF",
         "page": 1,
         "used_engine": "bulldozer",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "raw_content": "",
-            "product_name": ""
-        }
-    },
-    "f484626982680bd2fd3a21d489244fa179008cd958f94261b721222273f37138": {
-        "f_hash": "f484626982680bd2fd3a21d489244fa179008cd958f94261b721222273f37138",
-        "product_name": "Methanol hypergrade for LC-MS LICHROsolv®",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "67-56-1(95~100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/028_Methanol.pdf",
-        "page": 1,
-        "used_engine": "flash",
         "engine_version": "17.3.3.2"
     },
     "293b5445bac50744c9e533ea08c1323531d2f51400de04adbf438a6e678b69a8": {
@@ -370,49 +28,21 @@
         "product_name": "Nitric acid",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7697-37-2(70~<75%)",
+        "raw_content": "7697-37-2(70~75%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/029_NITRIC ACID, ACS REAGENT, 70%.PDF",
         "page": 1,
         "used_engine": "odl",
-        "engine_version": "17.3.3.2",
-        "manual_data": {
-            "raw_content": "",
-            "product_name": ""
-        }
-    },
-    "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531": {
-        "f_hash": "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531",
-        "product_name": "Water for chromatography (LC-MS Grade)\nLiChrosolv®",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "7732-18-5(미기재%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/030_Water.pdf",
-        "page": 1,
-        "used_engine": "flash",
         "engine_version": "17.3.3.2"
     },
-    "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c": {
-        "f_hash": "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c",
-        "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)",
-        "measure_target": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/031_용접봉CR-13 CSW-0001_MSDS_용접재료(연강용 피복아크 용접봉)_(국문)v5_2023.08.22 (2).pdf",
-        "page": 1,
-        "used_engine": "bulldozer",
-        "engine_version": "17.3.3.2"
-    },
-    "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e": {
-        "f_hash": "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e",
-        "product_name": "K-308",
+    "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def": {
+        "f_hash": "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def",
+        "product_name": "아이이생각수성내부프로 (M-BASE)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7439-89-6(55~65%); 7440-47-3(17~20%); 7440-02-0(8~10%); 7631-86-9(1~2%); 13463-67-7(5~7%); 7439-96-5(1~2%); 1314-23-4(1~2%)",
+        "raw_content": "7732-18-5(≥40%); 14807-96-6(≥20%); 1317-65-3(≥10%); 26636-08-8(≥1%); 92704-41-1(≥1%); 13463-67-7(≥1%); 471-34-1(≥1%); 57-55-6(≥1%); 108-01-0(≥0.1%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/032_용접봉_코리아나_논가스와이어_(K-308)MSDS.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_v2/input_stress/033_아이생각수성내부프로 (M-BASE)_GHS국문.pdf",
         "page": 1,
         "used_engine": "odl",
         "engine_version": "17.3.3.2"

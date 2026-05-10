@@ -1,0 +1,8 @@
+
+[2026-05-10 13:14:31.976130]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1981, in run_extraction
+    self.update_log_signal.emit(f"[*] 선택 추출 모드 가동: 전체 {len(target_paths)}건에 대해 재추출을 수행합니다.")
+    ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'SMUGUI' object has no attribute 'update_log_signal'
+

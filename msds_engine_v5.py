@@ -121,7 +121,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.3.2" # [V17.3.3.2] 하이브리드 안정화 및 GUI 동기화 강화 버전
+VERSION = "17.3.3.3" # [V17.3.3.3] CAS/함량 공백 수술적 정규화(Surgical Normalization) 도입
 
 def load_prompt(prompt_type, version):
     """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
@@ -478,6 +478,9 @@ def extract_from_text_regex(page, log_func=None):
                     # 행 종료 및 정렬
                     current_row_words.sort(key=lambda w: w[0]) # X좌표 순 정렬
                     row_text = " ".join([w[4] for w in current_row_words])
+                    # 🚨 [V17.3.3.3] 수술적 정규화: 숫자 사이의 하이픈 공백 제거 (64742 - 54 - 7 대응)
+                    row_text = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', row_text)
+                    
                     cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
                     if cas_list:
                         logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
@@ -487,6 +490,9 @@ def extract_from_text_regex(page, log_func=None):
             if current_row_words:
                 current_row_words.sort(key=lambda w: w[0])
                 row_text = " ".join([w[4] for w in current_row_words])
+                # 🚨 [V17.3.3.3] 수술적 정규화: 숫자 사이의 하이픈 공백 제거
+                row_text = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', row_text)
+                
                 cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
                 if cas_list:
                     logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
@@ -653,6 +659,9 @@ def parse_row_robust_v2(row, priority_col_idx=-1):
         # 🚨 [V17.3.2.1] 통합된 셀 텍스트를 그대로 처리 (분할 루프 제거)
         c = raw_cell.strip()
         if not c: continue
+
+        # 🚨 [V17.3.3.3] 수술적 정규화: 셀 내 숫자 사이의 하이픈 공백 제거
+        c = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', c)
 
         # 🚨 [V17.3.2.3] CAS 정규식 엄격화 (날짜 4-2-2 차단)
         found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)

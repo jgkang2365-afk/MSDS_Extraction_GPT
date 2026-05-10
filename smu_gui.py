@@ -381,6 +381,10 @@ class ExtractionWorker(QThread):
                     elif not manual and (cached_data.get("product_name") == "제품명 확인 필요" or "오류" in cached_data.get("status", "")):
                         self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과 감지: API 재호출을 시도합니다.")
                         use_cache = False
+                    # 🚨 [V17.3.3.3] 사용자 요청(공란) 감지: 제품명이나 CAS 원본이 비어있으면 강제 재추출
+                    elif manual.get("product_name") == "" or manual.get("raw_content") == "":
+                        self.update_log_signal.emit(f"[*] [{fn}] 사용자 요청(공란) 감지: 강제 재추출을 수행합니다.")
+                        use_cache = False
                     
                     if use_cache:
                         self.update_log_signal.emit(f"[*] [{fn}] 캐시된 결과가 발견되었습니다. (재추출 건너뜀)")
@@ -1950,12 +1954,44 @@ class SMUGUI(QMainWindow):
             self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
 
         self.table.blockSignals(True) # [NEW] 대량 작업 전 시그널 차단
-        self.table.setRowCount(0)
-        self.progress.setValue(0)
+        
+        # 🚨 [V17.3.3.3] 스마트 선택 추출 (Selective Extraction) 로직 도입
+        target_paths = []
+        is_partial = False
+        
+        if self.table.rowCount() > 0:
+            for r in range(self.table.rowCount()):
+                prod_item = self.table.item(r, 2) # 제품명
+                cas_item = self.table.item(r, 3)  # CAS 원본
+                fn_item = self.table.item(r, 7)   # 파일명
+                
+                prod_text = prod_item.text().strip() if prod_item else ""
+                cas_text = cas_item.text().strip() if cas_item else ""
+                
+                # 제품명이나 CAS 원본이 비어있거나 '미확인', '오류' 등이 포함된 경우 추출 대상으로 선정
+                if not prod_text or not cas_text or "미확인" in prod_text or "오류" in cas_text or "미추출" in prod_text:
+                    if fn_item:
+                        fn = fn_item.text().strip()
+                        full_path = next((p for p in self.pdf_paths if os.path.basename(p) == fn), None)
+                        if full_path:
+                            target_paths.append(full_path)
+            
+            if target_paths:
+                is_partial = True
+                self.log(f"[*] 선택 추출 모드 가동: 전체 {len(target_paths)}건에 대해 재추출을 수행합니다.")
+        
+        if not is_partial:
+            # 전체 추출 모드
+            target_paths = self.pdf_paths
+            self.table.setRowCount(0)
+            self.results = []
+            self.progress.setValue(0)
+
         self.btn_stop.setEnabled(True)
         self.btn_step1.setEnabled(False)
         self.btn_step2.setEnabled(False)
-        self.worker = ExtractionWorker(self.core, self.pdf_paths, cache=self.cache)
+        
+        self.worker = ExtractionWorker(self.core, target_paths, cache=self.cache)
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
         # [NEW] 진행 상황 텍스트 업데이트 연결
@@ -2170,12 +2206,30 @@ class SMUGUI(QMainWindow):
         if hasattr(self, 'lbl_watermark'):
             self.lbl_watermark.hide()
         try:
-            self.results.append(data)
-            self.table.blockSignals(True) # [V7.3] 캐시 오염 차단
+            f_hash = data.get("f_hash")
+            # 🚨 [V17.3.3.3] 기존 행 업데이트 로직 (Selective Extraction 대응)
+            existing_row = -1
+            if self.table.rowCount() > 0:
+                for r in range(self.table.rowCount()):
+                    hash_item = self.table.item(r, 8)
+                    if hash_item and hash_item.text() == f_hash:
+                        existing_row = r
+                        break
+            
+            self.table.blockSignals(True)
             self.table.setSortingEnabled(False)
             
-            row = self.table.rowCount()
-            self.table.insertRow(row)
+            if existing_row >= 0:
+                row = existing_row
+                # 기존 결과 객체 업데이트 (메모리 동기화)
+                for i, res in enumerate(self.results):
+                    if res.get("f_hash") == f_hash:
+                        self.results[i] = data
+                        break
+            else:
+                self.results.append(data)
+                row = self.table.rowCount()
+                self.table.insertRow(row)
             
             # 1. 순번 (신호등 이모지 + 숫자 통합)
             traffic_val = data.get("신호등", "🔴")
