@@ -1610,20 +1610,26 @@ class SMUGUI(QMainWindow):
         # 데이터 초기화
         self.pdf_paths = []
         self.results = []
+        self.cache = {} # [V17.4.0.9] 메모리 캐시까지 완전 삭제
+        if os.path.exists("smu_cache.json"):
+            try: os.remove("smu_cache.json")
+            except: pass
+            
         self.table.setRowCount(0)
         self.log_view.clear()
         self.progress.setValue(0)
         self.update_file_count_display()
-        self.log("✅ 모든 데이터가 초기화되었습니다.")
+        self.log("✅ 모든 데이터와 캐시가 초기화되었습니다.")
 
     def reload_engine(self):
-        """[HOT-RELOAD] 엔진 모듈을 다시 로드하며 캐시 파일도 삭제(초기화)"""
+        """[HOT-RELOAD] 엔진 모듈을 다시 로드하며 캐시도 완전 초기화"""
         try:
-            # [V17.3.3.3] 엔진 새로고침 시 캐시 삭제 방지 (속도 저하 방지)
-            # if os.path.exists("smu_cache.json"):
-            #     os.remove("smu_cache.json")
-            #     self.cache = {}
-            self.log("[!] 엔진이 새로고침 되었습니다. (기존 캐시는 보존됨)")
+            # [V17.4.0.9] 엔진 로직 변경을 즉시 반영하기 위해 캐시 강제 삭제
+            if os.path.exists("smu_cache.json"):
+                try: os.remove("smu_cache.json")
+                except: pass
+            self.cache = {}
+            self.log("[!] 엔진이 새로고침 되었습니다. (정밀 분석을 위해 캐시 초기화됨)")
 
             import msds_engine_v5
             importlib.reload(msds_engine_v5)
