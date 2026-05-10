@@ -15,13 +15,17 @@ from dotenv import load_dotenv
 # .env 파일 로드
 load_dotenv(override=True)
 
-# [V17.3.3.7] 윈도우 터미널 인코딩 노이즈 방어 (UTF-8 강제)
+# [V17.3.3.7] 윈도우 터미널 인코딩 노이즈 방어 (안전한 설정 방식)
 if sys.platform == 'win32':
-    try:
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-    except: pass
+    import io
+    # 이미 UTF-8이거나 GUI 환경(idna 등)인 경우 재정의하지 않음
+    if getattr(sys.stdout, 'encoding', '').lower() != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except AttributeError:
+            # reconfigure가 없는 구버전 파이썬 대응
+            pass
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
@@ -121,7 +125,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.3.3.3" # [V17.3.3.3] CAS/함량 공백 수술적 정규화(Surgical Normalization) 도입
+VERSION = "17.4.0.0" # [V17.4.0.0] 엔진 이원화(표:ODL, 텍스트:AI) 및 정규화(날짜 쉴드) 근본 혁신
 
 def load_prompt(prompt_type, version):
     """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
@@ -227,23 +231,51 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None
     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
+    """[V17.4.0.0] 제품명: 비전 주도(Leader) + 텍스트 참고(Reference) 모델"""
     if not current_sniper or not image_list: return "", "실패"
     first_page_img = image_list[0]
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
-    payload = {"contents": [{"parts": [{"text": PRODUCT_NAME_PROMPT}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
+    # [V17.4.0.0] 텍스트 레이어는 환각 방지용 힌트로만 제공 (AI에게 자유를 부여)
+    combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[Text Layer Hint for Verification]:\n{text_chunk[:1000]}"
+    payload = {"contents": [{"parts": [{"text": combined_prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
+    # [V17.4.0.8] 429 에러 대응 및 재시도 로직 강화
+    for attempt in range(3):
+        try:
+            result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
+            if result:
+                pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                # [V17.4.0.0] 100자까지 허용하여 제품명 절단 방지
+                if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
+                    cleaned_pn = msds_utils_v3.clean_candidate(pn_ai)
+                    cleaned_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', cleaned_pn)
+                    if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {cleaned_pn[:40]}")
+                    return cleaned_pn, "Vision"
+                break # 유효하지 않은 결과인 경우 루프 종료 (Fallback 대기)
+        except Exception as e:
+            if "429" in str(e):
+                if log_func: log_func(f"  ⚠️ [Retry] {attempt+1}차 시도 실패(429). 잠시 대기 중...")
+                time.sleep(5 * (attempt + 1))
+                current_sniper = get_next_sniper()
+                continue
+            break
+            
+    # [V17.4.0.8] 최종 병기(GPT-4o-mini) 투입: Gemini 전담 요원 전멸 시
+    if log_func: log_func(" 🚀 [최종 병기] Gemini 쿼터 초과. GPT-4o-mini 긴급 투입...")
     try:
-        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
-        if result:
-            pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and not re.search(r'[PH]\d{3}', pn_ai):
-                # [V17.3.3.6] Lite 모델의 레이블 혼입(용도: 등) 방어 강화
-                cleaned_pn = msds_utils_v3.clean_candidate(pn_ai)
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {cleaned_pn[:30]}")
-                return cleaned_pn, "Vision"
+        gpt_prompt = f"{combined_prompt}\n\n[IMPORTANT]: 반드시 JSON 형식으로 응답하라. 예: {{\"제품명\": \"추출된이름\"}}"
+        gpt_res = call_gpt_4o_mini(image_list, prompt=gpt_prompt, log_func=log_func)
+        if gpt_res:
+            # GPT는 JSON 형식을 따를 수 있으므로 텍스트 추출 방식 조정
+            pn_gpt = gpt_res.get("제품명", "") if isinstance(gpt_res, dict) else str(gpt_res)
+            if pn_gpt and len(pn_gpt) < 100:
+                cleaned_pn = msds_utils_v3.clean_candidate(pn_gpt)
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ GPT 긴급 구출 성공: {cleaned_pn[:40]}")
+                return cleaned_pn, "GPT-Fallback"
     except Exception as e:
-        pass
+        if log_func: log_func(f"  ❌ GPT Fallback 실패: {e}")
+
     return "", "실패"
 
 def _normalize_single_content(content_str):
@@ -272,7 +304,6 @@ def _normalize_single_content(content_str):
 
     # 2. 특수 키워드 (잔량 등)
     if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
-    
     # 3. ± 범위 처리
     pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
@@ -282,47 +313,74 @@ def _normalize_single_content(content_str):
         except: pass
 
     # 4. 숫자 추출
-    nums = re.findall(r'(\d+\.?\d*|\.\d+)', v)
-    if not nums: return raw # 숫자 없으면 원본 반환
+    raw_lower = v.lower()
+    # [V17.3.5.20] 날짜/연도(YYYY.MM.DD 또는 YYYY) 패턴 사전 제거하여 함량 오인 방지
+    v_shield = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', v)
+    v_shield = re.sub(r'\b20[0-2]\d년?\b', ' ', v_shield)
+    
+    nums = re.findall(r'(\d+\.?\d*|\.\d+)', v_shield)
+    if not nums: return "미기재%"
+    
+    # [V17.3.5.14] 부등호 결정 (Boolean -> Char)
+    is_less = any(k in raw_lower for k in ["<", "미만", "below", "less"])
+    is_le = any(k in raw_lower for k in ["≤", "이하", "max", "upto"])
+    is_more = any(k in raw_lower for k in [">", "초과", "over", "above"])
+    is_ge = any(k in raw_lower for k in ["≥", "이상", "min", "from", "+"])
+    has_range_sep = any(k in raw_lower for k in ["~", "∼", "～", "-", "to"])
 
-    # 🚨 [V17.3.2.25] 후위 부등호 감지 및 반전 (일본식 표현 대응)
+    # 후위 부등호 반전 처리 (단일 수치일 때만 적용하여 범위형과 간섭 차단)
     if len(nums) == 1:
-        if re.search(r'\d\s*<$', v): sym_less, sym_more = "", ">"
-        elif re.search(r'\d\s*>$', v): sym_less, sym_more = "<", ""
-        elif re.search(r'\d\s*≤$', v): sym_less, sym_more = "", "≥"
-        elif re.search(r'\d\s*≥$', v): sym_less, sym_more = "≤", ""
-    else:
-        pass
+        if has_trailing_less: is_more, is_less, is_le, is_ge = True, False, False, False
+        if has_trailing_more: is_less, is_more, is_le, is_ge = True, False, False, False
+        if has_trailing_le:   is_le, is_ge, is_less, is_more = True, False, False, False
+        if has_trailing_ge:   is_ge, is_le, is_less, is_more = True, False, False, False
 
-    # 4. 수치 추출 및 부등호 결합
+    pref = "≥" if is_ge else (">" if is_more else ("≤" if is_le else ("<" if is_less else "")))
+    suff = "≤" if is_le else ("<" if is_less else "")
+
+    if len(nums) == 1:
+        v1 = nums[0]
+        try:
+            f1 = float(v1)
+            n1 = int(f1) if f1.is_integer() else f1
+            # [V17.3.5.17] 110% 초과 수치 거부
+            if n1 > 110: return "미기재%"
+            if (is_ge or is_more) and has_range_sep: return f"≥{n1}%"
+            return f"{pref}{n1}%"
+        except: return "미기재%"
+        
     if len(nums) >= 2:
         try:
+            if not has_range_sep:
+                f1 = float(nums[0])
+                n1 = int(f1) if f1.is_integer() else f1
+                if n1 > 110: return "미기재%"
+                return f"{pref}{n1}%"
+
             f1, f2 = float(nums[0]), float(nums[1])
             if f1 > f2: f1, f2 = f2, f1
-            n1_s, n2_s = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
+            n1, n2 = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
             
-            # [V17.3.2.25] 사용자 요청: 복수 수치가 모두 '이상' 기호(+)와 결합된 경우, 최솟값 기준 단일 '이상'으로 통합
-            if sym_more and not sym_less and ("+" in v or "min" in v.lower()):
-                return f"{sym_more}{n1_s}%"
-
-            # [V17.3.3.3] 범위형 정규화 고도화 (주님 지침: 1% 기준 예외 적용)
-            # 상한선(n2_s)이 1%를 초과하는 일반 범위는 부등호를 제거하여 A~B%로 통일
-            if n2_s > 1.0:
-                return f"{n1_s}~{n2_s}%"
-            else:
-                # 상한선이 1% 이하인 경우 미만(<) 기호를 보존하여 법적 검증(측정 비대상) 지원
-                p2 = sym_less if sym_less else ""
-                return f"{n1_s}~{p2}{n2_s}%"
+            if n1 > 110 or n2 > 110: return "미기재%"
+            
+            # [V17.4.0.9] 범위형 부등호 정밀 결합 (33번 파일 지침 반영)
+            # 앞단(n1)은 부등호 생략, 후단(n2)의 부등호(측정 기준)만 보존
+            parts = re.split(r'(?:~|∼|～|\-|to)', v, maxsplit=1)
+            s_sym = ""
+            
+            if len(parts) == 2:
+                v_right = parts[1]
+                if any(k in v_right for k in ["<", "≤", "below", "미만"]): 
+                    s_sym = "≤" if "≤" in v_right or "이하" in v_right else "<"
+            
+            # 결합: n1 ~ [s_sym]n2 %
+            if not s_sym:
+                if is_le or is_less: return f"{n1}~{suff}{n2}%"
+                return f"{n1}~{n2}%"
+            
+            return f"{n1}~{s_sym}{n2}%"
         except: pass
-    elif len(nums) == 1:
-        try:
-            f1 = float(nums[0])
-            if f1 <= 100:
-                n1_s = int(f1) if f1.is_integer() else f1
-                prefix = sym_less if sym_less else (sym_more if sym_more else "")
-                return f"{prefix}{n1_s}%"
-        except: pass
-
+    
     return "미기재%"
 
 def final_quality_control(components, full_text, is_ai=True, log_func=None):
@@ -352,7 +410,7 @@ def final_quality_control(components, full_text, is_ai=True, log_func=None):
         
         # 🚨 [V17.3.2.28] CAS 번호가 없더라도 '영업비밀', '해당없음' 등이 있다면 행 보존 (DNA 규칙 준수)
         if not cas_list:
-            if any(k in raw_cas_field for k in ["영업비밀", "비공개", "해당없음", "-", "Secret", "Proprietary"]):
+            if any(k in raw_cas_field for k in ["영업비밀", "비공개", "해당없음", "Secret", "Proprietary"]):
                 cas_list = [raw_cas_field] # 키워드 자체를 CAS로 취급하여 보존
             else:
                 continue
@@ -425,14 +483,15 @@ def find_section3_pages(doc):
     found_section3 = False
     
     # 섹션 4~9 종료 키워드 (행 시작 부분에 숫자와 함께 나타날 때만 인정)
-    exit_pattern = re.compile(r'^(?:SECTION\s*)?[4-9][\s.:]*(?:응급|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)', re.I | re.M)
+    exit_pattern = re.compile(r'^(?:SECTION\s*)?[4-9][항\s.:]*(?:응급|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)', re.I | re.M)
     
     for i in range(len(doc)):
         text = doc[i].get_text("text")
         
         # 1. 섹션 3 시작 확인
         if not found_section3:
-            if re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성성분|성분|성분\s?및\s?함량|COMPOSITION|INGREDIENTS)', text, re.I):
+            # [V17.4.0.9] 정규식 관용도 극대화: 오타(INFORMAION) 및 변칙 공백 대응 강화
+            if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
                 found_section3 = True
         
         if found_section3:
@@ -449,72 +508,206 @@ def find_section3_pages(doc):
 
 # [V17.3.2.28] 공용 정규식 패턴: CAS 번호 내 공백 허용 (\s* 추가)
 cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
-cont_pattern = re.compile(r'([<>≤≥~∼～-]?\s?\d+(?:\.\d+)?(?:\s*(?:이상|미만|~|∼|～|-|above|below|to|and|%)\s*)*[<>≤≥~∼～-]?\s?\d*(?:\.\d+)?\s*%?)', re.IGNORECASE)
+# [V17.3.3.5] 범위형 정규식 패턴 최종: 단일 수치와 범위 수치를 유연하게 획득 (*)
+# [V17.3.4.2] 범위형 정규식 패턴: 숫자 앞뒤에 알파벳이나 하이픈이 붙은 경우(화학명 파편) 제외
+# [V17.4.0.9] 특수 대시 및 전각 부등호 대응 강화: –, — (En/Em Dash), \uff1c, \uff1e 및 공백 유연화
+cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\b\d+(?:\.\d+)?\b(?:\s*(?:이상|미만|~|∼|～|\-\u2013\u2014|above|below|to|and|%)\s*)*[<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
+# 보조 패턴: 단일 수치 및 전각 부등호 대응
+cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
-def extract_from_text_regex(page, log_func=None):
-    """[V17.3.3.3] Logical Row Synthesis: 2D 좌표 기반 행 복원 및 CAS 앵커링 추출"""
+
+
+def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
+    """[V17.4.0.3] Logical Row Synthesis: 좌표 계승(Inheritance) 및 구조적 필터링 적용"""
     if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
     found = []
     
+    # [V17.4.0.3] 현재 페이지에서 감지된 좌표 범위를 반환하기 위한 변수
+    detected_x_range = inherited_x_range
+    
     try:
-        # 1. 모든 단어를 좌표와 함께 추출
-        words = page.get_text("words") # (x0, y0, x1, y1, "word", block_no, line_no, word_no)
-        if not words: return []
+        # 1. 모든 단어 추출 및 물리적 좌표 정렬 (Y-X)
+        raw_words = page.get_text("words")
+        if not raw_words: return [], inherited_x_range
+        raw_words.sort(key=lambda w: (w[1], w[0]))
+
+        # [V17.3.5.10] 지능형 성분명 숫자 마스킹: 8개 메타데이터 구조 유지
+        words = []
+        for w in raw_words:
+            # w: (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+            text_val = w[4]
+            if any(c.isdigit() for c in text_val) and any(c.isalpha() for c in text_val):
+                if not cas_pattern.search(text_val):
+                    text_val = re.sub(r'\d', 'X', text_val)
+            # 수정한 텍스트만 교체하고 나머지 좌표 및 메타데이터는 그대로 유지
+            new_w = (w[0], w[1], w[2], w[3], text_val, w[5], w[6], w[7])
+            words.append(new_w)
+
+        # 2. 함유량(%) 열의 X좌표 식별 및 계승 처리 (Column Localization)
+        content_x_min, content_x_max = 0, 9999
+        content_anchors = [w for w in words if any(k in w[4] for k in ["함유량", "함량", "Content", "Conc", "%"])]
         
-        # 2. Y좌표 기준으로 단어 그룹화 (행 복원)
-        words.sort(key=lambda w: (w[1], w[0])) # y0, x0 순 정렬
+        if content_anchors:
+            target_anchor = max(content_anchors, key=lambda w: w[0])
+            content_x_min = target_anchor[0] - 150 # [V17.4.0.3] 범위를 더 정밀하게 축소
+            content_x_max = target_anchor[2] + 150
+            detected_x_range = (content_x_min, content_x_max)
+            if log_func: log_func(f"    [*] 함유량 열 식별: {content_x_min:.1f} ~ {content_x_max:.1f}")
+        elif inherited_x_range:
+            content_x_min, content_x_max = inherited_x_range
+            if log_func: log_func(f"    [*] 함유량 열 좌표 계승: {content_x_min:.1f} ~ {content_x_max:.1f}")
         
-        logical_rows = []
+        # 3. 물리적 행(Physical Lines) 추출 및 좌표 기반 1차 그룹화
+        physical_lines = []
         if words:
-            current_row_words = [words[0]]
+            current_line_words = [words[0]]
             for i in range(1, len(words)):
                 prev_w = words[i-1]
                 curr_w = words[i]
-                
-                # Y좌표 차이가 3.0 이하이면 동일 행으로 간주 (임계값 조절 가능)
-                if abs(curr_w[1] - prev_w[1]) <= 3.0:
-                    current_row_words.append(curr_w)
+                if abs(curr_w[1] - prev_w[1]) <= 8.0:
+                    current_line_words.append(curr_w)
                 else:
-                    # 행 종료 및 정렬
-                    current_row_words.sort(key=lambda w: w[0]) # X좌표 순 정렬
-                    row_text = " ".join([w[4] for w in current_row_words])
-                    # 🚨 [V17.3.3.3] 수술적 정규화: 숫자 사이의 하이픈 공백 제거 (64742 - 54 - 7 대응)
-                    row_text = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', row_text)
-                    
-                    cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
-                    if cas_list:
-                        logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
-                    current_row_words = [curr_w]
-            
-            # 마지막 행 처리
-            if current_row_words:
-                current_row_words.sort(key=lambda w: w[0])
-                row_text = " ".join([w[4] for w in current_row_words])
-                # 🚨 [V17.3.3.3] 수술적 정규화: 숫자 사이의 하이픈 공백 제거
-                row_text = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', row_text)
-                
-                cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', row_text)
-                if cas_list:
-                    logical_rows.append({"cas_list": cas_list, "combined_text": row_text})
+                    current_line_words.sort(key=lambda w: w[0])
+                    physical_lines.append({
+                        "y": current_line_words[0][1], 
+                        "text": " ".join([w[4] for w in current_line_words]),
+                        "words": current_line_words # [복구] 좌표 데이터 유지
+                    })
+                    current_line_words = [curr_w]
+            if current_line_words:
+                current_line_words.sort(key=lambda w: w[0])
+                physical_lines.append({
+                    "y": current_line_words[0][1], 
+                    "text": " ".join([w[4] for w in current_line_words]),
+                    "words": current_line_words
+                })
 
-        # 3. 마스킹 및 함량 추출 (기존 로직 유지)
+        # 4. 논리적 행 합성 (Logical Row Synthesis)
+        logical_rows = []
+        pending_lines = []
+        current_row = None
+
+        for line in physical_lines:
+            row_text = line["text"]
+            # [V17.4.0.4] 전역 cas_pattern을 사용하여 띄어쓰기 포함된 CAS 번호도 완벽 감지
+            cas_list = cas_pattern.findall(row_text)
+            
+            if cas_list:
+                current_row = {
+                    "cas_list": cas_list, 
+                    "combined_text": "", 
+                    "words": [],
+                    "last_y": line["y"]
+                }
+                for p_line in pending_lines:
+                    current_row["combined_text"] += p_line["text"] + " "
+                    current_row["words"].extend(p_line["words"])
+                pending_lines = []
+                
+                current_row["combined_text"] += line["text"]
+                current_row["words"].extend(line["words"])
+                logical_rows.append(current_row)
+            else:
+                if current_row:
+                    current_row["combined_text"] += " " + line["text"]
+                    current_row["words"].extend(line["words"])
+                    current_row["last_y"] = line["y"]
+                else:
+                    pending_lines.append(line)
+
+        # 5. 마스킹 및 함량 추출 (합성된 텍스트 기반)
         for row in logical_rows:
-            protected_text = row["combined_text"]
+            # [V17.3.5.7] 유연한 좌표 필터링: 함유량 열 범위 밖의 숫자는 노이즈로 간주
+            safe_word_texts = []
+            row_words = row.get("words", [])
+            
+            # [V17.4.0.3] CAS 위치(X좌표) 파악하여 좌측 데이터 보호 및 구분
+            cas_x_min = 9999
+            for w in row_words:
+                if any(cas in w[4] for cas in row["cas_list"]):
+                    cas_x_min = min(cas_x_min, w[0])
+
+            for w in row_words:
+                # w: (x0, y0, x1, y1, "word", block_no, line_no, word_no)
+                text_val = w[4]
+                is_cas = any(cas in text_val for cas in row["cas_list"])
+                # [V17.4.0.3] X 범위 필터링 타겟팅 강화 (50px 여유로 축소)
+                in_x_range = (content_x_min - 50 <= w[0] <= content_x_max + 50)
+                
+                if is_cas or in_x_range:
+                    safe_word_texts.append(text_val)
+                else:
+                    # 범위 밖이라도 숫자가 없는 단어(이상, 미만, %, ~ 등)는 보존
+                    if any(c.isdigit() for c in text_val):
+                        # 숫자가 포함된 단어만 X로 마스킹하여 간섭 차단
+                        safe_word_texts.append(re.sub(r'\d', 'X', text_val))
+                    else:
+                        safe_word_texts.append(text_val)
+            
+            protected_text = " ".join(safe_word_texts)
             for cas in row["cas_list"]:
                 protected_text = protected_text.replace(cas, "[CAS_ANCHOR]")
                 
-            all_conts = cont_pattern.findall(protected_text)
+            clean_text = protected_text
+            # [V17.4.0.0] 날짜/연도 패턴 사전 마스킹
+            clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
+            clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
+            
+            # 토큰 복구
+            clean_text = clean_text.replace("__IS__", "이상").replace("__MI__", "미만").replace("___CAS_ID___", "[CAS_ANCHOR]")
+            
+            all_conts = cont_pattern.findall(clean_text)
             content = "미기재%"
+            
             if all_conts:
-                outside_conts = []
-                for c in all_conts:
-                    start_idx = protected_text.find(c)
-                    prefix = protected_text[:start_idx]
-                    if prefix.count('(') > prefix.count(')'): continue
-                    outside_conts.append(c)
+                def score_match(m):
+                    # [V17.4.0.6] 전화번호/날짜 노이즈 강력 차단 (하이픈이 2개 이상이면 무조건 탈락)
+                    if m.count('-') >= 2 or m.count('\u2013') >= 2:
+                        return -5000
+                        
+                    score = 0
+                    # 기호 유무 가중치
+                    if '%' in m: score += 500
+                    if any(k in m for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상', '\u2013', '\u2014']): 
+                        score += 300
+                    
+                    # [V17.4.0.6] 구조적 위치 가점 (CAS와 같은 높이인지 여부가 가장 중요)
+                    anchor_pos = clean_text.find("[CAS_ANCHOR]")
+                    match_pos = clean_text.find(m)
+                    
+                    # 논리 행 내부에서의 상대적 위치 (CAS 뒤에 있는 것을 선호)
+                    if match_pos > anchor_pos:
+                        score += 200
+                    else:
+                        score -= 500 # 성분명 앞의 순번이나 페이지 번호 차단
+                    
+                    # 거리 감점 (가까울수록 정답)
+                    dist_char = abs(anchor_pos - match_pos)
+                    score -= (dist_char // 2) # 거리 감점 비중 강화
+                    
+                    m_nums = re.findall(r'\d+\.?\d*', m)
+                    if m_nums:
+                        try:
+                            val = float(m_nums[0])
+                            if val > 110: score -= 3000
+                            if 1990 <= val <= 2030: score -= 1000 # 년도 패턴 감점
+                        except: pass
+                    return score
                 
-                target_list = outside_conts if outside_conts else all_conts
-                content = _normalize_single_content(target_list[-1])
+                # 점수가 가장 높은 것을 선택하되, 최소 기준(0점) 이상이어야 함
+                best_match = max(all_conts, key=score_match)
+                if score_match(best_match) > -500:
+                    content = _normalize_single_content(best_match)
+            
+            # [V17.4.0.6] 백업 로직: 단일 수치 재검색 시에도 점수제 적용
+            if content == "미기재%":
+                single_matches = cont_pattern_single.findall(protected_text)
+                if single_matches:
+                    # 점수가 0점 이상인 것 중 최선책 선택
+                    valid_singles = [m for m in single_matches if score_match(m) > -500]
+                    if valid_singles:
+                        best_single = max(valid_singles, key=lambda m: score_match(m))
+                        content = _normalize_single_content(best_single)
                 
             for cas in row["cas_list"]:
                 if log_func: log_func(f"   [Regex-Recovery] CAS {cas} -> 함량 {content} (신뢰도: 고)")
@@ -523,7 +716,7 @@ def extract_from_text_regex(page, log_func=None):
     except Exception as e:
         if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
         
-    return found
+    return found, detected_x_range
 
 def extract_section3_images(pdf_path, current_sniper, log_func=None):
     try:
@@ -586,7 +779,11 @@ def call_gemini_2_5_flash(image_list=None, prompt=None, current_sniper=None, log
         result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model=model)
         if result:
             text_response = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-            return json.loads(text_response)
+            data = json.loads(text_response)
+            # [V17.4.0.1] AI가 리스트[]를 반환하면 엔진 규격에 맞게 {"구성성분": []}로 래핑
+            if isinstance(data, list):
+                return {"구성성분": data}
+            return data
     except: pass
     return None
 
@@ -612,10 +809,23 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     for img in image_list:
         content_list.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img.get('data', '')}"}})
     payload = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": content_list}], "temperature": 0.0, "response_format": {"type": "json_object"}}
-    try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers={"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}, json=payload, timeout=60)
-        if response.status_code == 200: return json.loads(response.json()["choices"][0]["message"]["content"])
-    except: pass
+    # [V17.3.5.18] GPT 호출 재시도 로직 도입 (429 대비)
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = requests.post("https://api.openai.com/v1/chat/completions", 
+                                   headers={"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_API_KEY}"}, 
+                                   json=payload, timeout=60)
+            if response.status_code == 200: 
+                res_data = json.loads(response.json()["choices"][0]["message"]["content"])
+                if isinstance(res_data, list):
+                    return {"구성성분": res_data}
+                return res_data
+            elif response.status_code == 429:
+                if log_func: log_func(f"    [GPT Retry] 429 감지. {5*(attempt+1)}초 후 재시도...")
+                time.sleep(5 * (attempt + 1))
+        except: pass
+    return None
     return None
 
 def _clean_content_odl(text):
@@ -736,55 +946,64 @@ def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None
     except:
         fitz_doc = None
 
-    for p_idx in target_pages:
-        if p_idx >= len(odl_doc.pages): continue
+        # [V17.4.0.3] 페이지 간 함량 열 좌표 계승 변수 (Context Messenger)
+        inherited_x_range = None
         
-        page_items = []
-        # 1. 테이블 기반 추출
-        tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
-        for table in tables:
-            priority_col_idx = -1
-            for row in table.rows:
-                row_texts = [c.text or "" for c in row.cells]
-                row_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts}
-                if row_lower_set.intersection(header_keywords):
-                    for i, t in enumerate(row_texts):
-                        if '%' in t:
-                            priority_col_idx = i
-                            break
-                    if priority_col_idx >= 0: break
+        for p_idx in target_pages:
+            if p_idx >= len(odl_doc.pages): continue
             
-            for row in table.rows:
-                parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
-                if parsed_comps:
-                    page_items.extend(parsed_comps)
-                elif page_items and page_items[-1]["content"] == "미기재%":
-                    row_raw_texts = [c.text for c in row.cells if c.text]
-                    for txt in row_raw_texts:
-                        norm = _normalize_single_content(txt)
-                        if norm != "미기재%" and re.search(r'\d', norm):
-                            idx = len(page_items) - 1
-                            while idx >= 0 and page_items[idx]["content"] == "미기재%":
-                                page_items[idx]["content"] = norm
-                                idx -= 1
-                            break
-        
-        # 2. 텍스트 기반 보완 (좌표 기반 행 복원)
-        if fitz_doc:
-            text_comps = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func)
-            
-            # [V17.3.2.25] 최종 병합: ODL 결과에 Regex 보조장치의 함량을 덧씌우거나 누락 성분 추가
-            for tc in text_comps:
-                target_cas = tc["cas_no"]
-                existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
-                if existing_item:
-                    if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
-                        existing_item["content"] = tc["content"]
-                        existing_item["engine"] = "Regex-Recovery"
-                else:
-                    page_items.append(tc)
+            page_items = []
+            # 1. 테이블 기반 추출
+            tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
+            for table in tables:
+                priority_col_idx = -1
+                for row in table.rows:
+                    row_texts = [c.text or "" for c in row.cells]
+                    # [V17.4.0.4] 헤더 매칭 시 모든 공백 제거 후 비교 (성  분 -> 성분)
+                    row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
                     
-        components.extend(page_items)
+                    if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
+                        for i, t in enumerate(row_texts):
+                            clean_t = re.sub(r'\s+', '', t.lower())
+                            if '%' in t or '함량' in clean_t or 'content' in clean_t:
+                                priority_col_idx = i
+                                break
+                        if priority_col_idx >= 0: break
+                
+                for row in table.rows:
+                    parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
+                    if parsed_comps:
+                        page_items.extend(parsed_comps)
+                    elif page_items and page_items[-1]["content"] == "미기재%":
+                        row_raw_texts = [c.text for c in row.cells if c.text]
+                        for txt in row_raw_texts:
+                            norm = _normalize_single_content(txt)
+                            if norm != "미기재%" and re.search(r'\d', norm):
+                                idx = len(page_items) - 1
+                                while idx >= 0 and page_items[idx]["content"] == "미기재%":
+                                    page_items[idx]["content"] = norm
+                                    idx -= 1
+                                break
+            
+            # 2. 텍스트 기반 보완 (좌표 계승 적용)
+            if fitz_doc:
+                text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
+                # [V17.4.0.3] 다음 페이지를 위해 감지된 좌표 업데이트 (기억의 계승)
+                if detected_x:
+                    inherited_x_range = detected_x
+                
+                # [V17.3.2.25] 최종 병합
+                for tc in text_comps:
+                    target_cas = tc["cas_no"]
+                    existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
+                    if existing_item:
+                        if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                            existing_item["content"] = tc["content"]
+                            existing_item["engine"] = "Regex-Recovery"
+                    else:
+                        page_items.append(tc)
+                        
+            components.extend(page_items)
 
     if fitz_doc: fitz_doc.close()
     return components
@@ -795,6 +1014,16 @@ def process_pdf(pdf_path, log_func=None):
     alias = current_sniper["alias"] if current_sniper else "알수없음"
     
     if log_func: log_func(f" 🚀 [{VERSION}] 엔진 가동: {os.path.basename(pdf_path)}")
+
+    # [V17.4.0.0] 스캔본(Image-only) 선제 탐지
+    is_scanned = False
+    try:
+        doc_check = fitz.open(pdf_path)
+        is_scanned = not any(page.get_text().strip() for page in doc_check)
+        doc_check.close()
+    except: is_scanned = True
+
+    if is_scanned and log_func: log_func(" 🔍 스캔본(Image-only) 감지. 즉시 AI 스나이퍼 모드 가동.")
 
     image_list, section3_text, pages = extract_section3_images(pdf_path, current_sniper, log_func=log_func)
     
@@ -814,63 +1043,99 @@ def process_pdf(pdf_path, log_func=None):
     used_engine = ""
     is_ai_extracted = False
     ai_res = None
-    
-    doc_t = fitz.open(pdf_path)
-    target_pages = find_section3_pages(doc_t) 
-    doc_t.close()
+    odl_components = []
+    components = []
 
-    try:
-        parser = PDFParser()
-        odl_doc = parser.parse(pdf_path)
-        odl_components = extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=log_func)
-    except Exception as e:
-        if log_func: log_func(f" ⚠️ ODL 파싱 오류: {e}")
-        odl_components = []
-    
-    # 🚨 [V17.3.2.25] ODL 추출 결과의 완전성 검증 (누락 체크)
-    # 텍스트 원본에 존재하는 CAS 번호 목록과 대조
-    expected_cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', section3_text)
-    # [V17.3.2.25] 진행률 판단 시에도 문서 원본(section3_text) 대조하여 오타 CAS 수용
-    unique_expected_cas = set(c for c in expected_cas_list if verify_cas_number(c, grounding_text=section3_text))
-    found_cas_set = set(str(c.get("cas_no", "")) for c in odl_components if verify_cas_number(str(c.get("cas_no", "")), grounding_text=section3_text))
-    
-    is_omitted = any(cas not in found_cas_set for cas in unique_expected_cas)
-    valid_odl_contents = sum(1 for c in odl_components if str(c.get("content", "")) not in ["", "미기재%"])
-    all_have_content = (valid_odl_contents == len(odl_components)) if odl_components else False
-    
-    # 🚨 ODL+보조장치가 모든 CAS를 찾았고, 함량도 완벽할 때만 AI 생략
-    if not is_omitted and all_have_content and len(odl_components) > 0:
-        if log_func: log_func(f" 🔍 [Raw ODL Search] {len(odl_components)}건 발견 (보조장치 가동 전)")
-        # [Debug] ODL이 찾은 원본 리스트 출력
-        for idx, c in enumerate(odl_components, 1):
-            if log_func: log_func(f"   └─ {idx}. {c.get('cas_no')} | {c.get('content')} | {c.get('name')[:15]}")
+    # 🚨 [V17.4.0.9] 진정한 엔진 단일화: ODL(표) + Regex(패턴) 융합 추출
+    if not is_scanned and pages:
+        target_pages = pages 
+        fitz_doc = fitz.open(pdf_path)
+
+        # 1. 표 구조 분석 (ODL)
+        try:
+            parser = PDFParser()
+            odl_doc = parser.parse(pdf_path)
+            odl_components = extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=log_func)
+        except Exception:
+            odl_components = []
+
+        # 2. 텍스트 패턴 분석 (Regex-Recovery) - 상시 가동
+        regex_components = []
+        inherited_x = None
+        for p_idx in target_pages:
+            if p_idx >= len(fitz_doc): continue
+            try:
+                page_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x)
+                regex_components.extend(page_comps)
+                if detected_x: inherited_x = detected_x
+            except Exception as e:
+                if log_func: log_func(f" ⚠️ [Regex] 페이지 {p_idx} 분석 오류: {e}")
         
-        if log_func: log_func(f" 🟢 ODL+보조장치 정밀 추출 성공 ({len(odl_components)}건). AI 생략.")
-        ai_res = {"구성성분": odl_components, "교정_사유": "ODL 정밀 추출 완료"}
-        used_engine = "ODL-Regex"
-        is_ai_extracted = False
+        fitz_doc.close()
+
+        # 3. 데이터 융합 (Merge) - CAS 번호 기준 중복 제거 및 밀도 극대화
+        merged_map = {}
+        # Regex 결과를 먼저 담고
+        for c in regex_components:
+            cas = str(c.get("cas_no", "")).strip()
+            if cas: merged_map[cas] = c
+        
+        # ODL 결과로 덮어쓰기 (표 구조 데이터가 더 정확하므로)
+        for c in odl_components:
+            cas = str(c.get("cas_no", "")).strip()
+            if cas: merged_map[cas] = c
+
+        components = list(merged_map.values())
+        
+        if components:
+            if log_func: log_func(f" 🔍 [텍스트 정밀 분석] {len(components)}건의 성분(ODL+Regex) 융합 성공")
+            used_engine = "Text-Analytic"
+        else:
+            components = []
     else:
-        reason_msg = "누락 감지" if is_omitted else "함량 미기재"
-        if not odl_components: reason_msg = "탐지 실패"
+        components = []
+    
+    # [V17.4.0.9] 통합 추출 결과 검증 및 AI 보충 판정
+    if not is_scanned:
+        # 원본 텍스트 내 유효한 CAS 리스트 추출
+        expected_cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', section3_text)
+        unique_expected_cas = set(c for c in expected_cas_list if verify_cas_number(c, grounding_text=section3_text))
         
-        if log_func: 
-            if is_omitted:
-                log_func(f" 🟡 ODL 추출 누락 (텍스트:{len(unique_expected_cas)} vs 추출:{len(found_cas_set)}). AI 비전 스나이퍼({alias}) 투입!")
-            else:
-                log_func(f" 🟡 ODL 결과 불완전 ({reason_msg}). AI 비전 스나이퍼({alias}) 투입!")
+        # 추출된 결과 내 유효한 CAS 세트
+        found_cas_set = set(str(c.get("cas_no", c.get("cas", ""))) for c in components)
         
-        ai_res = call_gemini_2_5_flash(image_list, None, current_sniper, log_func)
+        # 누락 여부 및 함량 미기재 여부 판단
+        is_omitted = any(cas not in found_cas_set for cas in unique_expected_cas)
+        valid_contents = sum(1 for c in components if str(c.get("content", "")) not in ["", "미기재%"])
+        all_have_content = (valid_contents == len(components)) if components else False
+        
+        if not components or is_omitted or not all_have_content:
+            reason_msg = "추출 데이터 없음" if not components else ("누락 감지" if is_omitted else "함량 미기재")
+            if log_func: log_func(f" 🟡 AI Sniper({alias}) 투입! (사유: {reason_msg})")
+            is_ai_extracted = True
+        else:
+            if log_func: log_func(" ✅ 텍스트 데이터 정합성 확인 완료. AI 생략.")
+            ai_res = {"구성성분": components, "교정_사유": "텍스트 정밀 추출 완료"}
+            is_ai_extracted = False
+    else:
+        # 스캔본일 경우 즉시 AI 투입
+        if log_func: log_func(f" 🟡 AI Sniper({alias}) 투입! (사유: 스캔본)")
+        is_ai_extracted = True
+
+    if is_ai_extracted:
+        
+        # AI 프롬프트에 제공할 원본 텍스트 컨텍스트 구성
+        raw_prompt = f"{VISION_EXTRACTOR_PROMPT}\n\n[Raw Text Context for Reference]:\n{section3_text[:2000]}"
+        ai_res = call_gemini_2_5_flash(image_list, raw_prompt, current_sniper, log_func)
         used_engine = "Gemini-2.5-Flash"
         is_ai_extracted = True
         
-        # 🚨 [지원군 모드] 스나이퍼(Gemini)가 응답 실패(None)인 경우에만 불도저(GPT) 복구 투입
         if ai_res is None:
             if log_func: log_func(f" ⚠️ {alias} 사망. 비상 지원군(GPT-4o-mini) 복구 투입...")
-            ai_res = call_gpt_4o_mini(image_list, None, log_func=log_func)
+            ai_res = call_gpt_4o_mini(image_list, raw_prompt, log_func=log_func)
             used_engine = "GPT-4o-mini"
             is_ai_extracted = True
             
-        # 결과 분석 (스나이퍼 또는 불도저의 결과)
         if ai_res and "구성성분" in ai_res:
             for c in ai_res["구성성분"]: c["engine"] = used_engine
             pure_cas_count = sum(1 for c in ai_res.get("구성성분", []) if re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', str(c.get("cas", "") or c.get("cas_no", ""))))
@@ -878,8 +1143,8 @@ def process_pdf(pdf_path, log_func=None):
             pure_cas_count = 0
             
         if not ai_res or "구성성분" not in ai_res:
-            if log_func: log_func(" ❌ AI 엔진(지원군 포함) 추출 실패 (수동 검토 대상)")
-            return {"error": "전체 추출 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}
+            if log_func: log_func(" ❌ AI 엔진 추출 실패 (수동 검토 대상)")
+            return {"error": "추출 실패", "제품명": hybrid_pn, "신호등": "🔴"}
 
     components = ai_res.get("구성성분", [])
     reason = ai_res.get("교정_사유", "사유 없음")
@@ -911,7 +1176,8 @@ def process_pdf(pdf_path, log_func=None):
             product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
             break
 
-    gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "odl"
+    gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "analytic"
+
     
     res_obj = {
         "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,

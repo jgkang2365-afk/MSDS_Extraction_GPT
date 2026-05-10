@@ -985,12 +985,19 @@ class SMUGUI(QMainWindow):
 
 
     def log(self, message):
-        """[Premium] 시스템 로그 출력 및 자동 스크롤 (GUI & 터미널 병행)"""
+        """[V17.4.0.2] 지능형 시스템 로그 출력: 사용자가 검토 중일 땐 스크롤 고정"""
         if hasattr(self, 'log_view'):
-            # GUI 로그 창이 준비된 경우에만 출력 (유니코드 완벽 지원)
+            # 1. 현재 스크롤바 상태 확인 (최하단 여부)
+            v_bar = self.log_view.verticalScrollBar()
+            is_at_bottom = v_bar.value() >= v_bar.maximum() - 10 # 약간의 마진 허용
+            
+            # 2. 로그 추가
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.log_view.append(f"[{timestamp}] {message}")
-            self.log_view.ensureCursorVisible() # 자동 스크롤
+            
+            # 3. 조건부 자동 스크롤: 최하단에 있었을 때만 화면을 내림
+            if is_at_bottom:
+                self.log_view.ensureCursorVisible()
             
         # [무결점] 터미널 출력 시 cp949 인코딩 오류 방지 (이모지 필터링 및 텍스트 태그 변환)
         try:
@@ -1612,11 +1619,11 @@ class SMUGUI(QMainWindow):
     def reload_engine(self):
         """[HOT-RELOAD] 엔진 모듈을 다시 로드하며 캐시 파일도 삭제(초기화)"""
         try:
-            # [NEW] 캐시 파일 삭제
-            if os.path.exists("smu_cache.json"):
-                os.remove("smu_cache.json")
-                self.cache = {}
-                self.log("[!] 엔진 새로고침에 따라 분석 캐시가 삭제되었습니다.")
+            # [V17.3.3.3] 엔진 새로고침 시 캐시 삭제 방지 (속도 저하 방지)
+            # if os.path.exists("smu_cache.json"):
+            #     os.remove("smu_cache.json")
+            #     self.cache = {}
+            self.log("[!] 엔진이 새로고침 되었습니다. (기존 캐시는 보존됨)")
 
             import msds_engine_v5
             importlib.reload(msds_engine_v5)
