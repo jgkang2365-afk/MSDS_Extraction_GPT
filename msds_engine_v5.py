@@ -305,12 +305,14 @@ def _normalize_single_content(content_str):
             if sym_more and not sym_less and ("+" in v or "min" in v.lower()):
                 return f"{sym_more}{n1_s}%"
 
-            # [규칙] ≥A ≤B 형태는 표준 범위 A~B%로 변환
-            if sym_more == "≥" and sym_less == "≤": return f"{n1_s}~{n2_s}%"
-            
-            # 범위형 부등호 결합 (미만 기호 보존)
-            p2 = sym_less if sym_less else ""
-            return f"{n1_s}~{p2}{n2_s}%"
+            # [V17.3.3.3] 범위형 정규화 고도화 (주님 지침: 1% 기준 예외 적용)
+            # 상한선(n2_s)이 1%를 초과하는 일반 범위는 부등호를 제거하여 A~B%로 통일
+            if n2_s > 1.0:
+                return f"{n1_s}~{n2_s}%"
+            else:
+                # 상한선이 1% 이하인 경우 미만(<) 기호를 보존하여 법적 검증(측정 비대상) 지원
+                p2 = sym_less if sym_less else ""
+                return f"{n1_s}~{p2}{n2_s}%"
         except: pass
     elif len(nums) == 1:
         try:
