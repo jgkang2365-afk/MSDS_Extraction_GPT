@@ -125,7 +125,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.4.2.0" # [V17.4.2.0] Milestone: Shikimic & Cycle Oil 영구 고정 및 자가검증 강화
+VERSION = "17.4.2.1" # [V17.4.2.1] 정찰병(Recon) 프롬프트 고도화 및 탐색 범위 확대
 
 def load_prompt(prompt_type, version):
     """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
@@ -763,11 +763,17 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         if not pages:
             if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 가동...")
             recon_images = []
-            for i in range(min(5, len(doc))):
+            for i in range(min(7, len(doc))): # [V17.4.2.1] 탐색 범위를 7페이지로 확대
                 pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
                 recon_images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
             
-            recon_res = call_gemini_2_5_flash(recon_images, prompt="이 이미지들 중 '2. 구성성분' 또는 '3. 구성성분' 표가 있는 페이지 번호(0부터 시작)를 찾아라. JSON응답: {\"page_index\": 숫자}", current_sniper=current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
+            # [V17.4.2.1] 정찰병 프롬프트 고도화: CAS, 함량(%), 표 구조 힌트 추가
+            recon_prompt = """각 이미지를 분석하여 '3. 구성성분의 명칭 및 함유량' (Composition / Information on Ingredients) 섹션이 시작되는 페이지 번호를 찾아라.
+이 섹션은 반드시 화학물질명(Substance Name), CAS 번호, 중량퍼센트(%)가 포함된 표(Table) 형식이어야 한다. 
+만약 2번 섹션(유해성·위험성)에 혼합물의 성분 정보가 포함되어 있다면 해당 페이지를 선택하라. 
+결과는 반드시 0부터 시작하는 인덱스(첫 번째 이미지가 0)로 응답해야 하며, JSON 형식 {"page_index": 숫자} 로만 답변하라."""
+            
+            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
             page_idx = int(recon_res.get("page_index", -1)) if recon_res else -1
                 
             if 0 <= page_idx < len(doc):
