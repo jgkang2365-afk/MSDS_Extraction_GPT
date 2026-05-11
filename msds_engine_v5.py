@@ -125,7 +125,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.4.2.1" # [V17.4.2.1] 정찰병(Recon) 프롬프트 고도화 및 탐색 범위 확대
+VERSION = "17.4.2.3" # [V17.4.2.3] 섹션 3 탐색 범위 제한 (Max 2 Pages) 적용 및 노이즈 필터 고도화
 
 def load_prompt(prompt_type, version):
     """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
@@ -509,15 +509,18 @@ def find_section3_pages(doc):
         
         if found_section3:
             pages.append(i)
-            # 🚨 [V17.3.2.25] 조기 종료 가드: 단순 '위험' 단어 등이 아니라, 행의 시작에서 섹션 번호가 명확할 때만 중단
-            # 'Page 4 / 10' 같은 텍스트에 의한 오탐 방지를 위해 행 단위 스캔
+            # 🚨 [V17.4.2.3] 주님의 지침: 섹션 3을 찾은 시점부터 최대 2페이지(현재+다음)까지만 읽음
+            # 범위를 6페이지로 넓게 잡을 경우 8항(노출기준) 등의 노이즈가 유입되어 정확도가 급락함
+            if len(pages) >= 2:
+                return sorted(list(set(pages)))
+            
+            # 🚨 [V17.3.2.25] 조기 종료 가드: 다음 페이지를 보기도 전에 섹션 4가 나오면 즉시 중단
             lines = [l.strip() for l in text.split('\n') if l.strip()]
             for line in lines:
-                # 페이지 번호(Page 4...)는 제외하고 진짜 섹션 제목인 경우만
                 if exit_pattern.match(line) and "Page" not in line:
-                    return sorted(list(set(pages)))[:6]
+                    return sorted(list(set(pages)))
                 
-    return sorted(list(set(pages)))[:6]
+    return sorted(list(set(pages)))
 
 # [V17.3.2.28] 공용 정규식 패턴: CAS 번호 내 공백 허용 (\s* 추가)
 cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
@@ -697,6 +700,11 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             
             if all_conts:
                 def score_match(m):
+                    # [V17.4.2.2] 주님의 지침: 페이지 번호, 제품 코드, 노출 기준(ppm) 등 노이즈 강력 차단
+                    context_area = clean_text[max(0, clean_text.find(m)-20):min(len(clean_text), clean_text.find(m)+len(m)+20)]
+                    if any(noise in context_area for noise in ["쪽", "Page", "ppm", "TWA", "mg/m3", "Millipore", "Sigma"]):
+                        return -5000
+                        
                     # [V17.4.0.6] 전화번호/날짜 노이즈 강력 차단 (하이픈이 2개 이상이면 무조건 탈락)
                     if m.count('-') >= 2 or m.count('\u2013') >= 2:
                         return -5000
@@ -1161,8 +1169,15 @@ def process_pdf(pdf_path, log_func=None):
         valid_contents = sum(1 for c in components if str(c.get("content", "")) not in ["", "미기재%"])
         all_have_content = (valid_contents == len(components)) if components else False
         
-        if not components or is_omitted or not all_have_content:
-            reason_msg = "추출 데이터 없음" if not components else ("누락 감지" if is_omitted else "함량 미기재")
+        # [V17.4.2.2] 주님의 경험적 지침: ODL(표) 결과가 없는 '텍스트 기반 문서'는 무조건 AI Sniper 투입
+        is_text_mode = (not odl_components)
+        
+        if not components or is_omitted or not all_have_content or is_text_mode:
+            if not components: reason_msg = "추출 데이터 없음"
+            elif is_omitted: reason_msg = "누락 감지"
+            elif not all_have_content: reason_msg = "함량 미기재"
+            else: reason_msg = "텍스트 기반 문서(AI 필수)"
+            
             if log_func: log_func(f" 🟡 AI Sniper({alias}) 투입! (사유: {reason_msg})")
             is_ai_extracted = True
         else:
