@@ -125,23 +125,24 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.4.2.3" # [V17.4.2.3] 섹션 3 탐색 범위 제한 (Max 2 Pages) 적용 및 노이즈 필터 고도화
+VERSION = "17.4.2.11" # [V17.4.2.11] 3대 결함 통합 패치 (전화번호 오인, 자가 덮어쓰기, 단어 경계 결함 해결)
 
 def load_prompt(prompt_type, version):
-    """[V17.3.2.30] 프롬프트 로드 (Hierarchy Search: Root -> archive/)"""
+    """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
     mapping = {
-        "vision_extractor": f"prompt_vision_extractor_{version}.txt",
-        "product_name": f"prompt_product_name_{version}.txt"
+        "vision_extractor": f"prompt_vision_extractor",
+        "product_name": f"prompt_product_name"
     }
-    filename = mapping.get(prompt_type)
-    if not filename: raise ValueError(f"알 수 없는 프롬프트 타입: {prompt_type}")
+    prefix = mapping.get(prompt_type)
+    if not prefix: raise ValueError(f"알 수 없는 프롬프트 타입: {prompt_type}")
     
     base_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # 🔍 탐색 순서 정의 (최신은 루트, 구버전은 archive)
+    # 🔍 탐색 순서 정의
     search_paths = [
-        os.path.join(base_dir, filename),             # 1. 루트 (최신 버전 위치)
-        os.path.join(base_dir, "archive", filename)   # 2. 아카이브 폴더 (구버전 보관)
+        os.path.join(base_dir, f"{prefix}.txt"),             # 1. 루트 (버전 없는 표준 파일)
+        os.path.join(base_dir, f"{prefix}_{version}.txt"),   # 2. 루트 (현재 버전 명시 파일)
+        os.path.join(base_dir, "archive", f"{prefix}_{version}.txt") # 3. 아카이브
     ]
     
     for path in search_paths:
@@ -150,21 +151,19 @@ def load_prompt(prompt_type, version):
                 return f.read().strip()
                 
     # 모든 경로에서 실패 시
-    print(f"\n[Version Lock Error] 프롬프트 파일({filename})을 찾을 수 없습니다.")
-    print(f"   현재 엔진 요구 버전: {version}")
-    print(f"   탐색한 경로:")
-    for p in search_paths:
-        print(f"     - {p}")
-    sys.exit(1)
+    msg = f"[Version Lock Error] 프롬프트 파일을 찾을 수 없습니다.\n탐색한 경로:\n" + "\n".join([f" - {p}" for p in search_paths])
+    raise RuntimeError(msg)
 
 # 프롬프트 초기화 (지휘 체계 단일화)
 try:
     VISION_EXTRACTOR_PROMPT = load_prompt("vision_extractor", VERSION)
     PRODUCT_NAME_PROMPT = load_prompt("product_name", VERSION)
-    print(f"[*] 프롬프트 엔진 통폐합 및 버전 동기화 완료 (버전: {VERSION})")
+    print(f"[*] 프롬프트 엔진 표준화 및 로드 완료 (엔진 버전: {VERSION})")
 except Exception as e:
     print(f"[ERROR] 프롬프트 로드 중 치명적 오류: {e}")
-    sys.exit(1)
+    # GUI에서 import 시 sys.exit(1)이 발생하면 GUI가 닫히므로, 
+    # 여기서는 예외를 다시 발생시켜 smu_gui.py의 try-except에서 잡도록 함
+    raise
 
 # [V17.3.2.25] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
 MES_MASTER_MAP = {}
@@ -547,13 +546,34 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         if not raw_words: return [], inherited_x_range
         raw_words.sort(key=lambda w: (w[1], w[0]))
 
+        # [V17.4.2.10] 수직 구역 격리 (Vertical Section Guard): 섹션 3 위아래의 노이즈 물리적 절단
+        y_start = 0.0
+        y_end = 9999.0
+        
+        for w in raw_words:
+            text_val = w[4].replace(" ", "")
+            # 상한선: "구성성분" 헤더 위치
+            if "구성성분" in text_val or "성분및" in text_val:
+                if y_start == 0.0: y_start = w[1] - 20 # 약간의 위쪽 마진 허용
+            # 하한선: "응급조치" 헤더 위치
+            elif "응급조치" in text_val or "FIRST" in text_val.upper():
+                if w[1] > y_start: # 구성성분보다 아래에 있는 응급조치만 하한선으로 인정
+                    y_end = w[1]
+                    break
+        
+        # 상한선과 하한선 사이에 있는 단어만 살려두고 나머지(1항, 4항 등)는 파기
+        raw_words = [w for w in raw_words if y_start <= w[1] <= y_end]
+
         # [V17.3.5.10] 지능형 성분명 숫자 마스킹: 8개 메타데이터 구조 유지
         words = []
         for w in raw_words:
             # w: (x0, y0, x1, y1, "word", block_no, line_no, word_no)
             text_val = w[4]
             if any(c.isdigit() for c in text_val) and any(c.isalpha() for c in text_val):
-                if not cas_pattern.search(text_val):
+                # 눈에 보이지 않는 공백/특수 공백까지 모두 제거한 임시 변수 생성
+                check_val = re.sub(r'\s+', '', text_val)
+                # 공백이 압착된 check_val을 기준으로 키워드 생존 여부 검사
+                if not cas_pattern.search(text_val) and not any(k in check_val for k in ["미만", "미맊", "미먄", "이상", "이하", "초과", "%", "~", "∼", "to"]):
                     text_val = re.sub(r'\d', 'X', text_val)
             # 수정한 텍스트만 교체하고 나머지 좌표 및 메타데이터는 그대로 유지
             new_w = (w[0], w[1], w[2], w[3], text_val, w[5], w[6], w[7])
@@ -668,11 +688,20 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             # [V17.4.0.0] 날짜/연도 패턴 사전 마스킹
             clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
             clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
+
+            # [V17.4.2.6] 회귀 방지형 정규화: OCR 오타 사전 교정 및 특정 지시어에만 단어 경계 생성
+            clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만")
+            clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
             
             # 토큰 복구
             clean_text = clean_text.replace("__IS__", "이상").replace("__MI__", "미만").replace("___CAS_ID___", "[CAS_ANCHOR]")
             # [V17.4.1.1] 수술적 정규화 (RULE 9): 숫자 사이의 공백 제거 (CAS, 함량 공백 대응)
             clean_text = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', clean_text)
+            
+            # [V17.4.2.7] 정규식 단어 경계(\b) 함정 회피 및 OCR 오타 사전 교정
+            clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만")
+            clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text) # 타겟 지시어에만 제한적으로 단어 경계(\b) 생성 (회귀 방지)
+
             if log_func: log_func(f"   [DEBUG] clean_text: '{clean_text}'")
             
             # [V17.4.0.13] 지능형 괄호 가드 (Parenthesis Guard 2.0) 적용
@@ -705,8 +734,9 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     if any(noise in context_area for noise in ["쪽", "Page", "ppm", "TWA", "mg/m3", "Millipore", "Sigma"]):
                         return -5000
                         
-                    # [V17.4.0.6] 전화번호/날짜 노이즈 강력 차단 (하이픈이 2개 이상이면 무조건 탈락)
-                    if m.count('-') >= 2 or m.count('\u2013') >= 2:
+                    # [V17.4.2.9] 전화번호/날짜 노이즈 강력 차단: 선행/후행 기호(빈 셀 표시 등)를 제외하고 내부 하이픈만 카운트
+                    core_m = m.strip(' -∼~<>\u2013\u2014≤≥=')
+                    if core_m.count('-') >= 2 or core_m.count('\u2013') >= 2:
                         return -5000
                         
                     score = 0
@@ -1129,7 +1159,12 @@ def process_pdf(pdf_path, log_func=None):
         for c in regex_components:
             # [V17.4.1.3] CAS 번호 공백 제거하여 키 일치화 (64742 - 54 - 7 -> 64742-54-7)
             cas = str(c.get("cas_no", "")).replace(" ", "").strip()
-            if cas: merged_map[cas] = c
+            if cas: 
+                existing = merged_map.get(cas)
+                # [회귀 방지] 기존에 '유효한 함량'이 있는데, 새로 들어온 값이 '미기재%'라면 덮어쓰기 무시
+                if existing and str(existing.get("content")) != "미기재%" and str(c.get("content")) == "미기재%":
+                    continue
+                merged_map[cas] = c
         
         # ODL 결과로 병합 (ODL이 구조적으로 더 정확하나, 함량이 '미기재%'인 경우 Regex 데이터 보존)
         for c in odl_components:
@@ -1155,38 +1190,19 @@ def process_pdf(pdf_path, log_func=None):
     else:
         components = []
     
-    # [V17.4.0.9] 통합 추출 결과 검증 및 AI 보충 판정
+    # [V17.4.2.5] 3중 방어망 아키텍처 (주님 지침 반영)
+    # 1선(ODL) + 2선(Regex)에서 단 하나라도 추출되었다면 AI를 호출하지 않고 종료 (비용 절감 및 정합성 우선)
     if not is_scanned:
-        # 원본 텍스트 내 유효한 CAS 리스트 추출
-        expected_cas_list = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', section3_text)
-        unique_expected_cas = set(c for c in expected_cas_list if verify_cas_number(c, grounding_text=section3_text))
-        
-        # 추출된 결과 내 유효한 CAS 세트
-        found_cas_set = set(str(c.get("cas_no", c.get("cas", ""))) for c in components)
-        
-        # 누락 여부 및 함량 미기재 여부 판단
-        is_omitted = any(cas not in found_cas_set for cas in unique_expected_cas)
-        valid_contents = sum(1 for c in components if str(c.get("content", "")) not in ["", "미기재%"])
-        all_have_content = (valid_contents == len(components)) if components else False
-        
-        # [V17.4.2.2] 주님의 경험적 지침: ODL(표) 결과가 없는 '텍스트 기반 문서'는 무조건 AI Sniper 투입
-        is_text_mode = (not odl_components)
-        
-        if not components or is_omitted or not all_have_content or is_text_mode:
-            if not components: reason_msg = "추출 데이터 없음"
-            elif is_omitted: reason_msg = "누락 감지"
-            elif not all_have_content: reason_msg = "함량 미기재"
-            else: reason_msg = "텍스트 기반 문서(AI 필수)"
-            
-            if log_func: log_func(f" 🟡 AI Sniper({alias}) 투입! (사유: {reason_msg})")
-            is_ai_extracted = True
-        else:
-            if log_func: log_func(" ✅ 텍스트 데이터 정합성 확인 완료. AI 생략.")
+        if components:
+            if log_func: log_func(f" ✅ [1-2선 성공] {len(components)}건의 성분(ODL+Regex) 융합 성공. AI 생략.")
             ai_res = {"구성성분": components, "교정_사유": "텍스트 정밀 추출 완료"}
             is_ai_extracted = False
+        else:
+            if log_func: log_func(f" 🟡 [1-2선 실패] 추출 데이터 0건. AI Sniper({alias}) 긴급 투입!")
+            is_ai_extracted = True
     else:
         # 스캔본일 경우 즉시 AI 투입
-        if log_func: log_func(f" 🟡 AI Sniper({alias}) 투입! (사유: 스캔본)")
+        if log_func: log_func(f" 🟡 [스캔본] AI Sniper({alias}) 투입! (사유: 이미지 전용 문서)")
         is_ai_extracted = True
 
     if is_ai_extracted:
