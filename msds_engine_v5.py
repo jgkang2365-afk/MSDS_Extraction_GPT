@@ -122,10 +122,108 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
+def extract_spatial_cell_content(page_obj, cas_list):
+    """
+    [V18.0.0.12] 편집증적 공간 지각(Spatial) 추출기 (엄격한 동일 선상 락온 모델)
+    """
+    words = page_obj.get_text("words") 
+    
+    # 1. 십자선 교차 검증 (엄격한 동일 선상 락온 및 투명 그리드)
+    header_x0, header_x1 = None, None
+    table_start_y = None
+    
+    cas_candidates = [w for w in words if "CAS" in w[4].upper()]
+    header_keywords = ["함유량", "함량", "농도", "퍼센트", "content", "conc", "weight", "wt", "%"]
+    content_candidates = [w for w in words if any(k in w[4].lower() for k in header_keywords)]
+    
+    for c_word in content_candidates:
+        for cas_word in cas_candidates:
+            # 🚨 [V18.0.0.12] 가짜 제목 트랩 차단: 무조건 동일 선상(±12px)에 존재해야만 락온 허용
+            if abs(c_word[1] - cas_word[1]) <= 12: 
+                # 주변 헤더 간격을 스스로 측정하여 투명 세로선 생성
+                peer_words = [w for w in words if abs(w[1] - c_word[1]) <= 15]
+                
+                # 왼쪽 벽 세우기 (타 열 침범 방지)
+                left_peers = [w for w in peer_words if c_word[0] - w[2] > 15]
+                if left_peers:
+                    closest_left = max(left_peers, key=lambda w: w[2])
+                    header_x0 = closest_left[2] + 5 # 왼쪽 열의 글자와 겹치지 않게 5px 마진
+                else:
+                    header_x0 = c_word[0] - 100 # 왼쪽에 벽이 없으면 적당히 100px만 확장
+                    
+                # 오른쪽 벽 세우기
+                right_peers = [w for w in peer_words if w[0] - c_word[2] > 15]
+                if right_peers:
+                    closest_right = min(right_peers, key=lambda w: w[0])
+                    header_x1 = closest_right[0] - 5
+                else:
+                    header_x1 = c_word[2] + 100 # 오른쪽에 벽이 없으면 적당히 100px만 확장
+                    
+                table_start_y = min(c_word[1], cas_word[1])
+                break
+        if header_x0: break
+        
+    if not header_x0:
+        return {} 
+
+    # 2. Y축 락온 (표 내부 한정 및 y1 하단 좌표 추가)
+    cas_positions = []
+    for w in words:
+        if w[1] >= table_start_y - 10: 
+            for cas in cas_list:
+                if cas in w[4]:
+                    cas_positions.append({"cas": cas, "y0": w[1], "y1": w[3]})
+                    break
+                    
+    cas_positions.sort(key=lambda x: x["y0"])
+
+    results = {}
+    
+    # 3. 범용 그리드 추론 및 역방향 교차 검증
+    content_words = [w for w in words if header_x0 <= w[0] and w[2] <= header_x1 and w[1] >= table_start_y - 10]
+    
+    # 🚨 [V18.0.0.7] 문서 맞춤형 행 높이(Row Height) 자동 추론
+    cas_centers = [(item["y0"] + item["y1"]) / 2 for item in cas_positions]
+    gaps = [cas_centers[i] - cas_centers[i-1] for i in range(1, len(cas_centers))]
+    valid_gaps = [g for g in gaps if g > 5] # 5px 이하는 띄어쓰기 등 동일 줄 노이즈로 간주하고 배제
+    
+    if valid_gaps:
+        valid_gaps.sort()
+        inferred_row_height = valid_gaps[len(valid_gaps) // 2] # 중앙값(Median)으로 이 표의 평균 줄 간격 도출
+    else:
+        # CAS가 1개뿐이거나 간격 추론이 불가능할 경우의 안전 폴백
+        cas_h = cas_positions[0]["y1"] - cas_positions[0]["y0"] if cas_positions else 12
+        inferred_row_height = cas_h * 1.5 
+        
+    # 탐색 반경은 무조건 "줄 간격의 절반 + 미세 오차 2px"로 설정. (수학적 완벽 경계선)
+    dynamic_radius = (inferred_row_height / 2) + 2
+
+    for item in cas_positions:
+        target_cas = item["cas"]
+        cas_y_center = (item["y0"] + item["y1"]) / 2
+        
+        overlapping_contents = []
+        for cw in content_words:
+            c_y_center = (cw[1] + cw[3]) / 2
+            
+            # 🚨 타겟 중심점이 동적 반경(줄 간격의 절반) 이내에 들어오는 것만 캡처
+            if abs(cas_y_center - c_y_center) <= dynamic_radius:
+                overlapping_contents.append(cw)
+                
+        if overlapping_contents:
+            overlapping_contents.sort(key=lambda x: x[0]) 
+            content_str = " ".join([w[4] for w in overlapping_contents]).strip()
+            
+            if content_str and re.search(r'\d', content_str):
+                if target_cas not in results: 
+                    results[target_cas] = content_str
+                    
+    return results
+
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.4.3.3" # [V17.4.3.3] 2-Tier 노이즈 필터 (Absolute vs Conditional) 및 과잉 방어 교정
+VERSION = "18.0.0.12" # [V18.0.0.12] 공간 추출기 엄격한 동일 선상 락온(Tolerance ±12px) 및 그리드 안정화 적용
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -533,10 +631,15 @@ cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?
 
 
 def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
-    """[V17.4.0.3] Logical Row Synthesis: 좌표 계승(Inheritance) 및 구조적 필터링 적용"""
+    """[V18.0.0.0] Logical Row Synthesis: 공간 추출 모듈 통합 및 바이패스 지원"""
     if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
     found = []
     
+    # [V18.0.0.0] 공간 추출 모듈 선제 가동
+    all_text = page.get_text("text")
+    all_cas_on_page = list(set(cas_pattern.findall(all_text)))
+    spatial_results = extract_spatial_cell_content(page, all_cas_on_page)
+
     # [V17.4.0.3] 현재 페이지에서 감지된 좌표 범위를 반환하기 위한 변수
     detected_x_range = inherited_x_range
     
@@ -653,6 +756,14 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
 
         # 5. 마스킹 및 함량 추출 (합성된 텍스트 기반)
         for row in logical_rows:
+            # [V18.0.0.0] 공간 추출 결과 선제 체크: 모든 CAS가 해결되었다면 Regex 바이패스
+            if all(cas in spatial_results for cas in row["cas_list"]):
+                for cas in row["cas_list"]:
+                    content_s = spatial_results[cas]
+                    if log_func: log_func(f"   [Spatial-Cell] CAS {cas} -> 함량 {content_s} (공간 좌표 기반 신뢰)")
+                    found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content_s, "engine": "Spatial-Cell"})
+                continue # Regex 로직 전체 바이패스
+
             # [V17.3.5.7] 유연한 좌표 필터링: 함유량 열 범위 밖의 숫자는 노이즈로 간주
             safe_word_texts = []
             row_words = row.get("words", [])
@@ -773,11 +884,17 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     
                     m_nums = re.findall(r'\d+\.?\d*', m)
                     if m_nums:
-                        try:
-                            val = float(m_nums[0])
-                            if val > 110: score -= 3000
-                            if 1990 <= val <= 2030: score -= 1000 # 년도 패턴 감점
-                        except: pass
+                        # 🚨 [V18.0.0.2] 양방향 110 초과 전수 검문
+                        for num_str in m_nums:
+                            try:
+                                val = float(num_str)
+                                # 배열 내 단 하나의 숫자라도 110을 넘으면 3000점 깎고 즉시 루프 중단
+                                if val > 110: 
+                                    score -= 3000
+                                    break 
+                                if 1990 <= val <= 2030: 
+                                    score -= 1000 
+                            except: pass
                     return score
                 
                 # 점수가 가장 높은 것을 선택하되, 최소 기준(0점) 이상이어야 함
@@ -796,6 +913,13 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                         content = _normalize_single_content(best_single)
                 
             for cas in row["cas_list"]:
+                # [V18.0.0.0] 개별 CAS에 대해서도 공간 추출 결과가 있으면 우선 채택
+                if cas in spatial_results:
+                    content_s = spatial_results[cas]
+                    if log_func: log_func(f"   [Spatial-Cell] CAS {cas} -> 함량 {content_s} (공간 좌표 기반 신뢰)")
+                    found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content_s, "engine": "Spatial-Cell"})
+                    continue
+
                 if log_func: log_func(f"   [Regex-Recovery] CAS {cas} -> 함량 {content} (신뢰도: 고)")
                 found.append({"name": "CAS 기반 자동 매핑", "cas_no": cas, "content": content, "engine": "Regex-Recovery"})
 
@@ -1289,7 +1413,8 @@ analyze_msds = process_pdf
 
 def self_test_regression():
     """[DEPRECATED] 정답지 기반 검증 제거. 로직의 본질적 견고함에 집중."""
-    pass
+    fail_count = 0
+    pass_count = 0
     
     # 1. 부등호 및 범위 표준화 테스트
     test_cases = [
