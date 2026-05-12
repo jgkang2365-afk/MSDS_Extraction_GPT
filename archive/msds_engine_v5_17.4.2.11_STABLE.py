@@ -125,7 +125,7 @@ def _get_sorted_and_normalized_text(page):
 if not OPENAI_API_KEY:
     print("경고: .env 파일에 OPENAI_API_KEY가 없습니다.")
 
-VERSION = "17.4.3.3" # [V17.4.3.3] 2-Tier 노이즈 필터 (Absolute vs Conditional) 및 과잉 방어 교정
+VERSION = "17.4.2.11" # [V17.4.2.11] 3대 결함 통합 패치 (전화번호 오인, 자가 덮어쓰기, 단어 경계 결함 해결)
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -729,22 +729,10 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             
             if all_conts:
                 def score_match(m):
-                    # [V17.4.3.3] 2-Tier 노이즈 강력 필터 (회귀 방지 및 과잉 방어 교정)
+                    # [V17.4.2.2] 주님의 지침: 페이지 번호, 제품 코드, 노출 기준(ppm) 등 노이즈 강력 차단
                     context_area = clean_text[max(0, clean_text.find(m)-20):min(len(clean_text), clean_text.find(m)+len(m)+20)]
-                    
-                    # 🚨 Tier 1 (절대 방어선): 산업위생/화학 도메인 노이즈
-                    # 노출기준이나 타 스펙이 섞이는 치명적 회귀를 막기 위해 기호(%) 유무와 상관없이 무조건 차단
-                    domain_noises = ["ppm", "TWA", "mg/m3", "Millipore", "Sigma", "허용농도", "LEL", "OEL"]
-                    if any(noise in context_area for noise in domain_noises):
+                    if any(noise in context_area for noise in ["쪽", "Page", "ppm", "TWA", "mg/m3", "Millipore", "Sigma"]):
                         return -5000
-                        
-                    # 🚨 Tier 2 (조건부 방어선): 레이아웃 노이즈 (머리말/꼬리말)
-                    layout_noises = ["쪽", "Page", "페이지"]
-                    if any(noise in context_area for noise in layout_noises):
-                        # [회귀 완벽 차단] 추출된 값에 '%' 기호가 "없다면" 무조건 차단한다.
-                        # ('-'나 '~'는 페이지 범위(Page 1-5)에 흔히 쓰이므로 바이패스 조건으로 절대 허용 불가)
-                        if "%" not in m: 
-                            return -5000 
                         
                     # [V17.4.2.9] 전화번호/날짜 노이즈 강력 차단: 선행/후행 기호(빈 셀 표시 등)를 제외하고 내부 하이픈만 카운트
                     core_m = m.strip(' -∼~<>\u2013\u2014≤≥=')
