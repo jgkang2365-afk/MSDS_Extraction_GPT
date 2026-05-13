@@ -1624,6 +1624,10 @@ class SMUGUI(QMainWindow):
     def reload_engine(self):
         """[HOT-RELOAD] 엔진 모듈을 다시 로드하며 캐시도 완전 초기화"""
         try:
+            # [V23.0.0.0] 엔진 새로고침 시 사용자 요청에 따라 로그 창 초기화
+            if hasattr(self, 'log_view'):
+                self.log_view.clear()
+
             # [V17.4.0.9] 엔진 로직 변경을 즉시 반영하기 위해 캐시 강제 삭제
             if os.path.exists("smu_cache.json"):
                 try: os.remove("smu_cache.json")

@@ -1,27 +1,27 @@
-# 🚀 Project Specification: MSDS Extraction Engine Stabilization (File 13 & CAS Filtering)
+# Specification: MSDS Extraction Engine V23 Upgrade
 
-## 1. 개요 (Overview)
-- **목표**: 13번 파일의 제품명 추출 실패 문제를 해결하고, "CAS 번호가 없는 성분은 최종 결과에서 제외"하는 규칙을 강화한다.
-- **대상 파일**: `msds_engine_v5.py`, `SUCCESS_DNA.md`
-- **핵심 변경 사항**:
-    1. **제품명 추출 복구**: 429 에러 대응 및 영문 포맷 레이아웃 인식 개선.
-    2. **CAS 필터링 강화**: CAS 번호가 유효하지 않은(예: `-`, `None`) 성분은 함량이 있더라도 최종 테이블 기재 시 제외 처리.
+## 1. 개요
+`msds_engine_v5.py`의 추출 성능 고도화를 위해 V23.0.0.0 지능형 하이브리드 엔진을 이식하고 시스템 버전을 업데이트한다.
 
-## 2. 요구사항 (Requirements)
-### 2.1 제품명 추출 (Product Name)
-- 429 에러(Rate Limit) 발생 시 지연 후 재시도 또는 로컬/텍스트 기반 Fallback 강화.
-- 영문 MSDS의 `Product name :` 라벨 하단에 위치한 제품명을 정확히 캡처하도록 비전 프롬프트 및 로직 보정.
+## 2. 변경 사항
+### 2.1 버전 정보 수정
+- **파일**: `msds_engine_v5.py`
+- **대상**: `VERSION` 변수 (Line 125 부근)
+- **변경**: `"22.2.0.0"` -> `"23.0.0.0"`
 
-### 2.2 성분 필터링 (Component Filtering)
-- **Rule**: 유효한 CAS 번호가 없는 성분 행은 최종 추출 결과 문자열에서 제외한다.
-- **대상**: CAS 번호가 `-`, `미기재`, `None` 등으로 표시된 항목.
-- **예외**: '영업비밀', 'Secret' 등 법적으로 보존이 필요한 키워드는 기존 DNA 규칙에 따라 유지 여부 재확인 (현재 주님 지침에 따라 `-` 등은 제거 확정).
+### 2.2 extract_from_text_regex 함수 전체 교체
+- **위치**: Line 532 ~ 730 부근
+- **주요 특징**:
+    - **Topological Barrier**: 020번 가짜 볼드체 및 유령 텍스트 병합 로직 강화.
+    - **Intelligent Header Scanner**: 문서 헤더에서 단위(%) 상속 여부 및 좌우 배열(CAS vs Content) 컨텍스트 파악.
+    - **Enhanced Score Logic**: 헤더 컨텍스트 기반의 가중치(Score) 시스템 적용.
+    - **Safe Recovery**: CAS 기반 자동 매핑의 신뢰도 향상.
 
-## 3. 성공 기준 (UAT)
-- [ ] 13번 파일 실행 시 제품명 `Snail Secretion Filtrate(HD2)`가 정확히 추출됨.
-- [ ] 13번 파일의 성분 결과가 `7732-18-5(5%); 6920-22-5(3%)`로만 구성됨 (92% 성분 제외).
-- [ ] 기존 33개 테스트 파일에 대한 회귀 테스트 통과.
+## 3. 검증 계획 (GSD2 Verify)
+1. **문법 검사**: 수정 후 `python -m py_compile msds_engine_v5.py`를 통해 구문 오류가 없는지 확인.
+2. **구조 검증**: `extract_from_text_regex` 함수가 기존의 다른 함수들과 적절히 연결되는지 확인.
+3. **로직 확인**: 버전 정보가 정상적으로 반영되었는지 확인.
 
-## 4. 위험 요소 (Risks)
-- **회귀 위험**: CAS 번호가 없지만 중요한 성분을 강제로 제외할 경우, 특정 업체용 MSDS에서 정보 유실 가능성.
-- **API 제한**: 429 에러가 지속될 경우 전체 엔진 성능 저하.
+## 4. 주의 사항
+- 1,000줄 이상의 파일이므로 전체 재작성이 아닌 **정밀 부분 교체(replace_file_content)** 방식을 사용한다.
+- 들여쓰기(Indentation) 오류가 발생하지 않도록 4-space 규칙을 엄격히 준수한다.
