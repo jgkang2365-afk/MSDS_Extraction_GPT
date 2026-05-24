@@ -122,7 +122,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.3.1.0" # [V24.3.1.0] % 면책 특권 룰: 단위 기반 지능적 필터링 및 거리 페널티 대폭 강화
+VERSION = "24.3.5.4" # [V24.3.5.4] 엑셀 셀 전역 서식(맞춤, 줄 바꿈, 폰트 정보) 백업 및 복원 장치 구현
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -555,28 +555,37 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         
         raw_words.sort(key=lambda w: (w[1], w[0]))
 
-        # 수직 구역 격리
+        # 블록 단위로 y_start, y_end 계산
+        blocks = page.get_text("blocks")
+        blocks.sort(key=lambda b: b[1])
+        
         y_start, y_end = 0.0, 9999.0
-        for w in raw_words:
-            text_val = w[4].replace(" ", "").upper()
-            if any(k in text_val for k in ["구성성분", "성분및", "COMPONENTS", "INGREDIENTS"]):
-                if y_start == 0.0: y_start = w[1] - 30
-            elif any(k in text_val for k in ["응급조치", "FIRSTAID"]):
-                if w[1] > y_start: 
-                    y_end = w[1]
+        y_start_orig = 0.0
+        for b in blocks:
+            b_text = re.sub(r'\s+', '', b[4]).upper()
+            if y_start_orig == 0.0:
+                if any(k in b_text for k in ["구성성분", "성분및", "COMPONENTS", "INGREDIENTS", "COMPOSITION", "조성물"]):
+                    y_start_orig = b[1] - 30
+                    y_start = y_start_orig
+            # y_start_orig가 감지된 상태에서, 그 아래쪽 영역에서만 y_end 탐색 (오염 방지)
+            if y_start_orig > 0.0 and b[1] > y_start_orig:
+                if any(k in b_text for k in ["응급조치", "FIRSTAID", "FIRSTAIDMEASURES"]):
+                    y_end = b[1]
                     break
                     
         if raw_words and y_start > raw_words[-1][1] * 0.75:
             y_start = 0.0
             
-        raw_words = [w for w in raw_words if y_start <= w[1] <= y_end]
+        raw_words = [w for w in raw_words if y_start <= w[1] < y_end]
 
         # 🚨 [V24.0.1.0] 누락되었던 content_x_mid 변수 및 갱신 로직 복구
         is_left_arranged = False
         has_global_percent = False
         content_x_mid = 9999 # 🚨 누락되었던 변수 부활
         
-        header_words = [w for w in raw_words if w[1] <= y_start + 150]
+        # y_start가 0.0으로 폴백되더라도 y_start_orig가 존재한다면 그 기준으로 헤더를 감지
+        y_header_ref = y_start_orig if y_start_orig > 0.0 else y_start
+        header_words = [w for w in raw_words if y_header_ref - 30 <= w[1] <= y_header_ref + 150]
         header_text = " ".join([w[4] for w in header_words]).upper()
         
         if "%" in header_text or "퍼센트" in header_text:
@@ -643,11 +652,33 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     "words": current_line_words
                 })
 
+        # physical_lines 빌드 후 y_start 정밀 재검색 및 교정
+        y_start_refined = 0.0
+        for pl in physical_lines:
+            line_text = pl["text"]
+            if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', line_text, re.I):
+                y_start_refined = pl["y"] - 10
+                break
+                
+        if y_start_refined > 0.0:
+            y_start_orig = y_start_refined
+            if raw_words and y_start_refined > raw_words[-1][1] * 0.75:
+                y_start = 0.0
+            else:
+                y_start = y_start_refined
+                
+            raw_words = [w for w in raw_words if y_start <= w[1] < y_end]
+            y_header_ref = y_start_orig
+            header_words = [w for w in raw_words if y_header_ref - 30 <= w[1] <= y_header_ref + 150]
+            header_text = " ".join([w[4] for w in header_words]).upper()
+            has_global_percent = "%" in header_text or "퍼센트" in header_text
+
         logical_rows = []
         pending_lines = []
         current_row = None
 
         for line in physical_lines:
+            if line["y"] < y_start: continue # y_start 이전 라인은 행 구성에서 생략 (블랙홀 방어)
             row_text = line["text"]
             cas_list = cas_pattern.findall(row_text)
             

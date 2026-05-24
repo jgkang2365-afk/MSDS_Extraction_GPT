@@ -3,22 +3,42 @@
         "순번/No": "A",
         "제품명": "D",
         "파일명": "P",
-        "2차 결과(규제)": "L",
+        "2차 결과(규제)": "J",
         "1차 결과(전체)": "N",
         "측정대상1": "M",
-        "측정대상2": "",
+        "측정대상2": "I",
         "CAS 원본": "O",
-        "공정명": "",
-        "제조/사용": "",
-        "사용용도": "",
-        "월취급량": "",
-        "단위": ""
+        "공정명": "B",
+        "제조/사용": "C",
+        "사용용도": "E",
+        "월취급량": "S",
+        "단위": "T"
     },
-    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/주식회사 은민에스엔디 24-3513 설해원 설해수림 인테리어 공사-B공구/26년 상반기 작업환경 측정 자료/은민_msds/주식회사 은민에스엔디 24-3513 설해원 설해수림 인테리어 공사-B공구(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "measure_mapping": {
+        "공정명 열": "B",
+        "화학물질명 열": "C",
+        "일련번호 수 열": "E",
+        "번호코드 열(F)": "F",
+        "번호코드 열(G)": "G",
+        "노출기준 L값 열": "I",
+        "노출기준 E값 열": "J",
+        "분석방법 열": "K",
+        "병합 대상 열": "D, E, F, G, M",
+        "현황 공정명 열": "C",
+        "현황 화학물질명 열": "I"
+    },
+    "backup_path": "",
+    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Downloads/오송락카_각색_MSDS(GHS)(KOR)/2-오성락카-백색.pdf"
+        "C:/Users/USER/Downloads/오송락카_각색_MSDS(GHS)(KOR)/2-오성락카-백색.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/009_barium chloride anhydrous.pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/011_1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/040_질산은 7761-88-8.pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)002_MSDS(보통휘발유(Regular Unleaded Gasoline)_SOIL)(O).pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)011_SDS_ICP-08N-1(Cd).pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)018_[K.S.PEARL] MSDS - Iron Oxide Red 3AS (KR).pdf"
     ]
 }

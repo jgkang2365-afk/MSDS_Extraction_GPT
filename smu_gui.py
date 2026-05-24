@@ -10,7 +10,8 @@ from PyQt5.QtWidgets import (
     QTableWidgetItem, QHeaderView, QGroupBox, QGridLayout, 
     QScrollArea, QMessageBox, QComboBox, QProgressBar, QFrame,
     QSplitter, QTabWidget, QTextEdit, QStyledItemDelegate, QStyle,
-    QStackedWidget, QToolButton, QSizePolicy, QMenu
+    QStackedWidget, QToolButton, QSizePolicy, QMenu, QDialog,
+    QButtonGroup, QRadioButton, QAbstractItemView
 )
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
@@ -33,6 +34,270 @@ COL_IDX_PAGE = 10
 # [Part 1] 탐색기 스타일 자연스러운 정렬 (Natural Sort)
 def natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
+
+
+# [Part 1.5] 세부 성상 선택 팝업 다이얼로그 (1:N 매칭 제어용)
+class SubstanceSelectDialog(QDialog):
+    def __init__(self, title, name, cas, content, candidates, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setModal(True)
+        self.selected_code = None
+        self.selected_entry = None
+        self.candidates = candidates
+        
+        # 메인 레이아웃 구성
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        
+        # 상세 안내 정보 라벨
+        info_text = f"성분명: {name}\nCAS 번호: {cas}\n함유량: {content if content else '미기재%'}\n\n아래의 상세 성상 목록 중 수집 대상 물질을 선택해 주세요:"
+        lbl_info = QLabel(info_text)
+        lbl_info.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 10pt; font-weight: bold; color: #222222; line-height: 140%;")
+        layout.addWidget(lbl_info)
+        
+        # 후보 목록 그룹박스
+        group_box = QGroupBox("매칭 후보 물질 목록")
+        group_box.setStyleSheet("QGroupBox { font-family: 'Malgun Gothic'; font-weight: bold; color: #555; }")
+        group_layout = QVBoxLayout()
+        group_layout.setContentsMargins(10, 15, 10, 10)
+        group_layout.setSpacing(8)
+        
+        self.group = QButtonGroup(self)
+        self.radio_buttons = []
+        
+        for idx, cand in enumerate(candidates):
+            m_name = cand.get("측정대상 물질명") or ""
+            twa = cand.get("노출기준(TWA)", "") or "-"
+            stel = cand.get("노출기준(STEL)", "") or "-"
+            display_text = f"{m_name} [TWA: {twa} / STEL: {stel}]"
+            
+            radio = QRadioButton(display_text)
+            radio.setStyleSheet("QRadioButton { font-family: 'Malgun Gothic'; font-size: 9.5pt; padding: 2px; } QRadioButton::indicator { width: 16px; height: 16px; }")
+            if idx == 0:
+                radio.setChecked(True)
+            group_layout.addWidget(radio)
+            self.group.addButton(radio, idx)
+            self.radio_buttons.append((radio, cand.get("정렬코드"), cand))
+            
+        group_box.setLayout(group_layout)
+        layout.addWidget(group_box)
+        
+        # 확인 / 취소 버튼 박스
+        btn_layout = QHBoxLayout()
+        btn_apply = QPushButton("적용")
+        btn_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #1a73e8;
+                color: white;
+                font-family: 'Malgun Gothic';
+                font-size: 9.5pt;
+                font-weight: bold;
+                border-radius: 4px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover {
+                background-color: #1557b0;
+            }
+        """)
+        btn_apply.clicked.connect(self.accept)
+        
+        btn_cancel = QPushButton("취소")
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f3f4;
+                color: #3c4043;
+                font-family: 'Malgun Gothic';
+                font-size: 9.5pt;
+                border-radius: 4px;
+                padding: 6px 16px;
+            }
+            QPushButton:hover {
+                background-color: #e8eaed;
+            }
+        """)
+        btn_cancel.clicked.connect(self.reject)
+        
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_apply)
+        btn_layout.addWidget(btn_cancel)
+        layout.addLayout(btn_layout)
+        
+        self.setLayout(layout)
+        self.setMinimumWidth(450)
+        
+    def get_selected_data(self):
+        idx = self.group.checkedId()
+        if idx != -1:
+            return self.radio_buttons[idx][1], self.radio_buttons[idx][2]
+        return None, None
+
+
+# [Part 1.6] 물질명 오타 교정 다이얼로그 (사용자 직접 편집 가능)
+class SubstanceCorrectionDialog(QDialog):
+    """표준 마스터에 없는 물질명이 감지될 때 표시되는 교정 다이얼로그.
+    사용자가 추천안을 선택하거나 직접 입력하여 교정할 수 있음."""
+    
+    # 반환 코드 상수 정의
+    RESULT_APPLY = 1       # 교정 적용
+    RESULT_SKIP = 2        # 건너뛰기
+    RESULT_ALL_APPLY = 3   # 이후 모두 교정
+    RESULT_ALL_SKIP = 4    # 이후 모두 건너뛰기
+    
+    def __init__(self, row_num, detected_name, suggestions, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("물질명 오타 교정 제안")
+        self.setModal(True)
+        self.result_action = self.RESULT_SKIP
+        self.corrected_name = detected_name
+        
+        layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(12)
+        
+        # 안내 라벨
+        lbl_info = QLabel(f"[행 {row_num}] 표준 마스터 리스트에 없는 물질명이 감지되었습니다.")
+        lbl_info.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 10pt; font-weight: bold; color: #d32f2f;")
+        lbl_info.setWordWrap(True)
+        layout.addWidget(lbl_info)
+        
+        # 감지된 명칭 표시
+        lbl_detected = QLabel(f"감지된 명칭: <span style='color: #1a73e8; font-weight: bold;'>{detected_name}</span>")
+        lbl_detected.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 10pt; color: #222222;")
+        layout.addWidget(lbl_detected)
+        
+        # 교정 입력 필드 (사용자가 직접 편집 가능)
+        lbl_edit = QLabel("교정할 물질명 (직접 수정 가능):")
+        lbl_edit.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9.5pt; color: #555;")
+        layout.addWidget(lbl_edit)
+        
+        self.edit_name = QLineEdit()
+        self.edit_name.setText(suggestions[0] if suggestions else detected_name)
+        self.edit_name.setStyleSheet("""
+            QLineEdit {
+                font-family: 'Malgun Gothic'; font-size: 10pt;
+                padding: 6px 10px; border: 2px solid #1a73e8;
+                border-radius: 4px; background-color: #fff;
+            }
+            QLineEdit:focus { border-color: #0d47a1; }
+        """)
+        layout.addWidget(self.edit_name)
+        
+        # 추천 교정안 목록 (클릭 시 edit_name에 자동 반영)
+        if suggestions:
+            lbl_suggest = QLabel("추천 교정안 (클릭하면 위 입력란에 반영):")
+            lbl_suggest.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9pt; color: #777;")
+            layout.addWidget(lbl_suggest)
+            
+            for sug in suggestions:
+                btn_sug = QPushButton(f"  → {sug}")
+                btn_sug.setCursor(QCursor(Qt.PointingHandCursor))
+                btn_sug.setStyleSheet("""
+                    QPushButton {
+                        text-align: left; font-family: 'Malgun Gothic'; font-size: 9.5pt;
+                        color: #1a73e8; background: transparent; border: 1px solid #e0e0e0;
+                        border-radius: 3px; padding: 4px 8px;
+                    }
+                    QPushButton:hover { background-color: #e8f0fe; border-color: #1a73e8; }
+                """)
+                btn_sug.clicked.connect(lambda checked, s=sug: self.edit_name.setText(s))
+                btn_sug.installEventFilter(self)
+                btn_sug.setProperty("sug_name", sug)
+                layout.addWidget(btn_sug)
+        
+        # 구분선
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet("color: #e0e0e0;")
+        layout.addWidget(line)
+        
+        # 버튼 영역
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
+        
+        btn_apply = QPushButton("교정 적용")
+        btn_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #1a73e8; color: white;
+                font-family: 'Malgun Gothic'; font-size: 9.5pt; font-weight: bold;
+                border-radius: 4px; padding: 6px 16px;
+            }
+            QPushButton:hover { background-color: #1557b0; }
+        """)
+        btn_apply.clicked.connect(self._on_apply)
+        
+        btn_skip = QPushButton("건너뛰기")
+        btn_skip.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f3f4; color: #3c4043;
+                font-family: 'Malgun Gothic'; font-size: 9.5pt;
+                border-radius: 4px; padding: 6px 16px;
+            }
+            QPushButton:hover { background-color: #e8eaed; }
+        """)
+        btn_skip.clicked.connect(self._on_skip)
+        
+        btn_all_apply = QPushButton("이후 모두 교정")
+        btn_all_apply.setStyleSheet("""
+            QPushButton {
+                background-color: #e8f5e9; color: #2e7d32;
+                font-family: 'Malgun Gothic'; font-size: 9pt;
+                border-radius: 4px; padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #c8e6c9; }
+        """)
+        btn_all_apply.clicked.connect(self._on_all_apply)
+        
+        btn_all_skip = QPushButton("이후 모두 건너뛰기")
+        btn_all_skip.setStyleSheet("""
+            QPushButton {
+                background-color: #fff3e0; color: #e65100;
+                font-family: 'Malgun Gothic'; font-size: 9pt;
+                border-radius: 4px; padding: 6px 12px;
+            }
+            QPushButton:hover { background-color: #ffe0b2; }
+        """)
+        btn_all_skip.clicked.connect(self._on_all_skip)
+        
+        btn_layout.addWidget(btn_apply)
+        btn_layout.addWidget(btn_skip)
+        btn_layout.addStretch()
+        btn_layout.addWidget(btn_all_apply)
+        btn_layout.addWidget(btn_all_skip)
+        layout.addLayout(btn_layout)
+        
+        self.setLayout(layout)
+        self.setMinimumWidth(500)
+    
+    def _on_apply(self):
+        self.corrected_name = self.edit_name.text().strip()
+        self.result_action = self.RESULT_APPLY
+        self.accept()
+    
+    def _on_skip(self):
+        self.result_action = self.RESULT_SKIP
+        self.accept()
+    
+    def _on_all_apply(self):
+        self.corrected_name = self.edit_name.text().strip()
+        self.result_action = self.RESULT_ALL_APPLY
+        self.accept()
+    
+    def _on_all_skip(self):
+        self.result_action = self.RESULT_ALL_SKIP
+        self.accept()
+    
+    def eventFilter(self, obj, event):
+        """추천 버튼 더블클릭 시 즉시 교정 적용"""
+        from PyQt5.QtCore import QEvent
+        if event.type() == QEvent.MouseButtonDblClick and isinstance(obj, QPushButton):
+            sug_name = obj.property("sug_name")
+            if sug_name:
+                self.edit_name.setText(sug_name)
+                self._on_apply()
+                return True
+        return super().eventFilter(obj, event)
 
 
 # [Part 2] Seamless PDF Preview 패널 (바이너리 강제 로드 버전)
@@ -533,18 +798,39 @@ class ValidationWorker(QThread):
                 # [V7.0 추가] 캐시 적중 시 하위 파싱(components 루프 등) 전면 우회
                 if raw_val_res.get("status") == "Cache-Hit":
                     manual = raw_val_res.get("manual_data", {})
-                    val_res = {
-                        "res_1st": manual.get("reg1", "").split(";\n") if manual.get("reg1") else [""],
-                        "res_2nd": manual.get("reg2", "").split(";\n") if manual.get("reg2") else [""],
-                        "work_subjects": manual.get("measure", ""),
-                        "cas_with_content": manual.get("raw_content", "").split(";\n") if manual.get("raw_content") else []
-                    }
+                    
+                    # [버그 수정] 캐시된 성분 목록 로드 및 함유량 강제 복원
+                    cached_comps = self.parent_gui.cache.get(f_hash, {}).get("components", [])
+                    if cached_comps:
+                        for c in cached_comps:
+                            cas = c.get("cas", "")
+                            if cas in cas_to_content:
+                                c["content"] = cas_to_content[cas]
+                                
+                    # [버그 수정] 복원된 성분 정보를 기반으로 1차/2차 규제 및 측정대상을 실시간으로 완벽 재구성
+                    if cached_comps:
+                        new_res1, new_res2, new_work = self.parent_gui.regenerate_validation_results(cached_comps)
+                        val_res = {
+                            "res_1st": new_res1,
+                            "res_2nd": new_res2,
+                            "work_subjects": new_work,
+                            "cas_with_content": str(cas_content).split("; ") if cas_content else []
+                        }
+                    else:
+                        val_res = {
+                            "res_1st": manual.get("reg1", "").split(";\n") if manual.get("reg1") else [""],
+                            "res_2nd": manual.get("reg2", "").split(";\n") if manual.get("reg2") else [""],
+                            "work_subjects": manual.get("measure", ""),
+                            "cas_with_content": manual.get("raw_content", "").split(";\n") if manual.get("raw_content") else []
+                        }
+                    
                     res_data = {
                         "row_idx": row_idx,
                         "f_hash": f_hash,
                         "filename": fn,
                         "product_name": manual.get("product_name", prod),
                         "validation": val_res,
+                        "components": cached_comps,
                         "status": "검증 완료 (캐시)"
                     }
                     self.result_signal.emit(res_data)
@@ -563,6 +849,7 @@ class ValidationWorker(QThread):
                     
                     # 엔진 전송 전 잘라냈던 함유량을 원본에서 복원
                     range_val = cas_to_content.get(cas, c.get("content", ""))
+                    c["content"] = range_val
                     
                     # [V27.5 영문명/기호 완벽 보존 로직 복제]
                     # [V15.8.18 수정] 과도한 명칭 훼손 방지 (글로벌 명칭 및 모델명, 공백 보존)
@@ -583,7 +870,7 @@ class ValidationWorker(QThread):
                     else:
                         # 엔진 맵에 없을 경우에만 GUI 로컬 맵에서 2차 방어망 가동
                         mes_entry = self.parent_gui.mes_cas_map.get(cas, {})
-                        fallback_name = mes_entry.get("물질명") or mes_entry.get("상용명")
+                        fallback_name = mes_entry.get("측정대상 물질명")
                         if fallback_name and str(fallback_name).lower() != 'nan':
                             clean_name = str(fallback_name)
                             clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
@@ -673,6 +960,7 @@ class ValidationWorker(QThread):
                     "filename": fn,
                     "product_name": prod,
                     "validation": val_res,
+                    "components": raw_val_res.get("components", []),
                     "status": "검증 완료"
                 }
                 self.result_signal.emit(res_data)
@@ -770,10 +1058,110 @@ class ModernMappingPanel(QGroupBox):
         return {k: v.text().strip() for k, v in self.inputs.items()}
 
     def set_mapping(self, data):
-        """저장된 데이터를 바탕으로 매핑 입력창을 채움"""
-        if not data: return
-        for k, v in data.items():
+        """저장된 데이터를 바탕으로 매핑 입력창을 채움 (안전 폴백 포함)"""
+        default_map = {
+            "순번/No": "A", "제품명": "D", "파일명": "P",
+            "2차 결과(규제)": "L", "1차 결과(전체)": "N",
+            "측정대상1": "M", "측정대상2": "",
+            "CAS 원본": "O",
+            "공정명": "B", "제조/사용": "C",
+            "사용용도": "E", "월취급량": "S", "단위": "T"
+        }
+        if not data:
+            data = default_map
+        for k, default_v in default_map.items():
             if k in self.inputs:
+                v = data.get(k, "")
+                if v is None or str(v).strip() == "":
+                    v = default_v
+                self.inputs[k].setText(v)
+
+
+class MeasurePlanMappingPanel(QGroupBox):
+    # 측정계획 수립 전용 동적 열 매핑 패널
+    def __init__(self, title="측정계획 수립용 열 매핑 설정"):
+        super().__init__(title)
+        self.inputs = {}
+        layout = QGridLayout()
+        layout.setContentsMargins(15, 20, 15, 10)
+        layout.setHorizontalSpacing(15)
+        layout.setVerticalSpacing(10)
+
+        # 측정계획 수립에 필요한 핵심 열들 (내부 키값, UI 표시명, 기본값)
+        fields = [
+            ("공정명 열", "공정명 열 (측정대상 과/공정)", "B"),
+            ("화학물질명 열", "화학물질명 열 (측정대상 유해인자)", "C"),
+            ("일련번호 수 열", "근로자수 열 (일련번호 수)", "D"),
+            ("번호코드 열(F)", "번호코드 열 (근로자명)", "F"),
+            ("번호코드 열(G)", "번호코드 열 (장비번호)", "G"),
+            ("노출기준 L값 열", "측정매체(실무용) 열", "I"),
+            ("노출기준 E값 열", "유량 열", "J"),
+            ("분석방법 열", "분석방법 열 (분석방법)", "K"),
+            ("병합 대상 열", "병합 대상 열", "D, E, F, G, M"),
+            ("현황 공정명 열", "현황 공정명 열 (제조/사용)", "C"),
+            ("현황 화학물질명 열", "현황 화학물질명 열 (비고)", "I")
+        ]
+
+        for idx, (key, display_name, default) in enumerate(fields):
+            row = idx // 3
+            col_base = (idx % 3) * 2
+            
+            lbl = QLabel(display_name)
+            lbl.setStyleSheet("font-weight: bold; color: #444; min-width: 100px;")
+            layout.addWidget(lbl, row, col_base, Qt.AlignRight)
+            
+            edit = QLineEdit(default)
+            # 병합 대상 열의 경우 쉼표 구분 목록이므로 너비를 넓게 잡음
+            if key == "병합 대상 열":
+                edit.setFixedWidth(120)
+            else:
+                edit.setFixedWidth(50)
+            edit.setFixedHeight(28)
+            edit.setAlignment(Qt.AlignCenter)
+            edit.setStyleSheet("""
+                QLineEdit {
+                    background-color: #ffffff;
+                    border: 1px solid #ced4da;
+                    border-radius: 4px;
+                    padding: 2px;
+                }
+                QLineEdit:focus {
+                    border: 1px solid #0078d4;
+                    background-color: #f0f7ff;
+                }
+            """)
+            layout.addWidget(edit, row, col_base + 1, Qt.AlignLeft)
+            self.inputs[key] = edit
+            
+        layout.setColumnStretch(6, 1)
+        layout.setRowStretch((len(fields) + 2) // 3, 1)
+        self.setLayout(layout)
+
+    def get_mapping(self):
+        return {k: v.text().strip() for k, v in self.inputs.items()}
+
+    def set_mapping(self, data):
+        # 데이터 유실 방지를 위한 기본값 폴백 매핑
+        default_map = {
+            "공정명 열": "B",
+            "화학물질명 열": "C",
+            "일련번호 수 열": "D",
+            "번호코드 열(F)": "F",
+            "번호코드 열(G)": "G",
+            "노출기준 L값 열": "I",
+            "노출기준 E값 열": "J",
+            "분석방법 열": "K",
+            "병합 대상 열": "D, E, F, G, M",
+            "현황 공정명 열": "C",
+            "현황 화학물질명 열": "I"
+        }
+        if not data:
+            data = default_map
+        for k, default_v in default_map.items():
+            if k in self.inputs:
+                v = data.get(k, "")
+                if v is None or str(v).strip() == "":
+                    v = default_v
                 self.inputs[k].setText(v)
 
 
@@ -811,30 +1199,26 @@ class SMUGUI(QMainWindow):
         self.restore_table_from_session()
 
     def load_mes_master(self):
-        """[Master 지시서] MES 마스터 데이터셋 구축 및 55개 헤더 변수화"""
-        self.mes_master_list = [] # 순번 기반 전체 리스트 (누락 없음)
-        self.mes_cas_map = {}     # CAS 번호 기반 조회 맵 (정규화용)
+        """[Master 지시서] msds_index.json을 마스터 데이터셋으로 구축"""
+        self.mes_master_list = [] # 전체 리스트
+        self.mes_cas_map = {}     # CAS 번호 기반 조회 맵
         
-        mes_file = "유해인자_MES.txt"
+        mes_file = "msds_index.json"
         if not os.path.exists(mes_file):
             self.log(f"[!] {mes_file} 파일을 찾을 수 없습니다. 마스터 데이터셋을 생략합니다.")
             return
 
         try:
-            # [V10.5] 순번으로 누락없이 전체 로드를 위해 pandas 활용
-            df_mes = pd.read_csv(mes_file, sep='\t', encoding='cp949')
+            with open(mes_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
             
-            # 주님 지시: CAS 번호가 없는 행도 모두 포함
-            for idx, row in df_mes.iterrows():
-                # 55개 헤더 전체를 딕셔너리로 변환하여 보관
-                entry = row.to_dict()
-                self.mes_master_list.append(entry)
-                
-                # CAS 번호가 있는 경우 정규화 조회 맵에 등록
-                # 컬럼명이 깨질 수 있으므로 인덱스로 접근 시도 (CAS번호는 7번째 컬럼)
-                cas_key = str(row.iloc[6]).strip() if len(row) > 6 else ""
+            self.mes_master_list = data
+            
+            for entry in data:
+                # msds_index.json에서 "CAS No." 필드를 가져옴
+                cas_key = str(entry.get("CAS No.", "")).strip()
                 if cas_key and cas_key.lower() != 'nan' and re.match(r'^\d{2,7}-\d{2}-\d$', cas_key):
-                    # 만약 중복 CAS가 있다면 최초 발견된 것(표준) 우선 사용
+                    # 중복 CAS가 있다면 최초 발견된 표준 우선 사용
                     if cas_key not in self.mes_cas_map:
                         self.mes_cas_map[cas_key] = entry
             
@@ -866,7 +1250,9 @@ class SMUGUI(QMainWindow):
         self.menu_buttons = []
         menus = [
             ("추출 및 검증", "[DOC]", 0),
-            ("환경 설정", "[SET]", 1)
+            ("화학물질 정리", "[CLEAN]", 1),
+            ("측정계획 수립", "[PLAN]", 3),
+            ("환경 설정", "[SET]", 2)
         ]
 
         for text, icon, idx in menus:
@@ -895,6 +1281,10 @@ class SMUGUI(QMainWindow):
             path = self.edit_excel.text()
             if path and self.combo_sheet.count() == 0:
                 self._update_sheet_list(path)
+        elif idx == 1: # 화학물질 정리 탭
+            self._update_substance_clean_info()
+        elif idx == 3: # 측정계획 수립 탭
+            self._update_measure_plan_info()
 
     def toggle_sidebar(self):
         """[Premium] 사이드바 슬림 모드 <-> 풀 모드 전환 애니메이션"""
@@ -934,7 +1324,7 @@ class SMUGUI(QMainWindow):
         log_h_layout = QHBoxLayout(log_header)
         log_h_layout.setContentsMargins(10, 0, 10, 0)
         
-        lbl_log = QLabel("시스템 분석 로그")
+        lbl_log = QLabel("작업 모니터링 로그")
         lbl_log.setStyleSheet("font-size: 11px; font-weight: bold; color: #666;")
         log_h_layout.addWidget(lbl_log)
         
@@ -1056,30 +1446,73 @@ class SMUGUI(QMainWindow):
         self.page_extraction = self._create_extraction_page()
         self.stacked_widget.addWidget(self.page_extraction)
 
+        # 페이지 1: 화학물질 정리
+        self.page_substance_clean = self._create_substance_clean_page()
+        self.stacked_widget.addWidget(self.page_substance_clean)
+
+        # 페이지 2: 환경 설정
         self.page_settings = self._create_settings_page()
         self.stacked_widget.addWidget(self.page_settings)
 
+        # 페이지 3: 측정계획 수립
+        self.page_measure_plan = self._create_measure_plan_page()
+        self.stacked_widget.addWidget(self.page_measure_plan)
+
         # 3. 로그 창
         self._setup_log_section()
-        
 
     def _create_settings_page(self):
-        """[Page 2] 데이터 맵핑 및 보조 관리 도구를 모은 환경 설정 페이지"""
+        """[페이지 2] 데이터 맵핑 및 보조 관리 도구를 모은 환경 설정 페이지"""
         page = QWidget()
         layout = QVBoxLayout(page)
         
-        # 1. 컬럼 맵핑 설정 영역
+        # 1. 컬럼 매핑 설정 영역
         map_group = QGroupBox("데이터 열 매핑 설정 (엑셀 컬럼 지정)")
         map_layout = QVBoxLayout()
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setMinimumHeight(400)
+        
+        # 내부 컨테이너 위젯과 레이아웃 생성
+        scroll_content = QWidget()
+        scroll_content_layout = QVBoxLayout(scroll_content)
+        scroll_content_layout.setContentsMargins(0, 0, 0, 0)
+        scroll_content_layout.setSpacing(15)
+        
+        # 가로형 수집용 매핑 패널 추가
         self.mapping_panel = ModernMappingPanel()
-        scroll.setWidget(self.mapping_panel)
+        scroll_content_layout.addWidget(self.mapping_panel)
+        
+        # 측정계획 수립용 매핑 패널 추가
+        self.measure_mapping_panel = MeasurePlanMappingPanel()
+        scroll_content_layout.addWidget(self.measure_mapping_panel)
+        
+        # 자동 백업 설정 그룹박스 추가
+        backup_group = QGroupBox("측정계획 자동 백업 설정")
+        backup_layout = QGridLayout()
+        backup_layout.setContentsMargins(15, 15, 15, 15)
+        backup_layout.setSpacing(10)
+        
+        backup_layout.addWidget(QLabel("백업 저장 경로:"), 0, 0)
+        self.edit_backup_path = QLineEdit("")
+        self.edit_backup_path.setPlaceholderText("백업 파일이 저장될 폴더 경로를 지정해 주세요. (미지정 시 백업 생략)")
+        backup_layout.addWidget(self.edit_backup_path, 0, 1)
+        
+        btn_browse_backup = QPushButton("찾아보기")
+        btn_browse_backup.setFixedWidth(80)
+        btn_browse_backup.clicked.connect(self.browse_backup_path)
+        backup_layout.addWidget(btn_browse_backup, 0, 2)
+        
+        backup_group.setLayout(backup_layout)
+        scroll_content_layout.addWidget(backup_group)
+        
+        scroll_content_layout.addStretch()
+        scroll.setWidget(scroll_content)
+        
         map_layout.addWidget(scroll)
         map_group.setLayout(map_layout)
         layout.addWidget(map_group)
-
+ 
         # 2. 파일 및 번호 관리 영역 (부가 기능)
         lower_layout = QHBoxLayout()
         
@@ -1120,6 +1553,2211 @@ class SMUGUI(QMainWindow):
         layout.addStretch()
         
         return page
+
+    def _create_substance_clean_page(self):
+        """[페이지 1] 화학물질 정리 및 교정 제어 페이지"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        
+        # 1. 헤더 카드 (기업 스타일)
+        header_card = QFrame()
+        header_card.setStyleSheet(f"background-color: {LIGHT_BLUE}; border-radius: 8px; border: 1px solid {GRAY_BORDER};")
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(20, 15, 20, 15)
+        
+        title_label = QLabel("화학물질 정리 및 교정 도구")
+        title_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {PRIMARY_BLUE};")
+        desc_label = QLabel("엑셀 파일의 I열(비고)과 J열(MSDS) 내 기재된 화학물질들을 표준 마스터 정렬코드로 정렬하고,\n오타 등의 물질명을 대화식으로 자동 교정합니다. (미매칭 단어는 적색 표시)")
+        desc_label.setStyleSheet(f"font-size: 12px; color: {TEXT_SUB}; line-height: 15px;")
+        
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(desc_label)
+        layout.addWidget(header_card)
+        
+        # 2. 정보 표시 카드
+        info_group = QGroupBox("현재 연동 정보")
+        info_layout = QGridLayout()
+        
+        lbl_file_title = QLabel("연동 대상 엑셀 파일:")
+        lbl_file_title.setStyleSheet("font-weight: bold;")
+        self.lbl_clean_excel_path = QLabel("선택된 파일 없음")
+        self.lbl_clean_excel_path.setWordWrap(True)
+        
+        lbl_sheet_title = QLabel("연동 대상 시트명:")
+        lbl_sheet_title.setStyleSheet("font-weight: bold;")
+        self.lbl_clean_sheet_name = QLabel("선택된 시트 없음")
+        
+        info_layout.addWidget(lbl_file_title, 0, 0)
+        info_layout.addWidget(self.lbl_clean_excel_path, 0, 1)
+        info_layout.addWidget(lbl_sheet_title, 1, 0)
+        info_layout.addWidget(self.lbl_clean_sheet_name, 1, 1)
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # 3. 제어 영역
+        control_layout = QHBoxLayout()
+        self.btn_run_clean = QPushButton(" 정리 및 교정 실행")
+        self.btn_run_clean.setFixedHeight(40)
+        self.btn_run_clean.setStyleSheet(f"background-color: {PRIMARY_BLUE}; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_run_clean.clicked.connect(self.clean_substances_excel)
+        
+        self.btn_open_excel = QPushButton(" 엑셀 파일 열기")
+        self.btn_open_excel.setFixedHeight(40)
+        self.btn_open_excel.setStyleSheet(f"background-color: #5cb85c; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_open_excel.clicked.connect(self.open_current_excel)
+        
+        control_layout.addWidget(self.btn_run_clean)
+        control_layout.addWidget(self.btn_open_excel)
+        layout.addLayout(control_layout)
+        
+        # 4. 화학물질 마스터 DB 조회 및 관계 필터 영역
+        search_group = QGroupBox("화학물질 마스터 DB 조회 및 관계 필터")
+        search_group.setStyleSheet("QGroupBox { font-weight: bold; }")
+        search_layout = QVBoxLayout()
+        
+        # 검색 컨트롤 레이아웃
+        filter_layout = QHBoxLayout()
+        lbl_keyword = QLabel("조회 물질명/CAS:")
+        lbl_keyword.setStyleSheet("font-weight: bold;")
+        self.edit_search_keyword = QLineEdit()
+        self.edit_search_keyword.setPlaceholderText("검색할 물질명 또는 CAS 번호를 입력하세요 (예: 바륨, 7440-39-3)")
+        self.edit_search_keyword.setStyleSheet("""
+            QLineEdit {
+                font-family: 'Malgun Gothic'; font-size: 10pt;
+                padding: 4px 8px; border: 1px solid #ccc;
+                border-radius: 4px; background-color: #fff;
+            }
+        """)
+        self.edit_search_keyword.returnPressed.connect(self.search_substance_db)
+        
+        self.btn_search_substance = QPushButton("조회")
+        self.btn_search_substance.setStyleSheet(f"background-color: {PRIMARY_BLUE}; color: white; font-weight: bold; padding: 4px 12px; border-radius: 4px;")
+        self.btn_search_substance.clicked.connect(self.search_substance_db)
+        
+        filter_layout.addWidget(lbl_keyword)
+        filter_layout.addWidget(self.edit_search_keyword)
+        filter_layout.addWidget(self.btn_search_substance)
+        search_layout.addLayout(filter_layout)
+        
+        # 결과 표시 테이블
+        self.tbl_search_results = QTableWidget()
+        self.tbl_search_results.setColumnCount(6)
+        self.tbl_search_results.setHorizontalHeaderLabels(["정렬코드", "측정대상 물질명", "CAS No.", "노출기준(TWA)", "관계 유형", "상세 성상 정보"])
+        self.tbl_search_results.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.tbl_search_results.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.tbl_search_results.setStyleSheet("""
+            QTableWidget {
+                font-family: 'Malgun Gothic'; font-size: 9.5pt;
+                gridline-color: #e0e0e0; background-color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #f5f5f5; font-weight: bold;
+                border: 1px solid #e0e0e0; padding: 4px;
+            }
+        """)
+        search_layout.addWidget(self.tbl_search_results)
+        
+        search_group.setLayout(search_layout)
+        layout.addWidget(search_group)
+        
+        return page
+
+    def _create_measure_plan_page(self):
+        """[페이지 3] 측정계획 수립 핵심 기능 제어 페이지"""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        
+        # 1. 헤더 카드 (기업 스타일)
+        header_card = QFrame()
+        header_card.setStyleSheet(f"background-color: {LIGHT_BLUE}; border-radius: 8px; border: 1px solid {GRAY_BORDER};")
+        header_layout = QVBoxLayout(header_card)
+        header_layout.setContentsMargins(20, 15, 20, 15)
+        
+        title_label = QLabel("측정계획 수립 및 제어 도구")
+        title_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {PRIMARY_BLUE};")
+        desc_label = QLabel("측정계획(양식) 시트의 공정명과 물질명을 기반으로 매체를 업데이트하고,\n"
+                            "셀 병합 및 번호 자동 부여 워크플로우를 실행하여 최종 양식을 완성합니다.")
+        desc_label.setStyleSheet(f"font-size: 12px; color: {TEXT_SUB}; line-height: 15px;")
+        
+        header_layout.addWidget(title_label)
+        header_layout.addWidget(desc_label)
+        layout.addWidget(header_card)
+        
+        # 2. 정보 표시 카드
+        info_group = QGroupBox("현재 연동 정보")
+        info_layout = QGridLayout()
+        
+        lbl_file_title = QLabel("연동 대상 엑셀 파일:")
+        lbl_file_title.setStyleSheet("font-weight: bold;")
+        self.lbl_measure_excel_path = QLabel("선택된 파일 없음")
+        self.lbl_measure_excel_path.setWordWrap(True)
+        
+        lbl_sheet_title = QLabel("연동 대상 시트명:")
+        lbl_sheet_title.setStyleSheet("font-weight: bold;")
+        self.lbl_measure_sheet_name = QLabel("선택된 시트 없음")
+        
+        info_layout.addWidget(lbl_file_title, 0, 0)
+        info_layout.addWidget(self.lbl_measure_excel_path, 0, 1)
+        info_layout.addWidget(lbl_sheet_title, 1, 0)
+        info_layout.addWidget(self.lbl_measure_sheet_name, 1, 1)
+        info_group.setLayout(info_layout)
+        layout.addWidget(info_group)
+        
+        # 3. 제어 영역 (5대 핵심 버튼)
+        control_layout = QHBoxLayout()
+        
+        self.btn_measure_import = QPushButton(" 현황 데이터 반영")
+        self.btn_measure_import.setFixedHeight(40)
+        self.btn_measure_import.setStyleSheet("background-color: #17a2b8; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_measure_import.clicked.connect(self.measure_plan_import_slot)
+        
+        self.btn_measure_update = QPushButton(" 매체 업데이트")
+        self.btn_measure_update.setFixedHeight(40)
+        self.btn_measure_update.setStyleSheet(f"background-color: {PRIMARY_BLUE}; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_measure_update.clicked.connect(self.measure_plan_update_slot)
+        
+        self.btn_measure_workflow = QPushButton(" 워크플로우 실행")
+        self.btn_measure_workflow.setFixedHeight(40)
+        self.btn_measure_workflow.setStyleSheet("background-color: #e6a23c; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_measure_workflow.clicked.connect(self.measure_plan_workflow_slot)
+        
+        self.btn_measure_reset = QPushButton(" 초기화")
+        self.btn_measure_reset.setFixedHeight(40)
+        self.btn_measure_reset.setStyleSheet("background-color: #f56c6c; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_measure_reset.clicked.connect(self.measure_plan_reset_slot)
+        
+        self.btn_measure_survey = QPushButton(" 예비조사 데이터 취합")
+        self.btn_measure_survey.setFixedHeight(40)
+        self.btn_measure_survey.setStyleSheet("background-color: #67c23a; color: white; font-weight: bold; font-size: 13px; border-radius: 4px;")
+        self.btn_measure_survey.clicked.connect(self.measure_plan_survey_slot)
+        
+        control_layout.addWidget(self.btn_measure_import)
+        control_layout.addWidget(self.btn_measure_update)
+        control_layout.addWidget(self.btn_measure_workflow)
+        control_layout.addWidget(self.btn_measure_reset)
+        control_layout.addWidget(self.btn_measure_survey)
+        layout.addLayout(control_layout)
+        
+        # 4. 모니터링 로그 기록 영역
+        log_group = QGroupBox("측정계획 수립 로그")
+        log_layout = QVBoxLayout()
+        self.txt_measure_log = QTextEdit()
+        self.txt_measure_log.setReadOnly(True)
+        self.txt_measure_log.setStyleSheet("background-color: #222222; color: #00FF00; font-family: 'Consolas'; font-size: 11px;")
+        log_layout.addWidget(self.txt_measure_log)
+        log_group.setLayout(log_layout)
+        layout.addWidget(log_group)
+        
+        return page
+
+    def _update_measure_plan_info(self):
+        """환경 설정에서 연동된 엑셀 파일 및 시트명 갱신"""
+        path = self.edit_excel.text().strip()
+        sheet = self.combo_sheet.currentText().strip()
+        
+        if path:
+            self.lbl_measure_excel_path.setText(path)
+        else:
+            self.lbl_measure_excel_path.setText("환경 설정에서 결과를 저장할 엑셀 파일을 선택하세요.")
+            
+        if sheet:
+            self.lbl_measure_sheet_name.setText(sheet)
+        else:
+            self.lbl_measure_sheet_name.setText("측정계획(양식)")
+
+    def browse_backup_path(self):
+        """자동 백업 경로 찾아보기 다이얼로그"""
+        folder = QFileDialog.getExistingDirectory(self, "백업 파일 저장 폴더 선택")
+        if folder:
+            self.edit_backup_path.setText(os.path.normpath(folder).replace('\\', '/'))
+            self.save_config()
+
+    def measure_plan_log(self, text):
+        """측정계획 수립 진행 로그 출력"""
+        self.txt_measure_log.append(f"[{datetime.now().strftime('%H:%M:%S')}] {text}")
+        self.txt_measure_log.moveCursor(QTextCursor.End)
+        QApplication.processEvents()
+
+    def run_backup_engine(self, file_path):
+        """작업 시작 전 지정 폴더에 안전 백업본 생성"""
+        backup_dir = self.edit_backup_path.text().strip()
+        if not backup_dir or not os.path.exists(backup_dir):
+            self.measure_plan_log("⚠️ 자동 백업 경로가 미지정되었거나 유효하지 않아 백업을 생략합니다.")
+            return True
+            
+        if not os.path.exists(file_path):
+            return True
+            
+        try:
+            import shutil
+            fn = os.path.basename(file_path)
+            base, ext = os.path.splitext(fn)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_fn = f"{base}_백업_{timestamp}{ext}"
+            backup_path = os.path.join(backup_dir, backup_fn)
+            
+            shutil.copy2(file_path, backup_path)
+            self.measure_plan_log(f"✅ 백업본이 안전하게 저장되었습니다: {backup_fn}")
+            return True
+        except Exception as e:
+            self.measure_plan_log(f"🔴 백업 생성 중 오류 발생: {e}")
+            reply = QMessageBox.question(self, "백업 오류", 
+                                         f"백업본을 만들지 못했습니다. 작업을 백업 없이 계속 진행할까요?\n사유: {e}",
+                                         QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            return reply == QMessageBox.Yes
+
+    def measure_plan_import_slot(self):
+        """[핵심 0] 화학물질 현황(화학물질입력_양식) 시트 데이터를 측정계획 시트에 최초 반영"""
+        excel_path = self.edit_excel.text().strip()
+        src_sheet_name = self.combo_sheet.currentText().strip()
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        if not src_sheet_name:
+            src_sheet_name = "화학물질입력_양식"
+            
+        dest_sheet_name = "측정계획(양식)"
+        
+        # 1. 자동 백업 실행
+        if not self.run_backup_engine(excel_path):
+            self.measure_plan_log("🛑 사용자가 백업 실패 후 작업을 취소하였습니다.")
+            return
+            
+        self.txt_measure_log.clear()
+        self.measure_plan_log("🟢 화학물질 현황 최초 반영 작업 시작...")
+        
+        # 2. 마스터 데이터셋 구축 확인
+        if not hasattr(self, 'mes_master_list') or not self.mes_master_list:
+            self.measure_plan_log("[*] msds_index.json 마스터 데이터를 로드합니다...")
+            self.load_mes_master()
+            
+        if not self.mes_master_list:
+            QMessageBox.critical(self, "오류", "msds_index.json을 로드할 수 없어 작업을 진행할 수 없습니다.")
+            return
+            
+        # 3. 마스터 데이터셋 구조화
+        dictMethod = {}
+        dictOrder = {}
+        dictLValue = {}
+        dictEValue = {}
+        
+        for idx, entry in enumerate(self.mes_master_list):
+            chemName = str(entry.get("측정대상 물질명", "")).strip()
+            if chemName:
+                if chemName not in dictMethod:
+                    dictMethod[chemName] = str(entry.get("분석방법", "")).strip()
+                    dictOrder[chemName] = idx
+                    # dictLValue는 측정매체(실무용)로 들어가며, dictEValue는 적정유속(유량)으로 들어감 (VBA 원래 로직 복구)
+                    l_val = str(entry.get("매체(실무용)", "")).strip() or str(entry.get("매체", "")).strip()
+                    dictLValue[chemName] = l_val
+                    dictEValue[chemName] = str(entry.get("적정유속(L/min)", "")).strip()
+                    
+        # 4. 분석방법 우선순위 리스트 정의
+        priorityList = [
+            "누적소음계", "중량분석법", "중량분석법(호)", "중량분석법(흡)", "FTIR법(다)",
+            "위상차현미경법", "중량분석법(단)", "ICP법(다)", "ICP법(다)호", "IC법(단)-금",
+            "ICP법(단)흡", "ICP법(단)", "GC법(다)", "GC법(다)2", "GC법(다)3", "GC법(다)4",
+            "GC법(다)5", "GC법(다)6", "GC법(다)7", "GC법(다)8", "GC법(단)", "HPLC법(다)",
+            "HPLC법(다)2", "HPLC법(다)3", "HPLC법(다)4", "HPLC법(단)",
+            "IC법(다)-산알", "IC법(다)2-산알", "UV법(다)", "IC법(단)-산알",
+            "UV법(단)", "GC법(NPD)(단)", "IC법(다)3-가스", "IC법(단)-가스", "VIS(다)", "추출법",
+            "GC법(단)-C", "HPLC법(단)-C", "ICP법(다)-C", "UV법(단)-C",
+            "직독식", "WBGT"
+        ]
+        
+        # 헬퍼 함수 1: 스페셜 패턴 처리 (괄호 안의 세미콜론 임시 치환)
+        def process_special_patterns(text):
+            if not text:
+                return ""
+            chars = list(text)
+            in_paren = 0
+            in_bracket = 0
+            for i, ch in enumerate(chars):
+                if ch == '(': in_paren += 1
+                elif ch == ')': in_paren -= 1
+                elif ch == '[': in_bracket += 1
+                elif ch == ']': in_bracket -= 1
+                elif ch == ';' and (in_paren > 0 or in_bracket > 0):
+                    chars[i] = '\u0001'
+            return "".join(chars)
+            
+        # 헬퍼 함수 2: 미분류 유해인자 그룹화 및 중복 제거
+        def format_grouped_chems(chem_list_str):
+            if not chem_list_str or chem_list_str.strip() == "":
+                return "-"
+            protected = process_special_patterns(chem_list_str)
+            items = [x.strip() for x in protected.split(";") if x.strip()]
+            
+            groups = {}
+            for item in items:
+                item = item.replace('\u0001', ';').strip()
+                if not item:
+                    continue
+                matched_prefix = None
+                for prefix in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                    if item.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                        
+                if matched_prefix:
+                    inner = item[len(matched_prefix):].strip()
+                    if inner.startswith("[") and inner.endswith("]"):
+                        inner = inner[1:-1].strip()
+                    elif inner.startswith("(") and inner.endswith(")"):
+                        inner = inner[1:-1].strip()
+                        
+                    sub_parts = [x.strip() for x in inner.split(";") if x.strip()]
+                    if matched_prefix not in groups:
+                        groups[matched_prefix] = []
+                    for sp in sub_parts:
+                        if sp not in groups[matched_prefix]:
+                            groups[matched_prefix].append(sp)
+                else:
+                    if "기타" not in groups:
+                        groups["기타"] = []
+                    if item not in groups["기타"]:
+                        groups["기타"].append(item)
+                        
+            result_parts = []
+            if "기타" in groups and groups["기타"]:
+                result_parts.append("; ".join(groups["기타"]))
+            for cat in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                if cat in groups and groups[cat]:
+                    result_parts.append(f"{cat}[{'; '.join(groups[cat])}]")
+                    
+            return "; ".join(result_parts)
+            
+        import win32com.client
+        import pythoncom
+        
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        try:
+            self.measure_plan_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            # 이미 열려있는 통합문서 검색
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                self.measure_plan_log(f"[*] 엑셀 파일 오픈: {excel_filename}")
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            # 시트 확인
+            try:
+                wsInput = wb.Worksheets(src_sheet_name)
+            except Exception as sheet_err:
+                self.measure_plan_log(f"🔴 현황 시트 '{src_sheet_name}'를 찾을 수 없습니다: {sheet_err}")
+                QMessageBox.critical(self, "시트 없음", f"화학물질 현황 시트 '{src_sheet_name}'가 존재하지 않습니다.\n설정을 확인해 주세요.")
+                return
+                
+            try:
+                wsOutput = wb.Worksheets(dest_sheet_name)
+            except Exception as sheet_err:
+                # 없으면 신규 생성
+                wsOutput = wb.Worksheets.Add(Before=None, After=wb.Worksheets(wb.Worksheets.Count))
+                wsOutput.Name = dest_sheet_name
+                self.measure_plan_log(f"📂 '{dest_sheet_name}' 시트가 존재하지 않아 신규 생성하였습니다.")
+                
+            # 매핑 열 정보 획득
+            map_data = self.measure_mapping_panel.get_mapping()
+            col_process = map_data.get("공정명 열", "B")
+            col_chem = map_data.get("화학물질명 열", "C")
+            col_l = map_data.get("노출기준 L값 열", "I")
+            col_e = map_data.get("노출기준 E값 열", "J")
+            col_method = map_data.get("분석방법 열", "K")
+            
+            col_src_process = map_data.get("현황 공정명 열", "C")
+            col_src_chem = map_data.get("현황 화학물질명 열", "I")
+            
+            idx_process = SMUGUI.c2i(col_process)
+            idx_chem = SMUGUI.c2i(col_chem)
+            idx_l = SMUGUI.c2i(col_l)
+            idx_e = SMUGUI.c2i(col_e)
+            idx_method = SMUGUI.c2i(col_method)
+            
+            idx_src_process = SMUGUI.c2i(col_src_process)
+            idx_src_chem = SMUGUI.c2i(col_src_chem)
+            
+            # 입력 데이터의 마지막 행 감지 (idx_src_chem 기준)
+            last_src_row = wsInput.Cells(wsInput.Rows.Count, idx_src_chem).End(-4162).Row # xlUp
+            if last_src_row < 3:
+                last_src_row = 3
+                
+            self.measure_plan_log(f"[*] 현황 데이터 범위: {src_sheet_name} 시트 3행 ~ {last_src_row}행")
+            
+            # 5. 입력 데이터를 읽어서 메모리에서 공정별 데이터 구성
+            master_dict = {}
+            missing_dict = {}
+            has_missing = False
+            
+            for r in range(3, last_src_row + 1):
+                processName = str(wsInput.Cells(r, idx_src_process).Value or "").strip()
+                chemList = str(wsInput.Cells(r, idx_src_chem).Value or "").strip()
+                
+                if processName != "" and chemList != "":
+                    # 특별관리물질 패턴 전처리 (VBA 정규식 로직 포팅)
+                    chemList_clean = re.sub(r'특별관리물질(?:\[([^\]]+)\]|\(([^()]+)\))', r'\1\2', chemList)
+                    
+                    protected_chemList = process_special_patterns(chemList_clean)
+                    arrChems = [x.strip() for x in protected_chemList.split(";") if x.strip()]
+                    
+                    for item in arrChems:
+                        chemName = item.replace('\u0001', ';').strip()
+                        if chemName:
+                            # 예외 항목(단시간, 보관, 허용소비량 미만)은 무조건 분석방법 없음으로 수집
+                            is_exception = ("단시간 및 임시작업" in chemName) or ("보관" in chemName) or ("허용소비량 미만" in chemName)
+                            
+                            if not is_exception and chemName in dictMethod and dictMethod[chemName] != "":
+                                method = dictMethod[chemName]
+                                if processName not in master_dict:
+                                    master_dict[processName] = {}
+                                if method not in master_dict[processName]:
+                                    master_dict[processName][method] = {}
+                                master_dict[processName][method][chemName] = 1
+                            else:
+                                if processName not in missing_dict:
+                                    missing_dict[processName] = {}
+                                missing_dict[processName][chemName] = 1
+                                has_missing = True
+                                
+            # 6. 기존 측정계획 시트 데이터 영역 삭제
+            clearRowB = wsOutput.Cells(wsOutput.Rows.Count, idx_process).End(-4162).Row
+            if clearRowB < 4: clearRowB = 4
+            
+            clearRowI = wsOutput.Cells(wsOutput.Rows.Count, idx_l).End(-4162).Row
+            if clearRowI < 4: clearRowI = 4
+            
+            # 공정명, 화학물질명 삭제
+            wsOutput.Range(wsOutput.Cells(4, idx_process), wsOutput.Cells(clearRowB, idx_chem)).ClearContents()
+            # L값, E값, 분석방법 삭제
+            wsOutput.Range(wsOutput.Cells(4, idx_l), wsOutput.Cells(clearRowI, idx_method)).ClearContents()
+            
+            # 글꼴 색상 초기화 (검정색으로)
+            fontRow = max(clearRowB, clearRowI)
+            if fontRow < 4: fontRow = 4
+            wsOutput.Range(wsOutput.Cells(4, idx_process), wsOutput.Cells(fontRow, idx_method)).Font.Color = 0
+            
+            # 7. 메모리에 수집된 데이터를 정렬하여 순차적으로 기입
+            output_row = 4
+            
+            for pKey in master_dict.keys():
+                processName = pKey
+                method_dict = master_dict[pKey]
+                
+                arrMethods = list(method_dict.keys())
+                def get_method_priority(m):
+                    if m in priorityList:
+                        return priorityList.index(m)
+                    return 9999
+                arrMethods.sort(key=get_method_priority)
+                
+                for method in arrMethods:
+                    chem_dict = method_dict[method]
+                    arrSortedChems = list(chem_dict.keys())
+                    def get_chem_order(c):
+                        if c in dictOrder:
+                            return dictOrder[c]
+                        return 999999
+                    arrSortedChems.sort(key=get_chem_order)
+                    
+                    firstChem = arrSortedChems[0]
+                    
+                    if "(단)" in method:
+                        for c_item in arrSortedChems:
+                            wsOutput.Cells(output_row, idx_process).Value = processName
+                            wsOutput.Cells(output_row, idx_chem).Value = c_item
+                            wsOutput.Cells(output_row, idx_l).Value = dictLValue.get(c_item, "-") if c_item in dictLValue else "-"
+                            wsOutput.Cells(output_row, idx_e).Value = dictEValue.get(c_item, "-") if c_item in dictEValue else "-"
+                            wsOutput.Cells(output_row, idx_method).Value = method
+                            output_row += 1
+                    else:
+                        wsOutput.Cells(output_row, idx_process).Value = processName
+                        wsOutput.Cells(output_row, idx_chem).Value = "; ".join(arrSortedChems)
+                        wsOutput.Cells(output_row, idx_l).Value = dictLValue.get(firstChem, "-") if firstChem in dictLValue else "-"
+                        wsOutput.Cells(output_row, idx_e).Value = dictEValue.get(firstChem, "-") if firstChem in dictEValue else "-"
+                        
+                        if len(arrSortedChems) == 1 and "(다)" in method:
+                            wsOutput.Cells(output_row, idx_method).Value = method.replace("(다)", "(단)")
+                        else:
+                            wsOutput.Cells(output_row, idx_method).Value = method
+                        output_row += 1
+                        
+            # 8. 누락 및 미대상(물리적인자, 분진, 비대상 등) 항목 기입 (적색)
+            if has_missing:
+                output_row += 1 # 1행 건너뛰기
+                for pKey in missing_dict.keys():
+                    processName = pKey
+                    m_chems = list(missing_dict[pKey].keys())
+                    
+                    # 그룹화 및 중복 제거
+                    formatted_chems = format_grouped_chems("; ".join(m_chems))
+                    
+                    wsOutput.Cells(output_row, idx_process).Value = processName
+                    wsOutput.Cells(output_row, idx_chem).Value = formatted_chems
+                    wsOutput.Cells(output_row, idx_l).Value = "-"
+                    wsOutput.Cells(output_row, idx_e).Value = "-"
+                    wsOutput.Cells(output_row, idx_method).Value = "분석방법 없음"
+                    
+                    # 적색 글자 서식
+                    wsOutput.Range(wsOutput.Cells(output_row, idx_process), wsOutput.Cells(output_row, idx_method)).Font.Color = 255
+                    output_row += 1
+                    
+            # 9. 실시간 수식 갱신
+            try:
+                excel.Calculate()
+            except:
+                pass
+                
+            wb.Save()
+            self.measure_plan_log("🟢 화학물질 현황 시트 최초 반영 완료!")
+            QMessageBox.information(self, "완료", "화학물질 현황 데이터 반영이 정상적으로 완료되었습니다!")
+            
+        except Exception as e:
+            self.measure_plan_log(f"🔴 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"작업 중 예기치 못한 오류가 발생했습니다:\n{e}")
+        finally:
+            pythoncom.CoUninitialize()
+
+    def measure_plan_update_slot(self):
+        """[핵심 1] 측정계획 매체 업데이트 실행"""
+        excel_path = self.edit_excel.text().strip()
+        sheet_name = self.combo_sheet.currentText().strip()
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        if not sheet_name:
+            sheet_name = "측정계획(양식)"
+            
+        # 1. 자동 백업 실행
+        if not self.run_backup_engine(excel_path):
+            self.measure_plan_log("🛑 사용자가 백업 실패 후 작업을 취소하였습니다.")
+            return
+            
+        self.txt_measure_log.clear()
+        self.measure_plan_log("🟢 매체 업데이트 및 재정렬 작업 시작...")
+        
+        # 2. 마스터 데이터셋 구축 확인
+        if not hasattr(self, 'mes_master_list') or not self.mes_master_list:
+            self.measure_plan_log("[*] msds_index.json 마스터 데이터를 로드합니다...")
+            self.load_mes_master()
+            
+        if not self.mes_master_list:
+            QMessageBox.critical(self, "오류", "msds_index.json을 로드할 수 없어 작업을 진행할 수 없습니다.")
+            return
+            
+        # 3. 마스터 데이터셋 구조화
+        dictMethod = {}
+        dictOrder = {}
+        dictLValue = {}
+        dictEValue = {}
+        
+        for idx, entry in enumerate(self.mes_master_list):
+            chemName = str(entry.get("측정대상 물질명", "")).strip()
+            if chemName:
+                if chemName not in dictMethod:
+                    dictMethod[chemName] = str(entry.get("분석방법", "")).strip()
+                    dictOrder[chemName] = idx
+                    # dictLValue는 측정매체(실무용)로 들어가며, dictEValue는 적정유속(유량)으로 들어감 (VBA 원래 로직 복구)
+                    l_val = str(entry.get("매체(실무용)", "")).strip() or str(entry.get("매체", "")).strip()
+                    dictLValue[chemName] = l_val
+                    dictEValue[chemName] = str(entry.get("적정유속(L/min)", "")).strip()
+                    
+        # 4. 분석방법 우선순위 리스트 정의
+        priorityList = [
+            "누적소음계", "중량분석법", "중량분석법(호)", "중량분석법(흡)", "FTIR법(다)",
+            "위상차현미경법", "중량분석법(단)", "ICP법(다)", "ICP법(다)호", "IC법(단)-금",
+            "ICP법(단)흡", "ICP법(단)", "GC법(다)", "GC법(다)2", "GC법(다)3", "GC법(다)4",
+            "GC법(다)5", "GC법(다)6", "GC법(다)7", "GC법(다)8", "GC법(단)", "HPLC법(다)",
+            "HPLC법(다)2", "HPLC법(다)3", "HPLC법(다)4", "HPLC법(단)",
+            "IC법(다)-산알", "IC법(다)2-산알", "UV법(다)", "IC법(단)-산알",
+            "UV법(단)", "GC법(NPD)(단)", "IC법(다)3-가스", "IC법(단)-가스", "VIS(다)", "추출법",
+            "GC법(단)-C", "HPLC법(단)-C", "ICP법(다)-C", "UV법(단)-C",
+            "직독식", "WBGT"
+        ]
+        
+        # 헬퍼 함수 1: 스페셜 패턴 처리 (괄호 안의 세미콜론 임시 치환)
+        def process_special_patterns(text):
+            if not text:
+                return ""
+            chars = list(text)
+            in_paren = 0
+            in_bracket = 0
+            for i, ch in enumerate(chars):
+                if ch == '(': in_paren += 1
+                elif ch == ')': in_paren -= 1
+                elif ch == '[': in_bracket += 1
+                elif ch == ']': in_bracket -= 1
+                elif ch == ';' and (in_paren > 0 or in_bracket > 0):
+                    chars[i] = '\u0001'
+            return "".join(chars)
+            
+        # 헬퍼 함수 2: 미분류 유해인자 그룹화 및 중복 제거
+        def format_grouped_chems(chem_list_str):
+            if not chem_list_str or chem_list_str.strip() == "":
+                return "-"
+            protected = process_special_patterns(chem_list_str)
+            items = [x.strip() for x in protected.split(";") if x.strip()]
+            
+            groups = {}
+            for item in items:
+                item = item.replace('\u0001', ';').strip()
+                if not item:
+                    continue
+                matched_prefix = None
+                for prefix in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                    if item.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                        
+                if matched_prefix:
+                    inner = item[len(matched_prefix):].strip()
+                    if inner.startswith("[") and inner.endswith("]"):
+                        inner = inner[1:-1].strip()
+                    elif inner.startswith("(") and inner.endswith(")"):
+                        inner = inner[1:-1].strip()
+                        
+                    sub_parts = [x.strip() for x in inner.split(";") if x.strip()]
+                    if matched_prefix not in groups:
+                        groups[matched_prefix] = []
+                    for sp in sub_parts:
+                        if sp not in groups[matched_prefix]:
+                            groups[matched_prefix].append(sp)
+                else:
+                    if "기타" not in groups:
+                        groups["기타"] = []
+                    if item not in groups["기타"]:
+                        groups["기타"].append(item)
+                        
+            result_parts = []
+            if "기타" in groups and groups["기타"]:
+                result_parts.append("; ".join(groups["기타"]))
+            for cat in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                if cat in groups and groups[cat]:
+                    result_parts.append(f"{cat}[{'; '.join(groups[cat])}]")
+                    
+            return "; ".join(result_parts)
+            
+        import win32com.client
+        import pythoncom
+        
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        try:
+            self.measure_plan_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            # 이미 열려있는 통합문서 검색
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                self.measure_plan_log(f"[*] 엑셀 파일 오픈: {excel_filename}")
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            ws = wb.Worksheets(sheet_name)
+            
+            # 매핑 열 정보 획득
+            map_data = self.measure_mapping_panel.get_mapping()
+            col_process = map_data.get("공정명 열", "B")
+            col_chem = map_data.get("화학물질명 열", "C")
+            col_l = map_data.get("노출기준 L값 열", "I")
+            col_e = map_data.get("노출기준 E값 열", "J")
+            col_method = map_data.get("분석방법 열", "K")
+            
+            idx_process = SMUGUI.c2i(col_process)
+            idx_chem = SMUGUI.c2i(col_chem)
+            idx_l = SMUGUI.c2i(col_l)
+            idx_e = SMUGUI.c2i(col_e)
+            idx_method = SMUGUI.c2i(col_method)
+            
+            # 엑셀 데이터의 마지막 행 감지 (idx_chem 기준)
+            last_row = ws.Cells(ws.Rows.Count, idx_chem).End(-4162).Row # xlUp
+            if last_row < 4:
+                last_row = 4
+                
+            # 공정명이 비어 있고 화학물질명이 있는 행 체크
+            for r in range(4, last_row + 1):
+                c_val = str(ws.Cells(r, idx_chem).Value or "").strip()
+                p_val = str(ws.Cells(r, idx_process).Value or "").strip()
+                if c_val != "" and p_val == "":
+                    self.measure_plan_log(f"⚠️ 공정명({col_process}열)이 비어 있는 행이 감지되었습니다. (행 번호: {r})")
+                    QMessageBox.warning(self, "입력 오류", 
+                                        f"공정명({col_process}열)이 비어 있는 행이 있습니다. 확인 후 다시 실행해주세요.\n"
+                                        f"문제가 있는 행 번호: {r}")
+                    return
+                    
+            # 5. 기존 데이터를 읽어서 메모리에서 공정별 데이터 재구성 (Self-Reading)
+            master_dict = {}
+            for r in range(4, last_row + 1):
+                processName = str(ws.Cells(r, idx_process).Value or "").strip()
+                chemList = str(ws.Cells(r, idx_chem).Value or "").strip()
+                
+                if processName != "" and chemList != "":
+                    protected_chemList = process_special_patterns(chemList)
+                    arrChems = [x.strip() for x in protected_chemList.split(";") if x.strip()]
+                    
+                    for item in arrChems:
+                        chemName = item.replace('\u0001', ';').strip()
+                        if chemName:
+                            # 분석방법 및 매체/노출기준 조회
+                            if chemName in dictMethod and dictMethod[chemName] != "":
+                                method = dictMethod[chemName]
+                            else:
+                                method = "분석방법 없음"
+                                
+                            if processName not in master_dict:
+                                master_dict[processName] = {}
+                            if method not in master_dict[processName]:
+                                master_dict[processName][method] = {}
+                            master_dict[processName][method][chemName] = 1
+                            
+            # 6. 기존 시트 데이터 영역 삭제
+            # 6-1. B열 기준 마지막 행 계산
+            clearRowB = ws.Cells(ws.Rows.Count, idx_process).End(-4162).Row
+            if clearRowB < 4: clearRowB = 4
+            
+            clearRowI = ws.Cells(ws.Rows.Count, idx_l).End(-4162).Row
+            if clearRowI < 4: clearRowI = 4
+            
+            # 공정명, 화학물질명 삭제
+            ws.Range(ws.Cells(4, idx_process), ws.Cells(clearRowB, idx_chem)).ClearContents()
+            # L값, E값, 분석방법 삭제
+            ws.Range(ws.Cells(4, idx_l), ws.Cells(clearRowI, idx_method)).ClearContents()
+            
+            # 글꼴 색상 초기화 (검정색으로)
+            fontRow = max(clearRowB, clearRowI)
+            if fontRow < 4: fontRow = 4
+            ws.Range(ws.Cells(4, idx_process), ws.Cells(fontRow, idx_method)).Font.Color = 0
+            
+            # 7. 메모리에 재구성된 데이터를 정렬하여 순차적으로 기입
+            noMethodList = [] # 분석방법 없음 물질 수집용
+            output_row = 4
+            
+            for pKey in master_dict.keys():
+                processName = pKey
+                method_dict = master_dict[pKey]
+                
+                # 분석방법을 우선순위 리스트 기준으로 정렬
+                arrMethods = list(method_dict.keys())
+                def get_method_priority(m):
+                    if m in priorityList:
+                        return priorityList.index(m)
+                    return 9999
+                arrMethods.sort(key=get_method_priority)
+                
+                for method in arrMethods:
+                    chem_dict = method_dict[method]
+                    # 화학물질을 마스터 DB 인덱스 기준으로 정렬
+                    arrSortedChems = list(chem_dict.keys())
+                    def get_chem_order(c):
+                        if c in dictOrder:
+                            return dictOrder[c]
+                        return 999999
+                    arrSortedChems.sort(key=get_chem_order)
+                    
+                    firstChem = arrSortedChems[0]
+                    
+                    if method == "분석방법 없음":
+                        noMethodList.append({
+                            "process": processName,
+                            "chems": format_grouped_chems("; ".join(arrSortedChems)),
+                            "l_val": dictLValue.get(firstChem, "-") if firstChem in dictLValue else "-",
+                            "e_val": dictEValue.get(firstChem, "-") if firstChem in dictEValue else "-",
+                            "method": method
+                        })
+                    elif "(단)" in method:
+                        # (단) 성분은 각 물질당 1행씩 쪼개어 기입
+                        for c_item in arrSortedChems:
+                            ws.Cells(output_row, idx_process).Value = processName
+                            ws.Cells(output_row, idx_chem).Value = c_item
+                            ws.Cells(output_row, idx_l).Value = dictLValue.get(c_item, "-") if c_item in dictLValue else "-"
+                            ws.Cells(output_row, idx_e).Value = dictEValue.get(c_item, "-") if c_item in dictEValue else "-"
+                            ws.Cells(output_row, idx_method).Value = method
+                            output_row += 1
+                    else:
+                        # (다) 성분은 동일 공정/동일 분석방법을 세미콜론으로 묶어서 기입
+                        ws.Cells(output_row, idx_process).Value = processName
+                        ws.Cells(output_row, idx_chem).Value = "; ".join(arrSortedChems)
+                        ws.Cells(output_row, idx_l).Value = dictLValue.get(firstChem, "-") if firstChem in dictLValue else "-"
+                        ws.Cells(output_row, idx_e).Value = dictEValue.get(firstChem, "-") if firstChem in dictEValue else "-"
+                        
+                        # 다성분 분석인데 물질이 단 1개만 존재하는 경우 (다) ➔ (단) 자동 치환
+                        if len(arrSortedChems) == 1 and "(다)" in method:
+                            ws.Cells(output_row, idx_method).Value = method.replace("(다)", "(단)")
+                        else:
+                            ws.Cells(output_row, idx_method).Value = method
+                        output_row += 1
+                        
+            # 8. 분석방법 없음 항목들은 C열의 최종 기입 행에서 2줄 아래(2행의 빈 줄을 띄우고)부터 적색으로 기입
+            if noMethodList:
+                output_row += 1 # 1행 건너뛰기
+                for noItem in noMethodList:
+                    ws.Cells(output_row, idx_process).Value = noItem["process"]
+                    ws.Cells(output_row, idx_chem).Value = noItem["chems"]
+                    ws.Cells(output_row, idx_l).Value = noItem["l_val"]
+                    ws.Cells(output_row, idx_e).Value = noItem["e_val"]
+                    ws.Cells(output_row, idx_method).Value = noItem["method"]
+                    
+                    # 적색 글씨 적용 (RGB 255, 0, 0)
+                    ws.Range(ws.Cells(output_row, idx_process), ws.Cells(output_row, idx_method)).Font.Color = 255
+                    output_row += 1
+                    
+            # 9. 엑셀 수식 실시간 반영을 위해 재계산 강제 호출 (Calculate)
+            try:
+                excel.Calculate()
+            except Exception as calc_err:
+                self.measure_plan_log(f"⚠️ 수식 재계산 실패: {calc_err}")
+                
+            wb.Save()
+            self.measure_plan_log("🟢 매체 업데이트 및 재정렬 완료!")
+            QMessageBox.information(self, "완료", "매체 재정렬 및 업데이트가 정상적으로 완료되었습니다!")
+            
+        except Exception as e:
+            self.measure_plan_log(f"🔴 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"작업 중 예기치 못한 오류가 발생했습니다:\n{e}")
+            pythoncom.CoUninitialize()
+
+    def measure_plan_workflow_slot(self):
+        """[핵심 2] 측정계획 워크플로우 실행 (셀 병합, 번호 부여, 줄높이, 테두리 설정)"""
+        excel_path = self.edit_excel.text().strip()
+        sheet_name = self.combo_sheet.currentText().strip()
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        if not sheet_name:
+            sheet_name = "측정계획(양식)"
+            
+        reply = QMessageBox.question(self, "측정계획 워크플로우", 
+                                     "병합을 진행하고 근로자 수를 입력하시겠습니까?\n"
+                                     "(이미 병합했다면 '아니오'를 눌러 번호 부여 단계로 이동하세요)",
+                                     QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
+        
+        if reply == QMessageBox.Cancel:
+            return
+            
+        # 백업 실행
+        if not self.run_backup_engine(excel_path):
+            self.measure_plan_log("🛑 사용자가 백업 실패 후 작업을 취소하였습니다.")
+            return
+            
+        import win32com.client
+        import pythoncom
+        
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        
+        try:
+            self.measure_plan_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            ws = wb.Worksheets(sheet_name)
+            
+            # 매핑 열 정보 획득
+            map_data = self.measure_mapping_panel.get_mapping()
+            col_process = map_data.get("공정명 열", "B")
+            col_chem = map_data.get("화학물질명 열", "C")
+            col_worker = map_data.get("일련번호 수 열", "E")
+            col_code_f = map_data.get("번호코드 열(F)", "F")
+            col_code_g = map_data.get("번호코드 열(G)", "G")
+            col_merge_str = map_data.get("병합 대상 열", "D, E, F, G, M")
+            
+            idx_process = SMUGUI.c2i(col_process)
+            idx_chem = SMUGUI.c2i(col_chem)
+            idx_worker = SMUGUI.c2i(col_worker)
+            idx_code_f = SMUGUI.c2i(col_code_f)
+            idx_code_g = SMUGUI.c2i(col_code_g)
+            target_cols = [x.strip() for x in col_merge_str.split(",") if x.strip()]
+            
+            # Excel 상수
+            xlUp = -4162
+            xlCenter = -4108
+            xlLeft = -4131
+            xlNone = -4142
+            xlContinuous = 1
+            xlThin = 2
+            
+            last_row = ws.Cells(ws.Rows.Count, idx_chem).End(xlUp).Row
+            if last_row < 4:
+                last_row = 4
+                
+            if reply == QMessageBox.Yes:
+                # ----------------------------------------------------
+                # 1단계: B열(공정명) 기준 지정된 대상 열 셀 병합 처리
+                # ----------------------------------------------------
+                self.measure_plan_log("🟢 1단계: 공정명 기준 셀 병합을 시작합니다...")
+                excel.ScreenUpdating = False
+                excel.DisplayAlerts = False
+                
+                currentRow = 4
+                while currentRow <= last_row:
+                    currentValue = ws.Cells(currentRow, idx_process).Value
+                    if currentValue is None:
+                        currentValue = ""
+                    currentValue = str(currentValue).strip()
+                    
+                    endRow = currentRow
+                    while endRow + 1 <= last_row:
+                        nextValue = ws.Cells(endRow + 1, idx_process).Value
+                        if nextValue is None:
+                            nextValue = ""
+                        nextValue = str(nextValue).strip()
+                        
+                        if nextValue == currentValue and nextValue != "":
+                            endRow += 1
+                        else:
+                            break
+                            
+                    if endRow >= currentRow:
+                        for col_letter in target_cols:
+                            idx_col = SMUGUI.c2i(col_letter)
+                            if idx_col < 1: continue
+                            
+                            cell_range = ws.Range(ws.Cells(currentRow, idx_col), ws.Cells(endRow, idx_col))
+                            if cell_range.MergeCells:
+                                cell_range.UnMerge()
+                            cell_range.Merge()
+                            cell_range.HorizontalAlignment = xlCenter
+                            cell_range.VerticalAlignment = xlCenter
+                            
+                    currentRow = endRow + 1
+                    
+                excel.DisplayAlerts = True
+                excel.ScreenUpdating = True
+                wb.Save()
+                
+                self.measure_plan_log("🟢 1단계 병합 완료! 근로자 수와 측정 건수를 기입한 후 다시 워크플로우를 가동하여 번호를 부여해주세요.")
+                QMessageBox.information(self, "완료", "1단계 셀 병합 처리가 완료되었습니다.\n근로자 수(E열 등)와 측정 횟수(H열 등)를 입력한 뒤 다시 실행해 주세요.")
+                
+            elif reply == QMessageBox.No:
+                # ----------------------------------------------------
+                # 3단계: E열(근로자수) 기준 번호 코드 부여 및 행높이 조절
+                # ----------------------------------------------------
+                self.measure_plan_log("🟢 3단계: 번호 자동 부여 및 행높이 균등 분배를 시작합니다...")
+                excel.ScreenUpdating = False
+                
+                counter = 1
+                currentRow = 4
+                
+                while currentRow <= last_row:
+                    groupStartRow = currentRow
+                    currentGroup = ws.Cells(currentRow, idx_process).Value
+                    if currentGroup is None:
+                        currentGroup = ""
+                    currentGroup = str(currentGroup).strip()
+                    
+                    while currentRow + 1 <= last_row:
+                        nextGroup = ws.Cells(currentRow + 1, idx_process).Value
+                        if nextGroup is None:
+                            nextGroup = ""
+                        nextGroup = str(nextGroup).strip()
+                        
+                        if nextGroup == currentGroup:
+                            currentRow += 1
+                        else:
+                            break
+                            
+                    groupEndRow = currentRow
+                    rowCount = groupEndRow - groupStartRow + 1
+                    
+                    # skipGroup 판단: H열(8번 열) 값이 전부 "횟수조정"이거나 "0"인 경우 번호 미부여
+                    skipGroup = True
+                    for r in range(groupStartRow, groupEndRow + 1):
+                        hVal = str(ws.Cells(r, 8).Value or "").strip()
+                        if hVal != "횟수조정" and hVal != "0" and hVal != "":
+                            skipGroup = False
+                            break
+                            
+                    if not skipGroup:
+                        # E열(일련번호 수 열)의 병합 첫 셀 값 가져옴
+                        val = ws.Cells(groupStartRow, idx_worker).MergeArea.Cells(1, 1).Value
+                        try:
+                            val_num = int(float(val))
+                        except:
+                            val_num = 0
+                            
+                        if val_num > 0:
+                            # 번호 텍스트 생성
+                            text_out = "\n"
+                            for r in range(1, val_num + 1):
+                                text_out += f" {counter})\n\n"
+                                counter += 1
+                            text_out = text_out[:-1] # 마지막 줄바꿈 제거
+                            
+                            # 번호코드 열(F, G) 처리
+                            for idx_col in [idx_code_f, idx_code_g]:
+                                if idx_col < 1: continue
+                                cell_range = ws.Range(ws.Cells(groupStartRow, idx_col), ws.Cells(groupEndRow, idx_col))
+                                cell_range.UnMerge()
+                                cell_range.Merge()
+                                cell_range.Value = text_out
+                                cell_range.WrapText = True
+                                cell_range.HorizontalAlignment = xlLeft
+                                cell_range.VerticalAlignment = xlCenter
+                                
+                            # 행 높이 계산 (줄당 25pt 기준)
+                            totalHeight = 25 * (2 * val_num + 1)
+                            
+                            # C열 화학물질명 1차 AutoFit 후 높이 총합 측정
+                            cHeightSum = 0
+                            for i in range(groupStartRow, groupEndRow + 1):
+                                try:
+                                    ws.Rows(i).AutoFit()
+                                    cHeightSum += ws.Rows(i).RowHeight
+                                except:
+                                    pass
+                                    
+                            if cHeightSum > totalHeight:
+                                totalHeight = cHeightSum
+                                
+                            # 최소 높이 한계 보장
+                            if totalHeight < (25 * rowCount):
+                                totalHeight = 25 * rowCount
+                                
+                            eachRowHeight = totalHeight / rowCount
+                            if eachRowHeight > 409:
+                                eachRowHeight = 409
+                                
+                            for i in range(groupStartRow, groupEndRow + 1):
+                                ws.Rows(i).RowHeight = eachRowHeight
+                        else:
+                            # E열 값이 유효하지 않은 경우 공란 처리
+                            skipGroup = True
+                            
+                    if skipGroup:
+                        for idx_col in [idx_code_f, idx_code_g]:
+                            if idx_col < 1: continue
+                            cell_range = ws.Range(ws.Cells(groupStartRow, idx_col), ws.Cells(groupEndRow, idx_col))
+                            cell_range.UnMerge()
+                            cell_range.Merge()
+                            cell_range.Value = ""
+                            cell_range.WrapText = False
+                            
+                        for i in range(groupStartRow, groupEndRow + 1):
+                            if ws.Rows(i).RowHeight < 25:
+                                ws.Rows(i).RowHeight = 25
+                                
+                    currentRow += 1
+                    
+                # ----------------------------------------------------
+                # 테두리 설정 (SetConditionalBorders 로직 통합)
+                # ----------------------------------------------------
+                self.measure_plan_log("[*] 테두리 정밀 포맷팅을 수행합니다...")
+                
+                # C4부터 공백이 나오는 실제 마지막 행 재측정
+                lastRowBorder = 4
+                for r in range(4, ws.Rows.Count + 1):
+                    val_c = ws.Cells(r, idx_chem).Value
+                    if val_c is None or str(val_c).strip() == "":
+                        lastRowBorder = r - 1
+                        break
+                if lastRowBorder < 4: lastRowBorder = 4
+                
+                # A4:L{lastRowBorder} 전체 영역 기본 테두리 실선
+                whole_range = ws.Range(ws.Cells(4, 1), ws.Cells(lastRowBorder, 12))
+                whole_range.Borders.LineStyle = xlContinuous
+                whole_range.Borders.Color = 0
+                whole_range.Borders.Weight = xlThin
+                
+                # B열 공정 그룹별 가로 테두리 제거 및 외곽 유지
+                currentRow = 4
+                while currentRow <= lastRowBorder:
+                    currentVal = ws.Cells(currentRow, idx_process).Value
+                    if currentVal is None: currentVal = ""
+                    currentVal = str(currentVal).strip()
+                    
+                    if currentVal == "":
+                        currentRow += 1
+                        continue
+                        
+                    startR = currentRow
+                    while currentRow + 1 <= lastRowBorder:
+                        nextVal = ws.Cells(currentRow + 1, idx_process).Value
+                        if nextVal is None: nextVal = ""
+                        nextVal = str(nextVal).strip()
+                        
+                        if nextVal == currentVal:
+                            currentRow += 1
+                        else:
+                            break
+                            
+                    endR = currentRow
+                    group_rng = ws.Range(ws.Cells(startR, idx_process), ws.Cells(endR, idx_process))
+                    
+                    # 안쪽 가로 테두리 제거 (B열 전용)
+                    group_rng.Borders(12).LineStyle = xlNone # xlInsideHorizontal = 12
+                    
+                    # 첫행 위쪽, 마지막행 아래쪽, 좌우 테두리는 실선 유지
+                    group_rng.Cells(1, 1).Borders(8).LineStyle = xlContinuous # xlEdgeTop = 8
+                    group_rng.Cells(group_rng.Rows.Count, 1).Borders(9).LineStyle = xlContinuous # xlEdgeBottom = 9
+                    
+                    if group_rng.Rows.Count > 2:
+                        for row_offset in range(1, group_rng.Rows.Count - 1):
+                            group_rng.Cells(row_offset + 1, 1).Borders(8).LineStyle = xlNone
+                            group_rng.Cells(row_offset + 1, 1).Borders(9).LineStyle = xlNone
+                    elif group_rng.Rows.Count == 2:
+                        group_rng.Cells(2, 1).Borders(8).LineStyle = xlNone
+                        
+                    group_rng.Borders(7).LineStyle = xlContinuous # xlEdgeLeft = 7
+                    group_rng.Borders(10).LineStyle = xlContinuous # xlEdgeRight = 10
+                    
+                    currentRow += 1
+                    
+                # A열 및 C~L열 내부/외곽 테두리 전체 강제 유지
+                for a_col in [1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]:
+                    col_rng = ws.Range(ws.Cells(4, a_col), ws.Cells(lastRowBorder, a_col))
+                    col_rng.Borders.LineStyle = xlContinuous
+                    col_rng.Borders.Color = 0
+                    col_rng.Borders.Weight = xlThin
+                    
+                excel.ScreenUpdating = True
+                wb.Save()
+                
+                self.measure_plan_log("🟢 3단계 번호 자동 부여 및 정밀 테두리 세팅 완료!")
+                QMessageBox.information(self, "완료", "3단계 번호 부여 및 레이아웃 포맷팅이 완료되었습니다!")
+                
+        except Exception as e:
+            self.measure_plan_log(f"🔴 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"작업 중 예기치 못한 오류가 발생했습니다:\n{e}")
+        finally:
+            pythoncom.CoUninitialize()
+
+    def measure_plan_reset_slot(self):
+        """[핵심 3] 측정계획 폼 초기화 실행"""
+        excel_path = self.edit_excel.text().strip()
+        sheet_name = self.combo_sheet.currentText().strip()
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        if not sheet_name:
+            sheet_name = "측정계획(양식)"
+            
+        reply = QMessageBox.question(self, "초기화 경고", 
+                                     "현재 시트(A4:L295)의 데이터와 병합 서식을 모두 지우고 기본값으로 초기화합니다.\n"
+                                     "정말 진행하시겠습니까?", 
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.No:
+            return
+            
+        if not self.run_backup_engine(excel_path):
+            return
+            
+        import win32com.client
+        import pythoncom
+        
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        
+        try:
+            self.measure_plan_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            ws = wb.Worksheets(sheet_name)
+            
+            # Excel 상수
+            xlNone = -4142
+            xlCenter = -4108
+            
+            self.measure_plan_log("🟢 시트 초기화를 수행 중입니다...")
+            
+            # 1. 대상 범위 A4:L295 설정
+            targetRange = ws.Range("A4:L295")
+            
+            # 2. 값 삭제 및 병합 해제
+            targetRange.ClearContents()
+            targetRange.UnMerge()
+            
+            # 3. 글꼴 기본 설정 (굴림, 16pt, 검정)
+            targetRange.Font.Name = "굴림"
+            targetRange.Font.Size = 16
+            targetRange.Font.Color = 0
+            
+            # 4. 채우기 제거 및 맞춤(가운데, ShrinkToFit)
+            targetRange.Interior.Pattern = xlNone
+            targetRange.HorizontalAlignment = xlCenter
+            targetRange.VerticalAlignment = xlCenter
+            targetRange.ShrinkToFit = True
+            
+            # 5. A열 '@', C~L열 'General' 표시형식 복구
+            ws.Range("A4:A295").NumberFormat = "@"
+            ws.Range("C4:L295").NumberFormat = "General"
+            
+            # 6. 테두리 전체 제거
+            targetRange.Borders.LineStyle = xlNone
+            
+            # 7. 행높이 30으로 일괄 설정
+            for i in range(4, 296):
+                ws.Rows(i).RowHeight = 30
+                
+            wb.Save()
+            self.measure_plan_log("🟢 측정계획 시트 초기화 완료!")
+            QMessageBox.information(self, "완료", "시트가 성공적으로 초기화되었습니다.")
+            
+        except Exception as e:
+            self.measure_plan_log(f"🔴 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"초기화 중 오류가 발생했습니다:\n{e}")
+        finally:
+            pythoncom.CoUninitialize()
+
+    def measure_plan_survey_slot(self):
+        """[핵심 4] 예비조사 참고 데이터 취합 실행"""
+        excel_path = self.edit_excel.text().strip()
+        sheet_name = self.combo_sheet.currentText().strip()
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        if not sheet_name:
+            sheet_name = "측정계획(양식)"
+            
+        # 백업 실행
+        if not self.run_backup_engine(excel_path):
+            return
+            
+        import win32com.client
+        import pythoncom
+        
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        
+        try:
+            self.measure_plan_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            wsPlan = wb.Worksheets(sheet_name)
+            
+            # 예비조사_참고 시트 조회 및 없으면 신규 생성
+            wsRef = None
+            for s in wb.Worksheets:
+                if s.Name == "예비조사_참고":
+                    wsRef = s
+                    break
+                    
+            if wsRef is None:
+                # 마지막 시트 뒤에 추가
+                wsRef = wb.Worksheets.Add(Before=None, After=wb.Worksheets(wb.Worksheets.Count))
+                wsRef.Name = "예비조사_참고"
+                self.measure_plan_log("📂 '예비조사_참고' 시트가 존재하지 않아 신규 생성하였습니다.")
+                
+            # 기존 데이터 삭제 (A3:B마지막행)
+            lastRefRow = wsRef.Cells(wsRef.Rows.Count, 1).End(-4162).Row # xlUp
+            if lastRefRow >= 3:
+                wsRef.Range(wsRef.Cells(3, 1), wsRef.Cells(lastRefRow, 2)).ClearContents()
+                
+            # 매핑 열 정보 획득
+            map_data = self.measure_mapping_panel.get_mapping()
+            col_process = map_data.get("공정명 열", "B")
+            col_chem = map_data.get("화학물질명 열", "C")
+            idx_process = SMUGUI.c2i(col_process)
+            idx_chem = SMUGUI.c2i(col_chem)
+            
+            # 측정계획 시트 데이터 취합
+            lastPlanRow = wsPlan.Cells(wsPlan.Rows.Count, idx_chem).End(-4162).Row
+            if lastPlanRow < 4:
+                lastPlanRow = 4
+                
+            self.measure_plan_log("🟢 예비조사 데이터 수집 중...")
+            
+            data_dict = {}
+            for i in range(4, lastPlanRow + 1):
+                processName = str(wsPlan.Cells(i, idx_process).Value or "").strip()
+                factors = str(wsPlan.Cells(i, idx_chem).Value or "").strip()
+                
+                if not factors:
+                    break
+                if not processName:
+                    continue
+                    
+                # 쉼표 구분자로 통일
+                factors_clean = factors.replace("; ", ", ").strip()
+                
+                if processName not in data_dict:
+                    data_dict[processName] = []
+                
+                # 물질 쪼개기 및 중복 제거 수집
+                factor_arr = [x.strip() for x in factors_clean.split(", ") if x.strip()]
+                for f in factor_arr:
+                    if f and f not in data_dict[processName]:
+                        data_dict[processName].append(f)
+                        
+            # 결과 기입 (A3부터 시작)
+            outputRow = 3
+            for key, val_list in data_dict.items():
+                wsRef.Cells(outputRow, 1).Value = key
+                wsRef.Cells(outputRow, 2).Value = ", ".join(val_list)
+                wsRef.Cells(outputRow, 2).WrapText = True
+                
+                # 행 높이 AutoFit 및 최소 높이 25 보장
+                wsRef.Rows(outputRow).AutoFit()
+                if wsRef.Rows(outputRow).RowHeight < 25:
+                    wsRef.Rows(outputRow).RowHeight = 25
+                outputRow += 1
+                
+            # 컬럼 자동 조정
+            wsRef.Columns("A:B").AutoFit()
+            
+            wb.Save()
+            self.measure_plan_log("🟢 예비조사 데이터 취합 완료!")
+            QMessageBox.information(self, "완료", "예비조사 참고자료 데이터 취합이 성공적으로 완료되었습니다!")
+            
+        except Exception as e:
+            self.measure_plan_log(f"🔴 오류 발생: {e}")
+            QMessageBox.critical(self, "오류", f"데이터 취합 중 오류가 발생했습니다:\n{e}")
+        finally:
+            pythoncom.CoUninitialize()
+
+    def _update_substance_clean_info(self):
+        """환경 설정에서 연동된 엑셀 파일 및 시트명 갱신"""
+        path = self.edit_excel.text().strip()
+        sheet = self.combo_sheet.currentText().strip()
+        
+        if path:
+            self.lbl_clean_excel_path.setText(path)
+        else:
+            self.lbl_clean_excel_path.setText("환경 설정에서 결과를 저장할 엑셀 파일을 선택하세요.")
+            
+        if sheet:
+            self.lbl_clean_sheet_name.setText(sheet)
+        else:
+            self.lbl_clean_sheet_name.setText("Sheet1 (기본값)")
+
+    def open_current_excel(self):
+        """현재 설정된 엑셀 파일을 열린 상태로 실행"""
+        path = self.edit_excel.text().strip()
+        if not path or not os.path.exists(path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        try:
+            import win32com.client
+            excel = None
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+            excel.Visible = True
+            
+            # 이미 열려있는 통합문서 확인
+            wb_opened = False
+            abs_path = os.path.abspath(path)
+            for wb in excel.Workbooks:
+                try:
+                    if wb.FullName.lower() == abs_path.lower():
+                        wb_opened = True
+                        break
+                except:
+                    continue
+            if not wb_opened:
+                excel.Workbooks.Open(abs_path)
+        except Exception as e:
+            QMessageBox.critical(self, "오류", f"엑셀 파일을 여는 중 오류가 발생했습니다: {e}")
+
+    def search_substance_db(self):
+        """[V24.3.5.0] 화학물질 마스터 DB 조회 및 관계 필터 메서드"""
+        keyword = self.edit_search_keyword.text().strip()
+        if not keyword:
+            self.tbl_search_results.setRowCount(0)
+            return
+
+        # 마스터 데이터셋 로딩 확인
+        if not hasattr(self, 'mes_master_list') or not self.mes_master_list:
+            self.load_mes_master()
+
+        if not self.mes_master_list:
+            QMessageBox.critical(self, "오류", "msds_index.json 마스터 데이터를 로드할 수 없습니다.")
+            return
+
+        # 검색 대상 필터링
+        results = []
+        for entry in self.mes_master_list:
+            name = entry.get("측정대상 물질명", "") or ""
+            cas = entry.get("CAS No.", "") or ""
+            if keyword.lower() in name.lower() or keyword.lower() in cas.lower():
+                results.append(entry)
+
+        # 동일 CAS 번호별 관계 분석용 임시 매핑 구축
+        # 전체 DB를 돌며 CAS 번호별 모든 형제 목록 수집
+        cas_siblings = {}
+        for entry in self.mes_master_list:
+            c = str(entry.get("CAS No.", "")).strip()
+            n = str(entry.get("측정대상 물질명", "")).strip()
+            if c and c.lower() != 'nan' and n:
+                if c not in cas_siblings:
+                    cas_siblings[c] = set()
+                cas_siblings[c].add(n)
+
+        self.tbl_search_results.setRowCount(len(results))
+        for row_idx, entry in enumerate(results):
+            code = entry.get("정렬코드", "") or ""
+            name = entry.get("측정대상 물질명", "") or ""
+            cas = entry.get("CAS No.", "") or ""
+            twa = entry.get("노출기준(TWA)", "") or ""
+            spec = entry.get("비고", "") or ""
+
+            # 관계 유형 분석
+            rel_type = "단일 (대표명)"
+            cas_strip = cas.strip()
+            if cas_strip in cas_siblings:
+                siblings = list(cas_siblings[cas_strip])
+                if len(siblings) > 1:
+                    # 이름 길이 비교: 가장 짧은 것을 부모(대표명)로 판정, 나머지는 자식(상세명)
+                    sorted_siblings = sorted(siblings, key=len)
+                    parent_name = sorted_siblings[0]
+                    if name == parent_name:
+                        rel_type = "부모 (대표명)"
+                    elif parent_name in name:
+                        rel_type = "자식 (상세명)"
+                    else:
+                        rel_type = "이명 (동의어)"
+
+            self.tbl_search_results.setItem(row_idx, 0, QTableWidgetItem(str(code)))
+            self.tbl_search_results.setItem(row_idx, 1, QTableWidgetItem(str(name)))
+            self.tbl_search_results.setItem(row_idx, 2, QTableWidgetItem(str(cas)))
+            self.tbl_search_results.setItem(row_idx, 3, QTableWidgetItem(str(twa)))
+            self.tbl_search_results.setItem(row_idx, 4, QTableWidgetItem(rel_type))
+            self.tbl_search_results.setItem(row_idx, 5, QTableWidgetItem(str(spec)))
+
+    def clean_log(self, text):
+        """한글 진행 로그 출력 및 화면 강제 갱신"""
+        self.log_view.append(f"[{datetime.now().strftime('%H:%M:%S')}] [정리] {text}")
+        self.log_view.moveCursor(QTextCursor.End)
+        QApplication.processEvents()
+
+    def clean_substances_excel(self):
+        """이미 열려있는 엑셀을 직접 제어하여 물질명을 정렬하고 오타를 교정"""
+        excel_path = self.edit_excel.text().strip()
+        sheet_name = self.combo_sheet.currentText().strip() or "Sheet1"
+        
+        if not excel_path or not os.path.exists(excel_path):
+            QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
+            return
+            
+        # 마스터 데이터셋 로딩 확인
+        if not hasattr(self, 'mes_master_list') or not self.mes_master_list:
+            self.clean_log("[*] msds_index.json 마스터 데이터를 로드합니다...")
+            self.load_mes_master()
+            
+        if not self.mes_master_list:
+            QMessageBox.critical(self, "오류", "msds_index.json을 로드할 수 없어 작업을 진행할 수 없습니다.")
+            return
+
+        self.log_view.clear()
+        self.clean_log("🟢 화학물질 정렬 및 교정 작업 시작...")
+        
+        import win32com.client
+        import pythoncom
+        import difflib
+        
+        # 마스터 데이터 셋업
+        def normalize_name(name):
+            if not name:
+                return ""
+            return re.sub(r'\s+', '', name).lower()
+
+        valid_substances = {entry.get("측정대상 물질명", "").strip() for entry in self.mes_master_list if entry.get("측정대상 물질명")}
+        valid_substances_clean = {normalize_name(name) for name in valid_substances}
+
+        def extract_pure_substance_name(item):
+            # 물질명 항목에서 접두사, 함유량 괄호, 대괄호 등을 모두 제거한 순수 물질 매칭용 명칭을 반환합니다.
+            m_br = re.search(r'\[(.*?)\]', item)
+            if m_br:
+                text = m_br.group(1).strip()
+            else:
+                text = item.strip()
+                
+            text = re.sub(r'^\[.*?\]', '', text).strip()
+            text = re.sub(r'\(.*?\)', '', text).strip()
+            
+            for prefix in ["측정 비대상", "단시간 및 임시작업", "보관", "허용소비량 미만"]:
+                if text.startswith(prefix):
+                    text = text[len(prefix):].strip()
+                    
+            text = text.replace("[", "").replace("]", "").strip()
+            return text
+
+        def split_i_val(i_val):
+            if not i_val:
+                return []
+            
+            # 소괄호() 및 대괄호[] 안의 세미콜론(;)을 임시 치환하여 괄호 안 쪼개짐 방지
+            chars = list(i_val)
+            in_paren = 0
+            in_bracket = 0
+            for i, ch in enumerate(chars):
+                if ch == '(': in_paren += 1
+                elif ch == ')': in_paren -= 1
+                elif ch == '[': in_bracket += 1
+                elif ch == ']': in_bracket -= 1
+                elif ch == ';' and (in_paren > 0 or in_bracket > 0):
+                    chars[i] = '\u0001'
+            
+            protected_val = "".join(chars)
+            
+            # 세미콜론 기준으로만 분리 (화학식 내부의 쉼표 보존을 위해 쉼표 분리 로직은 완전 제거)
+            raw_splits = []
+            for part in re.split(r';', protected_val):
+                part = part.strip()
+                if not part:
+                    continue
+                raw_splits.append(part.replace('\u0001', ';'))
+                
+            final_items = []
+            for part in raw_splits:
+                matched_prefix = None
+                for prefix in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                    if part.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                        
+                if matched_prefix:
+                    # 대괄호/소괄호 내부의 알맹이 내용 추출
+                    inner_content = part[len(matched_prefix):].strip()
+                    if inner_content.startswith("[") and inner_content.endswith("]"):
+                        inner_content = inner_content[1:-1].strip()
+                    elif inner_content.startswith("(") and inner_content.endswith(")"):
+                        inner_content = inner_content[1:-1].strip()
+                    
+                    # 대괄호 내부도 세미콜론 기준으로만 분리
+                    sub_parts = re.split(r';', inner_content)
+                    for sub_p in sub_parts:
+                        sub_p = sub_p.strip()
+                        if sub_p:
+                            final_items.append(f"{matched_prefix}[{sub_p}]")
+                else:
+                    final_items.append(part)
+            return final_items
+
+        def parse_substance_item(item):
+            item = item.strip()
+            if not item:
+                return None
+            
+            # 메인 카테고리 접두사 분리
+            category = "측정대상"
+            for prefix in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                if item.startswith(prefix):
+                    category = prefix
+                    item = item[len(prefix):].strip()
+                    break
+                    
+            # 겉껍데기 대괄호 탈착
+            if item.startswith("[") and item.endswith("]"):
+                item = item[1:-1].strip()
+                
+            # 서브 접두사 분리 (특별, 허가, 특검 수식어)
+            sub_prefix = ""
+            for sub in ["[특별]", "[허가]", "[특검]"]:
+                if item.startswith(sub):
+                    sub_prefix = sub
+                    item = item[len(sub):].strip()
+                    break
+                    
+            # 🚨 [V24.3.4.0] 괄호 분리 로직 완전 제거. 풀네임 자체를 보존
+            pure_name = item.replace("[", "").replace("]", "").strip()
+            
+            return {
+                "category": category,
+                "sub_prefix": sub_prefix,
+                "pure_name": pure_name,
+                "suffix": ""
+            }
+        substance_sort_map = {}
+        substance_info_map = {}
+        for entry in self.mes_master_list:
+            name = entry.get("측정대상 물질명", "").strip()
+            code = entry.get("정렬코드", "").strip()
+            if name:
+                if name not in substance_sort_map:
+                    substance_sort_map[name] = code
+                # 특별, 허가, 특검, 측정 정보 취합
+                if name not in substance_info_map:
+                    substance_info_map[name] = {
+                        "특별관리": entry.get("특별관리") or "",
+                        "허가대상": entry.get("허가대상") or "",
+                        "특검": entry.get("특검") or "",
+                        "측정": entry.get("측정") or ""
+                    }
+                else:
+                    # 중복 물질의 경우 특별이나 허가 등이 하나라도 있으면 우대 적용
+                    existing = substance_info_map[name]
+                    if entry.get("특별관리") == "○": existing["특별관리"] = "○"
+                    if entry.get("허가대상") == "○": existing["허가대상"] = "○"
+                    if entry.get("특검") == "○": existing["특검"] = "○"
+                    if entry.get("측정") == "○": existing["측정"] = "○"
+
+        # CAS 번호 기반 역방향 맵 구축 (동일 CAS 형제 물질 탐색용)
+        cas_to_names = {}  # CAS번호 -> [물질명1, 물질명2, ...]
+        name_to_cas = {}   # 물질명 -> CAS번호
+        for entry in self.mes_master_list:
+            name = entry.get("측정대상 물질명", "").strip()
+            cas = entry.get("CAS No.", "").strip()
+            if name and cas:
+                name_to_cas[name] = cas
+                if cas not in cas_to_names:
+                    cas_to_names[cas] = []
+                if name not in cas_to_names[cas]:
+                    cas_to_names[cas].append(name)
+
+        pythoncom.CoInitialize()
+        excel = None
+        wb = None
+        try:
+            self.clean_log("[*] Excel 인스턴스 획득 중...")
+            try:
+                excel = win32com.client.GetActiveObject("Excel.Application")
+            except:
+                excel = win32com.client.Dispatch("Excel.Application")
+                excel.Visible = True
+                
+            abs_excel_path = os.path.abspath(excel_path)
+            excel_filename = os.path.basename(excel_path)
+            
+            # 이미 열려있는 파일인지 체크
+            for w in excel.Workbooks:
+                try:
+                    if w.FullName.lower() == abs_excel_path.lower() or w.Name.lower() == excel_filename.lower():
+                        wb = w
+                        break
+                except:
+                    continue
+                    
+            if wb is None:
+                self.clean_log(f"[*] 엑셀 파일 오픈: {excel_filename}")
+                wb = excel.Workbooks.Open(abs_excel_path)
+                excel.Visible = True
+                
+            ws = wb.Worksheets(sheet_name)
+            
+            try:
+                st_row = int(self.edit_start_row.text())
+            except:
+                st_row = 3
+                
+            # 데이터 행 감지
+            max_row = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
+            if max_row < st_row:
+                self.clean_log("[!] 처리할 데이터가 존재하지 않습니다.")
+                return
+                
+            self.clean_log(f"[*] 처리 대상 범위: {st_row}행 ~ {max_row}행")
+            
+            # 캐시의 correction_rules 사전 확보 (없으면 생성)
+            if not hasattr(self, 'cache') or self.cache is None:
+                self.cache = {}
+            if "correction_rules" not in self.cache:
+                self.cache["correction_rules"] = {}
+            correction_rules = self.cache["correction_rules"]
+            
+            all_apply = False
+            all_skip = False
+            
+            for r in range(st_row, max_row + 1):
+                i_cell = ws.Cells(r, 9) # I열 (비고)
+                j_cell = ws.Cells(r, 10) # J열 (MSDS)
+                
+                i_val = str(i_cell.Value or "").strip()
+                j_val = str(j_cell.Value or "").strip()
+                
+                if not i_val:
+                    continue
+                    
+                i_items = split_i_val(i_val)
+                j_items = [x.strip() for x in j_val.split(";") if x.strip()]
+                
+                # 순수 물질명을 매치메이커 삼아 지능형 일대일 매칭 진행
+                used_j_indices = set()
+                paired_data = []
+                
+                for i_item in i_items:
+                    parsed_i = parse_substance_item(i_item)
+                    i_pure = parsed_i["pure_name"] if parsed_i else extract_pure_substance_name(i_item)
+                    matched_j_item = None
+                    matched_idx = -1
+                    
+                    # 1차 완전 일치 검사
+                    for idx, j_item in enumerate(j_items):
+                        if idx in used_j_indices:
+                            continue
+                        j_pure = extract_pure_substance_name(j_item)
+                        if i_pure == j_pure:
+                            matched_j_item = j_item
+                            matched_idx = idx
+                            break
+                            
+                    # 2차 부분 포함 일치 검사
+                    if matched_j_item is None:
+                        for idx, j_item in enumerate(j_items):
+                            if idx in used_j_indices:
+                                continue
+                            j_pure = extract_pure_substance_name(j_item)
+                            if i_pure and j_pure and (i_pure in j_pure or j_pure in i_pure):
+                                matched_j_item = j_item
+                                matched_idx = idx
+                                break
+                                
+                    if matched_j_item is not None:
+                        used_j_indices.add(matched_idx)
+                    else:
+                        matched_j_item = ""
+                        
+                    paired_data.append((i_item, matched_j_item))
+                    
+                # 매칭 실패로 낙오된 J열 성분들을 추가
+                for idx, j_item in enumerate(j_items):
+                    if idx not in used_j_indices:
+                        paired_data.append(("", j_item))
+                        
+                row_data = []
+                for i_item, j_item in paired_data:
+                    # I열 항목이 아예 비어있어 매칭 불능인 낙오 물질 처리
+                    if not i_item:
+                        row_data.append({
+                            "i_item_final": "",
+                            "j_item": j_item,
+                            "category": "측정대상",
+                            "sort_code": "ZZZZZZ",
+                            "is_red": True
+                        })
+                        continue
+                        
+                    parsed_i = parse_substance_item(i_item)
+                    if not parsed_i:
+                        continue
+                    i_sub = parsed_i["pure_name"]
+                    category = parsed_i["category"]
+                    
+                    # 🚨 [V24.3.4.0] 빈 물질명 필터링: 괄호만 존재하여 pure_name이 비어 있는 비정상 고아 항목 무시
+                    if not i_sub:
+                        self.clean_log(f"⚠️ [건너뜀] {r}행: 알맹이 이름이 없는 고아 항목 '{i_item}' 감지되어 제외 조치합니다.")
+                        continue
+                    
+                    # 🚨 [V24.3.4.0] 영구 교정 기억 장치(사전) 조회 및 자동 대체
+                    i_sub_norm = normalize_name(i_sub)
+                    if i_sub_norm in correction_rules:
+                        corrected_val = correction_rules[i_sub_norm]
+                        if corrected_val != i_sub:
+                            self.clean_log(f"[*] {r}행: 캐시된 오타 교정 규칙 적용 '{i_sub}' -> '{corrected_val}'")
+                            i_sub = corrected_val
+                            i_sub_norm = normalize_name(i_sub)
+                            
+                    # [V24.3.5.0] 지능형 부모-자식 자동 교정 규칙 적용
+                    cas = name_to_cas.get(i_sub, "")
+                    if cas:
+                        siblings = cas_to_names.get(cas, [])
+                        # 🚨 [V24.3.5.2] 활석/소우프스톤 계열(CAS 14807-96-6)은 자동 교정에서 강제 제외
+                        if cas == "14807-96-6":
+                            pass
+                        elif len(siblings) > 1:
+                            # 동일 CAS를 가진 형제들 중 가장 짧은 명칭을 부모명으로 판단
+                            sorted_siblings = sorted(siblings, key=len)
+                            parent_name = sorted_siblings[0]
+                            if i_sub == parent_name:
+                                # 부모명이 자식명 텍스트 내에 포함되는 실질 상세 자식명만 필터링하여 이명(예: 소우프스톤 등)과의 간섭 차단
+                                children = [s for s in siblings if s != parent_name and parent_name in s]
+                                if len(children) == 1:
+                                    target_child = children[0]
+                                    self.clean_log(f"[*] {r}행: 부모 물질명 '{i_sub}' ➔ 자식 표준명 '{target_child}' 자동 교정 적용 (유일 자식)")
+                                    i_sub = target_child
+                                    i_sub_norm = normalize_name(i_sub)
+
+                    # 마스터 DB 표준 풀네임 집합 대조
+                    # 🚨 [V24.3.5.2] 활석/소우프스톤 계열(CAS 14807-96-6) 중 대표 부모명("활석")인 경우에만 수동 팝업 강제 호출
+                    is_talc_parent = (cas == "14807-96-6" and i_sub == "활석")
+                    if i_sub_norm in valid_substances_clean and not is_talc_parent:
+                        # 1단계: 사용자 기재 신뢰 (Zero-Popup Pass)
+                        pass
+                    else:
+                        # 마스터 DB에 정확히 일치하지 않거나, 예외 강제 팝업 케이스
+                        cas = name_to_cas.get(i_sub, "")
+                        candidates = []
+                        is_multi_regulation = False
+                        
+                        if cas:
+                            siblings = cas_to_names.get(cas, [])
+                            # 🚨 [V24.3.5.2] 활석/소우프스톤 계열은 대표 부모명인 '활석'을 제외하고 팝업 후보 구성
+                            if cas == "14807-96-6":
+                                candidates = [s for s in siblings if s != "활석"]
+                                is_multi_regulation = True
+                            # 2단계: 동일 CAS 형제들의 TWA 규제 조건 상이 여부 분석
+                            elif len(siblings) > 1:
+                                twa_sets = set()
+                                for sib in siblings:
+                                    info = substance_info_map.get(sib, {})
+                                    twa_sets.add((
+                                        info.get("특별관리", ""),
+                                        info.get("허가대상", ""),
+                                        info.get("특검", ""),
+                                        info.get("측정", ""),
+                                        substance_sort_map.get(sib, "ZZZZZZ")
+                                    ))
+                                if len(twa_sets) > 1:
+                                    candidates = siblings
+                                    is_multi_regulation = True
+                                else:
+                                    # 규제 조건이 동일하다면 대표 성상명으로 자동 매핑
+                                    i_sub = siblings[0]
+                                    i_sub_norm = normalize_name(i_sub)
+                            else:
+                                candidates = siblings
+                                
+                        # CAS 번호가 없거나, 성상 분기가 불필요하며, 여전히 마스터 DB에 없는 오타인 경우
+                        if not candidates:
+                            # 3단계: 유사도 임계치 cutoff=0.8로 상향하여 오타 후보 구축
+                            candidates = list(difflib.get_close_matches(i_sub, list(valid_substances), n=3, cutoff=0.8))
+                            for vname in valid_substances:
+                                if vname not in candidates and (i_sub in vname or vname in i_sub):
+                                    if len(vname) - len(i_sub) in [-2, -1, 0, 1, 2]:
+                                        candidates.append(vname)
+                                        
+                        # 교정 대화상자 호출
+                        if candidates and not all_skip:
+                            if all_apply:
+                                proposed = candidates[0]
+                                self.clean_log(f"[교정] {r}행: '{i_sub}' -> '{proposed}' (자동 적용)")
+                                i_sub = proposed
+                                i_sub_norm = normalize_name(i_sub)
+                            else:
+                                title = "동일 CAS 다중 규제 물질 선택" if is_multi_regulation else "물질명 오타 교정 제안"
+                                dlg = SubstanceCorrectionDialog(r, i_sub, candidates, parent=self)
+                                dlg.setWindowTitle(title)
+                                dlg.exec_()
+                                
+                                if dlg.result_action in (SubstanceCorrectionDialog.RESULT_APPLY, SubstanceCorrectionDialog.RESULT_ALL_APPLY):
+                                    self.clean_log(f"[교정] {r}행: '{i_sub}' -> '{dlg.corrected_name}' (적용)")
+                                    
+                                    # 영구 교정 기억 사전에 매핑 정보 등록
+                                    i_item_raw_norm = normalize_name(i_sub)
+                                    correction_rules[i_item_raw_norm] = dlg.corrected_name
+                                    self.save_cache() # 캐시 파일 영구 저장
+                                    
+                                    i_sub = dlg.corrected_name
+                                    i_sub_norm = normalize_name(i_sub)
+                                    
+                                    if dlg.result_action == SubstanceCorrectionDialog.RESULT_ALL_APPLY:
+                                        all_apply = True
+                                elif dlg.result_action == SubstanceCorrectionDialog.RESULT_ALL_SKIP:
+                                    all_skip = True
+                                    self.clean_log(f"[교정] {r}행: '{i_sub}' (이후 모두 건너뛰기 활성화)")
+                                else:
+                                    self.clean_log(f"[교정] {r}행: '{i_sub}' (건너뜀)")
+                                    
+                    # 마스터 데이터셋을 바탕으로 수식어 자동 복원 및 우선순위 매핑
+                    info = substance_info_map.get(i_sub)
+                    sub_prefix = ""
+                    if info:
+                        is_special = str(info.get("특별관리") or "").strip() == "○"
+                        is_permit = str(info.get("허가대상") or "").strip() == "○"
+                        is_exam = str(info.get("특검") or "").strip() == "○"
+                        is_measure = str(info.get("측정") or "").strip() == "○"
+                        
+                        if is_special:
+                            sub_prefix = "[특별]"
+                        elif is_permit:
+                            sub_prefix = "[허가]"
+                        elif is_exam and not is_measure:
+                            sub_prefix = "[특검]"
+                    else:
+                        sub_prefix = parsed_i["sub_prefix"]
+                        
+                    # 최종 교정된 물질명 재합성 (괄호 분리를 삭제했으므로 suffix는 붙이지 않음)
+                    i_item_final = f"{sub_prefix}{i_sub}"
+                    
+                    # 정렬 코드 정보 조회
+                    sort_code = substance_sort_map.get(i_sub)
+                    
+                    is_red = False
+                    # 최종 완성된 물질명이 마스터 DB 표준 리스트에 없다면 명백하게 오류(적색 마킹)
+                    if i_sub_norm not in valid_substances_clean:
+                        sort_code = "ZZZZZZ"
+                        is_red = True
+                        
+                    # 🚨 [V24.3.5.3] J열에 함유량(%)이 누락되어 있거나 비어 있는 경우 명백하게 오류(적색 마킹)
+                    if not j_item or "%" not in j_item:
+                        is_red = True
+                        
+                    row_data.append({
+                        "i_item_final": i_item_final,
+                        "j_item": j_item,
+                        "category": category,
+                        "sort_code": sort_code,
+                        "is_red": is_red
+                    })
+                    
+                # 정렬코드로 통합 정렬
+                row_data.sort(key=lambda x: x["sort_code"])
+                
+                # I열 카테고리별 조립 및 J열 순서 동기화 조립
+                group_i_results = []
+                group_j_results = []
+                group_definitions = [
+                    ("측정대상", "; ", ""),
+                    ("측정 비대상", "; ", "측정 비대상["),
+                    ("단시간 및 임시작업", "; ", "단시간 및 임시작업["),
+                    ("허용소비량 미만", "; ", "허용소비량 미만["),
+                    ("보관", "; ", "보관[")
+                ]
+                
+                for cat_name, sep, wrapper in group_definitions:
+                    cat_items = [x for x in row_data if x["category"] == cat_name]
+                    if not cat_items:
+                        continue
+                    
+                    inner_i_texts = [x["i_item_final"] for x in cat_items if x["i_item_final"]]
+                    if inner_i_texts:
+                        if wrapper:
+                            group_i_results.append(f"{wrapper}{sep.join(inner_i_texts)}]")
+                        else:
+                            group_i_results.append(sep.join(inner_i_texts))
+                            
+                    # 🚨 [V24.3.3.0] J열 순서를 I열의 카테고리 그룹 순서 및 정렬 코드와 1:1 완벽 동기화
+                    inner_j_texts = [x["j_item"] for x in cat_items if x["j_item"]]
+                    if inner_j_texts:
+                        group_j_results.append(sep.join(inner_j_texts))
+                        
+                new_i_val = "; ".join(group_i_results)
+                new_j_val = "; ".join(group_j_results)
+                
+                # 🚨 [V24.3.5.4] 셀 서식 및 맞춤 속성 사전 백업
+                def backup_cell_format(cell):
+                    try:
+                        return {
+                            "HorizontalAlignment": cell.HorizontalAlignment,
+                            "VerticalAlignment": cell.VerticalAlignment,
+                            "WrapText": cell.WrapText,
+                            "ShrinkToFit": cell.ShrinkToFit,
+                            "FontName": cell.Font.Name,
+                            "FontSize": cell.Font.Size,
+                            "FontBold": cell.Font.Bold,
+                            "FontItalic": cell.Font.Italic,
+                            "FontUnderline": cell.Font.Underline,
+                            "FontColor": cell.Font.Color
+                        }
+                    except Exception as e:
+                        self.clean_log(f"⚠️ 셀 서식 백업 실패: {e}")
+                        return None
+
+                def restore_cell_format(cell, fmt):
+                    if not fmt:
+                        return
+                    try:
+                        cell.HorizontalAlignment = fmt["HorizontalAlignment"]
+                        cell.VerticalAlignment = fmt["VerticalAlignment"]
+                        cell.WrapText = fmt["WrapText"]
+                        cell.ShrinkToFit = fmt["ShrinkToFit"]
+                        cell.Font.Name = fmt["FontName"]
+                        cell.Font.Size = fmt["FontSize"]
+                        cell.Font.Bold = fmt["FontBold"]
+                        cell.Font.Italic = fmt["FontItalic"]
+                        cell.Font.Underline = fmt["FontUnderline"]
+                        # Font.Color는 복원하되, 부분 색상 적용 시 충돌을 막기 위해 
+                        # 기존 색상이 검은색이나 기본값(보통 0 또는 1)이 아닐 경우(예: 사용자가 칠한 색) 보존
+                        if fmt["FontColor"] != 0:
+                            cell.Font.Color = fmt["FontColor"]
+                    except Exception as e:
+                        self.clean_log(f"⚠️ 셀 서식 복원 실패: {e}")
+
+                i_fmt = backup_cell_format(i_cell)
+                j_fmt = backup_cell_format(j_cell)
+
+                # 최종 셀 값 대입
+                i_cell.Value = new_i_val
+                j_cell.Value = new_j_val
+                
+                # 🚨 [V24.3.5.4] 셀 서식 복원 (일괄 리셋 제거)
+                restore_cell_format(i_cell, i_fmt)
+                restore_cell_format(j_cell, j_fmt)
+                
+                # I열 적색 마킹 좌표 계산
+                red_marks_i = []
+                current_len = 0
+                first_group = True
+                for cat_name, sep, wrapper in group_definitions:
+                    cat_items = [x for x in row_data if x["category"] == cat_name]
+                    inner_texts = [x["i_item_final"] for x in cat_items if x["i_item_final"]]
+                    if not inner_texts:
+                        continue
+                        
+                    if not first_group:
+                        current_len += 2 # 세미콜론 구분자 길이 보정
+                    first_group = False
+                    
+                    if wrapper:
+                        current_len += len(wrapper)
+                        
+                    for idx, item in enumerate(cat_items):
+                        if idx > 0:
+                            current_len += len(sep)
+                            
+                        item_text = item["i_item_final"]
+                        if item["is_red"] and item_text:
+                            red_marks_i.append((current_len + 1, len(item_text)))
+                            
+                        current_len += len(item_text)
+                        
+                    if wrapper:
+                        current_len += 1 # 닫는 괄호 길이 보정
+                        
+                # J열 적색 마킹 좌표 계산
+                red_marks_j = []
+                current_len_j = 0
+                first_j = True
+                for item in row_data:
+                    j_text = item["j_item"]
+                    if not j_text:
+                        continue
+                    if not first_j:
+                        current_len_j += 2
+                    first_j = False
+                    
+                    if item["is_red"]:
+                        red_marks_j.append((current_len_j + 1, len(j_text)))
+                    current_len_j += len(j_text)
+                    
+                # I열 셀 부분 적색 마킹 적용 (단일 셀 동적 바인딩)
+                try:
+                    import win32com.client.dynamic
+                    i_cell_dyn = win32com.client.dynamic.Dispatch(i_cell._oleobj_)
+                    i_cell_dyn._FlagAsMethod("Characters")
+                except Exception as e:
+                    i_cell_dyn = i_cell
+                    self.clean_log(f"⚠️ I열 동적 디스패치 래핑 실패: {e}")
+                    
+                for start, length in red_marks_i:
+                    try:
+                        i_cell_dyn.Characters(start, length).Font.Color = 255
+                    except Exception as ce:
+                        self.clean_log(f"⚠️ I열 서식 적용 실패 (위치 {start}): {ce}")
+                        
+                # J열 셀 부분 적색 마킹 적용 (단일 셀 동적 바인딩)
+                try:
+                    import win32com.client.dynamic
+                    j_cell_dyn = win32com.client.dynamic.Dispatch(j_cell._oleobj_)
+                    j_cell_dyn._FlagAsMethod("Characters")
+                except Exception as e:
+                    j_cell_dyn = j_cell
+                    self.clean_log(f"⚠️ J열 동적 디스패치 래핑 실패: {e}")
+                    
+                for start, length in red_marks_j:
+                    try:
+                        j_cell_dyn.Characters(start, length).Font.Color = 255
+                    except Exception as ce:
+                        self.clean_log(f"⚠️ J열 서식 적용 실패 (위치 {start}): {ce}")
+                    
+                # 유아이 반응성 유지
+                QApplication.processEvents()
+                
+            self.clean_log("🟢 화학물질 정리 및 교정 완료!")
+            QMessageBox.information(self, "완료", "화학물질 정리 및 교정 프로세스가 정상적으로 완료되었습니다.")
+        except Exception as e:
+            self.clean_log(f"🔴 오류 발생: {e}")
+            err_msg = str(e)
+            # 거부(0x8001010A - RPC_E_SERVERCALL_RETRYLATER) 에러에 대한 친절한 처리
+            if "거부" in err_msg or "Message filter" in err_msg or "-2147417846" in err_msg or "8001010a" in err_msg.lower():
+                QMessageBox.critical(self, "엑셀 편집 오류", 
+                                     "엑셀 시트가 편집 모드(셀 더블클릭 상태 등)에 있어서 제어할 수 없습니다.\n"
+                                     "엑셀 창에서 Enter 키를 누르거나 편집을 완료(셀 밖 클릭 등)한 후 다시 실행해 주세요.")
+            else:
+                QMessageBox.critical(self, "오류", f"작업 중 예기치 못한 오류가 발생했습니다:\n{e}")
+        finally:
+            pythoncom.CoUninitialize()
 
     def _create_extraction_page(self):
         """[Page 0] 최적화된 추출 및 검증 메인 페이지 (테이블 확장형)"""
@@ -1291,6 +3929,7 @@ class SMUGUI(QMainWindow):
         self.table.cellClicked.connect(self.on_row_clicked)
         
         self.table.itemChanged.connect(self.on_table_item_changed)
+        self.table.cellDoubleClicked.connect(self.on_table_cell_double_clicked)
         
         # [NEW] 빈 화면 워터마크 (Empty State Label)
         self.lbl_watermark = QLabel("① 여기에 PDF 파일을 끌어다 놓으세요  →  ② [추출 시작] 버튼을 누르세요", self.table)
@@ -1401,6 +4040,8 @@ class SMUGUI(QMainWindow):
         """[V6.995] 현재 설정을 config.json에 저장"""
         config = {
             "mapping": self.mapping_panel.get_mapping(),
+            "measure_mapping": self.measure_mapping_panel.get_mapping(),
+            "backup_path": self.edit_backup_path.text().strip(),
             "excel_path": self.edit_excel.text().strip(),
             "sheet_name": self.combo_sheet.currentText(),
             "start_row": self.edit_start_row.text().strip(),
@@ -1424,6 +4065,10 @@ class SMUGUI(QMainWindow):
             # 1. 매핑 설정 복구
             if "mapping" in config:
                 self.mapping_panel.set_mapping(config["mapping"])
+            if "measure_mapping" in config:
+                self.measure_mapping_panel.set_mapping(config["measure_mapping"])
+            if "backup_path" in config:
+                self.edit_backup_path.setText(config["backup_path"])
             
             # 2. 기타 설정 복구
             if "excel_path" in config:
@@ -2104,6 +4749,11 @@ class SMUGUI(QMainWindow):
                 found_row = fallback_idx
 
         if found_row != -1:
+            # 캐시 및 결과 메모리에 components 반영
+            if target_hash and target_hash in self.cache:
+                if "components" in res_data:
+                    self.cache[target_hash]["components"] = res_data["components"]
+                    self.save_cache()
 
             self.update_validation_row(
                 found_row, 
@@ -2111,7 +4761,8 @@ class SMUGUI(QMainWindow):
                 v.get("res_1st", []), 
                 v.get("res_2nd", []),
                 v.get("work_subjects", ""),
-                status=status # [NEW] 상태값 전달
+                status=status, # [NEW] 상태값 전달
+                components=res_data.get("components")
             )
 
     def on_validation_finished(self):
@@ -2349,7 +5000,7 @@ class SMUGUI(QMainWindow):
             self.table.blockSignals(False)
             self.log(f"[에러] 테이블 추가 실패: {e}")
 
-    def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass"):
+    def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass", components=None):
         """2단계 검증 결과를 테이블에 업데이트 (V10.2 파란색 신호등 🔵 제어 추가)"""
         try:
             # Hash를 가져와 캐시 조회
@@ -2406,11 +5057,184 @@ class SMUGUI(QMainWindow):
             if bg_color: item_cas.setBackground(bg_color)
             self.table.setItem(row, 3, item_cas)
 
-            # 3. 측정대상 (1% 필터링 반영)
-            final_measure = manual.get("measure", work_subjects)
-            item_measure = QTableWidgetItem(final_measure)
-            if bg_color: item_measure.setBackground(bg_color)
-            self.table.setItem(row, 4, item_measure)
+            # 1:N 성상 물질 분석 및 콤보박스 렌더링 판별
+            if components is None:
+                components = self.cache.get(f_hash, {}).get("components")
+
+            pending_cas = None
+            pending_candidates = []
+            pending_range = ""
+            
+            # components가 있다면 1:N 후보 검색
+            if components:
+                for c in components:
+                    cas_val = c.get("cas", "")
+                    candidates = self.find_mes_candidates(cas_val)
+                    if len(candidates) == 1:
+                        # [버그 수정] 단일 후보인 경우(예: 염화 바륨 -> 바륨 및 가용성 화합물) 자동으로 정규화된 물질 정보 이식
+                        first_cand = candidates[0]
+                        c["selected_name"] = first_cand.get("측정대상 물질명") or ""
+                        c["osh"] = {
+                            "is_measured": str(first_cand.get("측정", "")).strip() == "○",
+                            "is_special": str(first_cand.get("특검", "")).strip() == "○",
+                            "is_special_mgmt": bool(str(first_cand.get("특별관리", "")).strip()),
+                            "is_permit": bool(str(first_cand.get("허가대상", "")).strip()),
+                            "is_prohibited": False
+                        }
+                    elif len(candidates) >= 2:
+                        # 1:N 매칭 후보 물질 존재!
+                        selected_code = manual.get(f"selected_code_{cas_val}")
+                        if selected_code:
+                            # 과거 캐시된 정렬코드가 있는 경우 -> 콤보박스 생성 없이 확정 적용
+                            master_entry = None
+                            for entry in candidates:
+                                if str(entry.get("정렬코드", "")).strip() == str(selected_code).strip():
+                                    master_entry = entry
+                                    break
+                            if master_entry:
+                                c["selected_name"] = master_entry.get("측정대상 물질명") or ""
+                                c["osh"] = {
+                                    "is_measured": str(master_entry.get("측정", "")).strip() == "○",
+                                    "is_special": str(master_entry.get("특검", "")).strip() == "○",
+                                    "is_special_mgmt": bool(str(master_entry.get("특별관리", "")).strip()),
+                                    "is_permit": bool(str(master_entry.get("허가대상", "")).strip()),
+                                    "is_prohibited": False
+                                }
+                        else:
+                            # 캐시된 정렬코드가 없음 -> 콤보박스를 띄워야 함 (PENDING_SELECTION 상태)
+                            pending_cas = cas_val
+                            pending_candidates = candidates
+                            pending_range = c.get("content", "")
+                            break # 일단 첫 번째 1:N 매칭 물질만 콤보박스로 띄움
+
+            # 캐시가 반영된 성분들로 1차/2차 결과 재구성
+            if components:
+                final_res1, final_res2, work_subjects = self.regenerate_validation_results(components)
+
+            # 3. 측정대상 (1% 필터링 반영) 또는 콤보박스 설정
+            if pending_cas:
+                # [버그 수정] 콤보박스 대신 성상 선택을 유도하는 세련된 QPushButton 생성
+                btn_name = "Unknown"
+                mes_std_name = engine.MES_MASTER_MAP.get(pending_cas, "")
+                if mes_std_name:
+                    btn_name = str(mes_std_name)
+                    btn_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', btn_name, flags=re.IGNORECASE).strip()
+                else:
+                    for c in components:
+                        if c.get("cas") == pending_cas:
+                            btn_name = c.get("name", "Unknown")
+                            if re.search(r'[가-힣]', btn_name):
+                                btn_name = re.sub(r'\s*\([A-Za-z\s\d,]+\)$', '', btn_name).strip()
+                            break
+                            
+                # 1:N 대상 이외의 다른 측정대상 물질들 추출
+                other_subjects = []
+                other_non_subjects = []
+                if components:
+                    for c in components:
+                        cas_val = c.get("cas", "")
+                        if cas_val == pending_cas:
+                            continue
+                        
+                        name = c.get("name", "Unknown")
+                        range_val = c.get("content", "")
+                        
+                        if re.search(r'[가-힣]', name):
+                            name_no_eng = re.sub(r'\s*\([A-Za-z\s\d,]+\)$', '', name)
+                            clean_name = name_no_eng.strip()
+                        else:
+                            clean_name = name.strip()
+                            
+                        mes_std_name = engine.MES_MASTER_MAP.get(cas_val, "")
+                        if mes_std_name:
+                            clean_name = str(mes_std_name)
+                            clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
+                        
+                        if c.get("selected_name"):
+                            clean_name = c["selected_name"]
+
+                        osh = c.get("osh", {})
+                        is_work = osh.get("is_measured", False)
+                        
+                        if is_work:
+                            if not range_val or str(range_val).strip() == "":
+                                range_val = "미기재%"
+                            percentage = 0.0
+                            nums = re.findall(r'[\d\.]+', range_val)
+                            if nums:
+                                try: percentage = max(float(n) for n in nums)
+                                except: percentage = 0.0
+                                if "<" in range_val and percentage <= 1.0: percentage = 0.5
+                            else: percentage = 100.0
+                            
+                            is_ge_1 = (percentage >= 1.0)
+                            if is_ge_1:
+                                other_subjects.append(f"{clean_name}")
+                            else:
+                                other_non_subjects.append(f"{clean_name}")
+                
+                other_subj_str = "; ".join(other_subjects)
+                other_non_subj_str = f"측정 비대상[{'; '.join(other_non_subjects)}]" if other_non_subjects else ""
+                other_final_str = "; ".join(filter(None, [other_subj_str, other_non_subj_str]))
+                
+                # 버튼 인스턴스 생성 및 현대적인 디자인 적용
+                btn_text = f"🔍 성상 선택 ({btn_name}: {pending_range})"
+                btn = QPushButton(btn_text)
+                btn.setCursor(QCursor(Qt.PointingHandCursor))
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #e8f0fe;
+                        color: #1a73e8;
+                        border: 1px solid #1a73e8;
+                        border-radius: 4px;
+                        padding: 4px 8px;
+                        font-family: 'Malgun Gothic';
+                        font-size: 9pt;
+                        font-weight: bold;
+                        min-height: 28px;
+                    }
+                    QPushButton:hover {
+                        background-color: #d2e3fc;
+                    }
+                """)
+                
+                # 버튼 내에 데이터 및 콜백 변수 바인딩
+                btn.setProperty("cas", pending_cas)
+                btn.setProperty("candidates", pending_candidates)
+                btn.setProperty("content", pending_range)
+                btn.setProperty("other_text", other_final_str)
+                btn.setProperty("name", btn_name)
+                
+                # 클릭 시 다이얼로그 호출
+                btn.clicked.connect(lambda checked, r=row, c=pending_cas, cd=pending_candidates, n=btn_name, rg=pending_range: self.show_substance_selector(r, c, cd, n, rg))
+                
+                # 테이블 측정대상 셀에 버튼 배치
+                self.table.setCellWidget(row, 4, btn)
+                
+                # 최초 로드 시 첫 번째 아이템의 내용으로 1차/2차 결과 임시 동기화 실행 (공란 방지)
+                if pending_candidates:
+                    first_cand = pending_candidates[0]
+                    m_name = first_cand.get("측정대상 물질명") or ""
+                    for c in components:
+                        if str(c.get("cas", "")).strip() == str(pending_cas).strip():
+                            c["selected_name"] = m_name
+                            c["osh"] = {
+                                "is_measured": str(first_cand.get("측정", "")).strip() == "○",
+                                "is_special": str(first_cand.get("특검", "")).strip() == "○",
+                                "is_special_mgmt": bool(str(first_cand.get("특별관리", "")).strip()),
+                                "is_permit": bool(str(first_cand.get("허가대상", "")).strip()),
+                                "is_prohibited": False
+                            }
+                            break
+                    final_res1, final_res2, work_subjects = self.regenerate_validation_results(components)
+            else:
+                # 일반 텍스트 확정 렌더링
+                # setCellWidget에 남아있는 콤보박스 제거
+                self.table.removeCellWidget(row, 4)
+                final_measure = manual.get("measure", work_subjects)
+                item_measure = QTableWidgetItem(final_measure)
+                if bg_color: item_measure.setBackground(bg_color)
+                self.table.setItem(row, 4, item_measure)
 
             # 4. 2차 결과 (1% 필터링 반영) - [V17.3.1.0] GUI 줄바꿈 강제 (가독성 최적화)
             raw_reg2 = manual.get("reg2", ";\n".join(final_res2))
@@ -2426,7 +5250,6 @@ class SMUGUI(QMainWindow):
             if bg_color: item_reg1.setBackground(bg_color)
             self.table.setItem(row, 6, item_reg1)
 
-            
             # 기타 열 배경색 맞춤
             for c_idx in [1, 7]:
                 item = self.table.item(row, c_idx)
@@ -2441,6 +5264,235 @@ class SMUGUI(QMainWindow):
         finally:
             # [V8.3] 무조건 UI 시그널 락 해제
             self.table.blockSignals(False)
+
+    def find_mes_candidates(self, cas):
+        """[1:N 매칭] CAS 번호에 해당하는 마스터 DB의 모든 매칭 후보들을 반환"""
+        if not cas: return []
+        
+        # [수정] 대표 금속/화합물 그룹 CAS 번호 연동용 변환 맵 정의 (간접 매칭 지원)
+        # Barium chloride anhydrous(10361-37-2) -> Barium(7440-39-3)
+        # Silver nitrate(7761-88-8) -> Silver(7440-22-4)
+        cas_redirect_map = {
+            "10361-37-2": "7440-39-3",
+            "7761-88-8": "7440-22-4",
+        }
+        
+        target_cas = cas_redirect_map.get(str(cas).strip(), cas)
+        
+        candidates = []
+        normalized_cas = re.sub(r'[^0-9]', '', str(target_cas).strip())
+        for entry in getattr(self, "mes_master_list", []):
+            cas_val = str(entry.get("CAS No.", "")).strip()
+            if cas_val and cas_val.lower() != 'nan':
+                if re.sub(r'[^0-9]', '', cas_val) == normalized_cas:
+                    candidates.append(entry)
+        return candidates
+
+    def regenerate_validation_results(self, components):
+        """[실시간 갱신] 성분 정보를 기반으로 규제 정보 텍스트를 재생성"""
+        res_1st_list = []
+        res_2nd_list = []
+        res_work_subjects = []
+        res_work_non_subjects = []
+        
+        for c in components:
+            name = c.get("name", "Unknown")
+            cas = c.get("cas", "")
+            range_val = c.get("content", "")
+            
+            # [V27.5 영문명/기호 완벽 보존 로직 복제]
+            if re.search(r'[가-힣]', name):
+                name_no_eng = re.sub(r'\s*\([A-Za-z\s\d,]+\)$', '', name)
+                clean_name = name_no_eng.strip()
+            else:
+                clean_name = name.strip()
+                
+            mes_std_name = engine.MES_MASTER_MAP.get(cas, "")
+            if mes_std_name:
+                clean_name = str(mes_std_name)
+                clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
+            
+            # 만약 콤보박스 선택 등으로 변경된 이름이 지정되어 있다면 측정대상용으로 별도 보관
+            selected_name = c["selected_name"] if c.get("selected_name") else clean_name
+
+            osh = c.get("osh", {})
+            is_work = osh.get("is_measured", False)
+            is_spec = osh.get("is_special", False)
+            is_mgmt = osh.get("is_special_mgmt", False)
+            is_permit = osh.get("is_permit", False)
+
+            prefix = ""
+            if is_mgmt: prefix = "[특별]"
+            elif is_permit: prefix = "[허가]"
+            elif is_spec and not is_work: prefix = "[특검]"
+
+            if not range_val or str(range_val).strip() == "":
+                range_val = "미기재%"
+            c_str = f"({range_val})"
+            
+            res_1st_list.append(f"{prefix}{clean_name}[{cas}{c_str}]")
+            
+            if is_work or is_spec:
+                res_2nd_list.append(f"{prefix}{clean_name}{c_str}")
+                
+            if is_work:
+                percentage = 0.0
+                nums = re.findall(r'[\d\.]+', range_val)
+                if nums:
+                    try: percentage = max(float(n) for n in nums)
+                    except: percentage = 0.0
+                    if "<" in range_val and percentage <= 1.0: percentage = 0.5
+                else: percentage = 100.0 
+                
+                is_ge_1 = (percentage >= 1.0)
+                if is_ge_1:
+                    res_work_subjects.append(f"{selected_name}")
+                else:
+                    res_work_non_subjects.append(f"{selected_name}")
+
+        subj_str = "; ".join(res_work_subjects)
+        non_subj_str = f"측정 비대상[{'; '.join(res_work_non_subjects)}]" if res_work_non_subjects else ""
+        final_work_str = "; ".join(filter(None, [subj_str, non_subj_str]))
+        
+        # 보장 로직
+        if not res_1st_list: res_1st_list = [""]
+        if not res_2nd_list: res_2nd_list = [""]
+        
+        return res_1st_list, res_2nd_list, final_work_str
+
+    def on_table_cell_double_clicked(self, row, column):
+        """[실시간 갱신] 측정대상 셀 더블클릭 시 1:N 매칭 세부 성상 선택 팝업 강제 구동"""
+        if column == 4:
+            f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+            if not f_hash: return
+            
+            components = self.cache.get(f_hash, {}).get("components", [])
+            if not components: return
+            
+            # 해당 행의 components 목록 중 1:N 매칭 후보가 존재하는 CAS 검색
+            for c in components:
+                cas_val = c.get("cas", "")
+                candidates = self.find_mes_candidates(cas_val)
+                if len(candidates) >= 2:
+                    name = c.get("name", "Unknown")
+                    range_val = c.get("content", "")
+                    self.show_substance_selector(row, cas_val, candidates, name, range_val)
+                    break
+
+    def show_substance_selector(self, row, cas, candidates, name, range_val):
+        """[성상 선택 팝업] 다이얼로그를 호출하여 사용자가 선택한 정렬코드를 캐시 및 테이블에 실시간 동기화"""
+        dialog = SubstanceSelectDialog("세부 성상 및 규제 정보 선택", name, cas, range_val, candidates, self)
+        if dialog.exec_() == QDialog.Accepted:
+            code, master_entry = dialog.get_selected_data()
+            if code and master_entry:
+                f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+                if not f_hash: return
+                
+                m_name = master_entry.get("물질명") or master_entry.get("상용명") or ""
+                
+                # 캐시된 성분 정보 갱신
+                components = self.cache.get(f_hash, {}).get("components", [])
+                for c in components:
+                    if str(c.get("cas", "")).strip() == str(cas).strip():
+                        c["selected_name"] = m_name
+                        c["osh"] = {
+                            "is_measured": str(master_entry.get("측정", "")).strip() == "○",
+                            "is_special": str(master_entry.get("특검", "")).strip() == "○",
+                            "is_special_mgmt": bool(str(master_entry.get("특별관리", "")).strip()),
+                            "is_permit": bool(str(master_entry.get("허가대상", "")).strip()),
+                            "is_prohibited": bool(str(master_entry.get("금지대상", "")).strip())
+                        }
+                        break
+                
+                # 캐시에 수동 정렬코드 동기화
+                if "manual_data" not in self.cache[f_hash]:
+                    self.cache[f_hash]["manual_data"] = {}
+                self.cache[f_hash]["manual_data"][f"selected_code_{cas}"] = code
+                self.save_cache()
+                
+                # 1차/2차 결과 재합산
+                new_res1, new_res2, new_work = self.regenerate_validation_results(components)
+                
+                # 테이블 UI 실시간 업데이트 (시그널 락)
+                self.table.blockSignals(True)
+                
+                # 측정대상 4번 열의 버튼을 제거하고 확정된 일반 텍스트로 치환 적용
+                self.table.removeCellWidget(row, 4)
+                
+                # update_validation_row 호출을 통해 1차/2차 결과 및 전체 레이아웃 갱신
+                self.update_validation_row(
+                    row,
+                    self.table.item(row, 3).text().split(";\n"),
+                    new_res1,
+                    new_res2,
+                    new_work,
+                    status="검증 완료 (캐시)",
+                    components=components
+                )
+                self.table.blockSignals(False)
+                self.log(f"[*] 성상 선택 적용 완료: CAS {cas} -> {m_name} (정렬코드: {code})")
+
+    def on_combo_substance_changed(self, row, cas, combo):
+        """[실시간 동기화] 콤보박스 선택 변경 시 1차/2차 규제 결과와 캐시 실시간 동기화"""
+        try:
+            f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+            if not f_hash: return
+            
+            code = combo.currentData()
+            
+            # 마스터 DB에서 해당 코드에 해당하는 entry 탐색
+            master_entry = None
+            for entry in getattr(self, "mes_master_list", []):
+                if str(entry.get("정렬코드", "")).strip() == str(code).strip():
+                    master_entry = entry
+                    break
+            
+            if not master_entry: return
+            
+            m_name = master_entry.get("측정대상 물질명") or ""
+            
+            # 캐시된 성분 정보 갱신
+            components = self.cache.get(f_hash, {}).get("components", [])
+            for c in components:
+                if str(c.get("cas", "")).strip() == str(cas).strip():
+                    c["selected_name"] = m_name
+                    # 마스터 DB의 규제 플래그 덮어쓰기
+                    c["osh"] = {
+                        "is_measured": str(master_entry.get("측정", "")).strip() == "○",
+                        "is_special": str(master_entry.get("특검", "")).strip() == "○",
+                        "is_special_mgmt": bool(str(master_entry.get("특별관리", "")).strip()),
+                        "is_permit": bool(str(master_entry.get("허가대상", "")).strip()),
+                        "is_prohibited": False
+                    }
+                    break
+            
+            # 변경된 정보를 기반으로 1차/2차 규제 텍스트 재생성
+            new_res1, new_res2, new_work = self.regenerate_validation_results(components)
+            
+            # 테이블 셀 업데이트 (시그널 임시 차단)
+            self.table.blockSignals(True)
+            
+            # 4. 2차 결과 업데이트
+            final_reg2_str = ";\n".join([p.strip() for p in ";\n".join(new_res2).replace(';\n', ';').replace('\n', ';').split(';') if p.strip()])
+            self.table.setItem(row, 5, QTableWidgetItem(final_reg2_str))
+            
+            # 5. 1차 결과 업데이트
+            final_reg1_str = ";\n".join([p.strip() for p in ";\n".join(new_res1).replace(';\n', ';').replace('\n', ';').split(';') if p.strip()])
+            self.table.setItem(row, 6, QTableWidgetItem(final_reg1_str))
+            
+            self.table.blockSignals(False)
+            self._safe_resize_rows()
+            
+            # 캐시에 선택 정보 영구 저장
+            if "manual_data" not in self.cache[f_hash]:
+                self.cache[f_hash]["manual_data"] = {}
+            self.cache[f_hash]["manual_data"][f"selected_code_{cas}"] = code
+            self.save_cache()
+            
+            self.log(f"[*] 성상 선택 적용 완료: CAS {cas} -> {m_name} (정렬코드: {code})")
+        except Exception as e:
+            self.table.blockSignals(False)
+            self.log(f"[!] 성상 변경 처리 실패: {e}")
 
 
     def perform_standard_save(self):
@@ -2488,11 +5540,48 @@ class SMUGUI(QMainWindow):
                 fn_item = self.table.item(r, 7) # 파일명 (7번 열)
                 if fn_item:
                     fn = fn_item.text().strip()
+                    
+                    # [버그 수정] QPushButton(성상 미선택 버튼) 또는 일반 텍스트 상태에 따라 데이터 추출
+                    measure_widget = self.table.cellWidget(r, 4)
+                    
+                    if isinstance(measure_widget, QPushButton):
+                        # 사용자가 클릭을 안 하고 저장을 누른 경우 -> 첫 번째 후보 데이터로 자동 매칭
+                        candidates = measure_widget.property("candidates")
+                        cas_no = measure_widget.property("cas")
+                        content_val = measure_widget.property("content") or ""
+                        other_text = measure_widget.property("other_text") or ""
+                        
+                        if candidates:
+                            first_cand = candidates[0]
+                            m_name = first_cand.get("측정대상 물질명") or ""
+                            if content_val:
+                                combo_val = f"{m_name}({content_val})"
+                            else:
+                                combo_val = m_name
+                                
+                            measure_val = combo_val
+                            if other_text:
+                                measure_val = f"{combo_val}; {other_text}"
+                                
+                            # 캐시에 선택 정보 영구 저장
+                            selected_code = first_cand.get("정렬코드")
+                            f_hash = self.table.item(r, 8).text().strip() if self.table.item(r, 8) else ""
+                            if f_hash and f_hash in self.cache and cas_no:
+                                if "manual_data" not in self.cache[f_hash]:
+                                    self.cache[f_hash]["manual_data"] = {}
+                                self.cache[f_hash]["manual_data"][f"selected_code_{cas_no}"] = selected_code
+                                self.save_cache()
+                        else:
+                            measure_val = ""
+                    else:
+                        # 이미 선택 완료되어 텍스트 상태인 경우 셀 텍스트를 즉시 추출
+                        measure_val = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
+                        
                     table_dict[fn] = {
                         "no": self.table.item(r, 1).text().strip() if self.table.item(r, 1) else "",
                         "product_name": self.table.item(r, 2).text().strip() if self.table.item(r, 2) else "",
                         "cas_sum": self.table.item(r, 3).text().strip() if self.table.item(r, 3) else "",
-                        "measure": self.table.item(r, 4).text().strip() if self.table.item(r, 4) else "",
+                        "measure": measure_val,
                         "reg2": self.table.item(r, 5).text().strip() if self.table.item(r, 5) else "",
                         "reg1": self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
                     }

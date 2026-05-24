@@ -6,3 +6,56 @@ Traceback (most recent call last):
     ^^^^^^^^^^^^^^^^^^^^^^
 AttributeError: 'SMUGUI' object has no attribute 'update_log_signal'
 
+
+[2026-05-23 17:58:10.995776]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 3117, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 928, in __init__
+    self.restore_table_from_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1575, in restore_table_from_session
+    self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1575, in <lambda>
+    self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
+                                      ^^^^^^^^^^^^^^^^
+NameError: name 'natural_sort_key' is not defined
+
+
+[2026-05-23 18:33:39.832395]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 2272, in closeEvent
+    def closeEvent(self, event):
+    
+KeyboardInterrupt
+
+
+[2026-05-23 20:47:37.442482]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 3146, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 924, in __init__
+    self.init_ui()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1185, in init_ui
+    self.page_settings = self._create_settings_page()
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'SMUGUI' object has no attribute '_create_settings_page'
+
+
+[2026-05-24 10:57:30.027479]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 5607, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1190, in __init__
+    self.init_ui()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1450, in init_ui
+    self.page_substance_clean = self._create_substance_clean_page()
+                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1647, in _create_substance_clean_page
+    self.tbl_search_results.setEditTriggers(QAbstractItemView.NoEditTriggers)
+                                            ^^^^^^^^^^^^^^^^^
+NameError: name 'QAbstractItemView' is not defined
+
