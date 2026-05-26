@@ -28,17 +28,13 @@
         "현황 화학물질명 열": "I"
     },
     "backup_path": "",
-    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/연무마이스터고등학교/TEST_연무마이스터고(견적서-26년도)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
+    "clean_sheet_name": "화학물질입력_양식",
+    "measure_sheet_name": "측정계획(양식)",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Downloads/오송락카_각색_MSDS(GHS)(KOR)/2-오성락카-백색.pdf",
-        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/009_barium chloride anhydrous.pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/011_1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
-        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/040_질산은 7761-88-8.pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)002_MSDS(보통휘발유(Regular Unleaded Gasoline)_SOIL)(O).pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)011_SDS_ICP-08N-1(Cd).pdf",
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/(O)018_[K.S.PEARL] MSDS - Iron Oxide Red 3AS (KR).pdf"
+        "Z:/data/측정팀/측정보고서/2026년/상반기/연무마이스터고등학교/msds/MSDS/[미래자동차부품가공실]공작기계실습실/004_Kixx RD HD 32(구 Rando HD 32).pdf"
     ]
 }

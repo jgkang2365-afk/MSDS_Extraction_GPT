@@ -122,7 +122,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.3.5.4" # [V24.3.5.4] 엑셀 셀 전역 서식(맞춤, 줄 바꿈, 폰트 정보) 백업 및 복원 장치 구현
+VERSION = "24.4.1.0" # [V24.4.1.0] 비전 정찰병 7장 일괄 비교 폐기 및 순차적 조기 종료(Early Stopping) 알고리즘 도입
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -848,27 +848,48 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         doc = fitz.open(pdf_path)
         pages = find_section3_pages(doc)
         
-        # 🚨 [V17.3.2.25] 지연 정찰(Lazy Recon) 트랩: 텍스트로 못 찾으면 스캔본으로 간주하고 비전 정찰 투입
+        # [V24.4.1.0] 구조적 개편: 7장 일괄 비교를 폐기하고 '순차적 조기 종료(Early Stopping)' 알고리즘 도입
         if not pages:
-            if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 가동...")
-            recon_images = []
-            for i in range(min(7, len(doc))): # [V17.4.2.1] 탐색 범위를 7페이지로 확대
-                pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
-                recon_images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
+            if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 순차 탐색 가동...")
             
-            # [V17.4.2.1] 정찰병 프롬프트 고도화: CAS, 함량(%), 표 구조 힌트 추가
-            recon_prompt = """각 이미지를 분석하여 '3. 구성성분의 명칭 및 함유량' (Composition / Information on Ingredients) 섹션이 시작되는 페이지 번호를 찾아라.
-이 섹션은 반드시 화학물질명(Substance Name), CAS 번호, 중량퍼센트(%)가 포함된 표(Table) 형식이어야 한다. 
-만약 2번 섹션(유해성·위험성)에 혼합물의 성분 정보가 포함되어 있다면 해당 페이지를 선택하라. 
-결과는 반드시 0부터 시작하는 인덱스(첫 번째 이미지가 0)로 응답해야 하며, JSON 형식 {"page_index": 숫자} 로만 답변하라."""
+            target_index = None
+            max_recon_pages = min(7, len(doc))
             
-            recon_res = call_gemini_2_5_flash(recon_images, prompt=recon_prompt, current_sniper=current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
-            page_idx = int(recon_res.get("page_index", -1)) if recon_res else -1
+            for i in range(max_recon_pages):
+                if log_func: log_func(f"   ├─ [정찰 진행] 인덱스 {i}번 이미지 검증 중... ({i+1}/{max_recon_pages})")
                 
-            if 0 <= page_idx < len(doc):
-                pages = [page_idx, page_idx + 1] if page_idx + 1 < len(doc) else [page_idx]
-                if log_func: log_func(f" 🎯 정찰병이 페이지를 찾았습니다: {pages}번 바인딩")
+                pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
+                img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                single_image = {"mimeType": "image/png", "data": img_data}
+                
+                # 이진 판별(True/False) 초경량 전용 프롬프트 설계
+                recon_prompt = """현재 입력된 1장의 이미지(MSDS 문서 페이지)를 분석하여, 이 페이지가 '3. 구성성분의 명칭 및 함유량' (또는 Composition / Information on Ingredients) 표가 시작되는 페이지가 맞는지 판단하라.
+
+[판단 필수 기준]
+1. 반드시 화학물질명(Substance Name), CAS 번호, 함유량(%)을 기재하기 위한 가로/세로 '표(Table Grid)' 구조가 시각적으로 보여야 한다.
+2. 🚨 [절대 금지 - 함정 차단]: 문서 후반부에 등장하는 '11. 독성에 관한 정보' 섹션 내에서 단순히 '성분 1', '성분 2' 등의 줄글 텍스트나 독성학적 데이터가 나열된 페이지는 절대로 3번 섹션이 아니다. 무조건 false로 답하라.
+
+결과는 반드시 다른 서술 없이 JSON 형식 {"is_section3": true} 또는 {"is_section3": false} 로만 답변하라."""
+                
+                recon_res = call_gemini_2_5_flash(
+                    [single_image], 
+                    prompt=recon_prompt, 
+                    current_sniper=current_sniper, 
+                    log_func=log_func, 
+                    model="gemini-2.5-flash-lite"
+                )
+                
+                # 진짜 3번 섹션 표를 발견한 즉시 루프 탈출 (인터셉터 작동)
+                if recon_res and recon_res.get("is_section3") is True:
+                    if log_func: log_func(f"   🎯 [정찰 성공] 인덱스 {i}번에서 진짜 구성성분 표 확보. 루프 조기 종료(Early Stopping).")
+                    target_index = i
+                    break
+            
+            if target_index is not None:
+                pages = [target_index, target_index + 1] if target_index + 1 < len(doc) else [target_index]
+                if log_func: log_func(f"  🎯 정찰병이 최종 확정 페이지를 찾았습니다: {pages}번 바인딩")
             else:
+                if log_func: log_func("  ❌ [정찰 실패] 7페이지 이내에서 유효한 3번 구성성분 표를 인지하지 못함")
                 doc.close()
                 return [], "", []
 

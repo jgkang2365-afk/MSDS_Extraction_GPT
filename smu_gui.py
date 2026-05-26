@@ -1585,12 +1585,13 @@ class SMUGUI(QMainWindow):
         
         lbl_sheet_title = QLabel("연동 대상 시트명:")
         lbl_sheet_title.setStyleSheet("font-weight: bold;")
-        self.lbl_clean_sheet_name = QLabel("선택된 시트 없음")
+        self.combo_clean_sheet = QComboBox()
+        self.combo_clean_sheet.setMinimumWidth(150)
         
         info_layout.addWidget(lbl_file_title, 0, 0)
         info_layout.addWidget(self.lbl_clean_excel_path, 0, 1)
         info_layout.addWidget(lbl_sheet_title, 1, 0)
-        info_layout.addWidget(self.lbl_clean_sheet_name, 1, 1)
+        info_layout.addWidget(self.combo_clean_sheet, 1, 1)
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
@@ -1694,12 +1695,13 @@ class SMUGUI(QMainWindow):
         
         lbl_sheet_title = QLabel("연동 대상 시트명:")
         lbl_sheet_title.setStyleSheet("font-weight: bold;")
-        self.lbl_measure_sheet_name = QLabel("선택된 시트 없음")
+        self.combo_measure_sheet = QComboBox()
+        self.combo_measure_sheet.setMinimumWidth(150)
         
         info_layout.addWidget(lbl_file_title, 0, 0)
         info_layout.addWidget(self.lbl_measure_excel_path, 0, 1)
         info_layout.addWidget(lbl_sheet_title, 1, 0)
-        info_layout.addWidget(self.lbl_measure_sheet_name, 1, 1)
+        info_layout.addWidget(self.combo_measure_sheet, 1, 1)
         info_group.setLayout(info_layout)
         layout.addWidget(info_group)
         
@@ -1744,6 +1746,72 @@ class SMUGUI(QMainWindow):
         self.txt_measure_log = QTextEdit()
         self.txt_measure_log.setReadOnly(True)
         self.txt_measure_log.setStyleSheet("background-color: #222222; color: #00FF00; font-family: 'Consolas'; font-size: 11px;")
+        
+        # 헬퍼 함수 2: 미분류 유해인자 그룹화 및 중복 제거 (대괄호/접두사 제거 및 비정상 괄호 자동 세척, 중복 제거 보강)
+        def format_grouped_chems(chem_list_str, active_chems=None):
+            if active_chems is None:
+                active_chems = set()
+            if not chem_list_str or chem_list_str.strip() == "":
+                return "-"
+                
+            # 물질명 정제 헬퍼 함수
+            def clean_chem_name(name):
+                if not name:
+                    return ""
+                # 1. 특별, 특검, 허가 수식어 대괄호 제거
+                name = re.sub(r'\[특별\]|\[특검\]|\[허가\]', '', name).strip()
+                # 2. 겉에 씌워진 불완전 대괄호 제거
+                name = name.replace("[", "").replace("]", "").strip()
+                # 3. 소괄호 짝 밸런싱 세척
+                open_p = name.count("(")
+                close_p = name.count(")")
+                if open_p > close_p:
+                    name += ")" * (open_p - close_p)
+                elif close_p > open_p:
+                    name = "(" * (close_p - open_p) + name
+                return name.strip()
+
+            protected = process_special_patterns(chem_list_str)
+            items = [x.strip() for x in protected.split(";") if x.strip()]
+            
+            groups = {}
+            for item in items:
+                item = item.replace('\u0001', ';').strip()
+                if not item:
+                    continue
+                matched_prefix = None
+                for prefix in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
+                    if item.startswith(prefix):
+                        matched_prefix = prefix
+                        break
+                        
+                if matched_prefix:
+                    inner = item[len(matched_prefix):].strip()
+                    if inner.startswith("[") and inner.endswith("]"):
+                        inner = inner[1:-1].strip()
+                    elif inner.startswith("(") and inner.endswith(")"):
+                        inner = inner[1:-1].strip()
+                        
+                    sub_parts = [x.strip() for x in inner.split(";") if x.strip()]
+                    if matched_prefix not in groups:
+                        groups[matched_prefix] = []
+                    for sp in sub_parts:
+                        cleaned_sp = clean_chem_name(sp)
+                        # 활성 측정대상 물질명과 중복되면 제외 목록에서 누락
+                        if cleaned_sp in active_chems:
+                            continue
+                        if cleaned_sp and cleaned_sp not in groups[matched_prefix]:
+                            groups[matched_prefix].append(cleaned_sp)
+                else:
+                    cleaned_item = clean_chem_name(item)
+                    if cleaned_item in active_chems:
+                        continue
+                    if cleaned_item:
+                        if "기타" not in groups:
+                            groups["기타"] = []
+                        if cleaned_item not in groups["기타"]:
+                            groups["기타"].append(cleaned_item)
+        
         log_layout.addWidget(self.txt_measure_log)
         log_group.setLayout(log_layout)
         layout.addWidget(log_group)
@@ -1753,17 +1821,13 @@ class SMUGUI(QMainWindow):
     def _update_measure_plan_info(self):
         """환경 설정에서 연동된 엑셀 파일 및 시트명 갱신"""
         path = self.edit_excel.text().strip()
-        sheet = self.combo_sheet.currentText().strip()
         
         if path:
             self.lbl_measure_excel_path.setText(path)
+            if self.combo_measure_sheet.count() == 0:
+                self._update_sheet_list(path)
         else:
             self.lbl_measure_excel_path.setText("환경 설정에서 결과를 저장할 엑셀 파일을 선택하세요.")
-            
-        if sheet:
-            self.lbl_measure_sheet_name.setText(sheet)
-        else:
-            self.lbl_measure_sheet_name.setText("측정계획(양식)")
 
     def browse_backup_path(self):
         """자동 백업 경로 찾아보기 다이얼로그"""
@@ -1809,7 +1873,7 @@ class SMUGUI(QMainWindow):
     def measure_plan_import_slot(self):
         """[핵심 0] 화학물질 현황(화학물질입력_양식) 시트 데이터를 측정계획 시트에 최초 반영"""
         excel_path = self.edit_excel.text().strip()
-        src_sheet_name = self.combo_sheet.currentText().strip()
+        src_sheet_name = self.combo_clean_sheet.currentText().strip()
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -1818,7 +1882,7 @@ class SMUGUI(QMainWindow):
         if not src_sheet_name:
             src_sheet_name = "화학물질입력_양식"
             
-        dest_sheet_name = "측정계획(양식)"
+        dest_sheet_name = self.combo_measure_sheet.currentText().strip() or "측정계획(양식)"
         
         # 1. 자동 백업 실행
         if not self.run_backup_engine(excel_path):
@@ -1883,10 +1947,30 @@ class SMUGUI(QMainWindow):
                     chars[i] = '\u0001'
             return "".join(chars)
             
-        # 헬퍼 함수 2: 미분류 유해인자 그룹화 및 중복 제거
-        def format_grouped_chems(chem_list_str):
+        # 헬퍼 함수 2: 미분류 유해인자 그룹화 및 중복 제거 (대괄호/접두사 제거 및 비정상 괄호 자동 세척, 중복 제거 보강)
+        def format_grouped_chems(chem_list_str, active_chems=None):
+            if active_chems is None:
+                active_chems = set()
             if not chem_list_str or chem_list_str.strip() == "":
                 return "-"
+                
+            # 물질명 정제 헬퍼 함수
+            def clean_chem_name(name):
+                if not name:
+                    return ""
+                # 1. 특별, 특검, 허가 수식어 대괄호 제거
+                name = re.sub(r'\[특별\]|\[특검\]|\[허가\]', '', name).strip()
+                # 2. 겉에 씌워진 불완전 대괄호 제거
+                name = name.replace("[", "").replace("]", "").strip()
+                # 3. 소괄호 짝 밸런싱 세척
+                open_p = name.count("(")
+                close_p = name.count(")")
+                if open_p > close_p:
+                    name += ")" * (open_p - close_p)
+                elif close_p > open_p:
+                    name = "(" * (close_p - open_p) + name
+                return name.strip()
+
             protected = process_special_patterns(chem_list_str)
             items = [x.strip() for x in protected.split(";") if x.strip()]
             
@@ -1912,22 +1996,42 @@ class SMUGUI(QMainWindow):
                     if matched_prefix not in groups:
                         groups[matched_prefix] = []
                     for sp in sub_parts:
-                        if sp not in groups[matched_prefix]:
-                            groups[matched_prefix].append(sp)
+                        cleaned_sp = clean_chem_name(sp)
+                        # 활성 측정대상 물질명과 중복되면 제외 목록에서 누락
+                        if cleaned_sp in active_chems:
+                            continue
+                        if cleaned_sp and cleaned_sp not in groups[matched_prefix]:
+                            groups[matched_prefix].append(cleaned_sp)
                 else:
-                    if "기타" not in groups:
-                        groups["기타"] = []
-                    if item not in groups["기타"]:
-                        groups["기타"].append(item)
+                    cleaned_item = clean_chem_name(item)
+                    if cleaned_item in active_chems:
+                        continue
+                    if cleaned_item:
+                        if "기타" not in groups:
+                            groups["기타"] = []
+                        if cleaned_item not in groups["기타"]:
+                            groups["기타"].append(cleaned_item)
                         
+            # [V24.3.5.7] 제외사유별 수집된 물질들을 마스터 DB 정렬 키 기준으로 정렬
+            def get_chem_sort_key(c):
+                name_clean = re.sub(r'\[.*?\]|\(.*?\)', '', c).strip()
+                if name_clean in dictOrder:
+                    return dictOrder[name_clean]
+                for m_name, idx in dictOrder.items():
+                    if m_name in name_clean or name_clean in m_name:
+                        return idx
+                return 999999
+                
             result_parts = []
             if "기타" in groups and groups["기타"]:
+                groups["기타"].sort(key=get_chem_sort_key)
                 result_parts.append("; ".join(groups["기타"]))
             for cat in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
                 if cat in groups and groups[cat]:
-                    result_parts.append(f"{cat}[{'; '.join(groups[cat])}]")
+                    groups[cat].sort(key=get_chem_sort_key)
+                    result_parts.append(f"▷ {cat} - {'; '.join(groups[cat])}")
                     
-            return "; ".join(result_parts)
+            return "\n".join(result_parts)
             
         import win32com.client
         import pythoncom
@@ -2045,6 +2149,11 @@ class SMUGUI(QMainWindow):
             clearRowI = wsOutput.Cells(wsOutput.Rows.Count, idx_l).End(-4162).Row
             if clearRowI < 4: clearRowI = 4
             
+            # 🚨 [V24.3.5.8] 병합 셀로 인한 삭제 에러 방지를 위해 기존 범위 병합 전체 해제
+            max_clear_row = max(clearRowB, clearRowI)
+            if max_clear_row >= 4:
+                wsOutput.Range(wsOutput.Cells(4, idx_process), wsOutput.Cells(max_clear_row, 12)).UnMerge()
+            
             # 공정명, 화학물질명 삭제
             wsOutput.Range(wsOutput.Cells(4, idx_process), wsOutput.Cells(clearRowB, idx_chem)).ClearContents()
             # L값, E값, 분석방법 삭제
@@ -2100,25 +2209,47 @@ class SMUGUI(QMainWindow):
                             wsOutput.Cells(output_row, idx_method).Value = method
                         output_row += 1
                         
-            # 8. 누락 및 미대상(물리적인자, 분진, 비대상 등) 항목 기입 (적색)
+            # 8. [V24.3.5.9] 누락 및 미대상(물리적인자, 분진, 비대상 등) 항목 기입 (적색 및 카테고리별 행분할 기입, 셀맞춤/줄바꿈 해제)
             if has_missing:
-                output_row += 1 # 1행 건너뛰기
+                output_row += 2 # 2칸 아래에서 표시되도록 빈 행 2개 건너뜀
                 for pKey in missing_dict.keys():
                     processName = pKey
                     m_chems = list(missing_dict[pKey].keys())
                     
+                    # 활성 측정대상 물질 수집 (교차 중복 방지)
+                    active_chems = set()
+                    if processName in master_dict:
+                        for method in master_dict[processName]:
+                            for chem in master_dict[processName][method]:
+                                active_chems.add(chem)
+                    
                     # 그룹화 및 중복 제거
-                    formatted_chems = format_grouped_chems("; ".join(m_chems))
+                    formatted_chems_str = format_grouped_chems("; ".join(m_chems), active_chems)
+                    parts = [x.strip() for x in formatted_chems_str.split("\n") if x.strip()]
                     
-                    wsOutput.Cells(output_row, idx_process).Value = processName
-                    wsOutput.Cells(output_row, idx_chem).Value = formatted_chems
-                    wsOutput.Cells(output_row, idx_l).Value = "-"
-                    wsOutput.Cells(output_row, idx_e).Value = "-"
-                    wsOutput.Cells(output_row, idx_method).Value = "분석방법 없음"
-                    
-                    # 적색 글자 서식
-                    wsOutput.Range(wsOutput.Cells(output_row, idx_process), wsOutput.Cells(output_row, idx_method)).Font.Color = 255
-                    output_row += 1
+                    for part in parts:
+                        # B열 공정명 기입 (모든 행에 실제 값을 기입하여 조건부 서식 연동 보장)
+                        wsOutput.Cells(output_row, idx_process).Value = processName
+                        
+                        # C열 화학물질명 기입 및 서식 설정 (좌측 정렬, 가로 병합 제거, 셀맞춤 해제, 줄바꿈 해제)
+                        c_cell = wsOutput.Cells(output_row, idx_chem)
+                        c_cell.Value = part
+                        c_cell.HorizontalAlignment = -4131 # xlLeft = -4131
+                        c_cell.VerticalAlignment = -4108 # xlCenter = -4108
+                        c_cell.ShrinkToFit = False         # 🚨 셀 맞춤 해제
+                        c_cell.WrapText = False            # 🚨 줄 바꿈 해제 (우측 오버플로우 허용)
+                        
+                        # D열부터 L열까지는 빈 값 처리
+                        for col_idx in range(idx_chem + 1, 13):
+                            wsOutput.Cells(output_row, col_idx).Value = ""
+                            
+                        # B열부터 L열까지 전체 적색 글자 서식 지정
+                        wsOutput.Range(wsOutput.Cells(output_row, idx_process), wsOutput.Cells(output_row, 12)).Font.Color = 255
+                        
+                        # 행높이 기본 30 설정
+                        wsOutput.Rows(output_row).RowHeight = 30
+                        
+                        output_row += 1
                     
             # 9. 실시간 수식 갱신
             try:
@@ -2139,7 +2270,7 @@ class SMUGUI(QMainWindow):
     def measure_plan_update_slot(self):
         """[핵심 1] 측정계획 매체 업데이트 실행"""
         excel_path = self.edit_excel.text().strip()
-        sheet_name = self.combo_sheet.currentText().strip()
+        sheet_name = self.combo_measure_sheet.currentText().strip() or "측정계획(양식)"
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -2240,7 +2371,7 @@ class SMUGUI(QMainWindow):
                     if matched_prefix not in groups:
                         groups[matched_prefix] = []
                     for sp in sub_parts:
-                        if sp not in groups[matched_prefix]:
+                        if sp not in groups[matched_prefix] and (not active_chems or sp not in active_chems):
                             groups[matched_prefix].append(sp)
                 else:
                     if "기타" not in groups:
@@ -2248,14 +2379,26 @@ class SMUGUI(QMainWindow):
                     if item not in groups["기타"]:
                         groups["기타"].append(item)
                         
+            # [V24.3.5.7] 제외사유별 수집된 물질들을 마스터 DB 정렬 키 기준으로 정렬
+            def get_chem_sort_key(c):
+                name_clean = re.sub(r'\[.*?\]|\(.*?\)', '', c).strip()
+                if name_clean in dictOrder:
+                    return dictOrder[name_clean]
+                for m_name, idx in dictOrder.items():
+                    if m_name in name_clean or name_clean in m_name:
+                        return idx
+                return 999999
+                
             result_parts = []
             if "기타" in groups and groups["기타"]:
+                groups["기타"].sort(key=get_chem_sort_key)
                 result_parts.append("; ".join(groups["기타"]))
             for cat in ["측정 비대상", "단시간 및 임시작업", "허용소비량 미만", "보관"]:
                 if cat in groups and groups[cat]:
-                    result_parts.append(f"{cat}[{'; '.join(groups[cat])}]")
+                    groups[cat].sort(key=get_chem_sort_key)
+                    result_parts.append(f"▷ {cat} - {'; '.join(groups[cat])}")
                     
-            return "; ".join(result_parts)
+            return "\n".join(result_parts)
             
         import win32com.client
         import pythoncom
@@ -2304,16 +2447,16 @@ class SMUGUI(QMainWindow):
             idx_e = SMUGUI.c2i(col_e)
             idx_method = SMUGUI.c2i(col_method)
             
-            # 엑셀 데이터의 마지막 행 감지 (idx_chem 기준)
+            # 🚨 [V24.3.5.9] 엑셀 데이터의 마지막 행 감지 (제외대상 텍스트까지 감지하기 위해 idx_chem 기준으로 변경)
             last_row = ws.Cells(ws.Rows.Count, idx_chem).End(-4162).Row # xlUp
             if last_row < 4:
                 last_row = 4
                 
-            # 공정명이 비어 있고 화학물질명이 있는 행 체크
+            # 공정명이 비어 있고 화학물질명이 있는 행 체크 (제외대상 ▷ 행은 B열 글씨가 가려져 있어 Value가 공백처럼 보일 수 있으므로 ▷ 로 시작하면 통과)
             for r in range(4, last_row + 1):
                 c_val = str(ws.Cells(r, idx_chem).Value or "").strip()
                 p_val = str(ws.Cells(r, idx_process).Value or "").strip()
-                if c_val != "" and p_val == "":
+                if c_val != "" and p_val == "" and not c_val.startswith("▷"):
                     self.measure_plan_log(f"⚠️ 공정명({col_process}열)이 비어 있는 행이 감지되었습니다. (행 번호: {r})")
                     QMessageBox.warning(self, "입력 오류", 
                                         f"공정명({col_process}열)이 비어 있는 행이 있습니다. 확인 후 다시 실행해주세요.\n"
@@ -2322,9 +2465,31 @@ class SMUGUI(QMainWindow):
                     
             # 5. 기존 데이터를 읽어서 메모리에서 공정별 데이터 재구성 (Self-Reading)
             master_dict = {}
+            noMethodList = [] # 분석방법 없음 물질 수집용 (로컬 정의를 위로 이동)
             for r in range(4, last_row + 1):
                 processName = str(ws.Cells(r, idx_process).Value or "").strip()
                 chemList = str(ws.Cells(r, idx_chem).Value or "").strip()
+                
+                # 🚨 [V24.3.5.9] ▷ 제외대상 행 발견 시, 카테고리와 물질 리스트를 파싱하여 noMethodList에 보존 수집
+                if chemList.startswith("▷") or chemList.startswith("▷"):
+                    match = re.match(r'^▷\s*([^-]+)\s*-\s*(.*)$', chemList)
+                    if match:
+                        cat_name = match.group(1).strip()
+                        chems_part = match.group(2).strip()
+                        # 포맷팅 변환: 카테고리[물질들] 구조로 format_grouped_chems에 전달
+                        reconstructed = f"{cat_name}[{chems_part}]"
+                        noMethodList.append({
+                            "process": processName,
+                            "chems": reconstructed,
+                            "method": "분석방법 없음"
+                        })
+                    else:
+                        noMethodList.append({
+                            "process": processName,
+                            "chems": chemList,
+                            "method": "분석방법 없음"
+                        })
+                    continue
                 
                 if processName != "" and chemList != "":
                     protected_chemList = process_special_patterns(chemList)
@@ -2353,6 +2518,11 @@ class SMUGUI(QMainWindow):
             clearRowI = ws.Cells(ws.Rows.Count, idx_l).End(-4162).Row
             if clearRowI < 4: clearRowI = 4
             
+            # 🚨 [V24.3.5.8] 병합 셀로 인한 삭제 에러 방지를 위해 기존 범위 병합 전체 해제
+            max_clear_row = max(clearRowB, clearRowI)
+            if max_clear_row >= 4:
+                ws.Range(ws.Cells(4, idx_process), ws.Cells(max_clear_row, 12)).UnMerge()
+            
             # 공정명, 화학물질명 삭제
             ws.Range(ws.Cells(4, idx_process), ws.Cells(clearRowB, idx_chem)).ClearContents()
             # L값, E값, 분석방법 삭제
@@ -2363,8 +2533,7 @@ class SMUGUI(QMainWindow):
             if fontRow < 4: fontRow = 4
             ws.Range(ws.Cells(4, idx_process), ws.Cells(fontRow, idx_method)).Font.Color = 0
             
-            # 7. 메모리에 재구성된 데이터를 정렬하여 순차적으로 기입
-            noMethodList = [] # 분석방법 없음 물질 수집용
+            # 7. 메모리에 재구성된 데이터를 정렬하여 순차적으로 기입 (noMethodList는 상단에서 정의됨)
             output_row = 4
             
             for pKey in master_dict.keys():
@@ -2392,6 +2561,7 @@ class SMUGUI(QMainWindow):
                     firstChem = arrSortedChems[0]
                     
                     if method == "분석방법 없음":
+                        # 🚨 [V24.3.5.9] 제외 대상을 그룹화하여 1행으로 기입하기 위해 이전 방식 복구
                         noMethodList.append({
                             "process": processName,
                             "chems": format_grouped_chems("; ".join(arrSortedChems)),
@@ -2422,19 +2592,56 @@ class SMUGUI(QMainWindow):
                             ws.Cells(output_row, idx_method).Value = method
                         output_row += 1
                         
-            # 8. 분석방법 없음 항목들은 C열의 최종 기입 행에서 2줄 아래(2행의 빈 줄을 띄우고)부터 적색으로 기입
+            # 8. [V24.3.5.9] 분석방법 없음 항목들은 C열의 최종 기입 행에서 2칸 아래(2행의 빈 줄을 띄우고)부터 적색으로 기입 (공정별로 통합 및 중복 제거 후 카테고리별 행분할 기입)
             if noMethodList:
-                output_row += 1 # 1행 건너뛰기
+                output_row += 2 # 2칸 아래에서 표시되도록 빈 행 2개 건너뜀
+                
+                # 공정명별로 수집된 제외대상 데이터 그룹화
+                grouped_no_methods = {}
                 for noItem in noMethodList:
-                    ws.Cells(output_row, idx_process).Value = noItem["process"]
-                    ws.Cells(output_row, idx_chem).Value = noItem["chems"]
-                    ws.Cells(output_row, idx_l).Value = noItem["l_val"]
-                    ws.Cells(output_row, idx_e).Value = noItem["e_val"]
-                    ws.Cells(output_row, idx_method).Value = noItem["method"]
+                    p = noItem["process"]
+                    c = noItem["chems"]
+                    if p not in grouped_no_methods:
+                        grouped_no_methods[p] = []
+                    grouped_no_methods[p].append(c)
+                
+                for processName, chem_list in grouped_no_methods.items():
+                    # 해당 공정에 활성화된 측정대상 물질들 모으기 (교차 중복 방지)
+                    active_chems = set()
+                    if processName in master_dict:
+                        for method in master_dict[processName]:
+                            for chem in master_dict[processName][method]:
+                                active_chems.add(chem)
                     
-                    # 적색 글씨 적용 (RGB 255, 0, 0)
-                    ws.Range(ws.Cells(output_row, idx_process), ws.Cells(output_row, idx_method)).Font.Color = 255
-                    output_row += 1
+                    # 수집된 제외 텍스트들을 조인하여 정제 및 중복 제거
+                    full_chem_str = "; ".join(chem_list)
+                    formatted_chems_str = format_grouped_chems(full_chem_str, active_chems)
+                    
+                    parts = [x.strip() for x in formatted_chems_str.split("\n") if x.strip()]
+                    
+                    for part in parts:
+                        # B열 공정명 기입 (모든 행에 실제 값을 기입하여 조건부 서식 연동 보장)
+                        ws.Cells(output_row, idx_process).Value = processName
+                        
+                        # C열 화학물질명 기입 및 서식 설정 (좌측 정렬, 가로 병합 제거, 셀맞춤 해제, 줄바꿈 해제)
+                        c_cell = ws.Cells(output_row, idx_chem)
+                        c_cell.Value = part
+                        c_cell.HorizontalAlignment = -4131 # xlLeft = -4131
+                        c_cell.VerticalAlignment = -4108 # xlCenter = -4108
+                        c_cell.ShrinkToFit = False         # 🚨 셀 맞춤 해제
+                        c_cell.WrapText = False            # 🚨 줄 바꿈 해제 (우측 오버플로우 허용)
+                        
+                        # D열부터 L열까지는 빈 값 처리
+                        for col_idx in range(idx_chem + 1, 13):
+                            ws.Cells(output_row, col_idx).Value = ""
+                        
+                        # 적색 글씨 적용 (RGB 255, 0, 0)
+                        ws.Range(ws.Cells(output_row, idx_process), ws.Cells(output_row, 12)).Font.Color = 255
+                        
+                        # 행높이 기본 30 설정
+                        ws.Rows(output_row).RowHeight = 30
+                        
+                        output_row += 1
                     
             # 9. 엑셀 수식 실시간 반영을 위해 재계산 강제 호출 (Calculate)
             try:
@@ -2454,7 +2661,7 @@ class SMUGUI(QMainWindow):
     def measure_plan_workflow_slot(self):
         """[핵심 2] 측정계획 워크플로우 실행 (셀 병합, 번호 부여, 줄높이, 테두리 설정)"""
         excel_path = self.edit_excel.text().strip()
-        sheet_name = self.combo_sheet.currentText().strip()
+        sheet_name = self.combo_measure_sheet.currentText().strip() or "측정계획(양식)"
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -2780,7 +2987,7 @@ class SMUGUI(QMainWindow):
     def measure_plan_reset_slot(self):
         """[핵심 3] 측정계획 폼 초기화 실행"""
         excel_path = self.edit_excel.text().strip()
-        sheet_name = self.combo_sheet.currentText().strip()
+        sheet_name = self.combo_measure_sheet.currentText().strip() or "측정계획(양식)"
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -2879,7 +3086,7 @@ class SMUGUI(QMainWindow):
     def measure_plan_survey_slot(self):
         """[핵심 4] 예비조사 참고 데이터 취합 실행"""
         excel_path = self.edit_excel.text().strip()
-        sheet_name = self.combo_sheet.currentText().strip()
+        sheet_name = self.combo_measure_sheet.currentText().strip() or "측정계획(양식)"
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -3007,17 +3214,13 @@ class SMUGUI(QMainWindow):
     def _update_substance_clean_info(self):
         """환경 설정에서 연동된 엑셀 파일 및 시트명 갱신"""
         path = self.edit_excel.text().strip()
-        sheet = self.combo_sheet.currentText().strip()
         
         if path:
             self.lbl_clean_excel_path.setText(path)
+            if self.combo_clean_sheet.count() == 0:
+                self._update_sheet_list(path)
         else:
             self.lbl_clean_excel_path.setText("환경 설정에서 결과를 저장할 엑셀 파일을 선택하세요.")
-            
-        if sheet:
-            self.lbl_clean_sheet_name.setText(sheet)
-        else:
-            self.lbl_clean_sheet_name.setText("Sheet1 (기본값)")
 
     def open_current_excel(self):
         """현재 설정된 엑셀 파일을 열린 상태로 실행"""
@@ -3124,7 +3327,7 @@ class SMUGUI(QMainWindow):
     def clean_substances_excel(self):
         """이미 열려있는 엑셀을 직접 제어하여 물질명을 정렬하고 오타를 교정"""
         excel_path = self.edit_excel.text().strip()
-        sheet_name = self.combo_sheet.currentText().strip() or "Sheet1"
+        sheet_name = self.combo_clean_sheet.currentText().strip() or "Sheet1"
         
         if not excel_path or not os.path.exists(excel_path):
             QMessageBox.warning(self, "경고", "올바른 엑셀 경로를 지정해 주세요.")
@@ -3152,26 +3355,63 @@ class SMUGUI(QMainWindow):
                 return ""
             return re.sub(r'\s+', '', name).lower()
 
-        valid_substances = {entry.get("측정대상 물질명", "").strip() for entry in self.mes_master_list if entry.get("측정대상 물질명")}
+        # [수정 후 대체 코드] 마스터DB의 측정대상 물질명과 별칭을 모두 검증 집합에 등록
+        valid_substances = set()
+        for entry in self.mes_master_list:
+            name = entry.get("측정대상 물질명", "").strip()
+            if name:
+                valid_substances.add(name)
+            
+            # 마스터DB의 별칭(리스트 형식)을 검증 대상에 포함
+            aliases = entry.get("별칭")
+            if isinstance(aliases, list):
+                for alias in aliases:
+                    alias_clean = str(alias).strip()
+                    if alias_clean:
+                        valid_substances.add(alias_clean)
+
         valid_substances_clean = {normalize_name(name) for name in valid_substances}
 
         def extract_pure_substance_name(item):
-            # 물질명 항목에서 접두사, 함유량 괄호, 대괄호 등을 모두 제거한 순수 물질 매칭용 명칭을 반환합니다.
-            m_br = re.search(r'\[(.*?)\]', item)
-            if m_br:
-                text = m_br.group(1).strip()
-            else:
-                text = item.strip()
-                
-            text = re.sub(r'^\[.*?\]', '', text).strip()
-            text = re.sub(r'\(.*?\)', '', text).strip()
+            if not item:
+                return ""
+            # 1. 소괄호 내용(함유량 등) 제거
+            text = re.sub(r'\(.*?\)', '', item).strip()
             
+            # 2. 메인 카테고리 접두사 제거
             for prefix in ["측정 비대상", "단시간 및 임시작업", "보관", "허용소비량 미만"]:
                 if text.startswith(prefix):
                     text = text[len(prefix):].strip()
                     
+            # 3. 서브 수식어([특별], [특검], [허가]) 제거 (대괄호와 함께 매칭하여 세척)
+            text = re.sub(r'\[특별\]|\[특검\]|\[허가\]', '', text).strip()
+            
+            # 4. 남아있는 모든 대괄호 제거
             text = text.replace("[", "").replace("]", "").strip()
             return text
+
+        def get_core_chemical_name(name):
+            if not name:
+                return ""
+            core = name
+            suffixes = [
+                "및 그 가용성 화합물",
+                "및 그 화합물",
+                "및 화합물",
+                " 및 그 가용성 화합물",
+                " 및 그 화합물",
+                " 및 화합물",
+                "(석면불포함)",
+                "석면불포함",
+                " 계열",
+                "계열",
+                " 유기화합물",
+                " 무기화합물"
+            ]
+            for suf in sorted(suffixes, key=len, reverse=True):
+                if suf in core:
+                    core = core.replace(suf, "")
+            return core.strip()
 
         def split_i_val(i_val):
             if not i_val:
@@ -3352,11 +3592,35 @@ class SMUGUI(QMainWindow):
             for r in range(st_row, max_row + 1):
                 i_cell = ws.Cells(r, 9) # I열 (비고)
                 j_cell = ws.Cells(r, 10) # J열 (MSDS)
+                g_cell = ws.Cells(r, 7) # G열 (월취급량)
+                n_cell = ws.Cells(r, 14) # N열 (1차 결과 전체)
                 
                 i_val = str(i_cell.Value or "").strip()
                 j_val = str(j_cell.Value or "").strip()
+                g_raw = str(g_cell.Value or "").strip()
+                n_val = str(n_cell.Value or "").strip()
                 
-                if not i_val:
+                # 수치가 실질적으로 0(0.0, 0 등)인지 판별하는 헬퍼
+                def is_zero_value(val_str):
+                    try:
+                        clean_val = val_str.replace(" ", "").replace(",", "")
+                        if not clean_val:
+                            return False
+                        return float(clean_val) == 0.0
+                    except:
+                        return False
+                
+                is_g_zero = is_zero_value(g_raw)
+                
+                # 1차 결과에서 유효한 CAS 번호와 함께 추출된 물질명 수집
+                api_valid_substances = set()
+                for m in re.finditer(r'([^[;]+)\[([^(\]]+)(?:\(([^)]*)\))?\]', n_val):
+                    sub_name = m.group(1).strip()
+                    cas_no = m.group(2).strip()
+                    if cas_no and re.match(r'^\d+-\d+-\d+$', cas_no):
+                        api_valid_substances.add(normalize_name(sub_name))
+                
+                if not i_val and not j_val:
                     continue
                     
                 i_items = split_i_val(i_val)
@@ -3393,6 +3657,20 @@ class SMUGUI(QMainWindow):
                                 matched_idx = idx
                                 break
                                 
+                    # 3차 핵심 단어 포함 검사 (예: "바륨 및 그 가용성 화합물" -> "바륨" 이 "염화 바륨"에 포함되는지)
+                    if matched_j_item is None:
+                        i_core = get_core_chemical_name(i_pure)
+                        if i_core:
+                            for idx, j_item in enumerate(j_items):
+                                if idx in used_j_indices:
+                                    continue
+                                j_pure = extract_pure_substance_name(j_item)
+                                j_core = get_core_chemical_name(j_pure)
+                                if (i_core in j_pure) or (j_core in i_pure):
+                                    matched_j_item = j_item
+                                    matched_idx = idx
+                                    break
+                                
                     if matched_j_item is not None:
                         used_j_indices.add(matched_idx)
                     else:
@@ -3409,8 +3687,9 @@ class SMUGUI(QMainWindow):
                 for i_item, j_item in paired_data:
                     # I열 항목이 아예 비어있어 매칭 불능인 낙오 물질 처리
                     if not i_item:
+                        self.clean_log(f"⚠️ {r}행: J열 성분 '{j_item}'에 상응하는 비고(I열) 매칭 물질이 누락되어 [누락]으로 표시합니다.")
                         row_data.append({
-                            "i_item_final": "",
+                            "i_item_final": "[누락]",
                             "j_item": j_item,
                             "category": "측정대상",
                             "sort_code": "ZZZZZZ",
@@ -3564,14 +3843,19 @@ class SMUGUI(QMainWindow):
                     sort_code = substance_sort_map.get(i_sub)
                     
                     is_red = False
-                    # 최종 완성된 물질명이 마스터 DB 표준 리스트에 없다면 명백하게 오류(적색 마킹)
-                    if i_sub_norm not in valid_substances_clean:
+                    # 최종 완성된 물질명이 마스터 DB 표준 리스트에 없고, 1차 결과(N열) CAS 목록에도 없다면 명백하게 오류(적색 마킹)
+                    if i_sub_norm not in valid_substances_clean and i_sub_norm not in api_valid_substances:
                         sort_code = "ZZZZZZ"
                         is_red = True
                         
                     # 🚨 [V24.3.5.3] J열에 함유량(%)이 누락되어 있거나 비어 있는 경우 명백하게 오류(적색 마킹)
                     if not j_item or "%" not in j_item:
                         is_red = True
+                        
+                    # 🚨 [V24.3.5.6] 보관 카테고리인데 월취급량(G열)이 0이 아니면 비즈니스 룰 위반 오류(적색 마킹)
+                    if category == "보관" and not is_g_zero:
+                        is_red = True
+                        self.clean_log(f"⚠️ {r}행: '보관' 성분 '{i_sub}'이 존재하나 G열(월취급량: '{g_raw}')이 '0'이 아닙니다.")
                         
                     row_data.append({
                         "i_item_final": i_item_final,
@@ -3584,9 +3868,14 @@ class SMUGUI(QMainWindow):
                 # 정렬코드로 통합 정렬
                 row_data.sort(key=lambda x: x["sort_code"])
                 
-                # I열 카테고리별 조립 및 J열 순서 동기화 조립
-                group_i_results = []
-                group_j_results = []
+                # 🚨 [V24.3.5.5] I열/J열 정교한 실시간 인덱스 기반 조립 및 적색/청색 마킹 좌표 추출
+                new_i_val = ""
+                new_j_val = ""
+                red_marks_i = []
+                red_marks_j = []
+                blue_marks_i = []
+                blue_marks_j = []
+                
                 group_definitions = [
                     ("측정대상", "; ", ""),
                     ("측정 비대상", "; ", "측정 비대상["),
@@ -3595,26 +3884,117 @@ class SMUGUI(QMainWindow):
                     ("보관", "; ", "보관[")
                 ]
                 
+                # J열 성분을 수식어, 물질명, 함유량으로 정밀 분리하기 위한 패턴
+                j_parser_pat = re.compile(r"^(?:(\[특별\]|\[특검\]|\[허가\]))?(.*?)(?:\(([^)]*)\))?$")
+                
+                first_i = True
+                first_j = True
                 for cat_name, sep, wrapper in group_definitions:
                     cat_items = [x for x in row_data if x["category"] == cat_name]
-                    if not cat_items:
-                        continue
+                    valid_cat_items_i = [x for x in cat_items if x["i_item_final"]]
+                    valid_cat_items_j = [x for x in cat_items if x["j_item"]]
                     
-                    inner_i_texts = [x["i_item_final"] for x in cat_items if x["i_item_final"]]
-                    if inner_i_texts:
-                        if wrapper:
-                            group_i_results.append(f"{wrapper}{sep.join(inner_i_texts)}]")
-                        else:
-                            group_i_results.append(sep.join(inner_i_texts))
-                            
-                    # 🚨 [V24.3.3.0] J열 순서를 I열의 카테고리 그룹 순서 및 정렬 코드와 1:1 완벽 동기화
-                    inner_j_texts = [x["j_item"] for x in cat_items if x["j_item"]]
-                    if inner_j_texts:
-                        group_j_results.append(sep.join(inner_j_texts))
+                    if not valid_cat_items_i and not valid_cat_items_j:
+                        continue
                         
-                new_i_val = "; ".join(group_i_results)
-                new_j_val = "; ".join(group_j_results)
-                
+                    # 1. I열 정교한 실시간 조립 및 오프셋 마킹 계산
+                    if valid_cat_items_i:
+                        if not first_i:
+                            new_i_val += "; "
+                        first_i = False
+                        
+                        if wrapper:
+                            new_i_val += wrapper
+                            
+                        for idx, item in enumerate(valid_cat_items_i):
+                            if idx > 0:
+                                new_i_val += sep
+                            i_item_final = item["i_item_final"]
+                            if i_item_final:
+                                # 수식어 추출
+                                sub_prefix = ""
+                                for sp in ["[특별]", "[특검]", "[허가]"]:
+                                    if i_item_final.startswith(sp):
+                                        sub_prefix = sp
+                                        break
+                                pure_sub_name = i_item_final[len(sub_prefix):]
+                                
+                                # 수식어([특별] 등)는 항상 파란색 강조
+                                if sub_prefix:
+                                    start_pos = len(new_i_val) + 1
+                                    blue_marks_i.append((start_pos, len(sub_prefix)))
+                                    new_i_val += sub_prefix
+                                    
+                                # 순수 물질명은 마스터 DB 표준명에 없거나, 또는 비즈니스 룰 위반 오류(is_red == True)인 경우 빨간색 강조 (1차 결과 CAS 포함 완화)
+                                if pure_sub_name:
+                                    pure_sub_norm = normalize_name(pure_sub_name)
+                                    is_i_red = False
+                                    if pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
+                                        is_i_red = True
+                                    if item.get("is_red", False):
+                                        is_i_red = True
+                                        
+                                    if is_i_red:
+                                        start_pos = len(new_i_val) + 1
+                                        red_marks_i.append((start_pos, len(pure_sub_name)))
+                                    new_i_val += pure_sub_name
+                                    
+                        if wrapper:
+                            new_i_val += "]"
+                            
+                    # 2. J열 정교한 실시간 조립 및 오프셋 마킹 계산 (I열 순서와 1:1 완벽 동기화)
+                    if valid_cat_items_j:
+                        if not first_j:
+                            new_j_val += "; "
+                        first_j = False
+                        
+                        for idx, item in enumerate(valid_cat_items_j):
+                            if idx > 0:
+                                new_j_val += "; "
+                            j_item = item["j_item"]
+                            if j_item:
+                                match = j_parser_pat.match(j_item)
+                                if match:
+                                    sub_prefix = match.group(1) or ""
+                                    pure_sub_name = match.group(2) or ""
+                                    concentration = match.group(3) or ""
+                                    
+                                    # 수식어는 항상 파란색 강조
+                                    if sub_prefix:
+                                        start_pos = len(new_j_val) + 1
+                                        blue_marks_j.append((start_pos, len(sub_prefix)))
+                                        new_j_val += sub_prefix
+                                        
+                                    # 물질명 마킹 (마스터 DB에 없거나, 함유량이 아예 누락되었거나, 비즈니스 룰 위반 오류인 경우 빨간색, 1차 결과 CAS 포함 완화)
+                                    if pure_sub_name:
+                                        pure_sub_norm = normalize_name(pure_sub_name)
+                                        is_sub_red = False
+                                        if pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
+                                            is_sub_red = True
+                                        if match.group(3) is None or not concentration.strip():
+                                            is_sub_red = True
+                                        if item.get("is_red", False):
+                                            is_sub_red = True
+                                            
+                                        if is_sub_red:
+                                            start_pos = len(new_j_val) + 1
+                                            red_marks_j.append((start_pos, len(pure_sub_name)))
+                                        new_j_val += pure_sub_name
+                                        
+                                    # 함유량 마킹 (함유량이 존재하지만 % 기호가 없거나 비어있는 경우 빨간색)
+                                    if match.group(3) is not None:
+                                        paren_content = f"({concentration})"
+                                        is_conc_red = ("%" not in concentration or not concentration.strip())
+                                        start_pos = len(new_j_val) + 1
+                                        if is_conc_red:
+                                            red_marks_j.append((start_pos, len(paren_content)))
+                                        new_j_val += paren_content
+                                else:
+                                    # 매칭 예외 시 전체 적색 폴백 마킹
+                                    start_pos = len(new_j_val) + 1
+                                    red_marks_j.append((start_pos, len(j_item)))
+                                    new_j_val += j_item
+                                
                 # 🚨 [V24.3.5.4] 셀 서식 및 맞춤 속성 사전 백업
                 def backup_cell_format(cell):
                     try:
@@ -3647,10 +4027,11 @@ class SMUGUI(QMainWindow):
                         cell.Font.Bold = fmt["FontBold"]
                         cell.Font.Italic = fmt["FontItalic"]
                         cell.Font.Underline = fmt["FontUnderline"]
-                        # Font.Color는 복원하되, 부분 색상 적용 시 충돌을 막기 위해 
-                        # 기존 색상이 검은색이나 기본값(보통 0 또는 1)이 아닐 경우(예: 사용자가 칠한 색) 보존
-                        if fmt["FontColor"] != 0:
+                        # 🚨 [V24.3.5.5] 이전 에러 마킹 색상(적색: 255, 청색: 16711680)은 복원하지 않고 검은색(0)으로 초기화
+                        if fmt["FontColor"] not in [0, 255, 16711680, -4105]:
                             cell.Font.Color = fmt["FontColor"]
+                        else:
+                            cell.Font.Color = 0
                     except Exception as e:
                         self.clean_log(f"⚠️ 셀 서식 복원 실패: {e}")
 
@@ -3665,53 +4046,7 @@ class SMUGUI(QMainWindow):
                 restore_cell_format(i_cell, i_fmt)
                 restore_cell_format(j_cell, j_fmt)
                 
-                # I열 적색 마킹 좌표 계산
-                red_marks_i = []
-                current_len = 0
-                first_group = True
-                for cat_name, sep, wrapper in group_definitions:
-                    cat_items = [x for x in row_data if x["category"] == cat_name]
-                    inner_texts = [x["i_item_final"] for x in cat_items if x["i_item_final"]]
-                    if not inner_texts:
-                        continue
-                        
-                    if not first_group:
-                        current_len += 2 # 세미콜론 구분자 길이 보정
-                    first_group = False
-                    
-                    if wrapper:
-                        current_len += len(wrapper)
-                        
-                    for idx, item in enumerate(cat_items):
-                        if idx > 0:
-                            current_len += len(sep)
-                            
-                        item_text = item["i_item_final"]
-                        if item["is_red"] and item_text:
-                            red_marks_i.append((current_len + 1, len(item_text)))
-                            
-                        current_len += len(item_text)
-                        
-                    if wrapper:
-                        current_len += 1 # 닫는 괄호 길이 보정
-                        
-                # J열 적색 마킹 좌표 계산
-                red_marks_j = []
-                current_len_j = 0
-                first_j = True
-                for item in row_data:
-                    j_text = item["j_item"]
-                    if not j_text:
-                        continue
-                    if not first_j:
-                        current_len_j += 2
-                    first_j = False
-                    
-                    if item["is_red"]:
-                        red_marks_j.append((current_len_j + 1, len(j_text)))
-                    current_len_j += len(j_text)
-                    
-                # I열 셀 부분 적색 마킹 적용 (단일 셀 동적 바인딩)
+                # I열 셀 부분 마킹 적용 (단일 셀 동적 바인딩)
                 try:
                     import win32com.client.dynamic
                     i_cell_dyn = win32com.client.dynamic.Dispatch(i_cell._oleobj_)
@@ -3724,9 +4059,15 @@ class SMUGUI(QMainWindow):
                     try:
                         i_cell_dyn.Characters(start, length).Font.Color = 255
                     except Exception as ce:
-                        self.clean_log(f"⚠️ I열 서식 적용 실패 (위치 {start}): {ce}")
+                        self.clean_log(f"⚠️ I열 적색 서식 적용 실패 (위치 {start}): {ce}")
                         
-                # J열 셀 부분 적색 마킹 적용 (단일 셀 동적 바인딩)
+                for start, length in blue_marks_i:
+                    try:
+                        i_cell_dyn.Characters(start, length).Font.Color = 16711680
+                    except Exception as ce:
+                        self.clean_log(f"⚠️ I열 청색 서식 적용 실패 (위치 {start}): {ce}")
+                        
+                # J열 셀 부분 마킹 적용 (단일 셀 동적 바인딩)
                 try:
                     import win32com.client.dynamic
                     j_cell_dyn = win32com.client.dynamic.Dispatch(j_cell._oleobj_)
@@ -3739,8 +4080,14 @@ class SMUGUI(QMainWindow):
                     try:
                         j_cell_dyn.Characters(start, length).Font.Color = 255
                     except Exception as ce:
-                        self.clean_log(f"⚠️ J열 서식 적용 실패 (위치 {start}): {ce}")
-                    
+                        self.clean_log(f"⚠️ J열 적색 서식 적용 실패 (위치 {start}): {ce}")
+                        
+                for start, length in blue_marks_j:
+                    try:
+                        j_cell_dyn.Characters(start, length).Font.Color = 16711680
+                    except Exception as ce:
+                        self.clean_log(f"⚠️ J열 청색 서식 적용 실패 (위치 {start}): {ce}")
+
                 # 유아이 반응성 유지
                 QApplication.processEvents()
                 
@@ -4044,6 +4391,8 @@ class SMUGUI(QMainWindow):
             "backup_path": self.edit_backup_path.text().strip(),
             "excel_path": self.edit_excel.text().strip(),
             "sheet_name": self.combo_sheet.currentText(),
+            "clean_sheet_name": self.combo_clean_sheet.currentText() if hasattr(self, 'combo_clean_sheet') else "",
+            "measure_sheet_name": self.combo_measure_sheet.currentText() if hasattr(self, 'combo_measure_sheet') else "",
             "start_row": self.edit_start_row.text().strip(),
             "start_num": self.edit_start_num.text().strip(),
             "pdf_paths": self.pdf_paths if hasattr(self, 'pdf_paths') else []
@@ -4075,7 +4424,12 @@ class SMUGUI(QMainWindow):
                 self.edit_excel.setText(config["excel_path"])
                 # 엑셀 경로가 있으면 시트 목록 로드 시도
                 if config["excel_path"] and os.path.exists(config["excel_path"]):
-                    self._update_sheet_list(config["excel_path"], config.get("sheet_name"))
+                    self._update_sheet_list(
+                        config["excel_path"], 
+                        config.get("sheet_name"),
+                        config.get("clean_sheet_name"),
+                        config.get("measure_sheet_name")
+                    )
 
             if "start_row" in config: self.edit_start_row.setText(config["start_row"])
             if "start_num" in config: self.edit_start_num.setText(config["start_num"])
@@ -4222,18 +4576,40 @@ class SMUGUI(QMainWindow):
                             # (주님이 수동으로 고친 결과가 시스템 내부 변수에 즉시 각인됨)
                             self.log(f"[*] 실시간 동기화 완료: {key} -> {new_text[:20]}...")
 
-    def _update_sheet_list(self, path, select_name=None):
-        """[V6.995] 설정 복구 시 시트 목록 자동 갱신 헬퍼"""
+    def _update_sheet_list(self, path, select_name=None, clean_select_name=None, measure_select_name=None):
+        """[V24.3.5.8] 설정 복구 시 시트 목록 자동 갱신 헬퍼 (각 콤보박스 개별 설정 복구)"""
+        combos = [self.combo_sheet, self.combo_clean_sheet, self.combo_measure_sheet]
+        for c in combos:
+            c.blockSignals(True)
+            c.clear()
+            c.blockSignals(False)
         try:
-            self.combo_sheet.clear()
             wb = openpyxl.load_workbook(path, read_only=True)
             sheets = wb.sheetnames
-            self.combo_sheet.addItems(sheets)
-            if select_name and select_name in sheets:
-                self.combo_sheet.setCurrentText(select_name)
             wb.close()
+            
+            # 각 콤보박스별 설정값 및 Fallback 맵 매핑
+            targets = [
+                (self.combo_sheet, select_name, "Sheet1"),
+                (self.combo_clean_sheet, clean_select_name, "Sheet1"),
+                (self.combo_measure_sheet, measure_select_name, "측정계획(양식)")
+            ]
+            
+            for combo, target_val, default_val in targets:
+                combo.blockSignals(True)
+                combo.addItems(sheets)
+                if target_val and target_val in sheets:
+                    combo.setCurrentText(target_val)
+                elif default_val in sheets:
+                    combo.setCurrentText(default_val)
+                combo.blockSignals(False)
         except:
-            self.combo_sheet.addItem("Sheet1")
+            for combo, _, default_val in [
+                (self.combo_sheet, None, "Sheet1"),
+                (self.combo_clean_sheet, None, "Sheet1"),
+                (self.combo_measure_sheet, None, "측정계획(양식)")
+            ]:
+                combo.addItem(default_val)
 
     def reset_all(self):
         """[NEW] 모든 데이터 초기화 (파일 목록, 테이블, 로그, 진행바)"""
@@ -4554,20 +4930,29 @@ class SMUGUI(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "대상 엑셀 파일 선택", "", "Excel Files (*.xlsx *.xls *.xlsm *.xlsb)")
         if path:
             self.edit_excel.setText(path)
-            self.combo_sheet.clear()
+            combos = [self.combo_sheet, self.combo_clean_sheet, self.combo_measure_sheet]
+            for c in combos:
+                c.blockSignals(True)
+                c.clear()
+                c.blockSignals(False)
             try:
                 # [Part 3-A] openpyxl을 사용하여 실제 시트 목록 추출
                 wb = openpyxl.load_workbook(path, read_only=True, keep_vba=True)
                 sheets = wb.sheetnames
+                wb.close()
                 if sheets:
-                    self.combo_sheet.addItems(sheets)
+                    for c in combos:
+                        c.blockSignals(True)
+                        c.addItems(sheets)
+                        c.blockSignals(False)
                     self.log(f"[*] 엑셀 시트 {len(sheets)}개를 성공적으로 로드했습니다.")
                 else:
-                    self.combo_sheet.addItem("Sheet1")
-                wb.close()
+                    for c in combos:
+                        c.addItem("Sheet1")
             except Exception as e:
                 self.log(f"⚠️ 시트 목록 로드 실패: {e}")
-                self.combo_sheet.addItem("Sheet1")
+                for c in combos:
+                    c.addItem("Sheet1")
 
 
     def _update_combo_sheets(self, path, combo_widget):
