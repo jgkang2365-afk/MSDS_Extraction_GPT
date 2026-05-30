@@ -3331,6 +3331,30 @@ class SMUGUI(QMainWindow):
                 return ""
             return re.sub(r'\s+', '', name).lower()
 
+        def get_mapped_factor(cas, name):
+            clean_name = normalize_name(name)
+            # 1. 특정 CAS / 명칭 매핑
+            if cas == "1317-65-3" or "limestone" in clean_name:
+                return ["기타광물성분진"]
+            elif cas == "471-34-1" or "탄산" in clean_name:
+                return ["기타광물성분진"]
+            elif cas == "1317-80-2" or "금홍석" in clean_name:
+                return ["이산화티타늄", "기타광물성분진"]
+            elif cas == "14807-96-6" or "소우프스톤" in clean_name:
+                return ["활석(석면불포함)", "활석", "소우프스톤"]
+            
+            # 2. 마스터 DB 조회
+            std_names = []
+            if cas:
+                for entry in self.mes_master_list:
+                    m_cas = str(entry.get("CAS No.", "")).strip()
+                    m_name = str(entry.get("측정대상 물질명", "")).strip()
+                    if m_cas == cas and m_name:
+                        std_names.append(m_name)
+            if not std_names:
+                std_names = [name]
+            return list(set(std_names))
+
         # [수정 후 대체 코드] 마스터DB의 측정대상 물질명과 별칭을 모두 검증 집합에 등록
         valid_substances = set()
         for entry in self.mes_master_list:
@@ -3602,88 +3626,20 @@ class SMUGUI(QMainWindow):
                 i_items = split_i_val(i_val)
                 j_items = [x.strip() for x in j_val.split(";") if x.strip()]
                 
-                # 순수 물질명을 매치메이커 삼아 지능형 일대일 매칭 진행
-                used_j_indices = set()
-                paired_data = []
-                
+                # 1. I열 원본 성분들을 순회하며 오타 교정을 먼저 수행하고 clean_i_items 구축
+                clean_i_items = []
                 for i_item in i_items:
-                    parsed_i = parse_substance_item(i_item)
-                    i_pure = parsed_i["pure_name"] if parsed_i else extract_pure_substance_name(i_item)
-                    matched_j_item = None
-                    matched_idx = -1
-                    
-                    # 1차 완전 일치 검사
-                    for idx, j_item in enumerate(j_items):
-                        if idx in used_j_indices:
-                            continue
-                        j_pure = extract_pure_substance_name(j_item)
-                        if i_pure == j_pure:
-                            matched_j_item = j_item
-                            matched_idx = idx
-                            break
-                            
-                    # 2차 부분 포함 일치 검사
-                    if matched_j_item is None:
-                        for idx, j_item in enumerate(j_items):
-                            if idx in used_j_indices:
-                                continue
-                            j_pure = extract_pure_substance_name(j_item)
-                            if i_pure and j_pure and (i_pure in j_pure or j_pure in i_pure):
-                                matched_j_item = j_item
-                                matched_idx = idx
-                                break
-                                
-                    # 3차 핵심 단어 포함 검사 (예: "바륨 및 그 가용성 화합물" -> "바륨" 이 "염화 바륨"에 포함되는지)
-                    if matched_j_item is None:
-                        i_core = get_core_chemical_name(i_pure)
-                        if i_core:
-                            for idx, j_item in enumerate(j_items):
-                                if idx in used_j_indices:
-                                    continue
-                                j_pure = extract_pure_substance_name(j_item)
-                                j_core = get_core_chemical_name(j_pure)
-                                if (i_core in j_pure) or (j_core in i_pure):
-                                    matched_j_item = j_item
-                                    matched_idx = idx
-                                    break
-                                
-                    if matched_j_item is not None:
-                        used_j_indices.add(matched_idx)
-                    else:
-                        matched_j_item = ""
-                        
-                    paired_data.append((i_item, matched_j_item))
-                    
-                # 매칭 실패로 낙오된 J열 성분들을 추가
-                for idx, j_item in enumerate(j_items):
-                    if idx not in used_j_indices:
-                        paired_data.append(("", j_item))
-                        
-                row_data = []
-                for i_item, j_item in paired_data:
-                    # I열 항목이 아예 비어있어 매칭 불능인 낙오 물질 처리
-                    if not i_item:
-                        self.clean_log(f"⚠️ {r}행: J열 성분 '{j_item}'에 상응하는 비고(I열) 매칭 물질이 누락되어 [누락]으로 표시합니다.")
-                        row_data.append({
-                            "i_item_final": "[누락]",
-                            "j_item": j_item,
-                            "category": "측정대상",
-                            "sort_code": "ZZZZZZ",
-                            "is_red": True
-                        })
-                        continue
-                        
                     parsed_i = parse_substance_item(i_item)
                     if not parsed_i:
                         continue
                     i_sub = parsed_i["pure_name"]
                     category = parsed_i["category"]
+                    sub_prefix = parsed_i["sub_prefix"]
                     
-                    # 🚨 [V24.3.4.0] 빈 물질명 필터링: 괄호만 존재하여 pure_name이 비어 있는 비정상 고아 항목 무시
                     if not i_sub:
                         self.clean_log(f"⚠️ [건너뜀] {r}행: 알맹이 이름이 없는 고아 항목 '{i_item}' 감지되어 제외 조치합니다.")
                         continue
-                    
+                        
                     # 🚨 [V24.3.4.0] 영구 교정 기억 장치(사전) 조회 및 자동 대체
                     i_sub_norm = normalize_name(i_sub)
                     if i_sub_norm in correction_rules:
@@ -3712,7 +3668,7 @@ class SMUGUI(QMainWindow):
                                     self.clean_log(f"[*] {r}행: 부모 물질명 '{i_sub}' ➔ 자식 표준명 '{target_child}' 자동 교정 적용 (유일 자식)")
                                     i_sub = target_child
                                     i_sub_norm = normalize_name(i_sub)
-
+ 
                     # 마스터 DB 표준 풀네임 집합 대조
                     # 🚨 [V24.3.5.2] 활석/소우프스톤 계열(CAS 14807-96-6) 중 대표 부모명("활석")인 경우에만 수동 팝업 강제 호출
                     is_talc_parent = (cas == "14807-96-6" and i_sub == "활석")
@@ -3796,7 +3752,6 @@ class SMUGUI(QMainWindow):
                                     
                     # 마스터 데이터셋을 바탕으로 수식어 자동 복원 및 우선순위 매핑
                     info = substance_info_map.get(i_sub)
-                    sub_prefix = ""
                     if info:
                         is_special = str(info.get("특별관리") or "").strip() == "○"
                         is_permit = str(info.get("허가대상") or "").strip() == "○"
@@ -3812,45 +3767,151 @@ class SMUGUI(QMainWindow):
                     else:
                         sub_prefix = parsed_i["sub_prefix"]
                         
-                    # 최종 교정된 물질명 재합성 (괄호 분리를 삭제했으므로 suffix는 붙이지 않음)
-                    i_item_final = f"{sub_prefix}{i_sub}"
+                    sort_code = substance_sort_map.get(i_sub) or "ZZZZZZ"
                     
-                    # 정렬 코드 정보 조회
-                    sort_code = substance_sort_map.get(i_sub)
-                    
-                    is_red = False
-                    # 최종 완성된 물질명이 마스터 DB 표준 리스트에 없고, 1차 결과(N열) CAS 목록에도 없다면 명백하게 오류(적색 마킹)
-                    if i_sub_norm not in valid_substances_clean and i_sub_norm not in api_valid_substances:
-                        sort_code = "ZZZZZZ"
-                        is_red = True
-                        
-                    # 🚨 [V24.3.5.3] J열에 함유량(%)이 누락되어 있거나 비어 있는 경우 명백하게 오류(적색 마킹)
-                    if not j_item or "%" not in j_item:
-                        is_red = True
-                        
                     # 🚨 [V24.3.5.6] 보관 카테고리인데 월취급량(G열)이 0이 아니면 비즈니스 룰 위반 오류(적색 마킹)
+                    is_red = False
                     if category == "보관" and not is_g_zero:
                         is_red = True
                         self.clean_log(f"⚠️ {r}행: '보관' 성분 '{i_sub}'이 존재하나 G열(월취급량: '{g_raw}')이 '0'이 아닙니다.")
                         
-                    row_data.append({
-                        "i_item_final": i_item_final,
-                        "j_item": j_item,
+                    clean_i_items.append({
                         "category": category,
+                        "sub_prefix": sub_prefix,
+                        "pure_name": i_sub,
                         "sort_code": sort_code,
                         "is_red": is_red
                     })
                     
-                # 정렬코드로 통합 정렬
-                row_data.sort(key=lambda x: x["sort_code"])
+                # 2. I열 중복 제거 적용
+                unique_i_list = []
+                seen_i_keys = set()
+                for item in clean_i_items:
+                    key = (item["category"], item["sub_prefix"], item["pure_name"])
+                    if key not in seen_i_keys:
+                        seen_i_keys.add(key)
+                        unique_i_list.append(item)
+                        
+                # 3. J열 성분 분석 및 지능형 N:1 매칭
+                j_parser_pat = re.compile(r"^(?:(\[특별\]|\[특검\]|\[허가\]))?(.*?)(?:\(([^)]*)\))?$")
+                j_matched_data = []
                 
-                # 🚨 [V24.3.5.5] I열/J열 정교한 실시간 인덱스 기반 조립 및 적색/청색 마킹 좌표 추출
+                for j_item in j_items:
+                    match = j_parser_pat.match(j_item)
+                    if not match:
+                        j_matched_data.append({
+                            "j_item": j_item,
+                            "category": "측정대상",
+                            "sort_code": "ZZZZZZ",
+                            "is_red": True
+                        })
+                        continue
+                        
+                    j_prefix = match.group(1) or ""
+                    j_pure_name = match.group(2) or ""
+                    j_concentration = match.group(3) or ""
+                    
+                    j_pure_clean = extract_pure_substance_name(j_pure_name)
+                    j_cas = name_to_cas.get(j_pure_clean, "")
+                    
+                    # 지능형 매핑 후보 도출
+                    j_mapped_factors = get_mapped_factor(j_cas, j_pure_clean)
+                    
+                    matched_i_item = None
+                    # A. 지능형 매핑 표준명 대조 (J열 매핑 후보가 바깥 루프여야 우선순위가 높은 인자와 먼저 매칭됨)
+                    for factor in j_mapped_factors:
+                        for i_item in unique_i_list:
+                            if normalize_name(factor) == normalize_name(i_item["pure_name"]):
+                                matched_i_item = i_item
+                                break
+                        if matched_i_item:
+                            break
+                            
+                    # B. CAS 번호 대조
+                    if not matched_i_item and j_cas:
+                        for i_item in unique_i_list:
+                            i_pure_clean = extract_pure_substance_name(i_item["pure_name"])
+                            i_cas = name_to_cas.get(i_pure_clean, "")
+                            if i_cas and j_cas == i_cas:
+                                matched_i_item = i_item
+                                break
+                                
+                    # C. 텍스트 포함 대조
+                    if not matched_i_item:
+                        for i_item in unique_i_list:
+                            i_pure_clean = extract_pure_substance_name(i_item["pure_name"])
+                            i_norm = normalize_name(i_pure_clean)
+                            j_norm = normalize_name(j_pure_clean)
+                            if i_norm and j_norm and (i_norm in j_norm or j_norm in i_norm):
+                                matched_i_item = i_item
+                                break
+                            
+                    if matched_i_item:
+                        # 보관 카테고리인데 G열 0 아님 오류 재확인
+                        is_red = False
+                        if matched_i_item["category"] == "보관" and not is_g_zero:
+                            is_red = True
+                            matched_i_item["is_red"] = True
+                            self.clean_log(f"⚠️ {r}행: '보관' 성분 '{matched_i_item['pure_name']}'이 존재하나 G열(월취급량: '{g_raw}')이 '0'이 아닙니다.")
+                            
+                        j_matched_data.append({
+                            "j_item": j_item,
+                            "category": matched_i_item["category"],
+                            "sort_code": matched_i_item["sort_code"],
+                            "is_red": is_red
+                        })
+                    else:
+                        # 매칭 실패한 경우 ➔ 마스터 DB 규제 대상(측정/특검)인지 확인
+                        is_regulation = False
+                        reg_info = substance_info_map.get(j_pure_clean)
+                        if reg_info:
+                            is_measure = str(reg_info.get("측정") or "").strip() == "○"
+                            is_exam = str(reg_info.get("특검") or "").strip() == "○"
+                            if is_measure or is_exam:
+                                is_regulation = True
+                                
+                        if is_regulation:
+                            self.clean_log(f"⚠️ {r}행: 규제 대상 성분 '{j_pure_name}'에 상응하는 비고(I열) 매칭 물질이 누락되어 [누락]으로 표시합니다.")
+                            
+                            # unique_i_list에 [누락] 임시 추가
+                            nu_exists = False
+                            for item in unique_i_list:
+                                if (item["category"], item["sub_prefix"], item["pure_name"]) == ("측정대상", "", "[누락]"):
+                                    nu_exists = True
+                                    break
+                            if not nu_exists:
+                                unique_i_list.append({
+                                    "category": "측정대상",
+                                    "sub_prefix": "",
+                                    "pure_name": "[누락]",
+                                    "sort_code": "ZZZZZZ",
+                                    "is_red": True
+                                })
+                                
+                            j_matched_data.append({
+                                "j_item": j_item,
+                                "category": "측정대상",
+                                "sort_code": "ZZZZZZ",
+                                "is_red": True
+                            })
+                        else:
+                            # 단순 일반 성분인 경우 ➔ [누락] 없이 J열에만 보존
+                            j_matched_data.append({
+                                "j_item": j_item,
+                                "category": "측정대상",
+                                "sort_code": "ZZZZZZ",
+                                "is_red": False
+                            })
+                            
+                # 4. 정렬
+                j_matched_data.sort(key=lambda x: x["sort_code"])
+                unique_i_list.sort(key=lambda x: x["sort_code"])
+                
+                # 5. I열 조립 및 마킹 좌표 계산
                 new_i_val = ""
-                new_j_val = ""
                 red_marks_i = []
-                red_marks_j = []
                 blue_marks_i = []
-                blue_marks_j = []
+                first_i = True
                 
                 group_definitions = [
                     ("측정대상", "; ", ""),
@@ -3860,116 +3921,100 @@ class SMUGUI(QMainWindow):
                     ("보관", "; ", "보관[")
                 ]
                 
-                # J열 성분을 수식어, 물질명, 함유량으로 정밀 분리하기 위한 패턴
-                j_parser_pat = re.compile(r"^(?:(\[특별\]|\[특검\]|\[허가\]))?(.*?)(?:\(([^)]*)\))?$")
-                
-                first_i = True
-                first_j = True
                 for cat_name, sep, wrapper in group_definitions:
-                    cat_items = [x for x in row_data if x["category"] == cat_name]
-                    valid_cat_items_i = [x for x in cat_items if x["i_item_final"]]
-                    valid_cat_items_j = [x for x in cat_items if x["j_item"]]
-                    
-                    if not valid_cat_items_i and not valid_cat_items_j:
+                    cat_items = [x for x in unique_i_list if x["category"] == cat_name]
+                    if not cat_items:
                         continue
                         
-                    # 1. I열 정교한 실시간 조립 및 오프셋 마킹 계산
-                    if valid_cat_items_i:
-                        if not first_i:
-                            new_i_val += "; "
-                        first_i = False
+                    if not first_i:
+                        new_i_val += "; "
+                    first_i = False
+                    
+                    if wrapper:
+                        new_i_val += wrapper
                         
-                        if wrapper:
-                            new_i_val += wrapper
+                    for idx, item in enumerate(cat_items):
+                        if idx > 0:
+                            new_i_val += sep
                             
-                        for idx, item in enumerate(valid_cat_items_i):
-                            if idx > 0:
-                                new_i_val += sep
-                            i_item_final = item["i_item_final"]
-                            if i_item_final:
-                                # 수식어 추출
-                                sub_prefix = ""
-                                for sp in ["[특별]", "[특검]", "[허가]"]:
-                                    if i_item_final.startswith(sp):
-                                        sub_prefix = sp
-                                        break
-                                pure_sub_name = i_item_final[len(sub_prefix):]
+                        sub_prefix = item["sub_prefix"]
+                        pure_sub_name = item["pure_name"]
+                        
+                        if sub_prefix:
+                            start_pos = len(new_i_val) + 1
+                            blue_marks_i.append((start_pos, len(sub_prefix)))
+                            new_i_val += sub_prefix
+                            
+                        if pure_sub_name:
+                            pure_sub_norm = normalize_name(pure_sub_name)
+                            is_i_red = False
+                            if pure_sub_name == "[누락]":
+                                is_i_red = True
+                            elif pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
+                                is_i_red = True
+                            if item.get("is_red", False):
+                                is_i_red = True
                                 
-                                # 수식어([특별] 등)는 항상 파란색 강조
-                                if sub_prefix:
-                                    start_pos = len(new_i_val) + 1
-                                    blue_marks_i.append((start_pos, len(sub_prefix)))
-                                    new_i_val += sub_prefix
-                                    
-                                # 순수 물질명은 마스터 DB 표준명에 없거나, 또는 비즈니스 룰 위반 오류(is_red == True)인 경우 빨간색 강조 (1차 결과 CAS 포함 완화)
-                                if pure_sub_name:
-                                    pure_sub_norm = normalize_name(pure_sub_name)
-                                    is_i_red = False
-                                    if pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
-                                        is_i_red = True
-                                    if item.get("is_red", False):
-                                        is_i_red = True
-                                        
-                                    if is_i_red:
-                                        start_pos = len(new_i_val) + 1
-                                        red_marks_i.append((start_pos, len(pure_sub_name)))
-                                    new_i_val += pure_sub_name
-                                    
-                        if wrapper:
-                            new_i_val += "]"
+                            if is_i_red:
+                                start_pos = len(new_i_val) + 1
+                                red_marks_i.append((start_pos, len(pure_sub_name)))
+                            new_i_val += pure_sub_name
                             
-                    # 2. J열 정교한 실시간 조립 및 오프셋 마킹 계산 (I열 순서와 1:1 완벽 동기화)
-                    if valid_cat_items_j:
-                        if not first_j:
-                            new_j_val += "; "
-                        first_j = False
+                    if wrapper:
+                        new_i_val += "]"
                         
-                        for idx, item in enumerate(valid_cat_items_j):
-                            if idx > 0:
-                                new_j_val += "; "
-                            j_item = item["j_item"]
-                            if j_item:
-                                match = j_parser_pat.match(j_item)
-                                if match:
-                                    sub_prefix = match.group(1) or ""
-                                    pure_sub_name = match.group(2) or ""
-                                    concentration = match.group(3) or ""
-                                    
-                                    # 수식어는 항상 파란색 강조
-                                    if sub_prefix:
-                                        start_pos = len(new_j_val) + 1
-                                        blue_marks_j.append((start_pos, len(sub_prefix)))
-                                        new_j_val += sub_prefix
-                                        
-                                    # 물질명 마킹 (마스터 DB에 없거나, 함유량이 아예 누락되었거나, 비즈니스 룰 위반 오류인 경우 빨간색, 1차 결과 CAS 포함 완화)
-                                    if pure_sub_name:
-                                        pure_sub_norm = normalize_name(pure_sub_name)
-                                        is_sub_red = False
-                                        if pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
-                                            is_sub_red = True
-                                        if match.group(3) is None or not concentration.strip():
-                                            is_sub_red = True
-                                        if item.get("is_red", False):
-                                            is_sub_red = True
-                                            
-                                        if is_sub_red:
-                                            start_pos = len(new_j_val) + 1
-                                            red_marks_j.append((start_pos, len(pure_sub_name)))
-                                        new_j_val += pure_sub_name
-                                        
-                                    # 함유량 마킹 (함유량이 존재하지만 % 기호가 없거나 비어있는 경우 빨간색)
-                                    if match.group(3) is not None:
-                                        paren_content = f"({concentration})"
-                                        is_conc_red = ("%" not in concentration or not concentration.strip())
-                                        start_pos = len(new_j_val) + 1
-                                        if is_conc_red:
-                                            red_marks_j.append((start_pos, len(paren_content)))
-                                        new_j_val += paren_content
-                                else:
-                                    # 매칭 예외 시 전체 적색 폴백 마킹
-                                    start_pos = len(new_j_val) + 1
-                                    red_marks_j.append((start_pos, len(j_item)))
-                                    new_j_val += j_item
+                # 6. J열 조립 및 마킹 좌표 계산
+                new_j_val = ""
+                red_marks_j = []
+                blue_marks_j = []
+                first_j = True
+                
+                for idx, item in enumerate(j_matched_data):
+                    j_item = item["j_item"]
+                    if not j_item:
+                        continue
+                        
+                    if not first_j:
+                        new_j_val += "; "
+                    first_j = False
+                    
+                    match = j_parser_pat.match(j_item)
+                    if match:
+                        sub_prefix = match.group(1) or ""
+                        pure_sub_name = match.group(2) or ""
+                        concentration = match.group(3) or ""
+                        
+                        if sub_prefix:
+                            start_pos = len(new_j_val) + 1
+                            blue_marks_j.append((start_pos, len(sub_prefix)))
+                            new_j_val += sub_prefix
+                            
+                        if pure_sub_name:
+                            pure_sub_norm = normalize_name(pure_sub_name)
+                            is_sub_red = False
+                            if item.get("is_red", False):
+                                is_sub_red = True
+                            elif pure_sub_norm not in valid_substances_clean and pure_sub_norm not in api_valid_substances:
+                                is_sub_red = True
+                            if match.group(3) is None or not concentration.strip():
+                                is_sub_red = True
+                                
+                            if is_sub_red:
+                                start_pos = len(new_j_val) + 1
+                                red_marks_j.append((start_pos, len(pure_sub_name)))
+                            new_j_val += pure_sub_name
+                            
+                        if match.group(3) is not None:
+                            paren_content = f"({concentration})"
+                            is_conc_red = ("%" not in concentration or not concentration.strip())
+                            start_pos = len(new_j_val) + 1
+                            if is_conc_red:
+                                red_marks_j.append((start_pos, len(paren_content)))
+                            new_j_val += paren_content
+                    else:
+                        start_pos = len(new_j_val) + 1
+                        red_marks_j.append((start_pos, len(j_item)))
+                        new_j_val += j_item
                                 
                 # 🚨 [V24.3.5.4] 셀 서식 및 맞춤 속성 사전 백업
                 def backup_cell_format(cell):

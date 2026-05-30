@@ -97,9 +97,9 @@ class MSDSCore:
                     if cas_match:
                         cas = cas_match.group(1).strip()
                         content = ""
-                        content_match = re.search(r"\(([^)]+)\)", part)
+                        content_match = re.findall(r"\(([^)]+)\)", part)
                         if content_match:
-                            content = content_match.group(1).strip()
+                            content = content_match[-1].strip()
                         raw_comps.append({"cas": cas, "content": content})
                         
             # 가공 및 정제 단계 집행

@@ -82,6 +82,10 @@ class KoshaAPIClient:
         if not product_name:
             product_name = chem_name_kor if chem_name_kor else "제품명 확인 불가"
 
+        # 🚨 [V27.7] 한글 제품명인 경우 공백을 완전 제거하여 표준명 일치율 향상 (예: 탄산 칼슘 -> 탄산칼슘)
+        if product_name and re.search(r'[가-힣]', product_name):
+            product_name = product_name.replace(" ", "")
+
         # 2. 노출기준 (full=True일 때만 조회)
         exposure = {"twa_ppm": "-", "twa_mg": "-", "stel_ppm": "-", "stel_mg": "-"}
         if full:
@@ -173,6 +177,10 @@ class KoshaAPIClient:
         if not product_name:
             # 제품명이 없으면 기본 검색된 화학물질명 사용
             product_name = chem_name_kor if chem_name_kor else "제품명 확인 불가"
+
+        # 🚨 [V27.7] 한글 제품명인 경우 공백을 완전 제거하여 표준명 일치율 향상 (예: 탄산 칼슘 -> 탄산칼슘)
+        if product_name and re.search(r'[가-힣]', product_name):
+            product_name = product_name.replace(" ", "")
 
         # 결과 판단 로직 및 포맷팅: 제품명(cas번호)
         if is_special_health and not is_work_env:
