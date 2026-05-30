@@ -165,7 +165,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.2.0" # [V24.4.2.0] 엑셀 속성 최적화(ScreenUpdating/Calculation), 형태학적 필터 인메모리 스코어링 및 서식 금고 3색 배경색 제어 도입
+VERSION = "24.4.3.0" # [V24.4.3.0] msds_core.py 정류 가공 가드레일 및 수평 세미콜론 체인 완착 필터 적용
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""

@@ -4344,13 +4344,18 @@ class SMUGUI(QMainWindow):
             self.preview_pane.load_pdf(path) # 이제 엉뚱한 용접재 대신 럭키 락카가 뜹니다.
 
     def show_cas_copy_menu(self, pos):
-        """[핵심] 우클릭 시 순수 CAS 번호만 추출하여 복사 기능"""
+        """[핵심] 우클릭 시 순수 CAS 번호만 추출하여 복사 및 수동 수정 복원 기능 제공"""
         index = self.table.indexAt(pos)
-        if index.isValid() and index.column() == 3:
-            menu = QMenu()
-            cell_text = self.table.item(index.row(), 3).text()
-            cas_list = re.findall(r'\d{2,7}-\d{2}-\d', cell_text)
+        if not index.isValid():
+            return
             
+        row = index.row()
+        menu = QMenu()
+        
+        # 1. CAS 복사 기능 (3번 열일 때만 활성화)
+        if index.column() == 3:
+            cell_text = self.table.item(row, 3).text()
+            cas_list = re.findall(r'\d{2,7}-\d{2}-\d', cell_text)
             if cas_list:
                 for cas in list(set(cas_list)):
                     action = menu.addAction(f"CAS {cas} 복사")
@@ -4358,13 +4363,124 @@ class SMUGUI(QMainWindow):
                 menu.addSeparator()
                 action_all = menu.addAction("모든 CAS 복사 (세미콜론 구분)")
                 action_all.triggered.connect(lambda: QApplication.clipboard().setText("; ".join(list(set(cas_list)))))
-                
+                menu.addSeparator()
+
+        # 2. 🚨 [주님 의도 복구] 수동 수정 취소 및 기계 원본 복원 메뉴 추가
+        f_hash = self.table.item(row, 8).text().strip() if self.table.item(row, 8) else ""
+        if f_hash and f_hash in self.cache:
+            cached_data = self.cache[f_hash]
+            manual = cached_data.get("manual_data", {})
+            if manual.get("is_manual") or any(k in manual for k in ["product_name", "raw_content", "measure", "reg2", "reg1"]):
+                action_restore = menu.addAction("🔄 수동 수정 취소 및 기계 원본 복원")
+                action_restore.triggered.connect(lambda _, r=row, h=f_hash: self.restore_to_clean_version(r, h))
+
+        if menu.actions():
             menu.exec_(self.table.viewport().mapToGlobal(pos))
 
+    def restore_to_clean_version(self, row, f_hash):
+        """[주님 의도 복구] 수동 락을 해제하고 최초 기계 분석 원본(v2.0_Clean)으로 복구"""
+        if f_hash not in self.cache:
+            return
+            
+        cached_data = self.cache[f_hash]
+        clean_snapshot = cached_data.get("v2.0_Clean")
+        if not clean_snapshot:
+            QMessageBox.warning(self, "안내", "이 항목의 최초 분석 원본 스냅샷이 존재하지 않습니다.")
+            return
+            
+        reply = QMessageBox.question(
+            self, "확인", "수동으로 수정한 모든 내역을 취소하고 최초 분석 원본으로 되돌리겠습니까?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+            
+        # 1. 캐시 및 메모리 락 해제
+        if "manual_data" in cached_data:
+            # 수동 기입 데이터 및 락 플래그 전면 파쇄
+            for k in list(cached_data["manual_data"].keys()):
+                del cached_data["manual_data"][k]
+        
+        # 성분들의 수동 락도 해제
+        components = cached_data.get("components", [])
+        for c in components:
+            if "is_manual" in c:
+                del c["is_manual"]
+            if "selected_name" in c:
+                del c["selected_name"]
+                
+        # 2. v2.0_Clean 원본 데이터를 복구하여 manual_data 및 v3.0_Final에 재안착
+        prod = clean_snapshot.get("product_name", "")
+        raw = clean_snapshot.get("raw_content", "")
+        meas = clean_snapshot.get("measure", "")
+        reg1 = clean_snapshot.get("reg1", [])
+        reg2 = clean_snapshot.get("reg2", [])
+        
+        # 3. 테이블 UI 복구 집행 (시그널 락)
+        self.table.blockSignals(True)
+        self.table.removeCellWidget(row, 4)
+        
+        # update_validation_row를 통해 렌더링 리셋
+        self.update_validation_row(
+            row,
+            raw.split(";\n") if isinstance(raw, str) else raw,
+            reg1,
+            reg2,
+            meas,
+            status="검증 완료 (캐시)",
+            components=components
+        )
+        self.table.blockSignals(False)
+        self.save_cache()
+        self.log(f"[*] [{prod}] 최초 분석 원본(v2.0_Clean)으로 복구 완료")
+        
+        # 실시간 후행 리프레시
+        self.refresh_live_correction_panel()
 
-
-
-
+    def clean_measure_duplicates(self, measure_raw):
+        """[주님 의도 복구] 역방향 마스터 DB 검색 필터로 화학물질명을 보존하며 중복 격멸"""
+        if not measure_raw:
+            return ""
+            
+        target_text = str(measure_raw).strip()
+        if not target_text:
+            return ""
+            
+        # 1. 공인 측정대상 물질명 목록 수집
+        master_names = set()
+        for entry in getattr(self, "mes_master_list", []):
+            name = entry.get("측정대상 물질명")
+            if name and str(name).lower() != 'nan':
+                master_names.add(str(name).strip())
+                
+        clean_tokens = []
+        seen = set()
+        
+        # 2. 긴 물질명 순으로 내림차순 정렬하여 역방향 인클루드 검색 작동 (부분 키워드 오탐지 방어)
+        sorted_masters = sorted(list(master_names), key=len, reverse=True)
+        for m_name in sorted_masters:
+            if m_name in target_text:
+                norm_key = re.sub(r'\s+', '', m_name).lower()
+                if norm_key not in seen:
+                    seen.add(norm_key)
+                    clean_tokens.append(m_name)
+                    # 매칭된 부분은 마스킹하여 이중 매칭 방지
+                    target_text = target_text.replace(m_name, " [MASK] ")
+                    
+        # 3. 마스터 DB에 없지만 사용자가 수동 타이핑한 유휴 명칭 수거
+        remaining_parts = [p.strip() for p in re.split(r'[;\n/]+', target_text) if p.strip()]
+        for p in remaining_parts:
+            # 마스크 처리된 영역이나 빈 단어는 패싱
+            p_clean = p.replace("[MASK]", "").strip()
+            if not p_clean:
+                continue
+            norm_key = re.sub(r'\s+', '', p_clean).lower()
+            if norm_key not in seen:
+                seen.add(norm_key)
+                clean_tokens.append(p_clean)
+                
+        # 4. 세미콜론과 한 칸의 공백(; )으로 조인하여 반환
+        return "; ".join(clean_tokens)
 
     def save_config(self):
         """[V6.995] 현재 설정을 config.json에 저장"""
@@ -4530,6 +4646,26 @@ class SMUGUI(QMainWindow):
     def update_cache(self, f_hash, data):
         """[NEW] 워커로부터 받은 새 분석 결과를 캐시에 저장"""
         self.cache[f_hash] = data
+        
+        # 🚨 [주님 의도 복구] 3중 스냅샷 캐시 레이어 분리 설계 이식
+        if f_hash in self.cache:
+            # v2.0_Clean 최초 순수 원본 레이어 생성
+            self.cache[f_hash]["v2.0_Clean"] = {
+                "product_name": data.get("product_name", ""),
+                "raw_content": data.get("raw_content", ""),
+                "measure": data.get("measure_target", ""),
+                "reg1": data.get("validation", {}).get("res_1st", []),
+                "reg2": data.get("validation", {}).get("res_2nd", [])
+            }
+            # v3.0_Final 수동 수정 확정본 레이어 초기화
+            if "v3.0_Final" not in self.cache[f_hash]:
+                self.cache[f_hash]["v3.0_Final"] = {
+                    "product_name": data.get("product_name", ""),
+                    "raw_content": data.get("raw_content", ""),
+                    "measure": data.get("measure_target", ""),
+                    "reg1": data.get("validation", {}).get("res_1st", []),
+                    "reg2": data.get("validation", {}).get("res_2nd", [])
+                }
         self.save_cache()
 
     def on_table_item_changed(self, item):
@@ -4565,6 +4701,15 @@ class SMUGUI(QMainWindow):
                                         del self.cache[f_hash]["manual_data"][old_k]
                                         
                             self.cache[f_hash]["manual_data"][key] = new_text
+                            
+                            # 🚨 [주님 의도 복구] 셀에서 직접 편집한 경우에도 수동 제어 락 강제 주입
+                            self.cache[f_hash]["manual_data"]["is_manual"] = True
+                            
+                            # 🚨 [주님 의도 복구] v3.0_Final 레이어에 수동 수정본 저장
+                            if "v3.0_Final" not in self.cache[f_hash]:
+                                self.cache[f_hash]["v3.0_Final"] = {}
+                            self.cache[f_hash]["v3.0_Final"][key] = new_text
+                            
                             self.save_cache()
                             
                             # 2. self.results 메모리 실시간 동기화 (Hot-Sync)
@@ -5178,6 +5323,10 @@ class SMUGUI(QMainWindow):
             orig_prod = self.table.item(r, 2).text() if self.table.item(r, 2) else "미확인"
             raw_cas_content = self.table.item(r, 3).text() if self.table.item(r, 3) else ""
             corrected_measure = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
+            
+            # 🚨 [주님 의도 복구] 교정창 장부 기입 시에도 역방향 마스터 DB 필터 기반 중복 격멸 적용
+            if corrected_measure:
+                corrected_measure = self.clean_measure_duplicates(corrected_measure)
             
             # 🚨 [주님 의도 복구] 통짜 조인을 파괴하고 오직 '해당 행에 존재하는 CAS'의 근거만 추출
             reasons = []
@@ -5828,10 +5977,11 @@ class SMUGUI(QMainWindow):
                 clean_name = str(mes_std_name)
                 clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
             
-            # 🚨 [주님 의도 복구] 사용자가 팝업에서 찍은 수동 선택 흔적이 있다면 기계적 오버라이트를 차단합니다.
+            # 🚨 [주님 의도 복구] 사용자가 팝업에서 찍은 수동 선택 흔적이 있거나 수동 락 플래그가 참이면 오버라이트를 차단합니다.
             manual_selected = c.get("selected_name")
+            is_manual = c.get("is_manual", False)
             
-            if manual_selected:
+            if is_manual or manual_selected:
                 target_factor = manual_selected
             else:
                 # 사용자의 수동 선택이 없을 때만 시스템 자율 판별 작동
@@ -5844,6 +5994,11 @@ class SMUGUI(QMainWindow):
                     target_factor = "기타광물성분진; 이산화티타늄"
                 elif cas == "14807-96-6":
                     target_factor = "소우프스톤"
+                    
+            # 🚨 [주님 의도 복구] 성분 내 다중 인자 세미콜론 분할로 인한 줄바꿈 불일치 방어
+            # 성분 단위로 줄 매칭을 일치시키기 위해 성분 내 세미콜론을 슬래시 기호로 정류합니다.
+            if target_factor:
+                target_factor = target_factor.replace("; ", " / ").replace(";", " / ")
 
             osh = c.get("osh", {})
             is_work = osh.get("is_measured", False)
@@ -5918,13 +6073,15 @@ class SMUGUI(QMainWindow):
                 f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
                 if not f_hash: return
                 
-                m_name = master_entry.get("물질명") or master_entry.get("상용명") or ""
+                m_name = master_entry.get("측정대상 물질명") or ""
                 
                 # 캐시된 성분 정보 갱신
                 components = self.cache.get(f_hash, {}).get("components", [])
                 for c in components:
                     if str(c.get("cas", "")).strip() == str(cas).strip():
                         c["selected_name"] = m_name
+                        # 🚨 [주님 의도 복구] 수동 개입에 따른 최고 존엄 락 설정
+                        c["is_manual"] = True
                         c["osh"] = {
                             "is_measured": str(master_entry.get("측정", "")).strip() == "○",
                             "is_special": str(master_entry.get("특검", "")).strip() == "○",
@@ -5938,6 +6095,9 @@ class SMUGUI(QMainWindow):
                 if "manual_data" not in self.cache[f_hash]:
                     self.cache[f_hash]["manual_data"] = {}
                 self.cache[f_hash]["manual_data"][f"selected_code_{cas}"] = code
+                # 🚨 [주님 의도 복구] 수동 제어 플래그 락 영구 장착
+                self.cache[f_hash]["manual_data"]["is_manual"] = True
+                self.cache[f_hash]["manual_data"][f"is_manual_{cas}"] = True
                 self.save_cache()
                 
                 # 1차/2차 결과 재합산
@@ -5947,6 +6107,13 @@ class SMUGUI(QMainWindow):
                 self.cache[f_hash]["manual_data"]["measure"] = new_work
                 self.cache[f_hash]["manual_data"]["reg1"] = ";\n".join(new_res1) if isinstance(new_res1, list) else new_res1
                 self.cache[f_hash]["manual_data"]["reg2"] = ";\n".join(new_res2) if isinstance(new_res2, list) else new_res2
+                
+                # 🚨 [주님 의도 복구] v3.0_Final 레이어 갱신
+                if "v3.0_Final" not in self.cache[f_hash]:
+                    self.cache[f_hash]["v3.0_Final"] = {}
+                self.cache[f_hash]["v3.0_Final"]["measure"] = new_work
+                self.cache[f_hash]["v3.0_Final"]["reg1"] = new_res1
+                self.cache[f_hash]["v3.0_Final"]["reg2"] = new_res2
                 self.save_cache()
                 
                 # 테이블 UI 실시간 업데이트 (시그널 락)
@@ -5954,6 +6121,10 @@ class SMUGUI(QMainWindow):
                 
                 # 측정대상 4번 열의 버튼을 제거하고 확정된 일반 텍스트로 치환 적용
                 self.table.removeCellWidget(row, 4)
+                
+                # 🚨 [주님 의도 복구] 화면 셀에 즉시 강제 수동 동기화 집행
+                item_measure = QTableWidgetItem(new_work)
+                self.table.setItem(row, 4, item_measure)
                 
                 # update_validation_row 호출을 통해 1차/2차 결과 및 전체 레이아웃 갱신
                 self.update_validation_row(
@@ -6146,7 +6317,13 @@ class SMUGUI(QMainWindow):
                     if key == "제품명": val = td.get("product_name")
                     elif key == "파일명": val = fn
                     elif key == "CAS 원본": val = td.get("cas_sum")
-                    elif key == "측정대상1" or key == "측정대상2": val = td.get("measure")
+                    elif key == "측정대상1" or key == "측정대상2":
+                        measure_raw = td.get("measure")
+                        # 🚨 [주님 의도 복구] 역방향 마스터 DB 필터 기반 중복 격멸 적용
+                        if measure_raw:
+                            val = self.clean_measure_duplicates(measure_raw)
+                        else:
+                            val = ""
                     elif key == "2차 결과(규제)": val = td.get("reg2")
                     elif key == "1차 결과(전체)": val = td.get("reg1")
                     elif key == "순번/No": val = td.get("no")
