@@ -113,3 +113,33 @@ def normalize_text(text):
             
         return t.strip()
     except Exception: return text
+
+def clean_percentage(content_str):
+    if not content_str: return ""
+    content_str = unicodedata.normalize('NFKC', content_str).strip()
+    
+    # [주님 지시 고정 가드선] 상류에서 정제된 고정 표준 단어는 숫자 연산을 우회하여 원형 보존
+    if content_str in ["Rem.", "미기재"]:
+        return content_str
+        
+    content_lower = content_str.lower()
+    nums = re.findall(r'\d+(?:\.\d+)?', content_str)
+    if not nums: return content_str
+    
+    suffix = "%" if "%" in content_str else ""
+    if len(nums) >= 2:
+        v1, v2 = float(nums[0]), float(nums[1])
+        if v1 > v2: v1, v2 = v2, v1
+        v1_str = int(v1) if v1.is_integer() else v1
+        v2_str = int(v2) if v2.is_integer() else v2
+        v2_prefix = "<" if any(c in content_lower for c in ["<", "미만", "below", "less"]) else ""
+        return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
+    
+    if any(c in content_lower for c in ["<", "미만", "below"]): prefix = "<"
+    elif any(c in content_lower for c in ["≤", "=<", "이하", "이내", "upto"]): prefix = "≤"
+    elif any(c in content_lower for c in [">", "초과", "over"]): prefix = ">"
+    elif any(c in content_lower for c in ["≥", "=>", "이상", "above"]): prefix = "≥"
+    else: prefix = ""
+    v1 = float(nums[0])
+    v1_str = int(v1) if v1.is_integer() else v1
+    return f"{prefix}{v1_str}{suffix}"

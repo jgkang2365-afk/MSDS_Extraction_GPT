@@ -13,6 +13,8 @@ class MockPage:
     def get_text(self, option, **kwargs):
         if option == "words":
             return self._words
+        if option == "blocks":
+            return []
         return ""
 
 def run_test():

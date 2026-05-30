@@ -74,6 +74,49 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
     if sniper:
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
+def refine_msds_components_strict(raw_components):
+    """[신형 완전판] KOSHA API 추출 국문명 원형 유지, 인위적 사칙연산 완전 폐기, 함유량 표준화 및 기존 호환 키 100% 보존"""
+    refined = []
+    
+    for comp in raw_components:
+        # KOSHA API와 기존 추출 스트림이 확보한 국문 물질명 및 호환 자산 키 누락 방지 매핑
+        name = comp.get('name', '').strip() or comp.get('chemical_name', '').strip()
+        cas = comp.get('cas', '').strip() or comp.get('cas_no', '').strip()
+        pct = comp.get('percentage', '').strip() or comp.get('content', '').strip()
+        page_val = comp.get('page', '')
+        engine_val = comp.get('engine', 'Unknown')
+        
+        # 1. 표준 CAS 정규식 가드레일 (없으면 함유량 불문 즉시 전수 파기)
+        clean_cas = re.sub(r'\s+', '', cas)
+        if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
+            continue
+            
+        # 2. 함유량 특이 텍스트 이원화 표준화 관문
+        # 잔량 성상 키워드가 발견되는 경우
+        if any(k in pct.lower() or k in name.lower() for k in ["rem", "balance", "잔량", "나머지"]):
+            pct = "Rem."
+        # 비공개/공백/미기재 성상 키워드가 발견되거나 값이 비어있는 경우
+        elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
+            pct = "미기재"
+            
+        # 3. N열(1차 가공 성분 결과) 안전 안착을 위한 독점 복합 포맷 생성
+        combined_text = f"{name}({pct})[{clean_cas}]"
+        
+        # 안티그래비티 데이터 그리드 및 final_quality_control과의 호환 키 규격 100% 유지 보존
+        refined.append({
+            'name': name,
+            'chemical_name': name,
+            'cas': clean_cas,
+            'cas_no': clean_cas,
+            'percentage': pct,
+            'content': pct,
+            'page': page_val,
+            'engine': engine_val,
+            'combined_format': combined_text  # 하류 GUI 환경 설정 N열에 직결 주입될 데이터 금고 열쇠
+        })
+        
+    return refined
+
 def verify_cas_number(cas_string, grounding_text=None):
     """[V17.3.2.25] CAS 번호 검증 (Grounding 우선 원칙: 문서에 적혀 있으면 체크섬 무관하게 통과)"""
     if not cas_string: return False
@@ -122,7 +165,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.1.0" # [V24.4.1.0] 비전 정찰병 7장 일괄 비교 폐기 및 순차적 조기 종료(Early Stopping) 알고리즘 도입
+VERSION = "24.4.2.0" # [V24.4.2.0] 엑셀 속성 최적화(ScreenUpdating/Calculation), 형태학적 필터 인메모리 스코어링 및 서식 금고 3색 배경색 제어 도입
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -629,9 +672,13 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
 
                 overlap = max(0, min(line_bottom, curr_bottom) - max(line_top, curr_top))
 
-                if overlap > (line_height * 0.3) or abs(curr_top - line_top) <= (line_height * 0.5):
+                # 줄바꿈 및 미세 인쇄 오차로 인해 '1 이상'과 '~ 10% 미만'이 찢어지는 현상을 방지하기 위해 결합 마진 임계치 확장
+                if overlap > (line_height * 0.2) or abs(curr_top - line_top) <= (line_height * 0.8) or abs(curr_bottom - line_bottom) <= (line_height * 0.8):
                     current_line_words.append(curr_w)
-                    # 🚨 선언: line_bottom을 확장하지 않음. 첫 글자의 기준을 엄격히 유지.
+                    # [회귀 방지] 가변형 하단선 확장 알고리즘 적용하여 웨이브/수직 개행 텍스트를 유연하게 흡수
+                    line_bottom = max(line_bottom, curr_bottom)
+                    line_top = min(line_top, curr_top)
+                    line_height = line_bottom - line_top
                 else:
                     current_line_words.sort(key=lambda w: w[0])
                     physical_lines.append({
@@ -834,9 +881,33 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     if content != "미기재%":
                         base_content = content.replace(" (병합추정)", "")
                         last_valid_info = (curr_x, curr_y, base_content)
-                    
-                if log_func: log_func(f"   [Regex-Recovery] CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
-                found.append({"name": "CAS 기반 자동 매핑", "cas_no": target_cas, "content": content, "engine": "Regex-Recovery"})
+                
+                # [회귀 방지] 마스터 DB 및 행 컨텍스트 역추적을 통한 누락 물질명 정밀 복구 엔진
+                name_str = MES_MASTER_MAP.get(target_cas, "")
+                if not name_str:
+                    temp_name = row_full_text
+                    temp_name = temp_name.replace(target_cas, "")
+                    if matches_with_pos:
+                        temp_name = temp_name.replace(best_match_tuple[0], "")
+                    temp_name = re.sub(r'(?i)cas|no|번호|함량|함유량|content|percentage|[\d\.\-\~\<\>\=\≤\≥\%\|\;\:\(\)\[\]]', ' ', temp_name)
+                    name_str = " ".join(temp_name.split()).strip()
+                    if not name_str:
+                        name_str = "CAS 기반 자동 매핑"
+
+                if log_func: log_func(f"   [Regex-Recovery] 물질명: {name_str} | CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
+                
+                # 주님의 표준 배달 규격 규제 체인 결합 (combined_format 생성을 상류로 강제 일치)
+                combined_text = f"{name_str}({content})[{target_cas}]"
+                found.append({
+                    "name": name_str, 
+                    "chemical_name": name_str,
+                    "cas": target_cas,
+                    "cas_no": target_cas, 
+                    "percentage": content,
+                    "content": content, 
+                    "engine": "Regex-Recovery",
+                    "combined_format": combined_text
+                })
 
     except Exception as e:
         if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
@@ -1302,6 +1373,7 @@ def process_pdf(pdf_path, log_func=None):
             return {"error": "추출 실패", "제품명": hybrid_pn, "신호등": "🔴"}
 
     components = ai_res.get("구성성분", [])
+    components = refine_msds_components_strict(components)
     reason = ai_res.get("교정_사유", "사유 없음")
     
     local_grounding_text = str(first_page_text)
@@ -1316,7 +1388,15 @@ def process_pdf(pdf_path, log_func=None):
     grounding_pool = full_text_for_grounding if full_text_for_grounding else local_grounding_text
     refined_comps, has_invalid_cas = final_quality_control(components, grounding_pool, is_ai=is_ai_extracted, log_func=log_func)
     
-    comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps]
+    # 🚨 [V24.4.2.0] 세미콜론 단독 출력을 전면 폐기하고 주님의 표준 배달 규격인 combined_format 기반 직렬화 안착
+    comp_parts = []
+    for c in refined_comps:
+        fmt = c.get('combined_format')
+        if fmt:
+            comp_parts.append(fmt)
+        else:
+            comp_parts.append(f"{c['name']}({c['content']})[{c['cas']}]")
+            
     if not comp_parts:
         if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
         return {"error": "AI 추출 완전 실패 (수동 검토 필요)", "제품명": hybrid_pn, "신호등": "🔴"}

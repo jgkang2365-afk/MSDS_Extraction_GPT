@@ -1,14 +1,14 @@
 {
-    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
-        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
-        "product_name": "Super Way Lube 32",
+    "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336": {
+        "f_hash": "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336",
+        "product_name": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
         "reliability": "N/A",
-        "신호등": "🔴",
-        "raw_content": "",
+        "신호등": "🟢",
+        "raw_content": "1317-65-3(29~39%); 108-88-3(21~31%); 14807-96-6(8~18%); 616-38-6(1~10%); 85535-85-9(1~10%); 1317-80-2(1~10%); 6358-31-2(1~10%); 1330-20-7(stel%); 22094-93-5(1~10%); 471-34-1(1~10%); 5567-15-7(1~10%)",
         "measure_target": "",
-        "full_path": "Z:/data/측정팀/측정보고서/2026년/상반기/연무마이스터고등학교/msds/MSDS/[미래자동차금형과]금형가공실(MCT)/001_SUPER WAY LUBE 32.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/038_노면표지용_도료_KSM-6080_1종_DHW-8800_GHS-MSDS.pdf",
         "page": 1,
-        "used_engine": "regex",
-        "engine_version": "24.3.5.7"
+        "used_engine": "analytic",
+        "engine_version": "24.4.2.0"
     }
 }

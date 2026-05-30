@@ -59,3 +59,27 @@ Traceback (most recent call last):
                                             ^^^^^^^^^^^^^^^^^
 NameError: name 'QAbstractItemView' is not defined
 
+
+[2026-05-30 14:03:19.114227]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 6321, in <module>
+    window = SMUGUI()
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 1309, in __init__
+    self.restore_table_from_session()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 4515, in restore_table_from_session
+    v_data.get("reg1", "").split(";\n"),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'list' object has no attribute 'split'
+
+
+[2026-05-30 14:21:35.234330]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 5164, in on_validation_finished
+    self.refresh_live_correction_panel()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 5174, in refresh_live_correction_panel
+    self.txt_corr_detail.clear()
+    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'SMUGUI' object has no attribute 'txt_corr_detail'
+

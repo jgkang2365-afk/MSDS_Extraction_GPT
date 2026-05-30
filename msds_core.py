@@ -75,7 +75,77 @@ class MSDSCore:
         """1단계: PDF에서 제품명 및 성분 추출"""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {pdf_path}")
-        return msds_engine_v5.process_pdf(pdf_path, log_func=log_func)
+        ext_res = msds_engine_v5.process_pdf(pdf_path, log_func=log_func)
+        
+        # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동
+        if ext_res and isinstance(ext_res, dict):
+            raw_comps = []
+            
+            # 경로 1: ext_res["함유량"]에 개별 성분 리스트 덩어리가 들어있는 경우
+            if "함유량" in ext_res and isinstance(ext_res["함유량"], list):
+                for item in ext_res["함유량"]:
+                    if isinstance(item, dict):
+                        cas = item.get("cas") or item.get("cas_no") or ""
+                        content = item.get("content") or item.get("percentage") or ""
+                        raw_comps.append({"cas": cas, "content": content})
+            # 경로 2: ext_res["구성성분"]에 세미콜론 텍스트 체인이 들어있는 경우 역분석
+            elif "구성성분" in ext_res and isinstance(ext_res["구성성분"], str):
+                comp_str = ext_res["구성성분"]
+                parts = [p.strip() for p in comp_str.split(";") if p.strip()]
+                for part in parts:
+                    cas_match = re.search(r"(\d{2,7}-\d{2}-\d)", part)
+                    if cas_match:
+                        cas = cas_match.group(1).strip()
+                        content = ""
+                        content_match = re.search(r"\(([^)]+)\)", part)
+                        if content_match:
+                            content = content_match.group(1).strip()
+                        raw_comps.append({"cas": cas, "content": content})
+                        
+            # 가공 및 정제 단계 집행
+            from msds_utils_v3 import is_valid_cas
+            comp_parts = []
+            for item in raw_comps:
+                cas_val = item.get("cas")
+                content_val = item.get("content")
+                
+                # CAS 번호가 없고 함유량만 있는 것 또는 CAS 번호가 아예 없는 것 기각 (버림)
+                if not cas_val:
+                    continue
+                    
+                # [공정 1] 전역 트림 및 소문자 세탁
+                cas_val = str(cas_val).strip().replace("\n", "").replace("\r", "").lower()
+                content_val = str(content_val).strip().replace("\n", "").replace("\r", "").lower() if content_val else ""
+                
+                # [차세대 방법론] 유효 CAS 체크디지트 필터 선행 가동
+                if not is_valid_cas(cas_val):
+                    continue
+                    
+                # CAS 번호는 유효한데 함유량이 비어 있는 경우 -> 미기재% 처리
+                if not content_val or content_val == "none" or content_val == "null" or content_val == "미기재%":
+                    final_content = "미기재%"
+                else:
+                    # [공정 2] 잔량 토큰의 'Rem.' 단일 규격 치환
+                    keywords = ["balance", "remainder", "rest", "잔량", "나머지"]
+                    if any(kw in content_val for kw in keywords):
+                        final_content = "Rem."
+                    elif content_val == "rem.":
+                        final_content = "Rem."
+                    else:
+                        # [공정 3] 'CAS번호(함유량%);' 수평 체인 결합
+                        if not content_val.endswith("%") and not content_val.endswith("rem.") and not content_val.endswith("rem"):
+                            content_val = content_val + "%"
+                        final_content = content_val
+                        
+                comp_parts.append(f"{cas_val}({final_content})")
+                
+            # [공정 4] 최종 안착 및 토스 계약 집행
+            # 세미콜론 뒤 한 칸의 공백(; )을 완벽하게 보존하여 조인
+            chain_str = "; ".join(comp_parts) if comp_parts else ""
+            ext_res["함유량"] = chain_str
+            ext_res["구성성분"] = chain_str
+            
+        return ext_res
 
     # [수정] 인자에 f_hash=None 추가
     def validate_with_kosha(self, cas_content, log_func=None, full=False, f_hash=None):
@@ -136,7 +206,9 @@ class MSDSCore:
                 "content_max": c_max,
                 "exposure": info["exposure"],
                 "osh": info["osh"],
-                "cca": info["cca"]
+                "cca": info["cca"],
+                # [주님 지시 고정] N열 안전 안착을 위한 고유 금고 열쇠 포워딩 경로 동기화
+                "combined_format": info.get("combined_format") or f"{info['product_name']}({range_val})[{cas}]"
             }
             detailed_components.append(comp_detail)
 
