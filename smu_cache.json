@@ -1,388 +1,80 @@
 {
-    "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336": {
-        "f_hash": "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336",
-        "product_name": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
+    "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127": {
+        "f_hash": "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127",
+        "product_name": "Formaldehyde solution, 36.5-38%",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "1317-65-3(29~39%); 108-88-3(21~31%); 14807-96-6(8~18%); 616-38-6(1~10%); 85535-85-9(1~10%); 1317-80-2(1~10%); 6358-31-2(1~10%); 1330-20-7(1~10%); 22094-93-5(1~10%); 471-34-1(1~10%); 5567-15-7(1~10%)",
+        "raw_content": "50-00-0(35~40%); 67-56-1(미기재%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/038_노면표지용_도료_KSM-6080_1종_DHW-8800_GHS-MSDS.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/01. 포름알데하이드_시그마.pdf",
         "page": 1,
         "used_engine": "analytic",
-        "engine_version": "24.4.3.0",
+        "engine_version": "24.4.5.3",
         "v2.0_Clean": {
-            "product_name": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
-            "raw_content": "1317-65-3(29~39%); 108-88-3(21~31%); 14807-96-6(8~18%); 616-38-6(1~10%); 85535-85-9(1~10%); 1317-80-2(1~10%); 6358-31-2(1~10%); 1330-20-7(1~10%); 22094-93-5(1~10%); 471-34-1(1~10%); 5567-15-7(1~10%)",
+            "product_name": "Formaldehyde solution, 36.5-38%",
+            "raw_content": "50-00-0(35~40%); 67-56-1(미기재%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
-            "raw_content": "1317-65-3(29~39%); 108-88-3(21~31%); 14807-96-6(8~18%); 616-38-6(1~10%); 85535-85-9(1~10%); 1317-80-2(1~10%); 6358-31-2(1~10%); 1330-20-7(1~10%); 22094-93-5(1~10%); 471-34-1(1~10%); 5567-15-7(1~10%)",
-            "measure": "기타광물성분진; 톨루엔; 활석(석면불포함); 기타광물성분진 / 이산화티타늄; 크실렌; 기타광물성분진",
-            "reg1": [
-                "Limestone[1317-65-3(29~39%)]",
-                "톨루엔[108-88-3(21~31%)]",
-                "소우프스톤[14807-96-6(8~18%)]",
-                "다이메틸 카르보네이트[616-38-6(1~10%)]",
-                "알케인, C14-7, 클로로[85535-85-9(1~10%)]",
-                "금홍석[1317-80-2(1~10%)]",
-                "C.I. 색소 황색 74[6358-31-2(1~10%)]",
-                "크실렌[1330-20-7(1~10%)]",
-                "C.I. 염료 황색 81(C.I. PIGMENT YELLOW 81)[22094-93-5(1~10%)]",
-                "탄산 칼슘[471-34-1(1~10%)]",
-                "C.I. 색소 황색 83(C.I. PIGMENT YELLOW 83)[5567-15-7(1~10%)]"
-            ],
-            "reg2": [
-                "Limestone(29~39%)",
-                "톨루엔(21~31%)",
-                "소우프스톤(8~18%)",
-                "금홍석(1~10%)",
-                "크실렌(1~10%)",
-                "탄산 칼슘(1~10%)"
-            ]
+            "product_name": "Formaldehyde solution, 36.5-38%",
+            "raw_content": "50-00-0(35~40%); 67-56-1(미기재%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "efa354221893da14a5d63de79697684c4141c721d72808556e48a2e86349104b": {
+        "f_hash": "efa354221893da14a5d63de79697684c4141c721d72808556e48a2e86349104b",
+        "product_name": "Giemsa's azur eosin methylene blue solution for microscopy",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "67-56-1(45~50%); 56-81-5(45~50%); 660-68-4(1%); 17372-87-1(1~16%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/05. Giemsa SDS.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.4.5.3",
+        "v2.0_Clean": {
+            "product_name": "Giemsa's azur eosin methylene blue solution for microscopy",
+            "raw_content": "67-56-1(45~50%); 56-81-5(45~50%); 660-68-4(1%); 17372-87-1(1~16%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
         },
-        "components": [
-            {
-                "cas": "1317-65-3",
-                "name": "Limestone",
-                "content": "29~39%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "10",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "Limestone()[1317-65-3]"
-            },
-            {
-                "cas": "108-88-3",
-                "name": "톨루엔",
-                "content": "21~31%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "50",
-                    "twa_mg": "-",
-                    "stel_ppm": "150",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "톨루엔()[108-88-3]",
-                "selected_name": "톨루엔"
-            },
-            {
-                "cas": "14807-96-6",
-                "name": "활석",
-                "content": "8~18%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "0.1개/cm3",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "활석()[14807-96-6]",
-                "selected_name": "활석(석면불포함)",
-                "is_manual": true
-            },
-            {
-                "cas": "616-38-6",
-                "name": "다이메틸 카르보네이트",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "다이메틸 카르보네이트()[616-38-6]"
-            },
-            {
-                "cas": "85535-85-9",
-                "name": "알케인, C14-7, 클로로",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "알케인, C14-7, 클로로()[85535-85-9]"
-            },
-            {
-                "cas": "1317-80-2",
-                "name": "금홍석",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_managed": true,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "금홍석()[1317-80-2]"
-            },
-            {
-                "cas": "6358-31-2",
-                "name": "C.I. 색소 황색 74",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "C.I. 색소 황색 74()[6358-31-2]"
-            },
-            {
-                "cas": "1330-20-7",
-                "name": "크실렌",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "100",
-                    "twa_mg": "-",
-                    "stel_ppm": "150",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_managed": true,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "크실렌()[1330-20-7]"
-            },
-            {
-                "cas": "22094-93-5",
-                "name": "C.I. 염료 황색 81(C.I. PIGMENT YELLOW 81)",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "C.I. 염료 황색 81(C.I. PIGMENT YELLOW 81)()[22094-93-5]"
-            },
-            {
-                "cas": "471-34-1",
-                "name": "탄산 칼슘",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "10",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": true,
-                    "is_special": true,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "탄산 칼슘()[471-34-1]"
-            },
-            {
-                "cas": "5567-15-7",
-                "name": "C.I. 색소 황색 83(C.I. PIGMENT YELLOW 83)",
-                "content": "1~10%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "C.I. 색소 황색 83(C.I. PIGMENT YELLOW 83)()[5567-15-7]"
-            }
-        ],
-        "manual_data": {
-            "selected_code_14807-96-6": "2D-11-031",
-            "is_manual": true,
-            "is_manual_14807-96-6": true,
-            "measure": "기타광물성분진; 톨루엔; 활석(석면불포함); 기타광물성분진 / 이산화티타늄; 크실렌; 기타광물성분진",
-            "reg1": "Limestone[1317-65-3(29~39%)];\n톨루엔[108-88-3(21~31%)];\n소우프스톤[14807-96-6(8~18%)];\n다이메틸 카르보네이트[616-38-6(1~10%)];\n알케인, C14-7, 클로로[85535-85-9(1~10%)];\n금홍석[1317-80-2(1~10%)];\nC.I. 색소 황색 74[6358-31-2(1~10%)];\n크실렌[1330-20-7(1~10%)];\nC.I. 염료 황색 81(C.I. PIGMENT YELLOW 81)[22094-93-5(1~10%)];\n탄산 칼슘[471-34-1(1~10%)];\nC.I. 색소 황색 83(C.I. PIGMENT YELLOW 83)[5567-15-7(1~10%)]",
-            "reg2": "Limestone(29~39%);\n톨루엔(21~31%);\n소우프스톤(8~18%);\n금홍석(1~10%);\n크실렌(1~10%);\n탄산 칼슘(1~10%)"
+        "v3.0_Final": {
+            "product_name": "Giemsa's azur eosin methylene blue solution for microscopy",
+            "raw_content": "67-56-1(45~50%); 56-81-5(45~50%); 660-68-4(1%); 17372-87-1(1~16%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "85dcdb840a9a2e3a8a88cf8fb05fd3e53c55a54b2fad57a4b630ccad1050b2eb": {
+        "f_hash": "85dcdb840a9a2e3a8a88cf8fb05fd3e53c55a54b2fad57a4b630ccad1050b2eb",
+        "product_name": "페놀",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "108-95-2(미기재%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/11. 페놀(PHENOL).pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.4.5.3",
+        "v2.0_Clean": {
+            "product_name": "페놀",
+            "raw_content": "108-95-2(미기재%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "페놀",
+            "raw_content": "108-95-2(미기재%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
         }
     }
 }

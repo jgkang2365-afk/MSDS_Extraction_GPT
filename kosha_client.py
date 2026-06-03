@@ -104,6 +104,7 @@ class KoshaAPIClient:
 
         # 3. 법적 규제 (chemdetail15에서 산안법/화관법 통합 조회 시도)
         osh_info = {k: False for k in ["is_measured", "is_special", "is_managed", "is_special_mgmt", "is_permit", "is_prohibited"]}
+        osh_info["raw_text"] = ""
         cca_info = {k: False for k in ["acute", "chronic", "ecology", "accident", "prohibited", "restricted"]}
         
         # 산안법은 가로형/세로형 공통으로 필요하므로 항상 조회
@@ -115,7 +116,8 @@ class KoshaAPIClient:
                 "is_managed": "관리대상유해물질" in osh_text,
                 "is_special_mgmt": "특별관리물질" in osh_text,
                 "is_permit": "허가대상물질" in osh_text,
-                "is_prohibited": "금지물질" in osh_text
+                "is_prohibited": "금지물질" in osh_text,
+                "raw_text": osh_text
             }
 
         # 화관법은 full=True일 때만 조회

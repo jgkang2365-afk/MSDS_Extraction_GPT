@@ -1,6 +1,28 @@
 # Task Progress: V15.8.7 Final Evolution & GUI Persistence
 
-- [x] 환경설정 및 엑셀 반영 정상 동작 수동 검증
-- [x] [Phase 2] Omission Detector Integration & Log Strengthening
-- [x] [Phase 3] GUI Persistence & Session Recovery Implementation
-- [x] [Phase 4] Final Verification & Syntax Check
+- [x] [Step 1] K-308 2차 결과에 철 성분 반영 (smu_gui.py의 regenerate_validation_results 수정)
+- [x] [Step 2] 정리/교정기 내 용접 철 성분 누락 자동 감지 및 범용 동적 주입 로직 구현 (smu_gui.py의 clean_substances_excel 수정)
+- [x] [Step 3] DNA 버전 V24.4.5.7 주석 업데이트 및 GUI 실행/교정 실테스트 검증
+- [x] [Step 4] 임시 테스트 파일 정리
+- [x] **[Task 3] 물리적 행 분리 및 물질명 내 영문 삭제 & '규제 접두사 측정대상 한정' 집행**
+  - [x] 테이블 정렬 기능(`setSortingEnabled`) 비활성화(QTableWidget 레이아웃 붕괴 방지)
+  - [x] `add_result_to_table` 개편: 성분 개수만큼 물리적 독립 행 분리 생성 및 `setSpan` 셀 병합
+  - [x] `update_validation_row` 개편: 각 성분의 독립 행에 유효성 데이터 1:1 매핑 기입
+  - [x] 코샤/마스터 물질명 내 영문 알파벳 및 영문 괄호 전량 삭제 헬퍼 함수 구현 및 적용
+  - [x] 접두사(`[특별]`, `[특검]`, `[허가]`)를 오직 4번 열(측정대상)에만 한정 결합 및 타 열 부착 금지
+  - [x] 규제 비대상 성분 행의 4번/5번 열을 깨끗한 빈칸(`""`)으로 두어 수평선 수평 지향성 유지
+- [x] **[Task 4] 직접 타이핑 수정 신호 차단 무한 루프 차단 및 우클릭 원복**
+  - [x] `on_table_item_changed` 슬롯 수정: `blockSignals(True)` 선제 차단 및 값 갱신/락 주입 후 `blockSignals(False)` 복구
+  - [x] 테이블 마우스 우클릭 컨텍스트 메뉴 개설 및 `[수동 수정 취소 및 기계 원본 복원]` 액션 구현
+  - [x] 우클릭 복원 시 `v2.0_Clean` 캐시 원본 스냅샷 복원 및 `is_manual = False`로 리셋
+- [x] **[Task 5] 후단 엑셀 저장 시 정밀 단어 경계 중복 제거 및 공백 기각 공정 (용접 이원화 최종본)**
+  - [x] `perform_standard_save` 엑셀 저장 시 측정대상 공백 행 기각(탈락) 및 위로 밀착 압축 적재
+  - [x] 토큰 단위 Exact Token Match(100% 완전 일치) 방식의 중복 제거 구현 (화학식 쉼표 보호)
+  - [x] 엑셀 최종 기록 전 마스터 DB 고유 정렬코드 순서에 의한 레이아웃 재정렬 교정
+  - [x] 용접봉 독립 처리 (이원 분기 판정 회로):
+    - [x] ① CR-13 단독 루트: 3종 고정 규격 성분(철, 망간, 이산화티타늄) 강제 기입 및 일반 정비 스킵
+    - [x] ② 일반 용접 공정 루트: 공정/용도 스캔 후 '용접' 키워드 포착 시 I열(비고) 및 J열(MSDS) 전체에서 분진류 성분을 완전 삭제(화이트 전체 파쇄 대안 B)하고 `용접흄`, `산화철(분진, 흄)` 강제 조립 추가
+- [x] **[검증 및 사후 관리]**
+  - [x] 파이썬 컴파일 자가 진단 및 검증 성공
+  - [x] 단위 테스트(`verify_regression.py` 등) 실행 통과 확인
+  - [x] 실 구동 환경에서 엑셀 정리 교정 후 정상 보정 여부 최종 검증

@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QScrollArea, QMessageBox, QComboBox, QProgressBar, QFrame,
     QSplitter, QTabWidget, QTextEdit, QStyledItemDelegate, QStyle,
     QStackedWidget, QToolButton, QSizePolicy, QMenu, QDialog,
-    QButtonGroup, QRadioButton, QAbstractItemView
+    QButtonGroup, QRadioButton, QAbstractItemView, QCheckBox
 )
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
@@ -42,6 +42,16 @@ def clean_english_parentheses(text):
     if not text:
         return ""
     return re.sub(r'\s*\([a-zA-Z\s,]+\)', '', text).strip()
+
+def clean_chemical_name_korean(name):
+    """성분명 보수적 정제: 한글명(영문명) 꼬리만 자르고 내부 공백은 보존"""
+    if not name: return ""
+    name = str(name).strip()
+    match = re.match(r'^([가-힣\s\d\w\-\,\.\/]+)\s*\([A-Za-z\s\d,]+\)$', name)
+    if match:
+        return match.group(1).strip()
+    return name.strip()
+
 
 def process_special_patterns(text):
     """세미콜론 임시 치환 헬퍼"""
@@ -166,7 +176,7 @@ def resolve_substance_variant(master_db, cas_no, substance_name, process_name=""
 
 # [Part 1.5] 세부 성상 선택 팝업 다이얼로그 (1:N 매칭 제어용)
 class SubstanceSelectDialog(QDialog):
-    def __init__(self, title, name, cas, content, candidates, parent=None):
+    def __init__(self, title, name, cas, content, candidates, saved_codes=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -180,10 +190,66 @@ class SubstanceSelectDialog(QDialog):
         layout.setSpacing(12)
         
         # 상세 안내 정보 라벨
-        info_text = f"성분명: {name}\nCAS 번호: {cas}\n함유량: {content if content else '미기재%'}\n\n아래의 상세 성상 목록 중 수집 대상 물질을 선택해 주세요:"
+        info_text = f"성분명: {name}\nCAS 번호: {cas}\n함유량: {content if content else '미기재%'}\n\n아래의 상세 성상 목록 중 수집 대상 물질을 선택해 주세요 (복수 선택 가능):"
         lbl_info = QLabel(info_text)
         lbl_info.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 10pt; font-weight: bold; color: #222222; line-height: 140%;")
         layout.addWidget(lbl_info)
+        
+        # 💡 [실무 가이드라인 팁 메인 배너] 동적 구성
+        guide_tips = []
+        lower_name = name.lower()
+        if "chrome" in lower_name or "크롬" in name or cas == "7440-47-3" or cas == "1308-38-9":
+            guide_tips.append("★ 크롬 성상 분기 팁: 용접봉/도료 가공 등 용접 공정 유래 시 '3가크롬' 또는 '크롬광 가공'을 검토하십시오. 노출기준이 가장 엄격한 것은 '6가크롬'(0.05 mg/m³) 입니다.")
+            guide_tips.append("★ 산화 간섭 주의: 3가 크롬이 산화되면서 6가 크롬으로 변환될 수 있으므로, 실무 판단에 따라 3가 크롬과 6가 크롬을 복수 선택하십시오.")
+        elif "nickel" in lower_name or "니켈" in name or cas == "7440-02-0":
+            guide_tips.append("★ 니켈 성상 분기 팁: 일반 금속 가공 시 '니켈(불용성합금)'을, 도금 공정 유래 시 '니켈(수용성화합물)'을 우선 검토하십시오.")
+        elif "silica" in lower_name or "실리카" in name or "규산" in name or cas in ["7631-86-9", "14808-60-7", "1317-65-3", "471-34-1"]:
+            guide_tips.append("★ 분진/실리카 분기 팁: 천연 광물 분진인 경우 '결정형 유리규산' 또는 '기타광물성분진'을, 실리카 겔 등 합성 실리카인 경우 '무정형 실리카'를 선택하십시오.")
+        
+        # 후보군 중 노출기준이 가장 엄격한(가장 낮은 TWA) 후보 찾기
+        strict_cand = None
+        min_twa = float('inf')
+        for cand in candidates:
+            twa_val = cand.get("노출기준(TWA)", "") or ""
+            nums = re.findall(r'[\d\.]+', twa_val)
+            if nums:
+                try:
+                    val = float(nums[0])
+                    if val < min_twa and val > 0:
+                        min_twa = val
+                        strict_cand = cand
+                except:
+                    pass
+        
+        if strict_cand:
+            guide_tips.append(f"⚖️ 법적 기준 분석: 현재 후보 중 가장 엄격한 기준을 가진 물질은 '{strict_cand.get('측정대상 물질명')}' (TWA: {strict_cand.get('노출기준(TWA)')}) 입니다.")
+        
+        if not guide_tips:
+            guide_tips.append("★ 실무 가이드: MSDS 원본의 구성성분 세부 명칭 및 실제 공정(용접, 분사, 유기용제 취급 등)에 부합하는 성상을 선택하십시오.")
+            
+        banner_frame = QFrame()
+        banner_frame.setStyleSheet("""
+            QFrame {
+                background-color: #f8f9fa;
+                border: 1px solid #dadce0;
+                border-radius: 6px;
+            }
+        """)
+        banner_layout = QVBoxLayout(banner_frame)
+        banner_layout.setContentsMargins(12, 12, 12, 12)
+        banner_layout.setSpacing(6)
+        
+        banner_title = QLabel("💡 실무 가이드라인 및 법적 기준 제안")
+        banner_title.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 10pt; font-weight: bold; color: #1a73e8;")
+        banner_layout.addWidget(banner_title)
+        
+        for tip in guide_tips:
+            tip_lbl = QLabel(tip)
+            tip_lbl.setWordWrap(True)
+            tip_lbl.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9pt; color: #3c4043; line-height: 140%;")
+            banner_layout.addWidget(tip_lbl)
+            
+        layout.addWidget(banner_frame)
         
         # 후보 목록 그룹박스
         group_box = QGroupBox("매칭 후보 물질 목록")
@@ -192,22 +258,63 @@ class SubstanceSelectDialog(QDialog):
         group_layout.setContentsMargins(10, 15, 10, 10)
         group_layout.setSpacing(8)
         
-        self.group = QButtonGroup(self)
-        self.radio_buttons = []
+        self.checkboxes = []
         
         for idx, cand in enumerate(candidates):
             m_name = cand.get("측정대상 물질명") or ""
             twa = cand.get("노출기준(TWA)", "") or "-"
             stel = cand.get("노출기준(STEL)", "") or "-"
-            display_text = f"{m_name} [TWA: {twa} / STEL: {stel}]"
+            code = cand.get("정렬코드")
             
-            radio = QRadioButton(display_text)
-            radio.setStyleSheet("QRadioButton { font-family: 'Malgun Gothic'; font-size: 9.5pt; padding: 2px; } QRadioButton::indicator { width: 16px; height: 16px; }")
-            if idx == 0:
-                radio.setChecked(True)
-            group_layout.addWidget(radio)
-            self.group.addButton(radio, idx)
-            self.radio_buttons.append((radio, cand.get("정렬코드"), cand))
+            # 법적 고시 상태 (특별관리, 허가대상 등)
+            is_special_mgmt = cand.get("특별관리")
+            is_permit = cand.get("허가대상")
+            
+            law_badges = []
+            if is_special_mgmt:
+                law_badges.append("특별관리물질")
+            if is_permit:
+                law_badges.append("허가대상")
+            
+            law_str = f" [{', '.join(law_badges)}]" if law_badges else ""
+            
+            # 추천 마킹 추가
+            is_recommended = False
+            if strict_cand and code == strict_cand.get("정렬코드"):
+                is_recommended = True
+                
+            recommend_prefix = "★추천: " if is_recommended else ""
+            display_text = f"{recommend_prefix}{m_name} [TWA: {twa} / STEL: {stel}]{law_str}"
+            
+            cb = QCheckBox(display_text)
+            # 추천 항목의 경우 폰트 및 스타일링 강조
+            if is_recommended:
+                cb.setStyleSheet("""
+                    QCheckBox {
+                        font-family: 'Malgun Gothic';
+                        font-size: 9.5pt;
+                        font-weight: bold;
+                        color: #1a73e8;
+                        padding: 2px;
+                    }
+                    QCheckBox::indicator {
+                        width: 16px;
+                        height: 16px;
+                    }
+                """)
+            else:
+                cb.setStyleSheet("QCheckBox { font-family: 'Malgun Gothic'; font-size: 9.5pt; padding: 2px; } QCheckBox::indicator { width: 16px; height: 16px; }")
+                
+            # 복수 체크 복원
+            if saved_codes:
+                if str(code).strip() in saved_codes:
+                    cb.setChecked(True)
+            else:
+                if idx == 0:
+                    cb.setChecked(True)
+                    
+            group_layout.addWidget(cb)
+            self.checkboxes.append((cb, code, cand))
             
         group_box.setLayout(group_layout)
         layout.addWidget(group_box)
@@ -253,13 +360,16 @@ class SubstanceSelectDialog(QDialog):
         layout.addLayout(btn_layout)
         
         self.setLayout(layout)
-        self.setMinimumWidth(450)
+        self.setMinimumWidth(480)
         
     def get_selected_data(self):
-        idx = self.group.checkedId()
-        if idx != -1:
-            return self.radio_buttons[idx][1], self.radio_buttons[idx][2]
-        return None, None
+        selected_codes = []
+        selected_entries = []
+        for cb, code, cand in self.checkboxes:
+            if cb.isChecked():
+                selected_codes.append(code)
+                selected_entries.append(cand)
+        return selected_codes, selected_entries
 
 
 # [Part 1.6] 물질명 오타 교정 다이얼로그 (사용자 직접 편집 가능)
@@ -4315,6 +4425,42 @@ class SMUGUI(QMainWindow):
         watermark_layout.addWidget(self.lbl_watermark)
         self.lbl_watermark.show() # 초기 상태는 노출
 
+        # [UX 개선] 성상 미선택 요약 및 다음 이동 제어 바 배치
+        pending_layout = QHBoxLayout()
+        pending_layout.setContentsMargins(5, 5, 5, 5)
+        
+        self.lbl_pending_status = QLabel("✅ 모든 성상 선택 완료")
+        self.lbl_pending_status.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9.5pt; font-weight: bold; color: #28a745; margin-left: 5px;")
+        pending_layout.addWidget(self.lbl_pending_status)
+        
+        self.btn_next_pending = QPushButton("🔍 다음 성상 선택 (이동)")
+        self.btn_next_pending.setFixedWidth(180)
+        self.btn_next_pending.setFixedHeight(28)
+        self.btn_next_pending.setEnabled(False)
+        self.btn_next_pending.setStyleSheet("""
+            QPushButton {
+                background-color: #fff7e6;
+                color: #d97706;
+                border: 1px solid #f59e0b;
+                border-radius: 4px;
+                font-family: 'Malgun Gothic';
+                font-size: 9pt;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #ffeeba;
+            }
+            QPushButton:disabled {
+                background-color: #f5f5f5;
+                color: #c0c0c0;
+                border: 1px solid #d9d9d9;
+            }
+        """)
+        self.btn_next_pending.clicked.connect(self.focus_next_pending_substance)
+        pending_layout.addWidget(self.btn_next_pending)
+        pending_layout.addStretch()
+        
+        self.left_vbox.addLayout(pending_layout)
         self.left_vbox.addWidget(self.table)
         
         self.content_splitter.addWidget(self.left_container)
@@ -4609,54 +4755,11 @@ class SMUGUI(QMainWindow):
             fn = os.path.basename(path)
             f_hash = self.core.calculate_file_hash(path)
             
-            # 캐시가 있으면 캐시 데이터 사용, 없으면 기본 정보만 사용
             if f_hash and f_hash in self.cache:
-                data = self.cache[f_hash].copy()
-                data["filename"] = fn
-                data["full_path"] = path
-                data["f_hash"] = f_hash
-                self.add_result_to_table(data)
-                
-                # 검증 결과도 있으면 반영
-                if "manual_data" in data or "reliability" in data:
-                    row = self.table.rowCount() - 1
-                    # add_result_to_table이 정렬을 할 수 있으므로 행을 다시 찾아야 함
-                    for r in range(self.table.rowCount()):
-                        if self.table.item(r, 8) and self.table.item(r, 8).text() == f_hash:
-                            row = r
-                            break
-                    
-                    # 수동 데이터나 검증 결과가 있으면 update_validation_row 호출
-                    v_data = data.get("manual_data", {})
-                    raw_content_val = v_data.get("raw_content", data.get("raw_content", ""))
-                    if isinstance(raw_content_val, list):
-                        raw_content_list = raw_content_val
-                    else:
-                        raw_content_list = raw_content_val.split("; ") if raw_content_val else []
-                        
-                    reg1_val = v_data.get("reg1", "")
-                    if isinstance(reg1_val, list):
-                        reg1_list = reg1_val
-                    else:
-                        reg1_list = reg1_val.split(";\n") if reg1_val else []
-                        
-                    reg2_val = v_data.get("reg2", "")
-                    if isinstance(reg2_val, list):
-                        reg2_list = reg2_val
-                    else:
-                        reg2_list = reg2_val.split(";\n") if reg2_val else []
-                        
-                    self.update_validation_row(
-                        row,
-                        raw_content_list,
-                        reg1_list,
-                        reg2_list,
-                        v_data.get("measure", ""),
-                        status=data.get("status", "캐시 로드됨")
-                    )
+                self.render_file_rows(f_hash)
             else:
-                # 캐시 없는 파일은 기본 행만 추가
-                data = {
+                # 캐시 없는 파일은 기본 정보만 캐시에 생성해두고 렌더링
+                self.cache[f_hash] = {
                     "filename": fn,
                     "f_hash": f_hash,
                     "product_name": "미분석",
@@ -4666,11 +4769,12 @@ class SMUGUI(QMainWindow):
                     "full_path": path,
                     "status": "대기 중"
                 }
-                self.add_result_to_table(data)
+                self.render_file_rows(f_hash)
                 
         self.table.blockSignals(False)
         self.update_file_count_display()
         self.log("✅ 세션 복구가 완료되었습니다.")
+
 
     def load_cache(self):
         """[NEW] smu_cache.json에서 영구 캐시 로드"""
@@ -5239,6 +5343,128 @@ class SMUGUI(QMainWindow):
         self.worker.finished_signal.connect(self.on_extraction_finished)
         self.worker.start()
 
+    def add_result_to_table(self, data):
+        """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""
+        # [NEW] 워터마크 즉시 숨김
+        if hasattr(self, 'lbl_watermark'):
+            self.lbl_watermark.hide()
+        try:
+            f_hash = data.get("f_hash")
+            # 🚨 [V17.3.3.3] 기존 행 업데이트 로직 (Selective Extraction 대응)
+            existing_row = -1
+            if self.table.rowCount() > 0:
+                for r in range(self.table.rowCount()):
+                    hash_item = self.table.item(r, 8)
+                    if hash_item and hash_item.text() == f_hash:
+                        existing_row = r
+                        break
+            
+            self.table.blockSignals(True)
+            self.table.setSortingEnabled(False)
+            
+            if existing_row >= 0:
+                row = existing_row
+                # 기존 결과 객체 업데이트 (메모리 동기화)
+                for i, res in enumerate(self.results):
+                    if res.get("f_hash") == f_hash:
+                        self.results[i] = data
+                        break
+            else:
+                self.results.append(data)
+                row = self.table.rowCount()
+                self.table.insertRow(row)
+            
+            # 배경색 결정 (신호등 상태 기준)
+            traffic_val = data.get("신호등", "🔴")
+            if str(traffic_val).lower() == "green": traffic_val = "🟢"
+            elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
+            elif str(traffic_val).lower() == "red": traffic_val = "🔴"
+            emoji = traffic_val[0] if traffic_val else "🔴"
+            
+            bg_color = None
+            if emoji == "🔴": bg_color = QColor("#ffebeb")
+            elif emoji == "🟡": bg_color = QColor("#fff9db")
+            elif emoji == "🟢": bg_color = QColor("#e1f7d5")
+            
+            # [수정] 행 번호보다는 데이터의 순수 순번을 위해 row+1 사용 (정렬 후에도 고유하도록)
+            combined_idx = f"{emoji} {row + 1}"
+            
+            item_seq = QTableWidgetItem(combined_idx)
+            item_seq.setTextAlignment(Qt.AlignCenter)
+            if bg_color: item_seq.setBackground(bg_color)
+            self.table.setItem(row, 0, item_seq)
+
+            # 2. No (파일명 앞 숫자 추출 및 3자리 제로 패딩 강제 - 정렬 무결성)
+            fn = data.get("filename", "")
+            match_no = re.match(r"^(\d+)", fn)
+            if match_no:
+                no_val = f"{int(match_no.group(1)):03d}"
+            else:
+                no_val = "999"
+            
+            item_no = QTableWidgetItem(no_val)
+            item_no.setTextAlignment(Qt.AlignCenter)
+            if bg_color: item_no.setBackground(bg_color)
+            self.table.setItem(row, 1, item_no)
+
+            # [방탄] 제품명 NoneType 및 에러 방어 로직
+            raw_prod = data.get("product_name")
+            if not raw_prod or str(raw_prod).lower() == "none":
+                raw_prod = f"미추출({data.get('filename')})"
+                
+            item_prod = QTableWidgetItem(str(raw_prod))
+            if bg_color: item_prod.setBackground(bg_color)
+            self.table.setItem(row, 2, item_prod)
+
+            # [최종 확정] CAS 원본 열은 PDF 추출 원문과 함유량을 100% 순수 유지 (표준명 병기 폐기)
+            raw = str(data.get("raw_content", ""))
+            clean_cas_parts = [p.strip() for p in str(raw).split(";") if p.strip()]
+            
+            item_cas = QTableWidgetItem(";\n".join(clean_cas_parts))
+            if bg_color: item_cas.setBackground(bg_color)
+            self.table.setItem(row, 3, item_cas)
+
+            # 5. [수정] 공란이었던 측정대상(4번 열)에 엔진이 강제로 보낸 데이터가 있다면 삽입!
+            measure_val = data.get("measure_target", "")
+            item_measure = QTableWidgetItem(str(measure_val))
+            if bg_color: item_measure.setBackground(bg_color)
+            self.table.setItem(row, 4, item_measure)
+
+            # 6-7. 2차/1차 결과 열(5, 6번 열)만 2단계를 위해 공란으로 비워둠
+            for c_idx in range(5, 7):
+                item_blank = QTableWidgetItem("")
+                if bg_color: item_blank.setBackground(bg_color)
+                self.table.setItem(row, c_idx, item_blank)
+            
+            # 8. 파일명 (숨김)
+            item_fn = QTableWidgetItem(fn)
+            if bg_color: item_fn.setBackground(bg_color)
+            self.table.setItem(row, COL_IDX_FILENAME, item_fn)
+
+            # 9. 해시 (숨김) - [NEW] 캐시 업데이트용
+            f_hash = data.get("f_hash", "")
+            item_hash = QTableWidgetItem(f_hash)
+            self.table.setItem(row, COL_IDX_HASH, item_hash)
+
+            # 10. [V7.0] Full Path (숨김 - 미리보기 브릿지용)
+            item_path = QTableWidgetItem(data.get("full_path", ""))
+            self.table.setItem(row, COL_IDX_FILEPATH, item_path)
+
+            # 11. [V7.0] Page (숨김 - 미리보기 브릿지용)
+            item_page = QTableWidgetItem(str(data.get("page", 1)))
+            self.table.setItem(row, COL_IDX_PAGE, item_page)
+
+            # [핵심] No(1번 열) 기준으로 오름차순 정렬 활성
+            self.table.setSortingEnabled(True)
+            self.table.sortItems(1, Qt.AscendingOrder)
+            
+            # 행 높이 재조정
+            self._safe_resize_rows()
+            self.table.blockSignals(False) # [NEW] 시그널 재개
+        except Exception as e:
+            self.table.blockSignals(False)
+            self.log(f"[에러] 테이블 추가 실패: {e}")
+
     def run_validation(self):
         rowCount = self.table.rowCount()
         if rowCount == 0:
@@ -5247,15 +5473,39 @@ class SMUGUI(QMainWindow):
 
         self.table.blockSignals(True) # [NEW] 시그널 일시 차단
 
-        # 테이블에서 현재 CAS/함유량 데이터 읽기
+        # 테이블에서 현재 CAS/함유량 데이터 읽기 (f_hash 기준으로 중복 제거)
+        seen_hashes = set()
         table_data = []
         for r in range(rowCount):
-            # [V7.9] 파일 해시(8번 열)를 고유 키로 추출
-            f_hash = self.table.item(r, 8).text() if self.table.item(r, 8) else ""
-            fn = self.table.item(r, 7).text() if self.table.item(r, 7) else ""
-            prod = self.table.item(r, 2).text()
-            cas_content = self.table.item(r, 3).text()
-            table_data.append({"row_idx": r, "f_hash": f_hash, "filename": fn, "prod": prod, "cas_content": cas_content})
+            f_hash = self.table.item(r, 8).text().strip() if self.table.item(r, 8) else ""
+            if not f_hash or f_hash in seen_hashes:
+                continue
+            seen_hashes.add(f_hash)
+            
+            fn = self.table.item(r, 7).text().strip() if self.table.item(r, 7) else ""
+            prod = self.table.item(r, 2).text().strip() if self.table.item(r, 2) else ""
+            
+            # CAS 원본(3번 열)은 성분별로 쪼개져 있는 상태이므로 캐시의 raw_content를 최우선으로 읽습니다.
+            cas_content = self.cache.get(f_hash, {}).get("raw_content", "")
+            if not cas_content:
+                # 캐시에 없을 경우 동일 f_hash를 가진 행들의 3번 열을 병합
+                cas_parts = []
+                for sub_r in range(rowCount):
+                    sub_hash = self.table.item(sub_r, 8).text().strip() if self.table.item(sub_r, 8) else ""
+                    if sub_hash == f_hash:
+                        c_val = self.table.item(sub_r, 3).text().strip() if self.table.item(sub_r, 3) else ""
+                        if c_val:
+                            cas_parts.append(c_val)
+                cas_content = "; ".join([p.replace('\n', '').strip() for p in cas_parts if p.strip()])
+                
+            table_data.append({
+                "row_idx": r,
+                "f_hash": f_hash,
+                "filename": fn,
+                "prod": prod,
+                "cas_content": cas_content
+            })
+
 
         self.progress.setValue(0)
         self.btn_stop.setEnabled(True)
@@ -5327,19 +5577,39 @@ class SMUGUI(QMainWindow):
         if found_row != -1:
             # 캐시 및 결과 메모리에 components 반영
             if target_hash and target_hash in self.cache:
+                self.cache[target_hash]["status"] = status
+                self.cache[target_hash]["product_name"] = res_data.get("product_name", self.cache[target_hash].get("product_name"))
+                
+                # 신호등 결정
+                traffic_col = 0
+                curr_traffic_text = self.table.item(found_row, traffic_col).text() if self.table.item(found_row, traffic_col) else ""
+                match = re.match(r'^([🔴🟡🟢⚪])\s*(.*)$', curr_traffic_text)
+                existing_emoji = match.group(1) if match else "⚪"
+                
+                emoji = existing_emoji
+                if "검증 완료" in status:
+                    if existing_emoji in ["🔴", "🟡"]:
+                        emoji = existing_emoji
+                    else:
+                        emoji = "🟢"
+                self.cache[target_hash]["신호등"] = emoji
+                
                 if "components" in res_data:
                     self.cache[target_hash]["components"] = res_data["components"]
-                    self.save_cache()
+                    
+                    # 3중 스냅샷 캐시 레이어 갱신
+                    self.cache[target_hash]["v3.0_Final"] = {
+                        "product_name": res_data.get("product_name", ""),
+                        "raw_content": res_data.get("raw_content", ""),
+                        "measure": v.get("work_subjects", ""),
+                        "reg1": v.get("res_1st", []),
+                        "reg2": v.get("res_2nd", [])
+                    }
+                self.save_cache()
 
-            self.update_validation_row(
-                found_row, 
-                v.get("cas_with_content", []), 
-                v.get("res_1st", []), 
-                v.get("res_2nd", []),
-                v.get("work_subjects", ""),
-                status=status, # [NEW] 상태값 전달
-                components=res_data.get("components")
-            )
+            # 테이블 전체 리프레시 실행 (구조적 충돌 원천 차단)
+            self.refresh_table()
+
 
     def on_validation_finished(self):
         """2단계 API 검증 완료 처리"""
@@ -5574,137 +5844,347 @@ class SMUGUI(QMainWindow):
     # [V15.5.4] GUI-side character substitution logic (assassin) removed to preserve data integrity.
     # Raw data from the engine is now displayed As-is.
 
-    def add_result_to_table(self, data):
-        """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""
-        # [NEW] 워터마크 즉시 숨김
-        if hasattr(self, 'lbl_watermark'):
-            self.lbl_watermark.hide()
-        try:
-            f_hash = data.get("f_hash")
-            # 🚨 [V17.3.3.3] 기존 행 업데이트 로직 (Selective Extraction 대응)
-            existing_row = -1
-            if self.table.rowCount() > 0:
-                for r in range(self.table.rowCount()):
-                    hash_item = self.table.item(r, 8)
-                    if hash_item and hash_item.text() == f_hash:
-                        existing_row = r
-                        break
-            
-            self.table.blockSignals(True)
-            self.table.setSortingEnabled(False)
-            
-            if existing_row >= 0:
-                row = existing_row
-                # 기존 결과 객체 업데이트 (메모리 동기화)
-                for i, res in enumerate(self.results):
-                    if res.get("f_hash") == f_hash:
-                        self.results[i] = data
-                        break
-            else:
-                self.results.append(data)
-                row = self.table.rowCount()
-                self.table.insertRow(row)
-            
-            # 1. 순번 (신호등 이모지 + 숫자 통합)
-            traffic_val = data.get("신호등", "🔴")
-            if not traffic_val or traffic_val == "N/A":
-                raw_rel = data.get("reliability", "")
-                if "[AUTO-PASS]" in raw_rel: traffic_val = "🟢"
-                elif "[AI-FIXED]" in raw_rel: traffic_val = "🟡"
-                else: traffic_val = "🔴"
-            
-            # [V17.3.3.2] 텍스트 형 신호등(green/yellow) 수신 시 이모지로 변환
-            if str(traffic_val).lower() == "green": traffic_val = "🟢"
-            elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
-            elif str(traffic_val).lower() == "red": traffic_val = "🔴"
-            
-            traffic_emoji = traffic_val[0] if traffic_val else "🔴"
-            
-            # [V6.96] 시각적 강조 로직: 녹색(🟢)은 생략, 황색(🟡)/적색(🔴)만 강조
-            bg_color = None
-            if traffic_emoji == "🔴":
-                bg_color = QColor("#ffebeb") # 연한 빨강
-            elif traffic_emoji == "🟡":
-                bg_color = QColor("#fff9db") # 연한 노랑
-            
-            # [수정] 행 번호보다는 데이터의 순수 순번을 위해 row+1 사용 (정렬 후에도 고유하도록)
-            combined_idx = f"{traffic_emoji} {row + 1}"
-            
-            item_seq = QTableWidgetItem(combined_idx)
-            item_seq.setTextAlignment(Qt.AlignCenter)
-            if bg_color: item_seq.setBackground(bg_color)
-            self.table.setItem(row, 0, item_seq)
-
-            # 2. No (파일명 앞 숫자 추출 및 3자리 제로 패딩 강제 - 정렬 무결성)
-            fn = data.get("filename", "")
-            match_no = re.match(r"^(\d+)", fn)
-            if match_no:
-                no_val = f"{int(match_no.group(1)):03d}"
-            else:
-                no_val = "999"
-            
-            item_no = QTableWidgetItem(no_val)
-            item_no.setTextAlignment(Qt.AlignCenter)
-            if bg_color: item_no.setBackground(bg_color)
-            self.table.setItem(row, 1, item_no)
-
-            # [방탄] 제품명 NoneType 및 에러 방어 로직
-            raw_prod = data.get("product_name")
-            if not raw_prod or str(raw_prod).lower() == "none":
-                raw_prod = f"미추출({data.get('filename')})"
+    def refresh_table(self):
+        """테이블 전체를 리프레시하여 setSpan 수직 병합 무결성을 보장"""
+        self.table.blockSignals(True)
+        self.table.setRowCount(0)
+        self.table.setSortingEnabled(False)
+        
+        # 로딩 시점에 내부 메모리 레벨에서 미리 완벽히 선정렬을 완료하여 화면에 청정 정착시킵니다.
+        # 파일 목록 순서대로 렌더링을 차례대로 수행
+        for path in self.pdf_paths:
+            f_hash = self.core.calculate_file_hash(path)
+            if f_hash:
+                self.render_file_rows(f_hash)
                 
-            item_prod = QTableWidgetItem(str(raw_prod))
-            if bg_color: item_prod.setBackground(bg_color)
-            self.table.setItem(row, 2, item_prod)
+        self.table.blockSignals(False)
+        self.update_file_count_display()
+        self.update_pending_count_display()
 
-            # [최종 확정] CAS 원본 열은 PDF 추출 원문과 함유량을 100% 순수 유지 (표준명 병기 폐기)
-            raw = str(data.get("raw_content", ""))
-            clean_cas_parts = [p.strip() for p in str(raw).split(";") if p.strip()]
+    def render_file_rows(self, f_hash):
+        """방안 A: 1파일 1행 구조를 성분별 독립 행 구조로 개편하여 테이블에 추가"""
+        data = self.cache.get(f_hash, {})
+        prod_name = data.get("product_name", "미분석")
+        components = data.get("components", [])
+        status = data.get("status", "대기 중")
+        fn = data.get("filename", "")
+        if not fn:
+            # 캐시에 파일명이 없으면 pdf_paths에서 탐색
+            for path in self.pdf_paths:
+                if self.core.calculate_file_hash(path) == f_hash:
+                    fn = os.path.basename(path)
+                    break
+        
+        # 1) CR-13 및 K-308 보정 감지
+        norm_pn = re.sub(r'[\s\-_()]', '', prod_name).upper() if prod_name else ""
+        is_cr13 = False
+        if prod_name:
+            if "CR13" in norm_pn and ("용접" in norm_pn or "WELDING" in norm_pn):
+                is_cr13 = True
+        else:
+            cas_set = {c.get("cas", "") for c in components if c.get("cas")}
+            if "7439-89-6" in cas_set and "7439-96-5" in cas_set and "13463-67-7" in cas_set and len(cas_set) == 3:
+                is_cr13 = True
+                
+        is_prod_k308 = False
+        if prod_name:
+            if "K308" in norm_pn or "K-308" in norm_pn:
+                is_prod_k308 = True
+                
+        # 2) render_components 구축
+        if is_cr13:
+            # 철 및 용접흄 잔량 표기 단위를 Rem.% 완성형으로 강제 교정 (1번 요청 반영)
+            render_components = [
+                {
+                    "cas": "7439-89-6",
+                    "name": "철",
+                    "content": "Rem.%",
+                    "selected_name": "",
+                    "osh": {"is_measured": True, "is_special": False, "is_special_mgmt": False, "is_permit": False}
+                },
+                {
+                    "cas": "7439-96-5",
+                    "name": "망간 및 그 무기화합물",
+                    "content": "1~5%",
+                    "selected_name": "",
+                    "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
+                },
+                {
+                    "cas": "13463-67-7",
+                    "name": "이산화티타늄",
+                    "content": "10~15%",
+                    "selected_name": "",
+                    "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
+                }
+            ]
+        else:
+            is_welding = ("용접" in prod_name) or ("welding" in prod_name.lower()) if prod_name else False
+            new_comps = []
             
-            item_cas = QTableWidgetItem(";\n".join(clean_cas_parts))
-            if bg_color: item_cas.setBackground(bg_color)
-            self.table.setItem(row, 3, item_cas)
-
-            # 5. [수정] 공란이었던 측정대상(4번 열)에 엔진이 강제로 보낸 데이터가 있다면 삽입!
-            measure_val = data.get("measure_target", "")
-            item_measure = QTableWidgetItem(str(measure_val))
-            if bg_color: item_measure.setBackground(bg_color)
-            self.table.setItem(row, 4, item_measure)
-
-            # 6-7. 2차/1차 결과 열(5, 6번 열)만 2단계를 위해 공란으로 비워둠
-            for c_idx in range(5, 7):
-                item_blank = QTableWidgetItem("")
-                if bg_color: item_blank.setBackground(bg_color)
-                self.table.setItem(row, c_idx, item_blank)
+            # 🚨 [V24.4.5.0] 용접 공정이면 기존 광물성 분진 차단
+            dust_keywords = ["분진", "규산", "운모", "석회석", "탄산칼슘", "실리카", "규석", "활석", "소우프스톤", "장석", "펠드스파", "feldspar", "limestone"]
             
-            # 8. 파일명 (숨김)
-            item_fn = QTableWidgetItem(fn)
-            if bg_color: item_fn.setBackground(bg_color)
-            self.table.setItem(row, COL_IDX_FILENAME, item_fn)
-
-            # 9. 해시 (숨김) - [NEW] 캐시 업데이트용
-            f_hash = data.get("f_hash", "")
-            item_hash = QTableWidgetItem(f_hash)
-            self.table.setItem(row, COL_IDX_HASH, item_hash)
-
-            # 10. [V7.0] Full Path (숨김 - 미리보기 브릿지용)
-            item_path = QTableWidgetItem(data.get("full_path", ""))
-            self.table.setItem(row, COL_IDX_FILEPATH, item_path)
-
-            # 11. [V7.0] Page (숨김 - 미리보기 브릿지용)
-            item_page = QTableWidgetItem(str(data.get("page", 1)))
-            self.table.setItem(row, COL_IDX_PAGE, item_page)
-
-            # [핵심] No(1번 열) 기준으로 오름차순 정렬 활성
-            self.table.setSortingEnabled(True)
-            self.table.sortItems(1, Qt.AscendingOrder)
+            for c in components:
+                cas_val = c.get("cas", "")
+                c_name = c.get("name", "")
+                
+                # 철 -> 산화철로 치환
+                if is_welding and (cas_val == "7439-89-6" or c_name == "철"):
+                    c_copy = c.copy()
+                    c_copy["name"] = "산화철(분진, 흄)"
+                    c_copy["cas"] = "1309-37-1"
+                    c_copy["osh"] = {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
+                    new_comps.append(c_copy)
+                    continue
+                
+                is_dust = False
+                if is_welding:
+                    if any(k in c_name.lower() for k in dust_keywords) or cas_val in ["1317-65-3", "471-34-1", "14807-96-6", "68476-25-5"]:
+                        is_dust = True
+                
+                if not is_dust:
+                    new_comps.append(c)
             
-            # 행 높이 재조정
-            self._safe_resize_rows()
-            self.table.blockSignals(False) # [NEW] 시그널 재개
-        except Exception as e:
-            self.table.blockSignals(False)
-            self.log(f"[에러] 테이블 추가 실패: {e}")
+            if is_welding:
+                has_welding_fume = any(c.get("cas") == "용접흄" or c.get("name") == "용접흄" for c in new_comps)
+                has_iron_oxide = any(c.get("cas") == "1309-37-1" or "산화철" in c.get("name", "") for c in new_comps)
+                
+                if not has_welding_fume:
+                    new_comps.append({
+                        "cas": "용접흄",
+                        "name": "용접흄",
+                        "content": "Rem.%",
+                        "selected_name": "",
+                        "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
+                    })
+                if not has_iron_oxide:
+                    new_comps.append({
+                        "cas": "1309-37-1",
+                        "name": "산화철(분진, 흄)",
+                        "content": "Rem.%",
+                        "selected_name": "",
+                        "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
+                    })
+            
+            # K308 유령 크롬 6가크롬 강제 삽입 폐기 (2번 요청 반영)
+            render_components = new_comps
+
+        N = len(render_components)
+        if N == 0 or not components:
+            # 표시할 성분이 없거나 미분석 상태인 경우 최소 1개 행 생성용 모크 삽입
+            render_components = [{
+                "cas": "",
+                "name": "",
+                "content": "",
+                "selected_name": "",
+                "osh": {"is_measured": False, "is_special": False}
+            }]
+            N = 1
+
+        # 3) 시작 행 설정 및 행 추가
+        start_row = self.table.rowCount()
+        for _ in range(N):
+            self.table.insertRow(self.table.rowCount())
+            
+        # 신호등 이모지 결정
+        emoji = data.get("신호등", "⚪")
+        # 순번
+        seq_num = str(start_row // N + 1) if N > 1 else str(start_row + 1)
+        
+        # 배경색 결정 (신호등 상태 기준)
+        bg_color = None
+        if emoji == "🔴": bg_color = QColor("#ffebeb")
+        elif emoji == "🟡": bg_color = QColor("#fff9db")
+        elif emoji == "🟢": bg_color = QColor("#e1f7d5")
+        
+        # 각 성분별 데이터 렌더링
+        for i in range(N):
+            c_row = start_row + i
+            c = render_components[i]
+            
+            # [Zebra Striping]: 많은 구성성분 가독성 제고를 위해 홀수 성분행의 색상을 미세하게 조정
+            row_bg_color = bg_color
+            if bg_color and i % 2 == 1:
+                r, g, b = bg_color.red(), bg_color.green(), bg_color.blue()
+                row_bg_color = QColor(max(0, r - 8), max(0, g - 8), max(0, b - 8))
+            
+            cas_val = c.get("cas", "")
+            content_val = c.get("content", "")
+            # 철 및 용접흄 잔량 표기 단위를 Rem.% 완성형으로 강제 교정 (3번의 content_val 교정 부분 이식)
+            if content_val == "Rem.":
+                content_val = "Rem.%"
+            c_str = f"({content_val})" if content_val else ""
+            
+            cas_display = f"{cas_val}{c_str}" if cas_val else ""
+            item_cas = QTableWidgetItem(cas_display)
+            if row_bg_color:
+                item_cas.setBackground(row_bg_color)
+            self.table.setItem(c_row, 3, item_cas)
+            
+            name = c.get("name", "")
+            osh = c.get("osh", {})
+            
+            raw_target_name = name or ""
+            if not raw_target_name:
+                mes_std_name = engine.MES_MASTER_MAP.get(cas_val, "")
+                if mes_std_name:
+                    raw_target_name = str(mes_std_name)
+                    
+            if raw_target_name:
+                clean_name = re.sub(r'\s*\([^)]*\)', '', raw_target_name).strip()
+                clean_name = clean_chemical_name_korean(clean_name)
+            else:
+                clean_name = ""
+                    
+            manual_selected = c.get("selected_name")
+            is_manual_comp = c.get("is_manual", False)
+            selected_names_dict = data.get("manual_data", {}).get("selected_names", {}) if data else {}
+            chosen_name_from_wizard = selected_names_dict.get(cas_val)
+            
+            if chosen_name_from_wizard:
+                target_factor = clean_chemical_name_korean(chosen_name_from_wizard)
+            elif is_manual_comp or manual_selected:
+                target_factor = clean_chemical_name_korean(manual_selected)
+            else:
+                target_factor = clean_name
+                # [규칙 적용] 15. 산업안전보건법 규제현황에 "광물성분진" 명시 시 기타광물성분진 매핑
+                osh_raw = osh.get("raw_text", "") or ""
+                if "광물성분진" in osh_raw:
+                    target_factor = "기타광물성분진"
+                elif cas_val == "1317-65-3" or "limestone" in clean_name.lower():
+                    target_factor = "기타광물성분진"
+                elif cas_val == "471-34-1" or "탄산" in clean_name:
+                    target_factor = "기타광물성분진"
+                elif cas_val == "1317-80-2" or "금홍석" in clean_name:
+                    target_factor = "기타광물성분진 / 이산화티타늄"
+                elif cas_val == "14807-96-6":
+                    target_factor = "소우프스톤"
+                    
+            if target_factor:
+                target_factor = target_factor.replace("; ", " / ").replace(";", " / ")
+                
+            is_work = osh.get("is_measured", False)
+            is_spec = osh.get("is_special", False)
+            is_mgmt = osh.get("is_special_mgmt", False)
+            is_permit = osh.get("is_permit", False)
+            
+            prefix = ""
+            if is_mgmt: prefix = "[특별]"
+            elif is_permit: prefix = "[허가]"
+            elif is_spec and not is_work: prefix = "[특검]"
+            
+            # [패치 2] 4번 열 화면을 찢어발기던 파란색 버튼 위젯을 진열대에서 완전히 격리 철거
+            self.table.removeCellWidget(c_row, 4)
+            display_factor = target_factor if target_factor else clean_name
+            
+            # 🚨 [식별 가능 가이드]: 1:N 매칭 후보가 존재하고 사용자가 아직 성상을 수동 지정하지 않았다면
+            candidates = self.find_mes_candidates(cas_val)
+            is_manual_chosen = data.get("manual_data", {}).get(f"is_manual_{cas_val}", False)
+            
+            auto_cand = None
+            if (is_work or is_spec) and len(candidates) >= 2 and not is_manual_chosen:
+                # 8번 TWA 자동 역산 및 일치 항목 탐색
+                auto_cand = self.find_auto_twa_matched_candidate(c.get("exposure"), candidates, c.get("osh"))
+                if auto_cand:
+                    display_factor = auto_cand.get("측정대상 물질명") or ""
+                    c["selected_name"] = display_factor
+                    c["osh"] = {
+                        "is_measured": str(auto_cand.get("측정", "")).strip() == "○",
+                        "is_special": str(auto_cand.get("특검", "")).strip() == "○",
+                        "is_special_mgmt": bool(str(auto_cand.get("특별관리", "")).strip()),
+                        "is_permit": bool(str(auto_cand.get("허가대상", "")).strip()),
+                        "is_prohibited": False
+                    }
+                    if "manual_data" not in data:
+                        data["manual_data"] = {}
+                    data["manual_data"][f"selected_code_{cas_val}"] = auto_cand.get("정렬코드")
+                    data["manual_data"][f"is_manual_{cas_val}"] = True
+            
+            # 4번 열: 측정대상 (측정/특검 대상 유해인자만 기입, 비대상은 빈 칸 마감)
+            if is_work or is_spec:
+                measure_text = f"{prefix}{display_factor}" if display_factor else ""
+            else:
+                measure_text = ""
+                
+            if (is_work or is_spec) and len(candidates) >= 2 and not is_manual_chosen and not auto_cand:
+                btn_text = f"⚠️ 성상 선택 ({display_factor})"
+                btn = QPushButton(btn_text)
+                btn.setCursor(QCursor(Qt.PointingHandCursor))
+                btn.setStyleSheet("""
+                    QPushButton {
+                        background-color: #fff3cd;
+                        color: #d97706;
+                        border: 1px solid #f59e0b;
+                        border-radius: 4px;
+                        padding: 2px 6px;
+                        font-family: 'Malgun Gothic';
+                        font-size: 8.5pt;
+                        font-weight: bold;
+                        min-height: 24px;
+                    }
+                    QPushButton:hover {
+                        background-color: #ffeeba;
+                    }
+                """)
+                # 버튼 클릭 시 팝업 다이얼로그 가동
+                btn.clicked.connect(lambda checked, r=c_row, c=cas_val, cd=candidates, n=clean_name, rg=content_val: self.show_substance_selector(r, c, cd, n, rg))
+                self.table.setCellWidget(c_row, 4, btn)
+            else:
+                item_measure = QTableWidgetItem(measure_text)
+                if row_bg_color:
+                    item_measure.setBackground(row_bg_color)
+                self.table.setItem(c_row, 4, item_measure)
+            
+            # 5번 열: 2차 결과(규제) 칸 대량 누수 완치 (미조회 및 비대상 물질은 깨끗한 빈값 "" 마감)
+            # 🚨 [법적 규칙 준수]: 2차 규제(5번 열) 및 1차 결과(6번 열)는 자식 성상이 아닌 부모 표준 화학명(clean_name)을 표기해야 합니다.
+            if is_work or is_spec:
+                reg2_text = f"{prefix}{clean_name}({content_val})" if clean_name else ""
+            else:
+                reg2_text = ""
+            item_reg2 = QTableWidgetItem(reg2_text)
+            if row_bg_color:
+                item_reg2.setBackground(row_bg_color)
+            self.table.setItem(c_row, 5, item_reg2)
+            
+            # 6번 열: 1차 결과(전체) 포맷팅의 [CAS번호]물질명(함유량%) 청정 역순 서식 고착화
+            reg1_text = f"[{cas_val}]{prefix}{clean_name}({content_val})" if (cas_val or clean_name) else ""
+            item_reg1 = QTableWidgetItem(reg1_text)
+            if row_bg_color:
+                item_reg1.setBackground(row_bg_color)
+            self.table.setItem(c_row, 6, item_reg1)
+            
+        # [패치 3] 시스템 배후 척추선인 7~10번 히든 관리 열을 최상위 병합 구역에 철저히 연동 결속
+        manual_data = data.get("manual_data", {})
+        rep_cols = [0, 1, 2, 7, 8, 9, 10]
+        val_map = {
+            0: f"{emoji} {seq_num}",
+            1: seq_num,
+            2: manual_data.get("product_name", data.get("product_name", f"미추출({fn})")),
+            7: fn,
+            8: f_hash,
+            9: data.get("full_path", ""),
+            10: str(data.get("page", 1))
+        }
+        
+        for col in rep_cols:
+            val_text = str(val_map.get(col, ""))
+            item = QTableWidgetItem(val_text)
+            if col in [0, 1]:
+                item.setTextAlignment(Qt.AlignCenter)
+            if bg_color:
+                item.setBackground(bg_color)
+            self.table.setItem(start_row, col, item)
+            
+            for i in range(1, N):
+                empty_item = QTableWidgetItem("")
+                if bg_color:
+                    empty_item.setBackground(bg_color)
+                self.table.setItem(start_row + i, col, empty_item)
+                
+            if N > 1:
+                self.table.setSpan(start_row, col, N, 1)
+            
+        self._safe_resize_rows()
 
     def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass", components=None):
         """2단계 검증 결과를 테이블에 업데이트 (V10.2 파란색 신호등 🔵 제어 추가)"""
@@ -5790,24 +6270,42 @@ class SMUGUI(QMainWindow):
                     elif len(candidates) >= 2:
                         # 1:N 매칭 후보 물질 존재!
                         selected_code = manual.get(f"selected_code_{cas_val}")
+                        
+                        # 8번 TWA 값 비교를 통한 자동 매칭 탐색
+                        auto_cand = None
+                        if not selected_code:
+                            auto_cand = self.find_auto_twa_matched_candidate(c.get("exposure"), candidates, c.get("osh"))
+                            if auto_cand:
+                                selected_code = auto_cand.get("정렬코드")
+                                
                         if selected_code:
-                            # 과거 캐시된 정렬코드가 있는 경우 -> 콤보박스 생성 없이 확정 적용
-                            master_entry = None
+                            # 캐시 또는 자동 매치된 코드가 있는 경우 -> 확정 적용
+                            saved_codes = [code_val.strip() for code_val in str(selected_code).split(";") if code_val.strip()]
+                            matched_entries = []
                             for entry in candidates:
-                                if str(entry.get("정렬코드", "")).strip() == str(selected_code).strip():
-                                    master_entry = entry
-                                    break
-                            if master_entry:
-                                c["selected_name"] = master_entry.get("측정대상 물질명") or ""
+                                if str(entry.get("정렬코드", "")).strip() in saved_codes:
+                                    matched_entries.append(entry)
+                                    
+                            if matched_entries:
+                                m_names = [e.get("측정대상 물질명") or "" for e in matched_entries]
+                                seen_n = set()
+                                uniq_n = [name_val for name_val in m_names if not (name_val in seen_n or seen_n.add(name_val))]
+                                c["selected_name"] = " / ".join(uniq_n)
                                 c["osh"] = {
-                                    "is_measured": str(master_entry.get("측정", "")).strip() == "○",
-                                    "is_special": str(master_entry.get("특검", "")).strip() == "○",
-                                    "is_special_mgmt": bool(str(master_entry.get("특별관리", "")).strip()),
-                                    "is_permit": bool(str(master_entry.get("허가대상", "")).strip()),
+                                    "is_measured": any(str(e.get("측정", "")).strip() == "○" for e in matched_entries),
+                                    "is_special": any(str(e.get("특검", "")).strip() == "○" for e in matched_entries),
+                                    "is_special_mgmt": any(bool(str(e.get("특별관리", "")).strip()) for e in matched_entries),
+                                    "is_permit": any(bool(str(e.get("허가대상", "")).strip()) for e in matched_entries),
                                     "is_prohibited": False
                                 }
+                                # 자동 매칭된 경우 캐시 정보 동기화
+                                if auto_cand:
+                                    if "manual_data" not in self.cache[f_hash]:
+                                        self.cache[f_hash]["manual_data"] = {}
+                                    self.cache[f_hash]["manual_data"][f"selected_code_{cas_val}"] = selected_code
+                                    self.cache[f_hash]["manual_data"][f"is_manual_{cas_val}"] = True
                         else:
-                            # 캐시된 정렬코드가 없음 -> 콤보박스를 띄워야 함 (PENDING_SELECTION 상태)
+                            # 캐시도 없고 자동 TWA 일치 자식도 없음 -> 위젯으로 띄워야 함
                             pending_cas = cas_val
                             pending_candidates = candidates
                             pending_range = c.get("content", "")
@@ -5884,14 +6382,14 @@ class SMUGUI(QMainWindow):
                 other_final_str = "; ".join(filter(None, [other_subj_str, other_non_subj_str]))
                 
                 # 버튼 인스턴스 생성 및 현대적인 디자인 적용
-                btn_text = f"🔍 성상 선택 ({btn_name}: {pending_range})"
+                btn_text = f"⚠️ 성상 선택 ({btn_name}: {pending_range})"
                 btn = QPushButton(btn_text)
                 btn.setCursor(QCursor(Qt.PointingHandCursor))
                 btn.setStyleSheet("""
                     QPushButton {
-                        background-color: #e8f0fe;
-                        color: #1a73e8;
-                        border: 1px solid #1a73e8;
+                        background-color: #fff3cd;
+                        color: #d97706;
+                        border: 1px solid #f59e0b;
                         border-radius: 4px;
                         padding: 4px 8px;
                         font-family: 'Malgun Gothic';
@@ -5900,7 +6398,7 @@ class SMUGUI(QMainWindow):
                         min-height: 28px;
                     }
                     QPushButton:hover {
-                        background-color: #d2e3fc;
+                        background-color: #ffeeba;
                     }
                 """)
                 
@@ -5974,28 +6472,49 @@ class SMUGUI(QMainWindow):
         finally:
             # [V8.3] 무조건 UI 시그널 락 해제
             self.table.blockSignals(False)
+            self.update_pending_count_display()
 
     def find_mes_candidates(self, cas):
-        """[1:N 매칭] CAS 번호에 해당하는 마스터 DB의 모든 매칭 후보들을 반환"""
+        """[1:N 매칭] CAS 번호에 해당하는 마스터 DB의 모든 매칭 후보들을 반환 (크롬, 규산 계열 자식 및 광물성분진 강제 융합)"""
         if not cas: return []
         
-        # [수정] 대표 금속/화합물 그룹 CAS 번호 연동용 변환 맵 정의 (간접 매칭 지원)
-        # Barium chloride anhydrous(10361-37-2) -> Barium(7440-39-3)
-        # Silver nitrate(7761-88-8) -> Silver(7440-22-4)
         cas_redirect_map = {
             "10361-37-2": "7440-39-3",
             "7761-88-8": "7440-22-4",
         }
         
-        target_cas = cas_redirect_map.get(str(cas).strip(), cas)
+        target_cas = str(cas_redirect_map.get(str(cas).strip(), cas)).strip()
+        
+        target_cases = [target_cas]
+        # 🚨 [크롬-6가크롬 다중 매칭]
+        if target_cas == "7440-47-3":
+            target_cases.append("18540-29-9")
+        # 🚨 [산화규소/규산/실리카 다중 매칭]: 규산 계열 CAS들 상호 연동 연합체 구축
+        elif target_cas in ["7631-86-9", "14808-60-7", "14464-46-1", "15468-32-3"]:
+            target_cases.extend(["7631-86-9", "14808-60-7", "14464-46-1", "15468-32-3"])
+            
+        normalized_cases = [re.sub(r'[^0-9]', '', str(tc).strip()) for tc in target_cases]
         
         candidates = []
-        normalized_cas = re.sub(r'[^0-9]', '', str(target_cas).strip())
+        # 광물성분진 강제 포함 여부 판단 플래그
+        include_mineral_dust = False
+        if target_cas in ["7631-86-9", "14808-60-7", "14464-46-1", "15468-32-3"]:
+            include_mineral_dust = True
+            
         for entry in getattr(self, "mes_master_list", []):
             cas_val = str(entry.get("CAS No.", "")).strip()
+            code_val = str(entry.get("정렬코드", "")).strip()
+            
+            # 1. 일반 CAS 번호 일치 판단
             if cas_val and cas_val.lower() != 'nan':
-                if re.sub(r'[^0-9]', '', cas_val) == normalized_cas:
+                if re.sub(r'[^0-9]', '', cas_val) in normalized_cases:
                     candidates.append(entry)
+                    continue
+            
+            # 2. 규산 계열 매칭 시 CAS가 비어 있는 '기타광물성분진'을 강제로 후보군에 편입
+            if include_mineral_dust and code_val == "2D-10-010":
+                candidates.append(entry)
+                
         return candidates
 
     def regenerate_validation_results(self, components):
@@ -6031,7 +6550,12 @@ class SMUGUI(QMainWindow):
             else:
                 # 사용자의 수동 선택이 없을 때만 시스템 자율 판별 작동
                 target_factor = clean_name
-                if cas == "1317-65-3" or "limestone" in clean_name.lower():
+                # [규칙 적용] 15. 산업안전보건법 규제현황에 "광물성분진" 명시 시 기타광물성분진 매핑
+                osh = c.get("osh", {})
+                osh_raw = osh.get("raw_text", "") or ""
+                if "광물성분진" in osh_raw:
+                    target_factor = "기타광물성분진"
+                elif cas == "1317-65-3" or "limestone" in clean_name.lower():
                     target_factor = "기타광물성분진"
                 elif cas == "471-34-1" or "탄산" in clean_name:
                     target_factor = "기타광물성분진"
@@ -6091,55 +6615,95 @@ class SMUGUI(QMainWindow):
         return res_1st_list, res_2nd_list, final_work_str
 
     def on_table_cell_double_clicked(self, row, column):
-        """[실시간 갱신] 측정대상 셀 더블클릭 시 1:N 매칭 세부 성상 선택 팝업 강제 구동"""
-        if column == 4:
-            f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
-            if not f_hash: return
+        """
+        [좌표 정류]: 3번 열(CAS) 또는 4번 열(측정대상) 더블클릭 시 
+        물리적으로 병합된 성분의 실제 행 인덱스를 정확히 역산하여 팝업을 조준 사격합니다.
+        """
+        # 3번 열(CAS) 또는 4번 열(측정대상) 더블클릭 시 모두 수용 진입
+        if column in [3, 4]:
+            # 🚨 [해시 주소 복구]: 8번 열도 세로로 병합되어 있으므로, 2번 열을 통해 먼저 start_row를 찾은 뒤 해시를 획득해야 합니다.
+            start_row = row
+            while start_row > 0:
+                # 2번 원본 제품명 열의 setSpan 시작점을 찾음
+                item_prod = self.table.item(start_row, 2)
+                if item_prod and item_prod.text().strip():
+                    break
+                start_row -= 1
+                
+            # 8번 숨겨진 열에서 파일 고유 해시 주소 획득
+            f_hash = self.table.item(start_row, 8).text() if self.table.item(start_row, 8) else ""
+            if not f_hash: 
+                return
             
-            components = self.cache.get(f_hash, {}).get("components", [])
-            if not components: return
+            data = self.cache.get(f_hash, {})
+            components = data.get("components", [])
+            if not components: 
+                return
             
-            # 해당 행의 components 목록 중 1:N 매칭 후보가 존재하는 CAS 검색
-            for c in components:
-                cas_val = c.get("cas", "")
+            # 현재 행에서 시작 행을 뺀 수치(오프셋)가 바로 이 파일 내의 실질 성분 인덱스 좌표입니다.
+            comp_idx = row - start_row
+            if 0 <= comp_idx < len(components):
+                target_comp = components[comp_idx]
+                cas_val = target_comp.get("cas", "")
+                
+                # 1:N 분기 매칭을 위한 공단 마스터 후보 데이터셋 스캔
                 candidates = self.find_mes_candidates(cas_val)
                 if len(candidates) >= 2:
-                    name = c.get("name", "Unknown")
-                    range_val = c.get("content", "")
-                    self.show_substance_selector(row, cas_val, candidates, name, range_val)
-                    break
+                    c_name = target_comp.get("name", "Unknown")
+                    range_val = target_comp.get("content", "")
+                    # 엉뚱한 행의 데이터를 찌르지 않도록 계산 완료된 정밀 row 좌표를 패스
+                    self.show_substance_selector(row, cas_val, candidates, c_name, range_val)
 
     def show_substance_selector(self, row, cas, candidates, name, range_val):
         """[성상 선택 팝업] 다이얼로그를 호출하여 사용자가 선택한 정렬코드를 캐시 및 테이블에 실시간 동기화"""
-        dialog = SubstanceSelectDialog("세부 성상 및 규제 정보 선택", name, cas, range_val, candidates, self)
+        # 🚨 [해시 주소 복구]: 8번 열도 세로로 병합되어 있으므로, 2번 열을 통해 먼저 start_row를 찾은 뒤 해시를 획득해야 합니다.
+        start_row = row
+        while start_row > 0:
+            # 2번 원본 제품명 열의 setSpan 시작점을 찾음
+            item_prod = self.table.item(start_row, 2)
+            if item_prod and item_prod.text().strip():
+                break
+            start_row -= 1
+            
+        f_hash = self.table.item(start_row, 8).text() if self.table.item(start_row, 8) else ""
+        
+        # 과거 선택된 코드들이 있다면 파싱하여 다이얼로그 기본값으로 부여
+        saved_code_str = self.cache.get(f_hash, {}).get("manual_data", {}).get(f"selected_code_{cas}", "")
+        saved_codes = [c.strip() for c in str(saved_code_str).split(";") if c.strip()]
+        
+        dialog = SubstanceSelectDialog("세부 성상 및 규제 정보 선택", name, cas, range_val, candidates, saved_codes, self)
         if dialog.exec_() == QDialog.Accepted:
-            code, master_entry = dialog.get_selected_data()
-            if code and master_entry:
-                f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+            codes, master_entries = dialog.get_selected_data()
+            if codes and master_entries:
                 if not f_hash: return
                 
-                m_name = master_entry.get("측정대상 물질명") or ""
+                # 복수 선택된 물질명 조인
+                m_names = [entry.get("측정대상 물질명") or "" for entry in master_entries]
+                seen = set()
+                uniq_m_names = [n for n in m_names if not (n in seen or seen.add(n))]
+                combined_m_name = " / ".join(uniq_m_names)
                 
                 # 캐시된 성분 정보 갱신
                 components = self.cache.get(f_hash, {}).get("components", [])
                 for c in components:
                     if str(c.get("cas", "")).strip() == str(cas).strip():
-                        c["selected_name"] = m_name
+                        c["selected_name"] = combined_m_name
                         # 🚨 [주님 의도 복구] 수동 개입에 따른 최고 존엄 락 설정
                         c["is_manual"] = True
                         c["osh"] = {
-                            "is_measured": str(master_entry.get("측정", "")).strip() == "○",
-                            "is_special": str(master_entry.get("특검", "")).strip() == "○",
-                            "is_special_mgmt": bool(str(master_entry.get("특별관리", "")).strip()),
-                            "is_permit": bool(str(master_entry.get("허가대상", "")).strip()),
-                            "is_prohibited": bool(str(master_entry.get("금지대상", "")).strip())
+                            "is_measured": any(str(entry.get("측정", "")).strip() == "○" for entry in master_entries),
+                            "is_special": any(str(entry.get("특검", "")).strip() == "○" for entry in master_entries),
+                            "is_special_mgmt": any(bool(str(entry.get("특별관리", "")).strip()) for entry in master_entries),
+                            "is_permit": any(bool(str(entry.get("허가대상", "")).strip()) for entry in master_entries),
+                            "is_prohibited": any(bool(str(entry.get("금지대상", "")).strip()) for entry in master_entries)
                         }
                         break
                 
-                # 캐시에 수동 정렬코드 동기화
+                # 캐시에 수동 정렬코드 동기화 (세미콜론 구분 복수 코드 저장)
+                joined_codes = ";".join(codes)
                 if "manual_data" not in self.cache[f_hash]:
                     self.cache[f_hash]["manual_data"] = {}
-                self.cache[f_hash]["manual_data"][f"selected_code_{cas}"] = code
+                self.cache[f_hash]["manual_data"][f"selected_code_{cas}"] = joined_codes
                 # 🚨 [주님 의도 복구] 수동 제어 플래그 락 영구 장착
                 self.cache[f_hash]["manual_data"]["is_manual"] = True
                 self.cache[f_hash]["manual_data"][f"is_manual_{cas}"] = True
@@ -6161,28 +6725,11 @@ class SMUGUI(QMainWindow):
                 self.cache[f_hash]["v3.0_Final"]["reg2"] = new_res2
                 self.save_cache()
                 
-                # 테이블 UI 실시간 업데이트 (시그널 락)
-                self.table.blockSignals(True)
-                
-                # 측정대상 4번 열의 버튼을 제거하고 확정된 일반 텍스트로 치환 적용
+                # 테이블 UI 실시간 업데이트 (전체 리프레시 실행하여 무결성 보장)
                 self.table.removeCellWidget(row, 4)
+                self.refresh_table()
                 
-                # 🚨 [주님 의도 복구] 화면 셀에 즉시 강제 수동 동기화 집행
-                item_measure = QTableWidgetItem(new_work)
-                self.table.setItem(row, 4, item_measure)
-                
-                # update_validation_row 호출을 통해 1차/2차 결과 및 전체 레이아웃 갱신
-                self.update_validation_row(
-                    row,
-                    self.table.item(row, 3).text().split(";\n"),
-                    new_res1,
-                    new_res2,
-                    new_work,
-                    status="검증 완료 (캐시)",
-                    components=components
-                )
-                self.table.blockSignals(False)
-                self.log(f"[*] 성상 선택 적용 완료: CAS {cas} -> {m_name} (정렬코드: {code})")
+                self.log(f"[*] 성상 선택 적용 완료: CAS {cas} -> {combined_m_name} (정렬코드: {joined_codes})")
                 
                 # 실시간 후행 리프레시 엔진 구동
                 self.refresh_live_correction_panel()
@@ -6248,6 +6795,106 @@ class SMUGUI(QMainWindow):
         except Exception as e:
             self.table.blockSignals(False)
             self.log(f"[!] 성상 변경 처리 실패: {e}")
+
+    def find_auto_twa_matched_candidate(self, parent_exposure, candidates, parent_osh=None):
+        """[자동 역산] 부모의 TWA 노출기준 값과 마스터 DB(자식 후보군)의 TWA 노출기준 값을 비교하여
+        정확히 일치하는 자식이 단 하나만 존재하는 경우 해당 자식 엔트리를 반환하고,
+        또한 15번 규제현황에 '광물성분진'이 명시된 경우 후보군 중 '기타광물성분진'을 자동 확정 매칭함."""
+        if not candidates:
+            return None
+            
+        # 1. 15번 규제현황에 '광물성분진'이 들어있는 경우 -> 기타광물성분진(2D-10-010)을 최우선 자동 낙찰
+        if parent_osh:
+            osh_raw = parent_osh.get("raw_text", "") or ""
+            if "광물성분진" in osh_raw:
+                for cand in candidates:
+                    if str(cand.get("정렬코드", "")).strip() == "2D-10-010":
+                        return cand
+                        
+        if not parent_exposure:
+            return None
+            
+        def parse_twa_value(twa_str):
+            if not twa_str: return None
+            nums = re.findall(r'[\d\.]+', str(twa_str).strip())
+            if nums:
+                try:
+                    val = float(nums[0])
+                    if val > 0: return val
+                except:
+                    pass
+            return None
+
+        p_twa_mg = parse_twa_value(parent_exposure.get("twa_mg"))
+        p_twa_ppm = parse_twa_value(parent_exposure.get("twa_ppm"))
+        
+        if p_twa_mg is None and p_twa_ppm is None:
+            return None
+            
+        matched_cands = []
+        for cand in candidates:
+            c_twa = parse_twa_value(cand.get("노출기준(TWA)"))
+            if c_twa is not None:
+                if (p_twa_mg is not None and abs(c_twa - p_twa_mg) < 1e-5) or \
+                   (p_twa_ppm is not None and abs(c_twa - p_twa_ppm) < 1e-5):
+                    matched_cands.append(cand)
+                    
+        if len(matched_cands) == 1:
+            return matched_cands[0]
+            
+        return None
+
+    def update_pending_count_display(self):
+        """[UX 개선] 테이블 내의 성상 미선택 버튼의 총 개수를 계산하여 상단 현황판에 반영"""
+        if not hasattr(self, 'lbl_pending_status') or not hasattr(self, 'btn_next_pending'):
+            return
+            
+        pending_count = 0
+        for r in range(self.table.rowCount()):
+            widget = self.table.cellWidget(r, 4)
+            if isinstance(widget, QPushButton) and "성상 선택" in widget.text():
+                pending_count += 1
+        
+        if pending_count > 0:
+            self.lbl_pending_status.setText(f"⏳ 성상 미선택: {pending_count}건")
+            self.lbl_pending_status.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9.5pt; font-weight: bold; color: #d93025; margin-left: 5px;")
+            self.btn_next_pending.setEnabled(True)
+        else:
+            self.lbl_pending_status.setText("✅ 모든 성상 선택 완료")
+            self.lbl_pending_status.setStyleSheet("font-family: 'Malgun Gothic'; font-size: 9.5pt; font-weight: bold; color: #28a745; margin-left: 5px;")
+            self.btn_next_pending.setEnabled(False)
+
+    def focus_next_pending_substance(self):
+        """[UX 개선] 성상 미선택 버튼이 존재하는 다음 행으로 스크롤하고 포커싱을 이동 (순환 순회)"""
+        row_count = self.table.rowCount()
+        if row_count == 0:
+            return
+            
+        curr_row = self.table.currentRow()
+        # 현재 선택된 행이 없으면 -1이므로 0부터 탐색하기 위해 start_idx = 0으로 처리
+        start_idx = curr_row if curr_row >= 0 else 0
+        
+        for i in range(1, row_count + 1):
+            target_row = (start_idx + i) % row_count
+            widget = self.table.cellWidget(target_row, 4)
+            if isinstance(widget, QPushButton) and "성상 선택" in widget.text():
+                # 해당 행의 3번 열(CAS)을 기준 아이템으로 선택
+                item = self.table.item(target_row, 3)
+                if item:
+                    self.table.setCurrentItem(item)
+                    self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+                    self.log(f"[*] 성상 미선택 대상 행으로 이동: 행 {target_row + 1}")
+                    return
+        
+        # 순환해도 못 찾았을 경우, 첫 행부터 다시 명시적 검색 시도
+        for target_row in range(row_count):
+            widget = self.table.cellWidget(target_row, 4)
+            if isinstance(widget, QPushButton) and "성상 선택" in widget.text():
+                item = self.table.item(target_row, 3)
+                if item:
+                    self.table.setCurrentItem(item)
+                    self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
+                    return
 
 
     def perform_standard_save(self):

@@ -1,0 +1,28 @@
+
+[2026-05-31 21:30:58.250583]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 6108, in <lambda>
+    btn.clicked.connect(lambda checked, r=c_row, c=cas_val, cd=candidates, n=clean_name, rg=content_val: self.show_substance_selector(r, c, cd, n, rg))
+                                                                                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 6621, in show_substance_selector
+    dialog = SubstanceSelectDialog("세부 성상 및 규제 정보 선택", name, cas, range_val, candidates, saved_codes, self)
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 289, in __init__
+    cb = QCheckBox(display_text)
+         ^^^^^^^^^
+NameError: name 'QCheckBox' is not defined
+
+
+[2026-05-31 21:31:52.043510]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 6108, in <lambda>
+    btn.clicked.connect(lambda checked, r=c_row, c=cas_val, cd=candidates, n=clean_name, rg=content_val: self.show_substance_selector(r, c, cd, n, rg))
+                                                                                                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 6621, in show_substance_selector
+    dialog = SubstanceSelectDialog("세부 성상 및 규제 정보 선택", name, cas, range_val, candidates, saved_codes, self)
+             ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 289, in __init__
+    cb = QCheckBox(display_text)
+         ^^^^^^^^^
+NameError: name 'QCheckBox' is not defined
+
