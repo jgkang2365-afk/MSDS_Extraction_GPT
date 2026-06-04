@@ -74,40 +74,35 @@ def mark_sniper_cooldown(sniper, cooldown_sec=60):
     if sniper:
         _sniper_cooldown[sniper["alias"]] = time.time() + cooldown_sec
 
-def is_strict_rem_token(text_val):
-    """[V24.4.5.3 중앙 집중 토큰 검증기] 단어 독립 경계선을 구속하여 예외 전이 원천 방어"""
-    if not text_val: return False
-    t_lower = str(text_val).lower()
-    if any(k in t_lower for k in ["balance", "잔량", "나머지"]): 
-        return True
-    if re.search(r'\brem\b|\brem\.', t_lower):
-        if not any(noise in t_lower for noise in ["remove", "removal", "remedy"]):
-            return True
-    return False
-
 def refine_msds_components_strict(raw_components):
-    """[V24.4.5.3 고도화 완전판] 하류 컴포넌트 엔진의 오탐 우회 누수 버그 완전 차단"""
+    """[신형 완전판] KOSHA API 추출 국문명 원형 유지, 인위적 사칙연산 완전 폐기, 함유량 표준화 및 기존 호환 키 100% 보존"""
     refined = []
     
     for comp in raw_components:
+        # KOSHA API와 기존 추출 스트림이 확보한 국문 물질명 및 호환 자산 키 누락 방지 매핑
         name = comp.get('name', '').strip() or comp.get('chemical_name', '').strip()
         cas = comp.get('cas', '').strip() or comp.get('cas_no', '').strip()
         pct = comp.get('percentage', '').strip() or comp.get('content', '').strip()
         page_val = comp.get('page', '')
         engine_val = comp.get('engine', 'Unknown')
         
+        # 1. 표준 CAS 정규식 가드레일 (없으면 함유량 불문 즉시 전수 파기)
         clean_cas = re.sub(r'\s+', '', cas)
         if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
             continue
             
-        # [V24.4.5.3 교정 가드선] 부분 일치 매칭을 폐기하고 중앙 집중식 독립 경계 매칭 적용
-        if is_strict_rem_token(pct) or is_strict_rem_token(name):
+        # 2. 함유량 특이 텍스트 이원화 표준화 관문
+        # 잔량 성상 키워드가 발견되는 경우
+        if any(k in pct.lower() or k in name.lower() for k in ["rem", "balance", "잔량", "나머지"]):
             pct = "Rem."
+        # 비공개/공백/미기재 성상 키워드가 발견되거나 값이 비어있는 경우
         elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
             pct = "미기재"
             
+        # 3. N열(1차 가공 성분 결과) 안전 안착을 위한 독점 복합 포맷 생성
         combined_text = f"{name}({pct})[{clean_cas}]"
         
+        # 안티그래비티 데이터 그리드 및 final_quality_control과의 호환 키 규격 100% 유지 보존
         refined.append({
             'name': name,
             'chemical_name': name,
@@ -117,7 +112,7 @@ def refine_msds_components_strict(raw_components):
             'content': pct,
             'page': page_val,
             'engine': engine_val,
-            'combined_format': combined_text
+            'combined_format': combined_text  # 하류 GUI 환경 설정 N열에 직결 주입될 데이터 금고 열쇠
         })
         
     return refined
@@ -170,7 +165,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.5.3" # [V24.4.5.3] 035번 범위 복구 및 GUI 1대N 매칭 확장 / F2 키 측정대상 직접 편집 탑재
+VERSION = "24.4.3.1" # [V24.4.3.1] Y축 델타 간격 단절 가드 장착 완결판
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -240,13 +235,7 @@ EXCEPTION_REGISTRY = {
         "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
         "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
         "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "components": "7439-89-6(Rem.%); 7439-96-5(1~5%); 13463-67-7(10~15%)"
-    },
-    "K-308_SERIES": {
-        "triggers": ["K-308", "논가스와이어"],
-        "target_pn": "K-308",
-        "target_substances": "3가크롬 / 6가크롬(불용성); 니켈(불용성); 기타광물성분진; 이산화티타늄; 망간 및 그 무기화합물; 지르코늄",
-        "components": "7439-89-6(55~65%); 7440-47-3(17~20%); 7440-02-0(8~10%); 7631-86-9(1~2%); 13463-67-7(5~7%); 7439-96-5(1~2%); 1314-23-4(1~2%)"
+        "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
     }
 }
 
@@ -329,31 +318,32 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
     return "", "실패"
 
 def _normalize_single_content(content_str):
-    """[고도화 판] 부등호 정밀 복구, 단위 환각 방지 및 영문 노이즈 단어 완전 격리"""
+    """[V17.3.2.25] 부등호 정밀 복구 및 단위(g) 환각 방지"""
     raw = str(content_str).strip()
     if not raw: return "미기재%"
 
-    # [가드] 중앙 집중식 검증기를 사용하여 잔량을 정밀하게 정규화
-    if is_strict_rem_token(raw):
-        return "Rem.%"
+    # 🚨 [V17.3.2.25] 단위(g, mg 등)가 포함된 수치는 함유량으로 인정하지 않음 (환각 방지)
+    if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
+        return "미기재%"
 
     # 1. 기초 정규화 (공백 제거 및 전각 -> 반각)
     v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    # [V17.3.2.25] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
     v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
     
-    # [V17.3.2.25] 후위 부등호 감지 및 반전 (일본식 표현 대응: 99 < -> >99)
+    # 🚨 [V17.3.2.25] 후위 부등호 감지 및 반전 (일본식 표현 대응: 99 < -> >99)
     has_trailing_less = re.search(r'\d\s*(<|미\s*[만맊먄]|below|less)$', v, re.I)
     has_trailing_more = re.search(r'\d\s*(>|초\s*과|more|over)$', v, re.I)
     has_trailing_le = re.search(r'\d\s*(≤|이\s*[하핚내]|up\s*to|max)$', v, re.I)
     has_trailing_ge = re.search(r'\d\s*(≥|이\s*상|above|from|min|\+)$', v, re.I)
 
-    # 전역 키워드 스캔: 기호 정밀 구분
+    # 🚨 [V17.3.2.25] 전역 키워드 스캔: 기호 정밀 구분
     sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
     sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min|\+)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
 
-    if is_strict_rem_token(v): return "Rem.%"
-    
-    # ± 범위 처리
+    # 2. 특수 키워드 (잔량 등)
+    if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
+    # 3. ± 범위 처리
     pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
         try:
@@ -427,10 +417,9 @@ def _normalize_single_content(content_str):
                     s_sym = "≥" if any(k in target_part for k in ["≥", "이상", "+"]) else ">"
             
             # [V17.4.2.1] 1% 앵커 및 예외 케이스: 부등호가 2개 이상이거나 + 기호 중첩 시 단일 수치로 전환
-            # 단, 물결표 등 범위 구분자가 있는 정상 범위형 수치는 이 예외를 우회하여 범위를 보존함
-            if not has_range_sep:
-                if v.count('+') >= 2 or v.count('이상') >= 2:
-                    return f"≥{n1}%"
+            # 예: (GR) 99.0 +% (EP) 98.0 +% -> 하한선 기준 하이브리드 처리
+            if v.count('+') >= 2 or v.count('이상') >= 2:
+                return f"≥{n1}%"
 
             if n2 > 1.0 and s_sym in ["<", "≤"]: 
                 if n2 != 1.0: s_sym = ""
@@ -647,16 +636,13 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             
         cas_x_min = 9999
         content_x_min = 9999
-        
-        # [교정 가드선] 시그마/머크 등 CAS와 함량 명칭이 서로 다른 줄에 비정형 배치된 경우 구출
         for w in header_words:
             txt = w[4].upper()
             if "CAS" in txt:
                 cas_x_min = min(cas_x_min, w[0])
-            if any(k in txt for k in ["함유량", "함량", "CONTENT", "CONC", "%", "농도", "CONCENTRATION"]):
-                # 엄격한 인접 가로줄 제약을 해제하여 컬럼 X좌표 탐지 성공률 극대화
+            if any(k in txt for k in ["함유량", "함량", "CONTENT", "CONC", "%", "농도"]):
                 content_x_min = min(content_x_min, w[0])
-                if content_x_mid == 9999:
+                if content_x_mid == 9999: # 🚨 첫 번째 발견된 헤더의 중앙 좌표 저장 로직 부활
                     content_x_mid = (w[0] + w[2]) / 2
                 
         if content_x_min < cas_x_min and cas_x_min != 9999:
@@ -677,36 +663,22 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             current_line_words = [words[0]]
             line_top = words[0][1]    
             line_bottom = words[0][3] 
-            initial_height = line_bottom - line_top
+            line_height = line_bottom - line_top
 
             for i in range(1, len(words)):
                 curr_w = words[i]
                 curr_top = curr_w[1]
                 curr_bottom = curr_w[3]
-                curr_height = curr_bottom - curr_top
 
                 overlap = max(0, min(line_bottom, curr_bottom) - max(line_top, curr_top))
 
-                base_height = min(initial_height, curr_height)
-                if base_height <= 0:
-                    base_height = 10.0
-
-                # 🚨 Y축 누적 팽창에 의한 눈사태 행 통합 방지 알고리즘 적용 (글자 높이 비례 오차 한계 제어)
-                is_same_line = False
-                if overlap > (base_height * 0.2):
-                    is_same_line = True
-                elif abs(curr_top - line_top) <= (base_height * 0.75) and abs(curr_bottom - line_bottom) <= (base_height * 0.75):
-                    is_same_line = True
-
-                if is_same_line:
+                # 줄바꿈 및 미세 인쇄 오차로 인해 '1 이상'과 '~ 10% 미만'이 찢어지는 현상을 방지하기 위해 결합 마진 임계치 확장
+                if overlap > (line_height * 0.2) or abs(curr_top - line_top) <= (line_height * 0.8) or abs(curr_bottom - line_bottom) <= (line_height * 0.8):
                     current_line_words.append(curr_w)
+                    # [회귀 방지] 가변형 하단선 확장 알고리즘 적용하여 웨이브/수직 개행 텍스트를 유연하게 흡수
                     line_bottom = max(line_bottom, curr_bottom)
                     line_top = min(line_top, curr_top)
-                    # 누적 높이가 팽창 한계를 초과하면 강제 타이트 재조정
-                    if (line_bottom - line_top) > (initial_height * 1.5):
-                        line_top = curr_top
-                        line_bottom = curr_bottom
-                        initial_height = curr_height
+                    line_height = line_bottom - line_top
                 else:
                     current_line_words.sort(key=lambda w: w[0])
                     physical_lines.append({
@@ -717,7 +689,7 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     current_line_words = [curr_w]
                     line_top = curr_w[1]
                     line_bottom = curr_w[3]
-                    initial_height = curr_height
+                    line_height = line_bottom - line_top
 
             if current_line_words:
                 current_line_words.sort(key=lambda w: w[0])
@@ -753,52 +725,38 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         current_row = None
 
         for line in physical_lines:
-            if line["y"] < y_start: continue
+            if line["y"] < y_start: continue # y_start 이전 라인은 행 구성에서 생략 (블랙홀 방어)
             row_text = line["text"]
             cas_list = cas_pattern.findall(row_text)
+            
             if cas_list:
-                current_row = {"cas_list": cas_list, "words": [], "line_text_raw": row_text} # 물리 행 텍스트 보존 백업
-                for p_line in pending_lines: current_row["words"].extend(p_line["words"])
+                current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"]}
+                for p_line in pending_lines:
+                    current_row["words"].extend(p_line["words"])
                 pending_lines = []
                 current_row["words"].extend(line["words"])
                 logical_rows.append(current_row)
             else:
-                if current_row: current_row["words"].extend(line["words"])
-                else: pending_lines.append(line)
+                # [V24.4.3.1] 표가 끝나고 하단 응급조치 문장이 마지막 성분명으로 흘러 넘치는 현상을 40픽셀 울타리로 원천 차단
+                if current_row and (line["y"] - current_row["last_y"]) < 40:
+                    current_row["words"].extend(line["words"])
+                    current_row["last_y"] = line["y"]
+                else:
+                    current_row = None
+                    pending_lines.append(line)
 
         last_valid_info = None 
         
         for row in logical_rows:
             safe_word_texts = [w[4] for w in row.get("words", [])]
             row_full_text = " ".join(safe_word_texts)
-            line_isolated_text = row.get("line_text_raw", "").lower() # 타이트 차단용 격리 텍스트 레이어 생성
             
             for target_cas in row["cas_list"]:
-                # [V24.4.5.1] 함량 열 X축 필터링 기반 텍스트 생성: 표의 다른 열 노이즈가 유입되어 범위형이 찢어지는 버그 차단
-                conc_only_text = ""
-                if content_x_min != 9999:
-                    if is_left_arranged and cas_x_min != 9999:
-                        conc_words = [w for w in row.get("words", []) if content_x_min - 30 <= w[0] <= cas_x_min - 5]
-                    else:
-                        conc_words = [w for w in row.get("words", []) if w[0] >= content_x_min - 20]
-                    if conc_words:
-                        conc_words.sort(key=lambda w: (w[1], w[0]))
-                        conc_only_text = " ".join([w[4] for w in conc_words])
-                
-                # 함량 열 텍스트가 유효하게 존재하고 매칭되는 패턴이 있는 경우 이를 우선 채택
-                use_conc_only = False
-                if conc_only_text:
-                    temp_clean = conc_only_text.replace("미맊", "미만").replace("미먄", "미만")
-                    temp_clean = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', temp_clean)
-                    temp_clean = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', temp_clean)
-                    if list(cont_pattern.finditer(temp_clean)): use_conc_only = True
-                
-                if use_conc_only: clean_text = "[CAS_ANCHOR] " + conc_only_text
-                else:
-                    clean_text = row_full_text
-                    for other_cas in row["cas_list"]:
-                        if other_cas != target_cas: clean_text = clean_text.replace(other_cas, " [OTHER_CAS] ")
-                    clean_text = clean_text.replace(target_cas, "[CAS_ANCHOR]")
+                clean_text = row_full_text
+                for other_cas in row["cas_list"]:
+                    if other_cas != target_cas:
+                        clean_text = clean_text.replace(other_cas, " [OTHER_CAS] ")
+                clean_text = clean_text.replace(target_cas, "[CAS_ANCHOR]")
                 
                 clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
                 clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
@@ -810,53 +768,93 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 for m in cont_pattern.finditer(clean_text):
                     val = m.group(1).strip()
                     if not val: continue
+                    
                     start_idx = m.start()
                     prefix = clean_text[:start_idx]
                     if prefix.count('(') > prefix.count(')'):
-                        if "[CAS_ANCHOR]" not in clean_text[max(0, prefix.rfind('(')-30):start_idx]: continue
-                    matches_with_pos.append((val, start_idx))
+                        last_open = prefix.rfind('(')
+                        context_window = clean_text[max(0, last_open-30):start_idx]
+                        if "[CAS_ANCHOR]" not in context_window:
+                            continue
+                    matches_with_pos.append((val, start_idx)) 
                     
                 content = "미기재%"
                 if matches_with_pos:
                     def score_match(match_tuple):
                         m_val, match_pos = match_tuple
+                        
+                        # 1. 핵심: % 기호 유무 판단
                         has_percent = "%" in m_val
                         
-                        if re.search(r'(?:ke|ec|index|cas|no|page|쪽)\s*[-_.:\s]*\s*' + re.escape(m_val.strip()), clean_text.lower()):
+                        # 2. GHS 규제치(SCL) 노이즈 차단 (콜론 법칙 - 27, 28, 29번 우측 열 방어)
+                        # % 기호 바로 뒤에 콜론(:)이 오면 무조건 규제 기준치임 (예: >= 0.1 %:)
+                        if re.search(r'%\s*:', clean_text[match_pos:match_pos+len(m_val)+5]):
                             return -5000
                             
-                        if re.search(r'%\s*:', clean_text[match_pos:match_pos+len(m_val)+5]): return -5000
-                        
-                        # [V24.4.5.3 대수술 가드선] 인접 행 노이즈 간섭 차단을 위해 문맥 영역 조사를 전체가 아닌 '물리적 한 줄' 자산으로 철저 차단
+                        context_area = clean_text[max(0, match_pos-30):min(len(clean_text), match_pos+len(m_val)+30)].lower()
                         tight_context = clean_text[max(0, match_pos-10):min(len(clean_text), match_pos+len(m_val)+10)].lower()
-                        if any(noise in tight_context for noise in ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]): return -5000
                         
+                        # 3. 절대 단위 노이즈 (반경 10글자 타이트)
+                        # 퍼센트 기호가 있든 없든 함유량 옆에 바로 붙어있으면 안되는 이종 단위들
+                        absolute_noises = ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]
+                        if any(noise in tight_context for noise in absolute_noises):
+                            return -5000
+                            
+                        # 🚨 [V24.3.1.0] % 면책 특권 룰: 퍼센트(%) 기호가 없는 경우에만 강력하게 환각 검사
                         if not has_percent:
-                            if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']): return -5000
-                            # 상위 논리적 행의 백업본인 line_isolated_text를 평가 기틀로 삼아 타 행 침범 차단
-                            if any(noise in line_isolated_text for noise in ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", "분자량", "molecular weight", "mw", "항", "section"]): 
+                            # 11번(TECA) 구제: 글로벌 헤더에도 %가 없고, 범위 기호(~, -)도 없다면 줄글이 확실하므로 컷
+                            if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']):
                                 return -5000
                                 
-                        if any(noise in clean_text[max(0, match_pos-20):match_pos].lower() for noise in ["쪽", "page", "페이지"]) and not has_percent: return -5000
-                        if m_val.strip(' -∼~<>\u2013\u2014≤≥=').count('-') >= 2: return -5000
+                            # %가 없는 숫자는 주변(30글자)에 노이즈가 1개라도 있으면 가짜(섹션번호, EC, 카테고리)로 간주
+                            weak_noises = ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", 
+                                           "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", 
+                                           "분자량", "molecular weight", "mw", "항", "section"]
+                            if any(noise in context_area for noise in weak_noises):
+                                return -5000
+                                
+                        # --- 이하 공통 로직 ---
+                        layout_noises = ["쪽", "page", "페이지"]
+                        if any(noise in clean_text[max(0, match_pos-20):match_pos].lower() for noise in layout_noises) and not has_percent: 
+                            return -5000 
+                            
+                        core_m_val = m_val.strip(' -∼~<>\u2013\u2014≤≥=')
+                        if core_m_val.count('-') >= 2 or core_m_val.count('\u2013') >= 2: return -5000
                             
                         anchor_pos = clean_text.find("[CAS_ANCHOR]")
-                        if "[OTHER_CAS]" in clean_text[min(anchor_pos, match_pos):max(anchor_pos, match_pos)]: return -10000
+                        
+                        start_search = min(anchor_pos, match_pos)
+                        end_search = max(anchor_pos, match_pos)
+                        text_between = clean_text[start_search:end_search]
+                        if "[OTHER_CAS]" in text_between:
+                            return -10000
+                            
                         dist_char = abs(anchor_pos - match_pos)
-                        if dist_char > 120: return -5000
+                        if dist_char > 120: 
+                            return -5000
 
-                        score = 500 if has_percent else (400 if has_global_percent else 0)
+                        score = 0
+                        if has_percent: score += 500
+                        elif has_global_percent: score += 400 
+
                         if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상', '\u2013', '\u2014']): score += 300
                         if '.' in m_val: score += 100
-                        score += 200 if match_pos > anchor_pos or is_left_arranged else -50
-                        score -= (dist_char * 3)
                         
-                        for num_str in re.findall(r'\d+\.?\d*', m_val):
-                            try:
-                                val = float(num_str)
-                                if val > 110: score -= 3000
-                                if 1990 <= val <= 2030: score -= 1000
-                            except: pass
+                        if match_pos > anchor_pos: score += 200 
+                        else:
+                            if is_left_arranged: score += 200 
+                            else: score -= 50  
+                        
+                        score -= (dist_char * 3) 
+                        
+                        m_nums = re.findall(r'\d+\.?\d*', m_val)
+                        if m_nums:
+                            for num_str in m_nums:
+                                try:
+                                    val = float(num_str)
+                                    if val > 110: score -= 3000; break 
+                                    if 1990 <= val <= 2030: score -= 1000 
+                                except: pass
                         return score
                     
                     best_match_tuple = max(matches_with_pos, key=score_match)
@@ -1174,64 +1172,64 @@ def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None
     except:
         fitz_doc = None
 
-    # [V17.4.0.3] 페이지 간 함량 열 좌표 계승 변수 (Context Messenger)
-    inherited_x_range = None
-    
-    for p_idx in target_pages:
-        if p_idx >= len(odl_doc.pages): continue
+        # [V17.4.0.3] 페이지 간 함량 열 좌표 계승 변수 (Context Messenger)
+        inherited_x_range = None
         
-        page_items = []
-        # 1. 테이블 기반 추출
-        tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
-        for table in tables:
-            priority_col_idx = -1
-            for row in table.rows:
-                row_texts = [c.text or "" for c in row.cells]
-                # [V17.4.0.4] 헤더 매칭 시 모든 공백 제거 후 비교 (성  분 -> 성분)
-                row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
-                
-                if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
-                    for i, t in enumerate(row_texts):
-                        clean_t = re.sub(r'\s+', '', t.lower())
-                        if '%' in t or '함량' in clean_t or 'content' in clean_t:
-                            priority_col_idx = i
-                            break
-                    if priority_col_idx >= 0: break
+        for p_idx in target_pages:
+            if p_idx >= len(odl_doc.pages): continue
             
-            for row in table.rows:
-                parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
-                if parsed_comps:
-                    page_items.extend(parsed_comps)
-                elif page_items and page_items[-1]["content"] == "미기재%":
-                    row_raw_texts = [c.text for c in row.cells if c.text]
-                    for txt in row_raw_texts:
-                        norm = _normalize_single_content(txt)
-                        if norm != "미기재%" and re.search(r'\d', norm):
-                            idx = len(page_items) - 1
-                            while idx >= 0 and page_items[idx]["content"] == "미기재%":
-                                page_items[idx]["content"] = norm
-                                idx -= 1
-                            break
-        
-        # 2. 텍스트 기반 보완 (좌표 계승 적용)
-        if fitz_doc:
-            text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
-            # [V17.4.0.3] 다음 페이지를 위해 감지된 좌표 업데이트 (기억의 계승)
-            if detected_x:
-                inherited_x_range = detected_x
-            
-            # [V17.3.2.25] 최종 병합
-            for tc in text_comps:
-                target_cas = tc["cas_no"]
-                existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
-                if existing_item:
-                    if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
-                        existing_item["content"] = tc["content"]
-                        existing_item["engine"] = "Regex-Recovery"
-                else:
-                    page_items.append(tc)
+            page_items = []
+            # 1. 테이블 기반 추출
+            tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
+            for table in tables:
+                priority_col_idx = -1
+                for row in table.rows:
+                    row_texts = [c.text or "" for c in row.cells]
+                    # [V17.4.0.4] 헤더 매칭 시 모든 공백 제거 후 비교 (성  분 -> 성분)
+                    row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
                     
-        components.extend(page_items)
+                    if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
+                        for i, t in enumerate(row_texts):
+                            clean_t = re.sub(r'\s+', '', t.lower())
+                            if '%' in t or '함량' in clean_t or 'content' in clean_t:
+                                priority_col_idx = i
+                                break
+                        if priority_col_idx >= 0: break
+                
+                for row in table.rows:
+                    parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
+                    if parsed_comps:
+                        page_items.extend(parsed_comps)
+                    elif page_items and page_items[-1]["content"] == "미기재%":
+                        row_raw_texts = [c.text for c in row.cells if c.text]
+                        for txt in row_raw_texts:
+                            norm = _normalize_single_content(txt)
+                            if norm != "미기재%" and re.search(r'\d', norm):
+                                idx = len(page_items) - 1
+                                while idx >= 0 and page_items[idx]["content"] == "미기재%":
+                                    page_items[idx]["content"] = norm
+                                    idx -= 1
+                                break
+            
+            # 2. 텍스트 기반 보완 (좌표 계승 적용)
+            if fitz_doc:
+                text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
+                # [V17.4.0.3] 다음 페이지를 위해 감지된 좌표 업데이트 (기억의 계승)
+                if detected_x:
+                    inherited_x_range = detected_x
+                
+                # [V17.3.2.25] 최종 병합
+                for tc in text_comps:
+                    target_cas = tc["cas_no"]
+                    existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
+                    if existing_item:
+                        if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                            existing_item["content"] = tc["content"]
+                            existing_item["engine"] = "Regex-Recovery"
+                    else:
+                        page_items.append(tc)
+                        
+            components.extend(page_items)
 
     if fitz_doc: fitz_doc.close()
     return components

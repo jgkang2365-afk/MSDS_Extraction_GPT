@@ -2,13 +2,13 @@
     "mapping": {
         "순번/No": "A",
         "제품명": "c",
-        "파일명": "",
-        "2차 결과(규제)": "",
-        "1차 결과(전체)": "",
-        "측정대상1": "",
+        "파일명": "P",
+        "2차 결과(규제)": "L",
+        "1차 결과(전체)": "N",
+        "측정대상1": "M",
         "측정대상2": "",
         "CAS 원본": "O",
-        "공정명": "",
+        "공정명": "B",
         "제조/사용": "C",
         "사용용도": "z",
         "월취급량": "r",
@@ -35,6 +35,8 @@
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "Z:/data/측정팀/측정보고서/2026년/상반기/국립축산과학원 축산자원개발부 가금연구센터/가금연구소(평창)_MSDS/(차량소독) 클린업플러스액_MSDS.pdf"
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/01. 포름알데하이드_시그마.pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/05. Giemsa SDS.pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/11. 페놀(PHENOL).pdf"
     ]
 }

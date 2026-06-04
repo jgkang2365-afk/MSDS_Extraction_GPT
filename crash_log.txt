@@ -26,3 +26,11 @@ Traceback (most recent call last):
          ^^^^^^^^^
 NameError: name 'QCheckBox' is not defined
 
+
+[2026-06-03 20:41:56.750499]
+Traceback (most recent call last):
+  File "C:\Users\USER\Desktop\안티그래티비\MSDS_EXtaction_V3(v24+GUI통합)\smu_gui.py", line 767, in paint
+    def paint(self, painter, option, index):
+    
+KeyboardInterrupt
+

@@ -118,18 +118,8 @@ def clean_percentage(content_str):
     if not content_str: return ""
     content_str = unicodedata.normalize('NFKC', content_str).strip()
     
-    # [V24.4.5.3 동기화 가드] 독립적인 잔량 식별 룰 및 미기재 보존
-    content_lower = content_str.lower()
-    is_rem = False
-    if any(k in content_lower for k in ["balance", "잔량", "나머지"]):
-        is_rem = True
-    elif re.search(r'\brem\b|\brem\.', content_lower):
-        if not any(noise in content_lower for noise in ["remove", "removal", "remedy"]):
-            is_rem = True
-            
-    if is_rem:
-        return "Rem."
-    if content_str == "미기재":
+    # [주님 지시 고정 가드선] 상류에서 정제된 고정 표준 단어는 숫자 연산을 우회하여 원형 보존
+    if content_str in ["Rem.", "미기재"]:
         return content_str
         
     content_lower = content_str.lower()

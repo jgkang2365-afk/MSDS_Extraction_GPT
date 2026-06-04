@@ -97,6 +97,8 @@ class TextElement:
 class TableElement:
     def __init__(self, data):
         self.type = "TABLE"
+        # [V24.4.5.5] 기하학적 분석을 위해 바운딩 박스 보존
+        self.bbox = data.get("bounding box", None)
         self.rows = [Row(r) for r in data.get("rows", [])]
 
 class Row:
@@ -116,3 +118,5 @@ class Cell:
             _extract_text(data["kids"])
         
         self.text = " ".join(texts).strip()
+        # [V24.4.5.5] 기하학적 분석을 위해 바운딩 박스 보존
+        self.bbox = data.get("bounding box", None)
