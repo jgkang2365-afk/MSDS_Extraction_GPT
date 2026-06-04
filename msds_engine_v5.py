@@ -1234,10 +1234,39 @@ def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None
     if fitz_doc: fitz_doc.close()
     return components
 
+def check_golden_fingerprint(log_func=None):
+    """[V24.4.3.1] 안티그래비티의 무단 코드 변조를 원천 봉쇄하는 형상 지문 검문소"""
+    try:
+        import hashlib
+        with open(__file__, "r", encoding="utf-8") as f:
+            code = f.read()
+        # 핵심 수술 구역인 extract_from_text_regex 함수 본문만 추출하여 지문 계산
+        func_match = re.search(r"def extract_from_text_regex\(.*?\):(.*?)def extract_section3_images", code, re.DOTALL)
+        if func_match:
+            core_logic = func_match.group(1).strip()
+            current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
+            
+            # 💡 [생산성 허브] 최초 실행 시 하단 안내 로그에 출력되는 16자리 지문 값을 여기에 박제하시면 동결 잠금이 활성화됩니다.
+            GOLDEN_HASH = "9a8b7c6d5e4f3a2b" 
+            
+            if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
+                if log_func: 
+                    log_func(f" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
+                    log_func(f"   ├─ 골든 마스터 지문: {GOLDEN_HASH}")
+                    log_func(f"   └─ 현재 변조된 지문: {current_hash} (가동 주의)")
+            else:
+                if log_func and GOLDEN_HASH == "9a8b7c6d5e4f3a2b":
+                    log_func(f" 🔒 [지문 안내] 현재 v24.4.3.1 순정 지문: '{current_hash}' -> 이 값을 GOLDEN_HASH에 입력하여 고정하십시오.")
+    except Exception as e:
+        if log_func: log_func(f" ⚠️ 지문 검문소 시스템 가동 실패: {e}")
+
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
     current_sniper = get_next_sniper()
     alias = current_sniper["alias"] if current_sniper else "알수없음"
+    
+    # 가동 직전 형상 무결성 전수 조사 실시
+    check_golden_fingerprint(log_func=log_func)
     
     if log_func: log_func(f" 🚀 [{VERSION}] 엔진 가동: {os.path.basename(pdf_path)}")
 
