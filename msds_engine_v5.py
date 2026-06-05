@@ -165,7 +165,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.1" # [V24.4.3.1] Y축 델타 간격 단절 가드 장착 완결판
+VERSION = "24.4.3.4" # [V24.4.3.4] 행 내부 토큰 선제 정렬 및 명칭 노이즈 세척 완착판
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -764,6 +764,9 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
                 clean_text = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', clean_text)
 
+                # 💡 [V24.4.3.4] 행 내부 토큰 선제 정렬 가드레일: 단일 행 내부에서 줄바꿈으로 분절된 범위 기호와 숫자를 직결 밀착
+                clean_text = re.sub(r'(\b\d+(?:\.\d+)?\s*(?:이상|이하|미만|초과)?\s*[-~∼～]\s*)([^0-9~-]*?[a-zA-Z가-힣][^0-9~-]*?)(\b\d+(?:\.\d+)?\b\s*%?\s*(?:미만|이하|이상|초과)?)', r'\1\3 \2', clean_text)
+
                 matches_with_pos = []
                 for m in cont_pattern.finditer(clean_text):
                     val = m.group(1).strip()
@@ -892,7 +895,8 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     temp_name = temp_name.replace(target_cas, "")
                     if matches_with_pos:
                         temp_name = temp_name.replace(best_match_tuple[0], "")
-                    temp_name = re.sub(r'(?i)cas|no|번호|함량|함유량|content|percentage|[\d\.\-\~\<\>\=\≤\≥\%\|\;\:\(\)\[\]]', ' ', temp_name)
+                    # 💡 [V24.4.3.4] 함량 관련 한글 키워드(이상/미만/이하/초과)를 명칭 소거 대상에 명시적으로 추가하여 이름 오염 전면 차단
+                    temp_name = re.sub(r'(?i)cas|no|번호|함량|함유량|content|percentage|이상|미만|이하|초과|[\d\.\-\~\<\>\=\≤\≥\%\|\;\:\(\)\[\]]', ' ', temp_name)
                     name_str = " ".join(temp_name.split()).strip()
                     if not name_str:
                         name_str = "CAS 기반 자동 매핑"
@@ -1169,73 +1173,74 @@ def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None
     # 텍스트 기반 추출을 위해 원본 문서 열기
     try:
         fitz_doc = fitz.open(pdf_path)
-    except:
+    except Exception as e:
         fitz_doc = None
+        if log_func: log_func(f"  ⚠️ ODL 보완용 fitz_doc 개방 실패: {e}")
 
-        # [V17.4.0.3] 페이지 간 함량 열 좌표 계승 변수 (Context Messenger)
-        inherited_x_range = None
+    # [V17.4.0.3] 페이지 간 함량 열 좌표 계승 변수 (Context Messenger)
+    inherited_x_range = None
+    
+    for p_idx in target_pages:
+        if p_idx >= len(odl_doc.pages): continue
         
-        for p_idx in target_pages:
-            if p_idx >= len(odl_doc.pages): continue
+        page_items = []
+        # 1. 테이블 기반 추출
+        tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
+        for table in tables:
+            priority_col_idx = -1
+            for row in table.rows:
+                row_texts = [c.text or "" for c in row.cells]
+                # [V17.4.0.4] 헤더 매칭 시 모든 공백 제거 후 비교 (성  분 -> 성분)
+                row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
+                
+                if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
+                    for i, t in enumerate(row_texts):
+                        clean_t = re.sub(r'\s+', '', t.lower())
+                        if '%' in t or '함량' in clean_t or 'content' in clean_t:
+                            priority_col_idx = i
+                            break
+                    if priority_col_idx >= 0: break
             
-            page_items = []
-            # 1. 테이블 기반 추출
-            tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
-            for table in tables:
-                priority_col_idx = -1
-                for row in table.rows:
-                    row_texts = [c.text or "" for c in row.cells]
-                    # [V17.4.0.4] 헤더 매칭 시 모든 공백 제거 후 비교 (성  분 -> 성분)
-                    row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
+            for row in table.rows:
+                parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
+                if parsed_comps:
+                    page_items.extend(parsed_comps)
+                elif page_items and page_items[-1]["content"] == "미기재%":
+                    row_raw_texts = [c.text for c in row.cells if c.text]
+                    for txt in row_raw_texts:
+                        norm = _normalize_single_content(txt)
+                        if norm != "미기재%" and re.search(r'\d', norm):
+                            idx = len(page_items) - 1
+                            while idx >= 0 and page_items[idx]["content"] == "미기재%":
+                                page_items[idx]["content"] = norm
+                                idx -= 1
+                            break
+        
+        # 2. 텍스트 기반 보완 (좌표 계승 적용)
+        if fitz_doc:
+            text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
+            # [V17.4.0.3] 다음 페이지를 위해 감지된 좌표 업데이트 (기억의 계승)
+            if detected_x:
+                inherited_x_range = detected_x
+            
+            # [V17.3.2.25] 최종 병합
+            for tc in text_comps:
+                target_cas = tc["cas_no"]
+                existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
+                if existing_item:
+                    if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                        existing_item["content"] = tc["content"]
+                        existing_item["engine"] = "Regex-Recovery"
+                else:
+                    page_items.append(tc)
                     
-                    if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
-                        for i, t in enumerate(row_texts):
-                            clean_t = re.sub(r'\s+', '', t.lower())
-                            if '%' in t or '함량' in clean_t or 'content' in clean_t:
-                                priority_col_idx = i
-                                break
-                        if priority_col_idx >= 0: break
-                
-                for row in table.rows:
-                    parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
-                    if parsed_comps:
-                        page_items.extend(parsed_comps)
-                    elif page_items and page_items[-1]["content"] == "미기재%":
-                        row_raw_texts = [c.text for c in row.cells if c.text]
-                        for txt in row_raw_texts:
-                            norm = _normalize_single_content(txt)
-                            if norm != "미기재%" and re.search(r'\d', norm):
-                                idx = len(page_items) - 1
-                                while idx >= 0 and page_items[idx]["content"] == "미기재%":
-                                    page_items[idx]["content"] = norm
-                                    idx -= 1
-                                break
-            
-            # 2. 텍스트 기반 보완 (좌표 계승 적용)
-            if fitz_doc:
-                text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
-                # [V17.4.0.3] 다음 페이지를 위해 감지된 좌표 업데이트 (기억의 계승)
-                if detected_x:
-                    inherited_x_range = detected_x
-                
-                # [V17.3.2.25] 최종 병합
-                for tc in text_comps:
-                    target_cas = tc["cas_no"]
-                    existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
-                    if existing_item:
-                        if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
-                            existing_item["content"] = tc["content"]
-                            existing_item["engine"] = "Regex-Recovery"
-                    else:
-                        page_items.append(tc)
-                        
-            components.extend(page_items)
+        components.extend(page_items)
 
     if fitz_doc: fitz_doc.close()
     return components
 
 def check_golden_fingerprint(log_func=None):
-    """[V24.4.3.1] 안티그래비티의 무단 코드 변조를 원천 봉쇄하는 형상 지문 검문소"""
+    """[V24.4.3.3] 안티그래비티의 무단 코드 변조를 원천 봉쇄하는 형상 지문 검문소"""
     try:
         import hashlib
         with open(__file__, "r", encoding="utf-8") as f:
@@ -1256,7 +1261,7 @@ def check_golden_fingerprint(log_func=None):
                     log_func(f"   └─ 현재 변조된 지문: {current_hash} (가동 주의)")
             else:
                 if log_func and GOLDEN_HASH == "9a8b7c6d5e4f3a2b":
-                    log_func(f" 🔒 [지문 안내] 현재 v24.4.3.1 순정 지문: '{current_hash}' -> 이 값을 GOLDEN_HASH에 입력하여 고정하십시오.")
+                    log_func(f" 🔒 [지문 안내] 현재 v24.4.3.3 순정 지문: '{current_hash}' -> 이 값을 GOLDEN_HASH에 입력하여 고정하십시오.")
     except Exception as e:
         if log_func: log_func(f" ⚠️ 지문 검문소 시스템 가동 실패: {e}")
 
