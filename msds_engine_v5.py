@@ -165,7 +165,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.4" # [V24.4.3.4] 행 내부 토큰 선제 정렬 및 명칭 노이즈 세척 완착판
+VERSION = "24.4.3.5" # [V24.4.3.5] 행 내부 단어 자산 X축 좌표 기준 정렬 및 격리 완착판
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -748,7 +748,20 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         last_valid_info = None 
         
         for row in logical_rows:
-            safe_word_texts = [w[4] for w in row.get("words", [])]
+            row_words = row.get("words", [])
+            # 💡 [V24.4.3.5] 행 내부 단어 자산 X축 좌표 기준 정렬 가드레일
+            # 함유량 기둥 시작점(content_x_min)이 정상 감지되었다면, 해당 영토 내부의 단어(함량 수치)들을 따로 격리하여 맨 뒤로 배치
+            if content_x_min != 9999:
+                content_words = [w for w in row_words if w[0] >= (content_x_min - 15)]
+                other_words = [w for w in row_words if w[0] < (content_x_min - 15)]
+                
+                content_words.sort(key=lambda w: (w[1], w[0]))
+                other_words.sort(key=lambda w: (w[1], w[0]))
+                sorted_words = other_words + content_words
+            else:
+                sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
+
+            safe_word_texts = [w[4] for w in sorted_words]
             row_full_text = " ".join(safe_word_texts)
             
             for target_cas in row["cas_list"]:
@@ -763,9 +776,6 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만")
                 clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
                 clean_text = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', clean_text)
-
-                # 💡 [V24.4.3.4] 행 내부 토큰 선제 정렬 가드레일: 단일 행 내부에서 줄바꿈으로 분절된 범위 기호와 숫자를 직결 밀착
-                clean_text = re.sub(r'(\b\d+(?:\.\d+)?\s*(?:이상|이하|미만|초과)?\s*[-~∼～]\s*)([^0-9~-]*?[a-zA-Z가-힣][^0-9~-]*?)(\b\d+(?:\.\d+)?\b\s*%?\s*(?:미만|이하|이상|초과)?)', r'\1\3 \2', clean_text)
 
                 matches_with_pos = []
                 for m in cont_pattern.finditer(clean_text):

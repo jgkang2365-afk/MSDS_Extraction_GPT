@@ -4,25 +4,330 @@
         "product_name": "아이생각수성내부프로 (M-BASE)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(≥1%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
+        "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/035_아이생각수성내부프로 (M-BASE)_GHS국문.pdf",
         "page": 1,
         "used_engine": "analytic",
-        "engine_version": "24.4.3.4",
+        "engine_version": "24.4.3.5",
         "v2.0_Clean": {
             "product_name": "아이생각수성내부프로 (M-BASE)",
-            "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(≥1%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
+            "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "아이생각수성내부프로 (M-BASE)",
-            "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(≥1%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
+            "raw_content": "",
+            "measure": "활석(석면불포함); 기타광물성분진; 이산화티타늄; 기타광물성분진",
+            "reg1": [
+                "물[7732-18-5(40~50%)]",
+                "소우프스톤[14807-96-6(20~30%)]",
+                "Limestone[1317-65-3(10~20%)]",
+                "Methacrylic acid-2-ethylhexyl acrylate-styrene polymer[26636-08-8(1~10%)]",
+                "생석회된카올린[92704-41-1(1~10%)]",
+                "이산화티타늄[13463-67-7(1~10%)]",
+                "탄산칼슘[471-34-1(1~10%)]",
+                "프로필렌글리콜[57-55-6(1~10%)]",
+                "N,N-다이메틸에탄올아민[108-01-0(0.1~<1%)]"
+            ],
+            "reg2": [
+                "소우프스톤(20~30%)",
+                "Limestone(10~20%)",
+                "이산화티타늄(1~10%)",
+                "탄산칼슘(1~10%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "7732-18-5",
+                "name": "물(WATER)",
+                "content": "40~50%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "물(WATER)()[7732-18-5]"
+            },
+            {
+                "cas": "14807-96-6",
+                "name": "활석",
+                "content": "20~30%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "0.1개/cm3",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "활석()[14807-96-6]",
+                "selected_name": "활석(석면불포함)",
+                "is_manual": true
+            },
+            {
+                "cas": "1317-65-3",
+                "name": "Limestone",
+                "content": "10~20%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)(그 밖의 광물성 분진)|특수건강진단대상물질 (진단주기 : 24개월)(광물성 분진)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Limestone()[1317-65-3]"
+            },
+            {
+                "cas": "26636-08-8",
+                "name": "Methacrylic acid-2-ethylhexyl acrylate-styrene polymer",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Methacrylic acid-2-ethylhexyl acrylate-styrene polymer()[26636-08-8]"
+            },
+            {
+                "cas": "92704-41-1",
+                "name": "생석회된카올린",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "생석회된카올린()[92704-41-1]"
+            },
+            {
+                "cas": "13463-67-7",
+                "name": "이산화티타늄",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "이산화티타늄()[13463-67-7]"
+            },
+            {
+                "cas": "471-34-1",
+                "name": "탄산칼슘",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 그 밖의 광물성 분진)|특수건강진단대상물질 (진단주기 : 광물성 분진)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "탄산칼슘()[471-34-1]"
+            },
+            {
+                "cas": "57-55-6",
+                "name": "프로필렌글리콜",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "프로필렌글리콜()[57-55-6]"
+            },
+            {
+                "cas": "108-01-0",
+                "name": "N,N-다이메틸에탄올아민",
+                "content": "0.1~<1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "N,N-다이메틸에탄올아민()[108-01-0]"
+            }
+        ],
+        "manual_data": {
+            "selected_code_14807-96-6": "2D-11-031",
+            "is_manual": true,
+            "is_manual_14807-96-6": true,
+            "measure": "활석(석면불포함); 기타광물성분진; 이산화티타늄; 기타광물성분진",
+            "reg1": "물[7732-18-5(40~50%)];\n소우프스톤[14807-96-6(20~30%)];\nLimestone[1317-65-3(10~20%)];\nMethacrylic acid-2-ethylhexyl acrylate-styrene polymer[26636-08-8(1~10%)];\n생석회된카올린[92704-41-1(1~10%)];\n이산화티타늄[13463-67-7(1~10%)];\n탄산칼슘[471-34-1(1~10%)];\n프로필렌글리콜[57-55-6(1~10%)];\nN,N-다이메틸에탄올아민[108-01-0(0.1~<1%)]",
+            "reg2": "소우프스톤(20~30%);\nLimestone(10~20%);\n이산화티타늄(1~10%);\n탄산칼슘(1~10%)"
         }
     }
 }
