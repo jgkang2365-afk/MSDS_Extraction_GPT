@@ -2,8 +2,10 @@
 
 - [x] [Step 1] K-308 2차 결과에 철 성분 반영 (smu_gui.py의 regenerate_validation_results 수정)
 - [x] [Step 2] 정리/교정기 내 용접 철 성분 누락 자동 감지 및 범용 동적 주입 로직 구현 (smu_gui.py의 clean_substances_excel 수정)
-- [x] [Step 3] DNA 버전 V24.4.5.7 주석 업데이트 및 GUI 실행/교정 실테스트 검증
-- [x] [Step 4] 임시 테스트 파일 정리
+- [x] JSON ➔ Excel 변환 스크립트(json_to_excel.py) 작성 및 실행
+- [x] 생성된 msds_index_edit.xlsx 검증
+- [x] Excel ➔ JSON 역변환 스크립트(excel_to_json.py) 작성
+- [x] 역변환 후 기존 json과의 데이터 정합성 검증
 - [x] **[Task 3] 물리적 행 분리 및 물질명 내 영문 삭제 & '규제 접두사 측정대상 한정' 집행**
   - [x] 테이블 정렬 기능(`setSortingEnabled`) 비활성화(QTableWidget 레이아웃 붕괴 방지)
   - [x] `add_result_to_table` 개편: 성분 개수만큼 물리적 독립 행 분리 생성 및 `setSpan` 셀 병합
