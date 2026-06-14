@@ -224,7 +224,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.19" # [V24.4.3.19] 1안 공간 제로형 풍선도움말(Tooltip) 정형 태그 스코어링 통합판
+VERSION = "24.4.3.21" # [V24.4.3.21] 한국어 대제목 노이즈 차단벽 확장 및 HTTP 429 트래픽 댐 통합판
 
 def clean_ocr_text_to_json(ocr_text, system_prompt, current_sniper, log_func=None):
     """
@@ -339,21 +339,31 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         
         try:
-            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
+            # [V24.4.3.20] 텍스트 정제 전용 초고속 타임아웃(12초) 압축벽 적용 (서버 먹통 시 60초 대기 차단)
+            response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=12)
             if response.status_code != 200:
                 if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code})")
                 if response.status_code == 429: mark_sniper_cooldown(current_sniper, 60)
                 elif response.status_code == 503: mark_sniper_cooldown(current_sniper, 30)
                 
-                backoff_time = 1.0 + attempt
+                # [V24.4.3.20] 1초 단위의 불필요한 백오프 대기 시간을 0.2초 초고속 재격발로 단축
+                backoff_time = 0.2
                 time.sleep(backoff_time)
                 current_sniper = get_next_sniper()
                 continue
             return response.json()
         except requests.exceptions.RequestException as e:
             mark_sniper_cooldown(current_sniper, 30)
-            backoff_time = 1.0 + attempt
-            time.sleep(backoff_time)
+            if log_func: log_func(f"   [Gemini Retry] {attempt+1}차 시도 실패 사유: {e}")
+            
+            # [V24.4.3.21] HTTP 429(Too Many Requests) 트래픽 초과 폭탄 감지 시 스마트 쿨다운 게이트 기동
+            if "429" in str(e) or "ResourceExhausted" in str(e) or "Too Many Requests" in str(e):
+                if log_func: log_func("   [스마트 트래픽 댐] HTTP 429 트래픽 포화 감지 -> 1.5초간 공장 라인 잠시 멈춤(Cool-down)...")
+                time.sleep(1.5)
+            else:
+                # 일반 오류 시에는 0.2초 초고속 재격발
+                backoff_time = 0.2
+                time.sleep(backoff_time)
             current_sniper = get_next_sniper()
             continue
     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
@@ -911,10 +921,11 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                                 return -5000
                                 
                             # %가 없는 숫자는 주변(30글자)에 노이즈가 1개라도 있으면 가짜(섹션번호, EC, 카테고리)로 간주
+                            # [V24.4.3.21] 한국어 표 지형이 뒤엉킬 때 대제목 '3'이 함량으로 둔갑하는 현상을 방지하기 위해 한국어 앵커 대거 보완
                             weak_noises = ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", 
                                            "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", 
                                            "분자량", "molecular weight", "mw", "항", "section", "japan", "formula",
-                                           "ingredient", "component", "composition"]
+                                           "ingredient", "component", "composition", "구성성분", "함유량", "명칭", "화학물질명", "관용명", "이명"]
                             if any(noise in context_area for noise in weak_noises):
                                 return -5000
                                 

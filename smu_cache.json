@@ -1,279 +1,55 @@
 {
-    "5d1803e13e93d0872cd90a83ca6ba1a89641deac6ccf77e584792fce93346dfd": {
-        "f_hash": "5d1803e13e93d0872cd90a83ca6ba1a89641deac6ccf77e584792fce93346dfd",
-        "product_name": "4-Aminoantipyrine",
+    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+        "product_name": "Super Way Lube 32",
         "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "83-07-8(99%)",
+        "신호등": "🔴",
+        "raw_content": "",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/11. 4-Aminoantipyrine_wako.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
         "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
+        "used_engine": "regex",
+        "engine_version": "24.4.3.21",
         "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "integrity_reason": "",
         "v2.0_Clean": {
-            "product_name": "4-Aminoantipyrine",
-            "raw_content": "83-07-8(99%)",
+            "product_name": "Super Way Lube 32",
+            "raw_content": "",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "4-Aminoantipyrine",
-            "raw_content": "83-07-8(99%)",
+            "product_name": "Super Way Lube 32",
+            "raw_content": "",
             "measure": "",
             "reg1": [],
             "reg2": []
         }
     },
-    "3133d806176ca906a4fc3204f669432fa4f1d7edd46c03cf8fc06e7827b3fdc8": {
-        "f_hash": "3133d806176ca906a4fc3204f669432fa4f1d7edd46c03cf8fc06e7827b3fdc8",
-        "product_name": "47% Sulfuric Acid (1+2)",
+    "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03": {
+        "f_hash": "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03",
+        "product_name": "Suncide EPH",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7732-18-5(52~54%); 7664-93-9(46~48%)",
+        "raw_content": "122-99-6(미기재%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/12. 47%Sulfuric Acid (Sulfuric Acid (1+2)).pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/020_★[SFG] Suncide EPH MSDS Kor. (Rev.04) 2025-05-13.pdf",
         "page": 1,
         "used_engine": "flash",
-        "engine_version": "24.4.3.19",
+        "engine_version": "24.4.3.21",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
         "v2.0_Clean": {
-            "product_name": "47% Sulfuric Acid (1+2)",
-            "raw_content": "7732-18-5(52~54%); 7664-93-9(46~48%)",
+            "product_name": "Suncide EPH",
+            "raw_content": "122-99-6(미기재%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "47% Sulfuric Acid (1+2)",
-            "raw_content": "7732-18-5(52~54%); 7664-93-9(46~48%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "7f291165447ad8c8c62866b8e2d1a07acbd2a36f0ddc6839122729779c5b204f": {
-        "f_hash": "7f291165447ad8c8c62866b8e2d1a07acbd2a36f0ddc6839122729779c5b204f",
-        "product_name": "5% 아세트산 용액 (5% Acetic acid solution)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64-19-7(5%); 7732-18-5(95%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/13. 5% Acetic acid solution(3).pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "5% 아세트산 용액 (5% Acetic acid solution)",
-            "raw_content": "64-19-7(5%); 7732-18-5(95%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "5% 아세트산 용액 (5% Acetic acid solution)",
-            "raw_content": "64-19-7(5%); 7732-18-5(95%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "d0955c38b9657e05902c8358ccf24034d98096dfce0e4a2e81ee01c9442a6b26": {
-        "f_hash": "d0955c38b9657e05902c8358ccf24034d98096dfce0e4a2e81ee01c9442a6b26",
-        "product_name": "64% Sulfuric Acid",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7664-93-9(61~65%); 7732-18-5(35~39%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/14. 64%Sulfuric Acid (Sulfuric Acid (1+1)).pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "64% Sulfuric Acid",
-            "raw_content": "7664-93-9(61~65%); 7732-18-5(35~39%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "64% Sulfuric Acid",
-            "raw_content": "7664-93-9(61~65%); 7732-18-5(35~39%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "5694dbfeab08eef4634016978208701e562249883c7668ffab1cc95a099cb650": {
-        "f_hash": "5694dbfeab08eef4634016978208701e562249883c7668ffab1cc95a099cb650",
-        "product_name": "Acetic acid",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64-19-7(>99%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/15. Acetic Acid_junsei.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "Acetic acid",
-            "raw_content": "64-19-7(>99%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "Acetic acid",
-            "raw_content": "64-19-7(>99%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "76691562c1aae8a40e3af2aea216f11d62058814373a525b47e978a396acd2a1": {
-        "f_hash": "76691562c1aae8a40e3af2aea216f11d62058814373a525b47e978a396acd2a1",
-        "product_name": "아세트산(빙초산)[Acetic Acid glacial]",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64-19-7(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/16. Acetic Acid_덕산.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "아세트산(빙초산)[Acetic Acid glacial]",
-            "raw_content": "64-19-7(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "아세트산(빙초산)[Acetic Acid glacial]",
-            "raw_content": "64-19-7(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "3ce98b6720aa8f99c3e927c4eeb118e3a80e02831c20d0412172d485a369619e": {
-        "f_hash": "3ce98b6720aa8f99c3e927c4eeb118e3a80e02831c20d0412172d485a369619e",
-        "product_name": "Acetone (010)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "67-64-1(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/17. Acetone_Honeywell.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "Acetone (010)",
-            "raw_content": "67-64-1(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "Acetone (010)",
-            "raw_content": "67-64-1(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "8f51fe90a4648ff545a7f96eb4bf543dd61f259febe8f6ae2ee6e42b95719b3f": {
-        "f_hash": "8f51fe90a4648ff545a7f96eb4bf543dd61f259febe8f6ae2ee6e42b95719b3f",
-        "product_name": "ACETONE",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "67-64-1(100%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/18. Acetone_tedia (1).pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "ACETONE",
-            "raw_content": "67-64-1(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "ACETONE",
-            "raw_content": "67-64-1(100%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "5bc24b96da61437d8633e2085e62021f1d19565ea613b084c8899ff331270ba6": {
-        "f_hash": "5bc24b96da61437d8633e2085e62021f1d19565ea613b084c8899ff331270ba6",
-        "product_name": "A Capping",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "75-05-8(84%); 616-47-7(16%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/19. Acetonitrile_Honeywell.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "v2.0_Clean": {
-            "product_name": "A Capping",
-            "raw_content": "75-05-8(84%); 616-47-7(16%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "A Capping",
-            "raw_content": "75-05-8(84%); 616-47-7(16%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "e214784630cdd6963f010fdf71a0e346b745b01ad39a0c59466eb11cbb2a7f28": {
-        "f_hash": "e214784630cdd6963f010fdf71a0e346b745b01ad39a0c59466eb11cbb2a7f28",
-        "product_name": "Ammonia solution",
-        "reliability": "N/A",
-        "신호등": "🟡",
-        "raw_content": "7664-41-7(28~30%); 7732-18-5(Rem.%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/20. Ammonia Solution_junsei.pdf",
-        "page": 1,
-        "used_engine": "flash",
-        "engine_version": "24.4.3.19",
-        "integrity_score": 40,
-        "integrity_reason": "[품질점수: 40점] ➔ [✅제품명완착] [❌CAS유실]",
-        "v2.0_Clean": {
-            "product_name": "Ammonia solution",
-            "raw_content": "7664-41-7(28~30%); 7732-18-5(Rem.%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "Ammonia solution",
-            "raw_content": "7664-41-7(28~30%); 7732-18-5(Rem.%)",
+            "product_name": "Suncide EPH",
+            "raw_content": "122-99-6(미기재%)",
             "measure": "",
             "reg1": [],
             "reg2": []

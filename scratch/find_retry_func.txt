@@ -1,0 +1,42 @@
+Line 331: def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+  [331] def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+  [332]     current_sniper = initial_sniper
+  [333]     for attempt in range(max_retries):
+  [334]         if not current_sniper:
+  [335]             raise ValueError("🚨 전담 스나이퍼가 배정되지 않았습니다.")
+  [336]             
+  [337]         api_key = current_sniper["key"]
+  [338]         alias = current_sniper["alias"]
+  [339]         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+  [340]         
+  [341]         try:
+  [342]             response = requests.post(url, headers={'Content-Type': 'application/json'}, json=payload, timeout=60)
+  [343]             if response.status_code != 200:
+  [344]                 if log_func: log_func(f"  🔴 {alias} 사격 실패(HTTP {response.status_code})")
+  [345]                 if response.status_code == 429: mark_sniper_cooldown(current_sniper, 60)
+  [346]                 elif response.status_code == 503: mark_sniper_cooldown(current_sniper, 30)
+  [347]                 
+  [348]                 backoff_time = 1.0 + attempt
+  [349]                 time.sleep(backoff_time)
+  [350]                 current_sniper = get_next_sniper()
+  [351]                 continue
+  [352]             return response.json()
+  [353]         except requests.exceptions.RequestException as e:
+  [354]             mark_sniper_cooldown(current_sniper, 30)
+  [355]             backoff_time = 1.0 + attempt
+  [356]             time.sleep(backoff_time)
+  [357]             current_sniper = get_next_sniper()
+  [358]             continue
+  [359]     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
+  [360] 
+  [361] def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
+  [362]     """[V17.4.0.0] 제품명: 비전 주도(Leader) + 텍스트 참고(Reference) 모델"""
+  [363]     if not current_sniper or not image_list: return "", "실패"
+  [364]     first_page_img = image_list[0]
+  [365]     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
+  [366]     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
+  [367] 
+  [368]     # [V17.4.0.0] 텍스트 레이어는 환각 방지용 힌트로만 제공 (AI에게 자유를 부여)
+  [369]     combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[Text Layer Hint for Verification]:\n{text_chunk[:1000]}"
+  [370]     payload = {"contents": [{"parts": [{"text": combined_prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
+  [371]     # [V17.4.0.8] 429 에러 대응 및 재시도 로직 강화
