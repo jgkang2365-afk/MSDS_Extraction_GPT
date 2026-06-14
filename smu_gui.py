@@ -987,7 +987,9 @@ class ExtractionWorker(QThread):
                             "reliability": cached_data.get("reliability", "N/A"),
                             "신호등": cached_data.get("신호등", "⚪"),
                             "raw_content": final_content, 
-                            "status": "수동 수정됨" if manual else "캐시 로드됨"
+                            "status": "수동 수정됨" if manual else "캐시 로드됨",
+                            "integrity_score": cached_data.get("integrity_score", 100),
+                            "integrity_reason": cached_data.get("integrity_reason", "")
                         }
                         self.result_signal.emit(res_data)
                         self.progress_signal.emit(int((i + 1) / total * 100))
@@ -1009,7 +1011,9 @@ class ExtractionWorker(QThread):
                     "full_path": path, 
                     "page": ext_res.get("page", 1), 
                     "used_engine": ext_res.get("used_engine", "regex"),
-                    "engine_version": engine.VERSION # [V17.2.9.9] 버전 낙인 찍기
+                    "engine_version": engine.VERSION, # [V17.2.9.9] 버전 낙인 찍기
+                    "integrity_score": ext_res.get("integrity_score", 100),
+                    "integrity_reason": ext_res.get("integrity_reason", "")
                 }
                 
                 # [NEW] 캐시에 저장 요청
@@ -5099,7 +5103,11 @@ class SMUGUI(QMainWindow):
                 try: os.remove("smu_cache.json")
                 except: pass
             self.cache = {}
-            self.log("[!] 엔진이 새로고침 되었습니다. (정밀 분석을 위해 캐시 초기화됨)")
+            # [V24.4.3.17] 엔진 새로고침 시 테이블 데이터 및 분석 결과 초기화
+            if hasattr(self, 'table'):
+                self.table.setRowCount(0)
+            self.results = []
+            self.log("[!] 엔진이 새로고침 되었습니다. (정밀 분석 및 테이블 초기화 완료)")
 
             import msds_engine_v5
             importlib.reload(msds_engine_v5)
@@ -5542,6 +5550,9 @@ class SMUGUI(QMainWindow):
             item_seq = QTableWidgetItem(combined_idx)
             item_seq.setTextAlignment(Qt.AlignCenter)
             if bg_color: item_seq.setBackground(bg_color)
+            # [V24.4.3.19] 신호등 컬럼 툴팁 스코어링 태그 연동
+            if "integrity_reason" in data and data["integrity_reason"]:
+                item_seq.setToolTip(data["integrity_reason"])
             self.table.setItem(row, 0, item_seq)
 
             # 2. No (파일명 앞 숫자 추출 및 3자리 제로 패딩 강제 - 정렬 무결성)

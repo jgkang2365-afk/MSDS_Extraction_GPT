@@ -1,0 +1,286 @@
+Line 919: self.setToolTip(self.full_text)
+--- Context ---
+  [916]     def set_slim(self, slim):
+  [917]         if slim:
+  [918]             self.setText(self.icon_str)
+  [919]             self.setToolTip(self.full_text)
+  [920]             self.setStyleSheet(self.styleSheet() + "padding-left: 0; text-align: center; font-size: 18px;")
+  [921]         else:
+  [922]             self.setText(self.full_text)
+  [923]             self.setToolTip("")
+  [924]             self.setStyleSheet(self.styleSheet() + "padding-left: 15px; text-align: left; font-size: 13px;")
+---------------
+
+Line 923: self.setToolTip("")
+--- Context ---
+  [920]             self.setStyleSheet(self.styleSheet() + "padding-left: 0; text-align: center; font-size: 18px;")
+  [921]         else:
+  [922]             self.setText(self.full_text)
+  [923]             self.setToolTip("")
+  [924]             self.setStyleSheet(self.styleSheet() + "padding-left: 15px; text-align: left; font-size: 13px;")
+  [925] 
+  [926] class ExtractionWorker(QThread):
+  [927]     """1단계: PDF에서 텍스트 기반 추출만 수행 (API 연동 없이)"""
+  [928]     update_log_signal = pyqtSignal(str)
+---------------
+
+Line 988: "신호등": cached_data.get("신호등", "⚪"),
+--- Context ---
+  [985]                             "f_hash": f_hash, 
+  [986]                             "product_name": final_product, 
+  [987]                             "reliability": cached_data.get("reliability", "N/A"),
+  [988]                             "신호등": cached_data.get("신호등", "⚪"),
+  [989]                             "raw_content": final_content, 
+  [990]                             "status": "수동 수정됨" if manual else "캐시 로드됨"
+  [991]                         }
+  [992]                         self.result_signal.emit(res_data)
+  [993]                         self.progress_signal.emit(int((i + 1) / total * 100))
+---------------
+
+Line 1005: "신호등": ext_res.get("신호등", "⚪"),
+--- Context ---
+  [1002]                     "f_hash": f_hash,
+  [1003]                     "product_name": ext_res.get("제품명", "미확인"),
+  [1004]                     "reliability": ext_res.get("신뢰도", "N/A"),
+  [1005]                     "신호등": ext_res.get("신호등", "⚪"), 
+  [1006]                     "raw_content": ext_res.get("구성성분", ext_res.get("구성성분 및 함유량", "")),
+  [1007]                     # 🚨 [V15.3 파이프 연결] 엔진이 강제로 쏴주는 '측정대상' 수신!
+  [1008]                     "measure_target": ext_res.get("측정대상", ""), 
+  [1009]                     "full_path": path, 
+  [1010]                     "page": ext_res.get("page", 1), 
+---------------
+
+Line 1038: "신호등": "🔴",
+--- Context ---
+  [1035]                     "filename": os.path.basename(path),
+  [1036]                     "product_name": "추출 오류",
+  [1037]                     "reliability": "[ERROR]",
+  [1038]                     "신호등": "🔴",
+  [1039]                     "raw_content": f"오류: {e}",
+  [1040]                     "status": "오류"
+  [1041]                 }
+  [1042]                 self.result_signal.emit(err_data)
+  [1043]                 self.progress_signal.emit(int((i + 1) / total * 100))
+---------------
+
+Line 4366: self.btn_step1.setToolTip("목록에 있는 PDF 파일들에서 MSDS 데이터를 AI로 자동 추출합니다.")
+--- Context ---
+  [4363]         header.addSpacing(20)
+  [4364]         self.btn_step1 = QPushButton("1단계 추출")
+  [4365]         self.btn_step1.setFixedHeight(35); self.btn_step1.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold;")
+  [4366]         self.btn_step1.setToolTip("목록에 있는 PDF 파일들에서 MSDS 데이터를 AI로 자동 추출합니다.")
+  [4367]         self.btn_step1.clicked.connect(self.run_extraction)
+  [4368]         header.addWidget(self.btn_step1)
+  [4369] 
+  [4370]         self.btn_step2 = QPushButton("2단계 검증")
+  [4371]         self.btn_step2.setFixedHeight(35); self.btn_step2.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold;")
+---------------
+
+Line 4372: self.btn_step2.setToolTip("추출된 데이터를 바탕으로 공단 DB 및 마스터 DB와 대조하여 규제 여부를 검증합니다.")
+--- Context ---
+  [4369] 
+  [4370]         self.btn_step2 = QPushButton("2단계 검증")
+  [4371]         self.btn_step2.setFixedHeight(35); self.btn_step2.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold;")
+  [4372]         self.btn_step2.setToolTip("추출된 데이터를 바탕으로 공단 DB 및 마스터 DB와 대조하여 규제 여부를 검증합니다.")
+  [4373]         self.btn_step2.clicked.connect(self.run_validation)
+  [4374]         header.addWidget(self.btn_step2)
+  [4375] 
+  [4376]         self.btn_stop = QPushButton("실행 중지")
+  [4377]         self.btn_stop.setFixedHeight(35); self.btn_stop.setStyleSheet("QPushButton { background-color: #d93025; color: white; font-weight: bold; } QPushButton:disabled { background-color: #eaa9a9; color: #ffffff; }")
+---------------
+
+Line 4394: self.btn_help.setToolTip("핵심 사용법 가이드를 확인합니다.")
+--- Context ---
+  [4391]         # [NEW] UX/UI 온보딩: 도움말 버튼 추가 (기존 빈 줄 낭비 방지를 위해 이 줄로 편입)
+  [4392]         self.btn_help = QToolButton()
+  [4393]         self.btn_help.setText(" ? ")
+  [4394]         self.btn_help.setToolTip("핵심 사용법 가이드를 확인합니다.")
+  [4395]         self.btn_help.setStyleSheet(f"""
+  [4396]             QToolButton {{
+  [4397]                 background-color: {PRIMARY_BLUE};
+  [4398]                 color: white;
+  [4399]                 border-radius: 12px;
+---------------
+
+Line 4440: btn_save_h.setToolTip("현재 화면에 표시된 데이터를 엑셀(Excel) 파일로 저장합니다.")
+--- Context ---
+  [4437]         btn_save_h = QPushButton("📁 엑셀에 저장")
+  [4438]         btn_save_h.setFixedWidth(130); btn_save_h.setFixedHeight(35)
+  [4439]         btn_save_h.setStyleSheet("background-color: #28a745; color: white; font-weight: bold;")
+  [4440]         btn_save_h.setToolTip("현재 화면에 표시된 데이터를 엑셀(Excel) 파일로 저장합니다.")
+  [4441]         btn_save_h.clicked.connect(self.perform_standard_save)
+  [4442]         excel_bar.addWidget(btn_save_h)
+  [4443]         
+  [4444]         self.btn_open_ex = QPushButton("📂 엑셀 열기")
+  [4445]         self.btn_open_ex.setFixedWidth(110); self.btn_open_ex.setFixedHeight(35)
+---------------
+
+Line 4465: self.table.horizontalHeaderItem(3).setToolTip("CAS 번호를 클릭하면 KOSHA 화학물질정보 페이지로 이동합니다.")
+--- Context ---
+  [4462]             "순번", "No", "원본 제품명", "CAS 원본(수정)", 
+  [4463]             "측정대상", "2차 결과(규제)", "1차 결과(전체)", "파일명", "Hash", "Full Path", "Page"
+  [4464]         ])
+  [4465]         self.table.horizontalHeaderItem(3).setToolTip("CAS 번호를 클릭하면 KOSHA 화학물질정보 페이지로 이동합니다.")
+  [4466]         self.table.verticalHeader().setVisible(False)
+  [4467] 
+  [4468]         header_table = self.table.horizontalHeader()
+  [4469]         header_table.sectionResized.connect(self._safe_resize_rows)
+  [4470]         self.table.setWordWrap(True)
+---------------
+
+Line 4849: "신호등": "⚪",
+--- Context ---
+  [4846]                     "f_hash": f_hash,
+  [4847]                     "product_name": "미분석",
+  [4848]                     "reliability": "[NEW]",
+  [4849]                     "신호등": "⚪",
+  [4850]                     "raw_content": "",
+  [4851]                     "full_path": path,
+  [4852]                     "status": "대기 중"
+  [4853]                 }
+  [4854]                 self.render_file_rows(f_hash)
+---------------
+
+Line 5531: # 배경색 결정 (신호등 상태 기준)
+--- Context ---
+  [5528]                 row = self.table.rowCount()
+  [5529]                 self.table.insertRow(row)
+  [5530]             
+  [5531]             # 배경색 결정 (신호등 상태 기준)
+  [5532]             traffic_val = data.get("신호등", "🔴")
+  [5533]             if str(traffic_val).lower() == "green": traffic_val = "🟢"
+  [5534]             elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
+  [5535]             elif str(traffic_val).lower() == "red": traffic_val = "🔴"
+  [5536]             emoji = traffic_val[0] if traffic_val else "🔴"
+---------------
+
+Line 5532: traffic_val = data.get("신호등", "🔴")
+--- Context ---
+  [5529]                 self.table.insertRow(row)
+  [5530]             
+  [5531]             # 배경색 결정 (신호등 상태 기준)
+  [5532]             traffic_val = data.get("신호등", "🔴")
+  [5533]             if str(traffic_val).lower() == "green": traffic_val = "🟢"
+  [5534]             elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
+  [5535]             elif str(traffic_val).lower() == "red": traffic_val = "🔴"
+  [5536]             emoji = traffic_val[0] if traffic_val else "🔴"
+  [5537]             
+---------------
+
+Line 5708: """[V10.2] 하이브리드 검증 결과 처리 (신호등 🔵 마킹 및 검수 큐잉 포함)"""
+--- Context ---
+  [5705] 
+  [5706] 
+  [5707]     def on_validation_result(self, res_data):
+  [5708]         """[V10.2] 하이브리드 검증 결과 처리 (신호등 🔵 마킹 및 검수 큐잉 포함)"""
+  [5709]         target_hash = res_data.get("f_hash")
+  [5710]         v = res_data.get("validation", {})
+  [5711]         fn = res_data.get("filename", "unknown")
+  [5712]         status = res_data.get("status", "High-Pass")
+  [5713]         
+---------------
+
+Line 5737: # 신호등 결정
+--- Context ---
+  [5734]                 self.cache[target_hash]["status"] = status
+  [5735]                 self.cache[target_hash]["product_name"] = res_data.get("product_name", self.cache[target_hash].get("product_name"))
+  [5736]                 
+  [5737]                 # 신호등 결정
+  [5738]                 traffic_col = 0
+  [5739]                 curr_traffic_text = self.table.item(found_row, traffic_col).text() if self.table.item(found_row, traffic_col) else ""
+  [5740]                 match = re.match(r'^([🔴🟡🟢⚪])\s*(.*)$', curr_traffic_text)
+  [5741]                 existing_emoji = match.group(1) if match else "⚪"
+  [5742]                 
+---------------
+
+Line 5749: self.cache[target_hash]["신호등"] = emoji
+--- Context ---
+  [5746]                         emoji = existing_emoji
+  [5747]                     else:
+  [5748]                         emoji = "🟢"
+  [5749]                 self.cache[target_hash]["신호등"] = emoji
+  [5750]                 
+  [5751]                 if "components" in res_data:
+  [5752]                     self.cache[target_hash]["components"] = res_data["components"]
+  [5753]                     
+  [5754]                     # 3중 스냅샷 캐시 레이어 갱신
+---------------
+
+Line 6143: # 신호등 이모지 결정
+--- Context ---
+  [6140]         for _ in range(N):
+  [6141]             self.table.insertRow(self.table.rowCount())
+  [6142]             
+  [6143]         # 신호등 이모지 결정
+  [6144]         emoji = data.get("신호등", "⚪")
+  [6145]         # 순번
+  [6146]         seq_num = str(start_row // N + 1) if N > 1 else str(start_row + 1)
+  [6147]         
+  [6148]         # 배경색 결정 (신호등 상태 기준)
+---------------
+
+Line 6144: emoji = data.get("신호등", "⚪")
+--- Context ---
+  [6141]             self.table.insertRow(self.table.rowCount())
+  [6142]             
+  [6143]         # 신호등 이모지 결정
+  [6144]         emoji = data.get("신호등", "⚪")
+  [6145]         # 순번
+  [6146]         seq_num = str(start_row // N + 1) if N > 1 else str(start_row + 1)
+  [6147]         
+  [6148]         # 배경색 결정 (신호등 상태 기준)
+  [6149]         bg_color = None
+---------------
+
+Line 6148: # 배경색 결정 (신호등 상태 기준)
+--- Context ---
+  [6145]         # 순번
+  [6146]         seq_num = str(start_row // N + 1) if N > 1 else str(start_row + 1)
+  [6147]         
+  [6148]         # 배경색 결정 (신호등 상태 기준)
+  [6149]         bg_color = None
+  [6150]         if emoji == "🔴": bg_color = QColor("#ffebeb")
+  [6151]         elif emoji == "🟡": bg_color = QColor("#fff9db")
+  [6152]         elif emoji == "🟢": bg_color = QColor("#e1f7d5")
+  [6153]         
+---------------
+
+Line 6350: """2단계 검증 결과를 테이블에 업데이트 (V10.2 파란색 신호등 🔵 제어 추가)"""
+--- Context ---
+  [6347]         self._safe_resize_rows()
+  [6348] 
+  [6349]     def update_validation_row(self, row, cas_with_content, res_1st_list, res_2nd_list, work_subjects="", status="High-Pass", components=None):
+  [6350]         """2단계 검증 결과를 테이블에 업데이트 (V10.2 파란색 신호등 🔵 제어 추가)"""
+  [6351]         try:
+  [6352]             # Hash를 가져와 캐시 조회
+  [6353]             f_hash = self.table.item(row, 8).text() if self.table.item(row, 8) else ""
+  [6354]             manual = self.cache.get(f_hash, {}).get("manual_data", {})
+  [6355]             
+---------------
+
+Line 6358: # 🚨 [수정: V15.8.16 호환] 신호등 이모지 및 배경색 제어 (1단계 경고 보존)
+--- Context ---
+  [6355]             
+  [6356]             self.table.blockSignals(True)
+  [6357]             
+  [6358]             # 🚨 [수정: V15.8.16 호환] 신호등 이모지 및 배경색 제어 (1단계 경고 보존)
+  [6359]             traffic_col = 0
+  [6360]             curr_traffic_text = self.table.item(row, traffic_col).text() if self.table.item(row, traffic_col) else ""
+  [6361]             
+  [6362]             # 1. 기존의 이모지(경고 상태)와 순번을 분리
+  [6363]             match = re.match(r'^([🔴🟡🟢⚪])\s*(.*)$', curr_traffic_text)
+---------------
+
+Line 6383: # 신호등 업데이트
+--- Context ---
+  [6380]                     emoji = "🟢"
+  [6381]                     bg_color = QColor("#e1f7d5")
+  [6382] 
+  [6383]             # 신호등 업데이트
+  [6384]             item_seq = QTableWidgetItem(f"{emoji} {pure_idx}")
+  [6385]             item_seq.setTextAlignment(Qt.AlignCenter)
+  [6386]             if bg_color: item_seq.setBackground(bg_color)
+  [6387]             self.table.setItem(row, traffic_col, item_seq)
+  [6388] 
+---------------
+

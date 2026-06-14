@@ -152,7 +152,7 @@ def refine_msds_components_strict(raw_components):
             
         # 2. 함유량 특이 텍스트 이원화 표준화 관문
         # 잔량 성상 키워드가 발견되는 경우 (화학 물질명 내 'premium' 등 철자 오염으로 인한 가짜 rem.% 환각 확정 차단)
-        if any(k in pct.lower() for k in ["rem", "balance"]) or any(k in pct for k in ["잔량", "나머지"]):
+        if any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
             pct = "Rem."
         # 비공개/공백/미기재 성상 키워드가 발견되거나 값이 비어있는 경우
         elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
@@ -224,7 +224,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.15" # [V24.4.3.15] 와코 부등호 보완 및 대제목 유령 숫자·세로 지형 혼선 원천 차단판
+VERSION = "24.4.3.19" # [V24.4.3.19] 1안 공간 제로형 풍선도움말(Tooltip) 정형 태그 스코어링 통합판
 
 def clean_ocr_text_to_json(ocr_text, system_prompt, current_sniper, log_func=None):
     """
@@ -431,7 +431,7 @@ def _normalize_single_content(content_str):
     sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min|\+)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
 
     # 2. 특수 키워드 (잔량 등)
-    if any(k in v.lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
+    if any(k in v.lower() for k in ["balance", "잔량", "rem", "residual"]): return "Rem.%"
     # 3. ± 범위 처리
     pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
     if pm_match:
@@ -658,6 +658,7 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
     """[V24.0.0.0] 분업의 철칙: 블랙홀 차단(엄격한 행 분리) 및 GHS 노이즈 필터링 (AI 토스 최적화)"""
     if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
     found = []
+    product_id_found = []
     
     try:
         raw_words = page.get_text("words")
@@ -809,13 +810,15 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         for line in physical_lines:
             if line["y"] < y_start: continue # y_start 이전 라인은 행 구성에서 생략 (블랙홀 방어)
             row_text = line["text"]
-            # [V24.4.3.15] 대제목(Section 3) 줄에 적힌 부서 번호 '3' 등이 함량 숫자로 오독되어 자루에 담기는 현상 원천 배제
+            # [V24.4.3.19] 대제목 줄에 적힌 부서 번호 '3' 오독 현상 원천 차단
             if re.search(r'SECTION\s*[3456]', row_text, re.I):
                 continue
             cas_list = cas_pattern.findall(row_text)
             
             if cas_list:
-                current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"]}
+                # [V24.4.3.19] 상류 제품 식별 단락 오독 방지 가드라인 힌트
+                is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
+                current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
                 for p_line in pending_lines:
                     current_row["words"].extend(p_line["words"])
                 pending_lines = []
@@ -823,7 +826,7 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 logical_rows.append(current_row)
             else:
                 # [V24.4.3.1] 표가 끝나고 하단 응급조치 문장이 마지막 성분명으로 흘러 넘치는 현상을 40픽셀 울타리로 원천 차단
-                # [V24.4.3.15] 세로형/리스트형 구조에서 다음 성분 명칭 라인이 기존 행으로 흡수되는 것을 차단
+                # [V24.4.3.19] 세로형 구조에서 다음 물질 명칭선이 기존 행 자루로 흡수되는 것 강제 단절
                 is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
                 if current_row and (line["y"] - current_row["last_y"]) < 40 and not is_new_ingredient_line:
                     current_row["words"].extend(line["words"])
@@ -1011,7 +1014,7 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 
                 # 주님의 표준 배달 규격 규제 체인 결합 (combined_format 생성을 상류로 강제 일치)
                 combined_text = f"{name_str}({content})[{target_cas}]"
-                found.append({
+                item_obj = {
                     "name": name_str, 
                     "chemical_name": name_str,
                     "cas": target_cas,
@@ -1020,10 +1023,19 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     "content": content, 
                     "engine": "Regex-Recovery",
                     "combined_format": combined_text
-                })
+                }
+                # [V24.4.3.19] 제품 껍데기 번호는 임시 가두리 보관함에 저축
+                if row.get("is_product_id"):
+                    product_id_found.append(item_obj)
+                else:
+                    found.append(item_obj)
 
     except Exception as e:
         if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
+        
+    # [V24.4.3.19] 단일 물질(C유형) 최종 구출: 진짜 성분이 0건일 때만 가두리 자산을 복구하여 글로벌 누락 방어
+    if not found and product_id_found:
+        found.extend(product_id_found)
         
     return found, inherited_x_range
 
@@ -1164,7 +1176,7 @@ def call_gpt_4o_mini(image_list=None, prompt=None, log_func=None):
     return None
 
 def _clean_content_odl(text):
-    if any(k in str(text).lower() for k in ["balance", "잔량", "rem"]): return "Rem.%"
+    if any(k in str(text).lower() for k in ["balance", "잔량", "rem", "residual"]): return "Rem.%"
     return text
 
 def parse_row_robust_v2(row, priority_col_idx=-1):
@@ -1562,11 +1574,31 @@ def process_pdf(pdf_path, log_func=None):
     gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "analytic"
 
     
+    # [V24.4.3.19] 1안: 공간 제로형 풍선도움말 정형 태그 스코어링 시스템 실시간 연산
+    score = 100
+    reason_tags = []
+    
+    if not product_name:
+        score -= 10
+        reason_tags.append("[❌제품명분실]")
+    else:
+        reason_tags.append("[✅제품명완착]")
+        
+    if has_invalid_cas:
+        score -= 60
+        reason_tags.append("[❌CAS유실]")
+    else:
+        reason_tags.append("[✅CAS정합]")
+        
+    integrity_reason = f"[품질점수: {score}점] ➔ " + " ".join(reason_tags)
+    
     res_obj = {
         "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
         "교정_사유": reason,
-        "신호등": "🟡" if (has_invalid_cas or is_ai_extracted or not product_name) else "🟢",
-        "used_engine": gui_engine_name
+        "신호등": "🟡" if (has_invalid_cas or not product_name) else "🟢",
+        "used_engine": gui_engine_name,
+        "integrity_score": score,
+        "integrity_reason": integrity_reason
     }
     
     traffic_light = res_obj.get("신호등", "⚪")

@@ -126,7 +126,7 @@ class MSDSCore:
                     final_content = "미기재%"
                 else:
                     # [공정 2] 잔량 토큰의 'Rem.' 단일 규격 치환
-                    keywords = ["balance", "remainder", "rest", "잔량", "나머지"]
+                    keywords = ["balance", "remainder", "rest", "residual", "잔량", "나머지"]
                     if any(kw in content_val for kw in keywords):
                         final_content = "Rem."
                     elif content_val == "rem.":
@@ -135,7 +135,7 @@ class MSDSCore:
                         # [공정 3] 'CAS번호(함유량%);' 수평 체인 결합
                         if not content_val.endswith("%") and not content_val.endswith("rem.") and not content_val.endswith("rem"):
                             content_val = content_val + "%"
-                        final_content = content_val
+                        final_content = content_val.replace("rem.%", "Rem.%")
                         
                 comp_parts.append(f"{cas_val}({final_content})")
                 

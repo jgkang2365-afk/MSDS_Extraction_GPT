@@ -1,0 +1,151 @@
+Line 5500:     def add_result_to_table(self, data):
+Line 5501:         """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""
+Line 5502:         # [NEW] 워터마크 즉시 숨김
+Line 5503:         if hasattr(self, 'lbl_watermark'):
+Line 5504:             self.lbl_watermark.hide()
+Line 5505:         try:
+Line 5506:             f_hash = data.get("f_hash")
+Line 5507:             # 🚨 [V17.3.3.3] 기존 행 업데이트 로직 (Selective Extraction 대응)
+Line 5508:             existing_row = -1
+Line 5509:             if self.table.rowCount() > 0:
+Line 5510:                 for r in range(self.table.rowCount()):
+Line 5511:                     hash_item = self.table.item(r, 8)
+Line 5512:                     if hash_item and hash_item.text() == f_hash:
+Line 5513:                         existing_row = r
+Line 5514:                         break
+Line 5515:             
+Line 5516:             self.table.blockSignals(True)
+Line 5517:             self.table.setSortingEnabled(False)
+Line 5518:             
+Line 5519:             if existing_row >= 0:
+Line 5520:                 row = existing_row
+Line 5521:                 # 기존 결과 객체 업데이트 (메모리 동기화)
+Line 5522:                 for i, res in enumerate(self.results):
+Line 5523:                     if res.get("f_hash") == f_hash:
+Line 5524:                         self.results[i] = data
+Line 5525:                         break
+Line 5526:             else:
+Line 5527:                 self.results.append(data)
+Line 5528:                 row = self.table.rowCount()
+Line 5529:                 self.table.insertRow(row)
+Line 5530:             
+Line 5531:             # 배경색 결정 (신호등 상태 기준)
+Line 5532:             traffic_val = data.get("신호등", "🔴")
+Line 5533:             if str(traffic_val).lower() == "green": traffic_val = "🟢"
+Line 5534:             elif str(traffic_val).lower() == "yellow": traffic_val = "🟡"
+Line 5535:             elif str(traffic_val).lower() == "red": traffic_val = "🔴"
+Line 5536:             emoji = traffic_val[0] if traffic_val else "🔴"
+Line 5537:             
+Line 5538:             bg_color = None
+Line 5539:             if emoji == "🔴": bg_color = QColor("#ffebeb")
+Line 5540:             elif emoji == "🟡": bg_color = QColor("#fff9db")
+Line 5541:             elif emoji == "🟢": bg_color = QColor("#e1f7d5")
+Line 5542:             
+Line 5543:             # [수정] 행 번호보다는 데이터의 순수 순번을 위해 row+1 사용 (정렬 후에도 고유하도록)
+Line 5544:             combined_idx = f"{emoji} {row + 1}"
+Line 5545:             
+Line 5546:             item_seq = QTableWidgetItem(combined_idx)
+Line 5547:             item_seq.setTextAlignment(Qt.AlignCenter)
+Line 5548:             if bg_color: item_seq.setBackground(bg_color)
+Line 5549:             self.table.setItem(row, 0, item_seq)
+Line 5550: 
+Line 5551:             # 2. No (파일명 앞 숫자 추출 및 3자리 제로 패딩 강제 - 정렬 무결성)
+Line 5552:             fn = data.get("filename", "")
+Line 5553:             match_no = re.match(r"^(\d+)", fn)
+Line 5554:             if match_no:
+Line 5555:                 no_val = f"{int(match_no.group(1)):03d}"
+Line 5556:             else:
+Line 5557:                 no_val = "999"
+Line 5558:             
+Line 5559:             item_no = QTableWidgetItem(no_val)
+Line 5560:             item_no.setTextAlignment(Qt.AlignCenter)
+Line 5561:             if bg_color: item_no.setBackground(bg_color)
+Line 5562:             self.table.setItem(row, 1, item_no)
+Line 5563: 
+Line 5564:             # [방탄] 제품명 NoneType 및 에러 방어 로직
+Line 5565:             raw_prod = data.get("product_name")
+Line 5566:             if not raw_prod or str(raw_prod).lower() == "none":
+Line 5567:                 raw_prod = f"미추출({data.get('filename')})"
+Line 5568:                 
+Line 5569:             item_prod = QTableWidgetItem(str(raw_prod))
+Line 5570:             if bg_color: item_prod.setBackground(bg_color)
+Line 5571:             self.table.setItem(row, 2, item_prod)
+Line 5572: 
+Line 5573:             # [최종 확정] CAS 원본 열은 PDF 추출 원문과 함유량을 100% 순수 유지 (표준명 병기 폐기)
+Line 5574:             raw = str(data.get("raw_content", ""))
+Line 5575:             clean_cas_parts = [p.strip() for p in str(raw).split(";") if p.strip()]
+Line 5576:             
+Line 5577:             item_cas = QTableWidgetItem(";\n".join(clean_cas_parts))
+Line 5578:             if bg_color: item_cas.setBackground(bg_color)
+Line 5579:             self.table.setItem(row, 3, item_cas)
+Line 5580: 
+Line 5581:             # 5. [수정] 공란이었던 측정대상(4번 열)에 엔진이 강제로 보낸 데이터가 있다면 삽입!
+Line 5582:             measure_val = data.get("measure_target", "")
+Line 5583:             item_measure = QTableWidgetItem(str(measure_val))
+Line 5584:             if bg_color: item_measure.setBackground(bg_color)
+Line 5585:             self.table.setItem(row, 4, item_measure)
+Line 5586: 
+Line 5587:             # 6-7. 2차/1차 결과 열(5, 6번 열)만 2단계를 위해 공란으로 비워둠
+Line 5588:             for c_idx in range(5, 7):
+Line 5589:                 item_blank = QTableWidgetItem("")
+Line 5590:                 if bg_color: item_blank.setBackground(bg_color)
+Line 5591:                 self.table.setItem(row, c_idx, item_blank)
+Line 5592:             
+Line 5593:             # 8. 파일명 (숨김)
+Line 5594:             item_fn = QTableWidgetItem(fn)
+Line 5595:             if bg_color: item_fn.setBackground(bg_color)
+Line 5596:             self.table.setItem(row, COL_IDX_FILENAME, item_fn)
+Line 5597: 
+Line 5598:             # 9. 해시 (숨김) - [NEW] 캐시 업데이트용
+Line 5599:             f_hash = data.get("f_hash", "")
+Line 5600:             item_hash = QTableWidgetItem(f_hash)
+Line 5601:             self.table.setItem(row, COL_IDX_HASH, item_hash)
+Line 5602: 
+Line 5603:             # 10. [V7.0] Full Path (숨김 - 미리보기 브릿지용)
+Line 5604:             item_path = QTableWidgetItem(data.get("full_path", ""))
+Line 5605:             self.table.setItem(row, COL_IDX_FILEPATH, item_path)
+Line 5606: 
+Line 5607:             # 11. [V7.0] Page (숨김 - 미리보기 브릿지용)
+Line 5608:             item_page = QTableWidgetItem(str(data.get("page", 1)))
+Line 5609:             self.table.setItem(row, COL_IDX_PAGE, item_page)
+Line 5610: 
+Line 5611:             # [핵심] No(1번 열) 기준으로 오름차순 정렬 활성
+Line 5612:             self.table.setSortingEnabled(True)
+Line 5613:             self.table.sortItems(1, Qt.AscendingOrder)
+Line 5614:             
+Line 5615:             # 행 높이 재조정
+Line 5616:             self._safe_resize_rows()
+Line 5617:             self.table.blockSignals(False) # [NEW] 시그널 재개
+Line 5618:         except Exception as e:
+Line 5619:             self.table.blockSignals(False)
+Line 5620:             self.log(f"[에러] 테이블 추가 실패: {e}")
+Line 5621: 
+Line 5622:     def run_validation(self):
+Line 5623:         rowCount = self.table.rowCount()
+Line 5624:         if rowCount == 0:
+Line 5625:             QMessageBox.warning(self, "경고", "검증할 데이터가 없습니다. 먼저 1단계를 진행하세요.")
+Line 5626:             return
+Line 5627: 
+Line 5628:         self.table.blockSignals(True) # [NEW] 시그널 일시 차단
+Line 5629: 
+Line 5630:         # 테이블에서 현재 CAS/함유량 데이터 읽기 (f_hash 기준으로 중복 제거)
+Line 5631:         seen_hashes = set()
+Line 5632:         table_data = []
+Line 5633:         for r in range(rowCount):
+Line 5634:             f_hash = self.table.item(r, 8).text().strip() if self.table.item(r, 8) else ""
+Line 5635:             if not f_hash or f_hash in seen_hashes:
+Line 5636:                 continue
+Line 5637:             seen_hashes.add(f_hash)
+Line 5638:             
+Line 5639:             fn = self.table.item(r, 7).text().strip() if self.table.item(r, 7) else ""
+Line 5640:             prod = self.table.item(r, 2).text().strip() if self.table.item(r, 2) else ""
+Line 5641:             
+Line 5642:             # CAS 원본(3번 열)은 성분별로 쪼개져 있는 상태이므로 캐시의 raw_content를 최우선으로 읽습니다.
+Line 5643:             cas_content = self.cache.get(f_hash, {}).get("raw_content", "")
+Line 5644:             if not cas_content:
+Line 5645:                 # 캐시에 없을 경우 동일 f_hash를 가진 행들의 3번 열을 병합
+Line 5646:                 cas_parts = []
+Line 5647:                 for sub_r in range(rowCount):
+Line 5648:                     sub_hash = self.table.item(sub_r, 8).text().strip() if self.table.item(sub_r, 8) else ""
+Line 5649:                     if sub_hash == f_hash:
+Line 5650:                         c_val = self.table.item(sub_r, 3).text().strip() if self.table.item(sub_r, 3) else ""
