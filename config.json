@@ -1,18 +1,18 @@
 {
     "mapping": {
         "순번/No": "A",
-        "제품명": "c",
+        "제품명": "d",
         "파일명": "P",
-        "2차 결과(규제)": "L",
-        "1차 결과(전체)": "N",
-        "측정대상1": "M",
+        "2차 결과(규제)": "J",
+        "1차 결과(전체)": "K",
+        "측정대상1": "I",
         "측정대상2": "",
         "CAS 원본": "O",
         "공정명": "B",
         "제조/사용": "C",
-        "사용용도": "z",
-        "월취급량": "r",
-        "단위": "s"
+        "사용용도": "E",
+        "월취급량": "S",
+        "단위": "T"
     },
     "measure_mapping": {
         "공정명 열": "B",
@@ -28,13 +28,16 @@
         "현황 화학물질명 열": "I"
     },
     "backup_path": "",
-    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/연무마이스터고등학교/TEST_연무마이스터고(견적서-26년도)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
     "clean_sheet_name": "화학물질입력_양식",
-    "measure_sheet_name": "측정계획(양식)",
+    "measure_sheet_name": "화학물질입력_양식",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/035_아이생각수성내부프로 (M-BASE)_GHS국문.pdf"
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/10. 3-Methyl-1-phenyl-5-pyrazolone_wako.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/15. Acetic Acid_junsei.pdf",
+        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/20. Ammonia Solution_junsei.pdf"
     ]
 }

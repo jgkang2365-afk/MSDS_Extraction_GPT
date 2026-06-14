@@ -5,6 +5,65 @@ import re
 import time
 from itertools import cycle
 import json
+import requests
+
+def call_deepseek_ocr_2(image_base64_list, system_prompt, log_func=None):
+    """
+    [V24.4.3.7] DeepSeek-OCR-2 전용 초저가 마스터 비전 호출 엔진
+    """
+    # load_dotenv가 호출된 후에 환경변수를 올바르게 확보할 수 있도록 동적으로 로드
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    deepseek_base_url = os.environ.get("DEEPSEEK_API_BASE_URL", "https://api.novita.ai/v3/openai")
+    deepseek_model = os.environ.get("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-ocr-2")
+
+    if not deepseek_key:
+        if log_func: log_func(" ❌ [인프라 마비] .env 파일 내 DEEPSEEK_API_KEY 가 누락되었습니다.")
+        return None
+        
+    headers = {
+        "Authorization": f"Bearer {deepseek_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # 텍스트 지시문(system_prompt)과 이미지 목록을 단일 user 메시지 규격으로 통합 가공
+    user_content = [
+        {"type": "text", "text": system_prompt}
+    ]
+    for b64 in image_base64_list:
+        user_content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64}"}
+        })
+    
+    messages = [
+        {"role": "user", "content": user_content}
+    ]
+    
+    # [V24.4.3.12] HTTP 400 오류를 유발하는 비호환 response_format 제거 및 순정 복구
+    payload = {
+        "model": deepseek_model,
+        "messages": messages,
+        "temperature": 0.1
+    }
+    
+    try:
+        response = requests.post(f"{deepseek_base_url}/chat/completions", headers=headers, json=payload, timeout=25)
+        if response.status_code == 200:
+            res_json = response.json()
+            raw_content = res_json["choices"][0]["message"]["content"]
+            # 마크다운 코드 블록 기호(```json 등) 정밀 세척
+            cleaned_content = re.sub(r'```json\s*', '', raw_content, flags=re.I)
+            cleaned_content = re.sub(r'```\s*$', '', cleaned_content)
+            return cleaned_content.strip()
+        elif response.status_code == 429:
+            if log_func: log_func(" 🟡 [DeepSeek 429] 딥시크 서버 할당량 초과 발생. 즉시 백업 회로 연동.")
+            return "HTTP_429_LIMIT"
+        else:
+            if log_func: log_func(f" ❌ [DeepSeek 에러] HTTP {response.status_code} 발생.")
+            return None
+    except Exception as e:
+        if log_func: log_func(f" ❌ [DeepSeek 통신 끊김] 원인: {str(e)}")
+        return None
 import fitz 
 import unicodedata
 import requests
@@ -92,8 +151,8 @@ def refine_msds_components_strict(raw_components):
             continue
             
         # 2. 함유량 특이 텍스트 이원화 표준화 관문
-        # 잔량 성상 키워드가 발견되는 경우
-        if any(k in pct.lower() or k in name.lower() for k in ["rem", "balance", "잔량", "나머지"]):
+        # 잔량 성상 키워드가 발견되는 경우 (화학 물질명 내 'premium' 등 철자 오염으로 인한 가짜 rem.% 환각 확정 차단)
+        if any(k in pct.lower() for k in ["rem", "balance"]) or any(k in pct for k in ["잔량", "나머지"]):
             pct = "Rem."
         # 비공개/공백/미기재 성상 키워드가 발견되거나 값이 비어있는 경우
         elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
@@ -165,7 +224,37 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.5" # [V24.4.3.5] 행 내부 단어 자산 X축 좌표 기준 정렬 및 격리 완착판
+VERSION = "24.4.3.15" # [V24.4.3.15] 와코 부등호 보완 및 대제목 유령 숫자·세로 지형 혼선 원천 차단판
+
+def clean_ocr_text_to_json(ocr_text, system_prompt, current_sniper, log_func=None):
+    """
+    [V24.4.3.9] 딥시크 OCR이 획득한 마크다운 텍스트를 가벼운 텍스트 전용 Gemini를 통해 JSON으로 정제
+    """
+    if not current_sniper:
+        return None
+        
+    # 이미지를 탑재하지 않고 순수 텍스트 지시문으로만 구성하여 저비용 기동
+    combined_prompt = f"{system_prompt}\n\n[🚨 CRITICAL OCR RAW DATA]:\n{ocr_text}"
+    
+    payload = {
+        "contents": [{"parts": [{"text": combined_prompt}]}],
+        "generationConfig": {
+            "temperature": 0.1,
+            "responseMimeType": "application/json"
+        }
+    }
+    
+    try:
+        result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
+        if result:
+            text_response = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+            data = json.loads(text_response)
+            if isinstance(data, list):
+                return {"구성성분": data}
+            return data
+    except Exception as e:
+        if log_func: log_func(f" ⚠️ [텍스트 정제 실패] 원인: {str(e)}")
+    return None
 
 def load_prompt(prompt_type, version):
     """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
@@ -239,7 +328,7 @@ EXCEPTION_REGISTRY = {
     }
 }
 
-def call_gemini_with_retry(payload, initial_sniper, max_retries=8, log_func=None, model="gemini-2.5-flash"):
+def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None, model="gemini-2.5-flash"):
     current_sniper = initial_sniper
     for attempt in range(max_retries):
         if not current_sniper:
@@ -326,8 +415,8 @@ def _normalize_single_content(content_str):
     if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
         return "미기재%"
 
-    # 1. 기초 정규화 (공백 제거 및 전각 -> 반각)
-    v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥')
+    # 1. 기초 정규화 (공백 제거 및 전각 -> 반각, 와코 등 변칙 부등호 보완)
+    v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥').replace('=<', '≤').replace('=>', '≥')
     # [V17.3.2.25] 약어 뒤의 마침표가 숫자 추출(.)을 방해하지 않도록 사전에 제거
     v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
     
@@ -387,13 +476,6 @@ def _normalize_single_content(content_str):
             if (is_ge or is_more) and has_range_sep: return f"≥{n1}%"
             return f"{pref}{n1}%"
         except: return "미기재%"
-        
-    # [V17.4.0.11] 수치 개수에 따른 분기 처리 (단일 수치 vs 범위 수치)
-    if len(nums) == 1:
-        f1 = float(nums[0])
-        n1 = int(f1) if f1.is_integer() else f1
-        if n1 > 110: return "미기재%"
-        return f"{pref}{n1}%"
 
     elif len(nums) >= 2:
         try:
@@ -727,6 +809,9 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
         for line in physical_lines:
             if line["y"] < y_start: continue # y_start 이전 라인은 행 구성에서 생략 (블랙홀 방어)
             row_text = line["text"]
+            # [V24.4.3.15] 대제목(Section 3) 줄에 적힌 부서 번호 '3' 등이 함량 숫자로 오독되어 자루에 담기는 현상 원천 배제
+            if re.search(r'SECTION\s*[3456]', row_text, re.I):
+                continue
             cas_list = cas_pattern.findall(row_text)
             
             if cas_list:
@@ -738,7 +823,9 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                 logical_rows.append(current_row)
             else:
                 # [V24.4.3.1] 표가 끝나고 하단 응급조치 문장이 마지막 성분명으로 흘러 넘치는 현상을 40픽셀 울타리로 원천 차단
-                if current_row and (line["y"] - current_row["last_y"]) < 40:
+                # [V24.4.3.15] 세로형/리스트형 구조에서 다음 성분 명칭 라인이 기존 행으로 흡수되는 것을 차단
+                is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
+                if current_row and (line["y"] - current_row["last_y"]) < 40 and not is_new_ingredient_line:
                     current_row["words"].extend(line["words"])
                     current_row["last_y"] = line["y"]
                 else:
@@ -751,9 +838,10 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
             row_words = row.get("words", [])
             # 💡 [V24.4.3.5] 행 내부 단어 자산 X축 좌표 기준 정렬 가드레일
             # 함유량 기둥 시작점(content_x_min)이 정상 감지되었다면, 해당 영토 내부의 단어(함량 수치)들을 따로 격리하여 맨 뒤로 배치
-            if content_x_min != 9999:
-                content_words = [w for w in row_words if w[0] >= (content_x_min - 15)]
-                other_words = [w for w in row_words if w[0] < (content_x_min - 15)]
+            if content_x_mid != 9999:
+                # [V24.4.3.6] 유동적 헤더 자석 윈도우: 경직된 15px 컷오프를 폐기하고 헤더 중심축(content_x_mid) 기준 좌우 45px 중력장으로 단어 자산을 유연 격리하여 마진 밀림 방어
+                content_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) <= 45]
+                other_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) > 45]
                 
                 content_words.sort(key=lambda w: (w[1], w[0]))
                 other_words.sort(key=lambda w: (w[1], w[0]))
@@ -822,7 +910,8 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                             # %가 없는 숫자는 주변(30글자)에 노이즈가 1개라도 있으면 가짜(섹션번호, EC, 카테고리)로 간주
                             weak_noises = ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", 
                                            "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", 
-                                           "분자량", "molecular weight", "mw", "항", "section"]
+                                           "분자량", "molecular weight", "mw", "항", "section", "japan", "formula",
+                                           "ingredient", "component", "composition"]
                             if any(noise in context_area for noise in weak_noises):
                                 return -5000
                                 
@@ -860,7 +949,14 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                         
                         score -= (dist_char * 3) 
                         
+                        # [V24.4.3.6] 중력장 점수 보너스 연동: 추출된 수치가 자석 윈도우 영역 단어 자산과 물리적으로 일치하면 +1500점 가산하여 무결성 안착
                         m_nums = re.findall(r'\d+\.?\d*', m_val)
+                        if content_x_mid != 9999 and m_nums:
+                            for w in row_words:
+                                if abs((w[0] + w[2])/2 - content_x_mid) <= 45:
+                                    if any(num in w[4] for num in m_nums):
+                                        score += 1500
+                                        break
                         if m_nums:
                             for num_str in m_nums:
                                 try:
@@ -996,11 +1092,10 @@ def extract_section3_images(pdf_path, current_sniper, log_func=None):
         section3_text_only = raw_text
         start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
         if start_m:
-            # [V17.3.1.7] 섹션 4 탐지 시 finditer를 사용하여 '가장 마지막' 섹션 4 위치를 찾아 데이터 유실 차단
-            ends = list(re.finditer(r'(?:SECTION\s*)?[34][\s.:]*(?:응급|유해성|위험성|FIRST|HAZARDS)', raw_text[start_m.end():], re.I))
+            # [V24.4.3.6] 하류 섹션 유입 원천 차단: 가장 먼저 매칭되는 섹션 4,5,6 경계면에서 문장을 칼같이 토막 절단하여 노이즈 격리
+            ends = list(re.finditer(r'(?:SECTION\s*)?[456][\s.:]*(?:응급|화재|폭발|누출|취급|저장|FIRST|FIRE|ACCIDENTAL)', raw_text[start_m.end():], re.I))
             if ends:
-                last_end = ends[-1]
-                section3_text_only = raw_text[start_m.start():start_m.end() + last_end.start()]
+                section3_text_only = raw_text[start_m.start():start_m.end() + ends[0].start()]
             else:
                 section3_text_only = raw_text[start_m.start():]
 
@@ -1316,89 +1411,72 @@ def process_pdf(pdf_path, log_func=None):
     odl_components = []
     components = []
 
-    # 🚨 [V17.4.0.9] 진정한 엔진 단일화: ODL(표) + Regex(패턴) 융합 추출
+    # [V24.4.3.13] 1선 ODL 정밀 격자 분석기 전격 복구 및 선제 장부 확보
+    odl_components = []
     if not is_scanned and pages:
-        target_pages = pages 
-        fitz_doc = fitz.open(pdf_path)
-
-        # 1. 표 구조 분석 (ODL)
         try:
             parser = PDFParser()
             odl_doc = parser.parse(pdf_path)
-            odl_components = extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=log_func)
-        except Exception:
-            odl_components = []
+            odl_components = extract_components_odl_robust(odl_doc, pages, pdf_path, log_func=log_func)
+            if log_func: log_func(f" 🔍 [1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
+        except Exception as e:
+            if log_func: log_func(f" ⚠️ [1선 ODL 예외] 분석 스킵: {e}")
 
-        # 2. 텍스트 패턴 분석 (Regex-Recovery) - 상시 가동
-        regex_components = []
-        inherited_x = None
-        for p_idx in target_pages:
-            if p_idx >= len(fitz_doc): continue
-            try:
-                page_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x)
-                regex_components.extend(page_comps)
-                if detected_x: inherited_x = detected_x
-            except Exception as e:
-                if log_func: log_func(f" ⚠️ [Regex] 페이지 {p_idx} 분석 오류: {e}")
-        
-        fitz_doc.close()
-
-        # 3. 데이터 융합 (Merge) - CAS 번호 기준 중복 제거 및 밀도 극대화
-        merged_map = {}
-        # Regex 결과를 먼저 담고
-        for c in regex_components:
-            # [V17.4.1.3] CAS 번호 공백 제거하여 키 일치화 (64742 - 54 - 7 -> 64742-54-7)
-            cas = str(c.get("cas_no", "")).replace(" ", "").strip()
-            if cas: 
-                existing = merged_map.get(cas)
-                # [회귀 방지] 기존에 '유효한 함량'이 있는데, 새로 들어온 값이 '미기재%'라면 덮어쓰기 무시
-                if existing and str(existing.get("content")) != "미기재%" and str(c.get("content")) == "미기재%":
-                    continue
-                merged_map[cas] = c
-        
-        # ODL 결과로 병합 (ODL이 구조적으로 더 정확하나, 함량이 '미기재%'인 경우 Regex 데이터 보존)
-        for c in odl_components:
-            cas = str(c.get("cas_no", "")).replace(" ", "").strip()
-            if cas:
-                existing = merged_map.get(cas)
-                if log_func: log_func(f"   [DEBUG] Merge CAS: {cas} | Existing: {existing.get('content') if existing else 'None'} | New: {c.get('content')}")
-                # [V17.4.1.2] Content-Aware Merger: Regex에 유효 함량이 있는데 ODL이 미기재면 Regex 데이터 유지
-                if existing and str(existing.get("content")) != "미기재%" and str(c.get("content")) == "미기재%":
-                    if log_func: log_func(f"   [DEBUG] Skip Overwrite for {cas} (Keep Regex Content)")
-                    if not existing.get("name") and c.get("name"):
-                        existing["name"] = c.get("name")
-                    continue
-                merged_map[cas] = c
-
-        components = list(merged_map.values())
-        
-        if components:
-            if log_func: log_func(f" 🔍 [텍스트 정밀 분석] {len(components)}건의 성분(ODL+Regex) 융합 성공")
-            used_engine = "Text-Analytic"
-        else:
-            components = []
-    else:
-        components = []
+    # [V24.4.3.13] 2단계 딥시크 마스터 요원 기동 및 데이터 자산 입고
+    if log_func: log_func(f" 🚀 [2단계 주력 가동] DeepSeek-OCR-2 통합 데이터 정제 및 수거 개시.")
     
-    # [V17.4.2.5] 3중 방어망 아키텍처 (주님 지침 반영)
-    # 1선(ODL) + 2선(Regex)에서 단 하나라도 추출되었다면 AI를 호출하지 않고 종료 (비용 절감 및 정합성 우선)
-    if not is_scanned:
-        if components:
-            if log_func: log_func(f" ✅ [1-2선 성공] {len(components)}건의 성분(ODL+Regex) 융합 성공. AI 생략.")
-            ai_res = {"구성성분": components, "교정_사유": "텍스트 정밀 추출 완료"}
-            is_ai_extracted = False
-        else:
-            if log_func: log_func(f" 🟡 [1-2선 실패] 추출 데이터 0건. AI Sniper({alias}) 긴급 투입!")
+    # [무결성 보존 가드레일] image_list 내의 이미지 파일 주소 또는 딕셔너리 base64 데이터를 안전하게 선제 가공
+    image_base64_list = []
+    for img_item in image_list:
+        try:
+            if isinstance(img_item, dict):
+                b64_data = img_item.get("data", "")
+                if b64_data:
+                    image_base64_list.append(b64_data)
+            elif isinstance(img_item, str) and os.path.exists(img_item):
+                with open(img_item, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+                    image_base64_list.append(encoded_string)
+        except Exception as e:
+            if log_func: log_func(f" ⚠️ [인코더 오류] 이미지 변환 실패 (원인 무시 후 전진): {str(e)}")
+    
+    # prompt_vision_extractor.txt에 수록된 마스터 지시문 로드
+    raw_prompt = f"{VISION_EXTRACTOR_PROMPT}\n\n[🚨 CONTEXT CAPTURE]:\n{section3_text[:2000]}"
+    
+    # 2단계 마스터 요원 사격
+    ds_output = call_deepseek_ocr_2(image_base64_list, raw_prompt, log_func)
+    
+    ai_res = None
+    used_engine = ""
+    is_ai_extracted = False
+    
+    if ds_output and ds_output != "HTTP_429_LIMIT":
+        try:
+            # [V24.4.3.10] 마크다운 래퍼 및 사설 노이즈 완벽 세척 가드레일 이식
+            cleaned_output = ds_output.strip()
+            
+            # 시작 괄호({, [)부터 끝 괄호(}, ])까지의 JSON 영역만 정규식으로 도려내기
+            json_match = re.search(r'([\{\[].*[\}\]])', cleaned_output, re.DOTALL)
+            if json_match:
+                cleaned_output = json_match.group(1).strip()
+                
+            ai_res = json.loads(cleaned_output)
+            if log_func: log_func(" ✅ [2단계 완료] 딥시크 통합 마스터가 레이아웃 정제 및 수거 장부를 성공적으로 완착했습니다.")
+            used_engine = "DeepSeek-OCR-2"
             is_ai_extracted = True
-    else:
-        # 스캔본일 경우 즉시 AI 투입
-        if log_func: log_func(f" 🟡 [스캔본] AI Sniper({alias}) 투입! (사유: 이미지 전용 문서)")
-        is_ai_extracted = True
+        except Exception:
+            # JSON 파싱 실패 시 2.5단계 하이브리드 정제 체인 가동
+            if log_func: log_func(" 🚀 [2.5단계 체인 가동] 딥시크 OCR 텍스트 기반 초저가 Gemini 정제 엔진 진입.")
+            ai_res = clean_ocr_text_to_json(ds_output, raw_prompt, current_sniper, log_func)
+            if ai_res:
+                if log_func: log_func(" ✅ [2.5단계 완료] 딥시크-구글 융합 하이브리드 체인 수거 장부가 성공적으로 완착되었습니다.")
+                used_engine = "DeepSeek-OCR-2_GeminiTextChain"
+                is_ai_extracted = True
 
-    if is_ai_extracted:
-        
-        # AI 프롬프트에 제공할 원본 텍스트 컨텍스트 구성
-        raw_prompt = f"{VISION_EXTRACTOR_PROMPT}\n\n[Raw Text Context for Reference]:\n{section3_text[:2000]}"
+    # 3단계 가드레일 작동 조건 (딥시크 서버 마비, 타임아웃, 429 한도 폭사 및 체인 붕괴 시 자동 스위칭)
+    if ai_res is None or ds_output == "HTTP_429_LIMIT":
+        if log_func: log_func(" 🟡 [3단계 비상 가드레일 발동] 구글 Gemini 정규 스나이퍼 풀 소환 및 대체 완착 사격.")
+        # 기존에 검증된 구글 비전 스나이퍼 연쇄 백업 체인을 호출하여 공장 다운타임 방어
         ai_res = call_gemini_2_5_flash(image_list, raw_prompt, current_sniper, log_func)
         used_engine = "Gemini-2.5-Flash"
         is_ai_extracted = True
@@ -1419,9 +1497,32 @@ def process_pdf(pdf_path, log_func=None):
             if log_func: log_func(" ❌ AI 엔진 추출 실패 (수동 검토 대상)")
             return {"error": "추출 실패", "제품명": hybrid_pn, "신호등": "🔴"}
 
-    components = ai_res.get("구성성분", [])
-    components = refine_msds_components_strict(components)
+    ai_components = ai_res.get("구성성분", [])
     reason = ai_res.get("교정_사유", "사유 없음")
+    
+    # [V24.4.3.13] ODL 선제 자산과 딥시크 AI 수거물의 무결성 융합 (CAS 기준 상호 보완 메커니즘)
+    merged_map = {}
+    
+    # 1. 1선 ODL 규칙 엔진 결과를 장부에 선제 수록
+    for c in odl_components:
+        cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
+        if cas:
+            merged_map[cas] = c
+            
+    # 2. 2단계 딥시크 AI 결과를 상호 병합 (AI의 정제 가치를 반영하되 ODL이 찾은 알맹이는 보존)
+    for c in ai_components:
+        cas = str(c.get("cas") or c.get("cas_no", "")).replace(" ", "").strip()
+        if cas:
+            existing = merged_map.get(cas)
+            # 기존 ODL 장부에 확실한 수치가 있고 AI 결과가 미기재%라면 안전하게 기존 값 유지
+            if existing and str(existing.get("content")) != "미기재%" and str(c.get("content", "")) == "미기재%":
+                if not existing.get("name") and c.get("name"):
+                    existing["name"] = c.get("name")
+                continue
+            merged_map[cas] = c
+
+    components = list(merged_map.values())
+    components = refine_msds_components_strict(components)
     
     local_grounding_text = str(first_page_text)
     try:

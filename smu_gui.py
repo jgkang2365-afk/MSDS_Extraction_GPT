@@ -251,6 +251,26 @@ class SubstanceSelectDialog(QDialog):
             
         layout.addWidget(banner_frame)
         
+        # 크롬(3가/6가) 등 특수 상황 판별하여 복수 선택 활성화 초기값 지정
+        lower_name = name.lower()
+        is_chrome_or_special = ("chrome" in lower_name or "크롬" in name or cas == "7440-47-3" or cas == "1308-38-9")
+        
+        # 복수 선택 활성화 체크박스 생성
+        self.cb_multi_select = QCheckBox("복수 선택 활성화 (크롬 등 특수 공정 유래 시 권장)")
+        self.cb_multi_select.setStyleSheet("""
+            QCheckBox {
+                font-family: 'Malgun Gothic';
+                font-size: 9.5pt;
+                font-weight: bold;
+                color: #d93025;
+                margin-top: 5px;
+                margin-bottom: 5px;
+            }
+        """)
+        self.cb_multi_select.setChecked(is_chrome_or_special)
+        self.cb_multi_select.stateChanged.connect(self.on_multi_select_mode_changed)
+        layout.addWidget(self.cb_multi_select)
+        
         # 후보 목록 그룹박스
         group_box = QGroupBox("매칭 후보 물질 목록")
         group_box.setStyleSheet("QGroupBox { font-family: 'Malgun Gothic'; font-weight: bold; color: #555; }")
@@ -259,6 +279,10 @@ class SubstanceSelectDialog(QDialog):
         group_layout.setSpacing(8)
         
         self.checkboxes = []
+        
+        # 기존 저장 데이터가 2개 이상이면 복수 선택 모드를 강제 활성화
+        if saved_codes and len(saved_codes) >= 2:
+            self.cb_multi_select.setChecked(True)
         
         for idx, cand in enumerate(candidates):
             m_name = cand.get("측정대상 물질명") or ""
@@ -312,6 +336,9 @@ class SubstanceSelectDialog(QDialog):
             else:
                 if idx == 0:
                     cb.setChecked(True)
+            
+            # 개별 체크박스 상태 변경 이벤트 연결
+            cb.stateChanged.connect(self.on_checkbox_changed)
                     
             group_layout.addWidget(cb)
             self.checkboxes.append((cb, code, cand))
@@ -361,6 +388,29 @@ class SubstanceSelectDialog(QDialog):
         
         self.setLayout(layout)
         self.setMinimumWidth(480)
+        
+    def on_multi_select_mode_changed(self, state):
+        """복수 선택 모드가 비활성화되면 현재 여러 개 선택된 것 중 하나만 남기고 전부 해제"""
+        if not self.cb_multi_select.isChecked():
+            checked_found = False
+            for cb, code, cand in self.checkboxes:
+                if cb.isChecked():
+                    if not checked_found:
+                        checked_found = True
+                    else:
+                        cb.blockSignals(True)
+                        cb.setChecked(False)
+                        cb.blockSignals(False)
+
+    def on_checkbox_changed(self, state):
+        """개별 체크박스의 상태가 변경될 때 단수 선택 모드인 경우 라디오 버튼처럼 작동하게 함"""
+        if not self.cb_multi_select.isChecked() and state == Qt.Checked:
+            sender = self.sender()
+            for cb, code, cand in self.checkboxes:
+                if cb is not sender and cb.isChecked():
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
         
     def get_selected_data(self):
         selected_codes = []
@@ -712,9 +762,41 @@ class HTMLDelegate(QStyledItemDelegate):
     
     # --- [V11.0] 다중 행 편집기(QTextEdit) 지원 로직 이식 ---
     def createEditor(self, parent, option, index):
-        # 🚨 4번 열(측정대상)은 QTextEdit가 이벤트를 가로채지 못하도록 무조건 None 반환!
+        # 🚨 4번 열(측정대상) 수정 제한 조건부 해제 (수동 타이핑 가능하도록 개선)
         if index.column() == 4:
-            return None
+            gui = self.parent() # SMUGUI 객체 획득
+            if gui:
+                table = gui.table
+                # 1. QPushButton(성상 선택 버튼)이 올라가 있는 상태라면 에디터 생성 차단 (팝업창 동작 유지)
+                widget = table.cellWidget(index.row(), index.column())
+                if isinstance(widget, QPushButton):
+                    return None
+                
+                # 2. 1:N 매칭 후보 물질이 2개 이상이고 아직 성상 수동 선택 전이라면 팝업창을 위해 에디터 차단
+                cas_item = table.item(index.row(), 3)
+                cas_display = cas_item.text().strip() if cas_item else ""
+                cas_val = cas_display.split("(")[0].strip() if cas_display else ""
+                
+                if cas_val:
+                    candidates = gui.find_mes_candidates(cas_val)
+                    # 캐시에서 성상 수동 선택 여부 확인
+                    f_hash = ""
+                    start_row = index.row()
+                    while start_row > 0:
+                        item_prod = table.item(start_row, 2)
+                        if item_prod and item_prod.text().strip():
+                            break
+                        start_row -= 1
+                    hash_item = table.item(start_row, 8)
+                    if hash_item:
+                        f_hash = hash_item.text().strip()
+                    
+                    data = gui.cache.get(f_hash, {}) if f_hash else {}
+                    is_manual_chosen = data.get("manual_data", {}).get(f"is_manual_{cas_val}", False)
+                    
+                    if len(candidates) >= 2 and not is_manual_chosen:
+                        return None
+                        
         editor = QTextEdit(parent)
         editor.setAcceptRichText(False)
         editor.setStyleSheet("QTextEdit { padding: 3px; font-family: 'Malgun Gothic'; font-size: 9pt; }")
@@ -4818,58 +4900,126 @@ class SMUGUI(QMainWindow):
         self.save_cache()
 
     def on_table_item_changed(self, item):
-        """[V7.3] 테이블 셀 수동 수정 시 캐시(JSON) 실시간 업데이트 (Gold Shield)"""
+        """[V24.4.3.7] 테이블 셀 직접 수동 수정 시 캐시(JSON) 성분 단위 실시간 업데이트 (Gold Shield)"""
         if not self.table.signalsBlocked():
             row = item.row()
             col = item.column()
             
-            # 감시 범위 확대: 제품명(2), CAS(3), 측정대상(4), 2차(5), 1차(6)
+            # 감시 대상 열: 제품명(2), CAS(3), 측정대상(4), 2차(5), 1차(6)
             if col in [2, 3, 4, 5, 6]:
-                hash_item = self.table.item(row, 8) 
+                # 🚨 [해시 주소 복구]: 8번 열도 세로 병합되어 있으므로, 2번 열을 거슬러 올라가 병합 시작점의 f_hash 획득
+                start_row = row
+                while start_row > 0:
+                    item_prod = self.table.item(start_row, 2)
+                    if item_prod and item_prod.text().strip():
+                        break
+                    start_row -= 1
+                    
+                hash_item = self.table.item(start_row, 8) 
                 if hash_item:
                     f_hash = hash_item.text().strip()
                     if f_hash in self.cache:
                         new_text = item.text().strip()
+                        data = self.cache[f_hash]
+                        components = data.get("components", [])
+                        comp_idx = row - start_row
+                        
                         # manual_data 구조 확보
                         if "manual_data" not in self.cache[f_hash]:
                             self.cache[f_hash]["manual_data"] = {}
                         
-                        # 각 컬럼별 키 매핑
                         col_map = {2: "product_name", 3: "raw_content", 4: "measure", 5: "reg2", 6: "reg1"}
                         key = col_map.get(col)
                         
                         if key:
-                            # 1. 캐시 영구 저장
-                            if "manual_data" not in self.cache[f_hash]:
-                                self.cache[f_hash]["manual_data"] = {}
+                            # 1. 개별 성분 단위 정밀 캐싱 (성분 인덱스가 유효한 경우)
+                            if 0 <= comp_idx < len(components):
+                                c = components[comp_idx]
+                                if key == "raw_content":
+                                    c["cas"] = new_text
+                                elif key == "measure":
+                                    c["selected_name"] = new_text
+                                    c["is_manual"] = True
+                                elif key == "reg2":
+                                    c["reg2_custom"] = new_text
+                                elif key == "reg1":
+                                    c["reg1_custom"] = new_text
                             
-                            # [V11.4 캐시 정화] CAS(raw_content)가 수정되면, 기존 규제 결과 캐시를 모두 삭제
-                            if key == "raw_content":
-                                for old_k in ["measure", "reg2", "reg1"]:
-                                    if old_k in self.cache[f_hash]["manual_data"]:
-                                        del self.cache[f_hash]["manual_data"][old_k]
-                                        
-                            self.cache[f_hash]["manual_data"][key] = new_text
-                            
-                            # 🚨 [주님 의도 복구] 셀에서 직접 편집한 경우에도 수동 제어 락 강제 주입
+                            # 하위 호환성을 위한 파일 전체 텍스트 수동 락 주입
                             self.cache[f_hash]["manual_data"]["is_manual"] = True
                             
-                            # 🚨 [주님 의도 복구] v3.0_Final 레이어에 수동 수정본 저장
+                            # 만약 CAS(raw_content)가 직접 수정되면 기존 규제 결과 캐시 정화
+                            if key == "raw_content" and 0 <= comp_idx < len(components):
+                                c = components[comp_idx]
+                                if "selected_name" in c: del c["selected_name"]
+                                if "reg2_custom" in c: del c["reg2_custom"]
+                                if "reg1_custom" in c: del c["reg1_custom"]
+                            
+                            # 해당 파일의 모든 행(성분 행 N개)을 돌며 수동 수정된 현재 테이블 셀들의 값을 조인
+                            N = len(components) if components else 1
+                            cas_parts = []
+                            measure_parts = []
+                            reg2_parts = []
+                            reg1_parts = []
+                            for i in range(N):
+                                r_idx = start_row + i
+                                
+                                c_item = self.table.item(r_idx, 3)
+                                c_text = c_item.text().strip() if c_item else ""
+                                if c_text: cas_parts.append(c_text)
+                                
+                                # 4번 열은 QPushButton 인스턴스가 올라가 있을 수 있으므로 위젯 확인 필요
+                                measure_w = self.table.cellWidget(r_idx, 4)
+                                if isinstance(measure_w, QPushButton):
+                                    m_text = measure_w.text().replace("⚠️ 성상 선택 (", "").rstrip(")")
+                                else:
+                                    m_item = self.table.item(r_idx, 4)
+                                    m_text = m_item.text().strip() if m_item else ""
+                                if m_text: measure_parts.append(m_text)
+                                
+                                r2_item = self.table.item(r_idx, 5)
+                                r2_text = r2_item.text().strip() if r2_item else ""
+                                if r2_text: reg2_parts.append(r2_text)
+                                
+                                r1_item = self.table.item(r_idx, 6)
+                                r1_text = r1_item.text().strip() if r1_item else ""
+                                if r1_text: reg1_parts.append(r1_text)
+                            
+                            # 세미콜론 조인 텍스트화
+                            joined_cas = "; ".join(cas_parts)
+                            joined_measure = "; ".join(measure_parts)
+                            joined_reg2 = "; ".join(reg2_parts)
+                            joined_reg1 = "; ".join(reg1_parts)
+                            
+                            # 조인된 최신 텍스트들을 캐시의 manual_data에 매핑
+                            self.cache[f_hash]["manual_data"]["product_name"] = self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else ""
+                            self.cache[f_hash]["manual_data"]["raw_content"] = joined_cas
+                            self.cache[f_hash]["manual_data"]["measure"] = joined_measure
+                            self.cache[f_hash]["manual_data"]["reg2"] = joined_reg2
+                            self.cache[f_hash]["manual_data"]["reg1"] = joined_reg1
+                            
+                            # v3.0_Final 레이어에 수동 수정본 저장
                             if "v3.0_Final" not in self.cache[f_hash]:
                                 self.cache[f_hash]["v3.0_Final"] = {}
-                            self.cache[f_hash]["v3.0_Final"][key] = new_text
+                            self.cache[f_hash]["v3.0_Final"]["product_name"] = self.cache[f_hash]["manual_data"]["product_name"]
+                            self.cache[f_hash]["v3.0_Final"]["raw_content"] = joined_cas
+                            self.cache[f_hash]["v3.0_Final"]["measure"] = joined_measure
+                            self.cache[f_hash]["v3.0_Final"]["reg2"] = joined_reg2
+                            self.cache[f_hash]["v3.0_Final"]["reg1"] = joined_reg1
                             
                             self.save_cache()
                             
                             # 2. self.results 메모리 실시간 동기화 (Hot-Sync)
                             for res in self.results:
                                 if res.get('f_hash') == f_hash:
-                                    res[key] = new_text
+                                    res["product_name"] = self.cache[f_hash]["manual_data"]["product_name"]
+                                    res["raw_content"] = joined_cas
+                                    res["measure"] = joined_measure
+                                    res["reg2"] = joined_reg2
+                                    res["reg1"] = joined_reg1
                                     break
                             
-                            # 3. [Task 5 추가] 만약 제품명이 수정되었다면 다른 연관 정보들도 즉시 동기화 유지
-                            # (주님이 수동으로 고친 결과가 시스템 내부 변수에 즉시 각인됨)
-                            self.log(f"[*] 실시간 동기화 완료: {key} -> {new_text[:20]}...")
+                            self.log(f"[*] 실시간 수동 수정 동기화 완료 ({key} -> {new_text[:20]}...)")
 
     def _update_sheet_list(self, path, select_name=None, clean_select_name=None, measure_select_name=None):
         """[V24.3.5.8] 설정 복구 시 시트 목록 자동 갱신 헬퍼 (각 콤보박스 개별 설정 복구)"""
@@ -6100,8 +6250,10 @@ class SMUGUI(QMainWindow):
                     data["manual_data"][f"selected_code_{cas_val}"] = auto_cand.get("정렬코드")
                     data["manual_data"][f"is_manual_{cas_val}"] = True
             
-            # 4번 열: 측정대상 (측정/특검 대상 유해인자만 기입, 비대상은 빈 칸 마감)
-            if is_work or is_spec:
+            # 4번 열: 측정대상 (수동 수정본이 있다면 최우선 보존, 아니면 측정/특검 대상에 한해 기입)
+            if is_manual_comp or manual_selected:
+                measure_text = display_factor
+            elif is_work or is_spec:
                 measure_text = f"{prefix}{display_factor}" if display_factor else ""
             else:
                 measure_text = ""
@@ -6135,9 +6287,10 @@ class SMUGUI(QMainWindow):
                     item_measure.setBackground(row_bg_color)
                 self.table.setItem(c_row, 4, item_measure)
             
-            # 5번 열: 2차 결과(규제) 칸 대량 누수 완치 (미조회 및 비대상 물질은 깨끗한 빈값 "" 마감)
-            # 🚨 [법적 규칙 준수]: 2차 규제(5번 열) 및 1차 결과(6번 열)는 자식 성상이 아닌 부모 표준 화학명(clean_name)을 표기해야 합니다.
-            if is_work or is_spec:
+            # 5번 열: 2차 결과(규제) 칸 수동 수정본 보존 및 자동 렌더링
+            if c.get("reg2_custom"):
+                reg2_text = c["reg2_custom"]
+            elif is_work or is_spec:
                 reg2_text = f"{prefix}{clean_name}({content_val})" if clean_name else ""
             else:
                 reg2_text = ""
@@ -6146,8 +6299,11 @@ class SMUGUI(QMainWindow):
                 item_reg2.setBackground(row_bg_color)
             self.table.setItem(c_row, 5, item_reg2)
             
-            # 6번 열: 1차 결과(전체) 포맷팅의 [CAS번호]물질명(함유량%) 청정 역순 서식 고착화
-            reg1_text = f"[{cas_val}]{prefix}{clean_name}({content_val})" if (cas_val or clean_name) else ""
+            # 6번 열: 1차 결과(전체) 수동 수정본 보존 및 자동 렌더링
+            if c.get("reg1_custom"):
+                reg1_text = c["reg1_custom"]
+            else:
+                reg1_text = f"[{cas_val}]{prefix}{clean_name}({content_val})" if (cas_val or clean_name) else ""
             item_reg1 = QTableWidgetItem(reg1_text)
             if row_bg_color:
                 item_reg1.setBackground(row_bg_color)
@@ -6936,14 +7092,24 @@ class SMUGUI(QMainWindow):
             except:
                 st_row = 3
 
-            # 테이블 데이터 스냅샷 생성 (파일명 기준)
+            # 테이블 데이터 스냅샷 생성 (파일명 기준 그룹화 및 조인)
             table_dict = {}
             for r in range(self.table.rowCount()):
-                fn_item = self.table.item(r, 7) # 파일명 (7번 열)
+                # 병합 구역의 시작 행(start_row)을 탐색하여 정확한 파일명, 제품명, 해시 정보 획득
+                start_row = r
+                while start_row > 0:
+                    item_fn = self.table.item(start_row, 7)
+                    if item_fn and item_fn.text().strip():
+                        break
+                    start_row -= 1
+                
+                fn_item = self.table.item(start_row, 7)
                 if fn_item:
                     fn = fn_item.text().strip()
+                    if not fn:
+                        continue
                     
-                    # [버그 수정] QPushButton(성상 미선택 버튼) 또는 일반 텍스트 상태에 따라 데이터 추출
+                    # 버튼(성상 미선택 버튼) 또는 일반 텍스트 상태에 따라 데이터 추출
                     measure_widget = self.table.cellWidget(r, 4)
                     
                     if isinstance(measure_widget, QPushButton):
@@ -6967,7 +7133,7 @@ class SMUGUI(QMainWindow):
                                 
                             # 캐시에 선택 정보 영구 저장
                             selected_code = first_cand.get("정렬코드")
-                            f_hash = self.table.item(r, 8).text().strip() if self.table.item(r, 8) else ""
+                            f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else ""
                             if f_hash and f_hash in self.cache and cas_no:
                                 if "manual_data" not in self.cache[f_hash]:
                                     self.cache[f_hash]["manual_data"] = {}
@@ -6979,23 +7145,76 @@ class SMUGUI(QMainWindow):
                         # 이미 선택 완료되어 텍스트 상태인 경우 셀 텍스트를 즉시 추출
                         measure_val = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
                         
-                    table_dict[fn] = {
-                        "no": self.table.item(r, 1).text().strip() if self.table.item(r, 1) else "",
-                        "product_name": self.table.item(r, 2).text().strip() if self.table.item(r, 2) else "",
-                        "cas_sum": self.table.item(r, 3).text().strip() if self.table.item(r, 3) else "",
-                        "measure": measure_val,
-                        "reg2": self.table.item(r, 5).text().strip() if self.table.item(r, 5) else "",
-                        "reg1": self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
-                    }
+                    no_val = self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else ""
+                    prod_val = self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else ""
+                    cas_val = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
+                    reg2_val = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
+                    reg1_val = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
+                    
+                    if fn not in table_dict:
+                        table_dict[fn] = {
+                            "no": no_val,
+                            "product_name": prod_val,
+                            "cas_list": [],
+                            "measure_list": [],
+                            "reg2_list": [],
+                            "reg1_list": []
+                        }
+                    
+                    if no_val and not table_dict[fn]["no"]:
+                        table_dict[fn]["no"] = no_val
+                    if prod_val and not table_dict[fn]["product_name"]:
+                        table_dict[fn]["product_name"] = prod_val
+                        
+                    if cas_val:
+                        for part in cas_val.replace('\n', ';').replace('\r', '').split(';'):
+                            p = part.strip()
+                            if p and p not in table_dict[fn]["cas_list"]:
+                                table_dict[fn]["cas_list"].append(p)
+                                
+                    if measure_val:
+                        for part in measure_val.replace('\n', ';').replace('\r', '').split(';'):
+                            p = part.strip()
+                            if p and p not in table_dict[fn]["measure_list"]:
+                                table_dict[fn]["measure_list"].append(p)
+                                
+                    if reg2_val:
+                        for part in reg2_val.replace('\n', ';').replace('\r', '').split(';'):
+                            p = part.strip()
+                            if p and p not in table_dict[fn]["reg2_list"]:
+                                table_dict[fn]["reg2_list"].append(p)
+                                
+                    if reg1_val:
+                        for part in reg1_val.replace('\n', ';').replace('\r', '').split(';'):
+                            p = part.strip()
+                            if p and p not in table_dict[fn]["reg1_list"]:
+                                table_dict[fn]["reg1_list"].append(p)
+
+            # 수집된 개별 성분 리스트들을 세미콜론과 한 칸의 공백("; ")으로 결합
+            for fn, td in table_dict.items():
+                td["cas_sum"] = "; ".join(td["cas_list"])
+                td["measure"] = "; ".join(td["measure_list"])
+                td["reg2"] = "; ".join(td["reg2_list"])
+                td["reg1"] = "; ".join(td["reg1_list"])
 
             # 데이터 기입 (순차적 저장)
             saved_count = 0
+            written_files = set()
             for row_idx in range(self.table.rowCount()):
-                fn_item = self.table.item(row_idx, 7) # 파일명 (7번 열)
+                # 병합 구역의 시작 행(start_row)을 탐색하여 정확한 파일명 획득
+                start_row = row_idx
+                while start_row > 0:
+                    item_fn = self.table.item(start_row, 7)
+                    if item_fn and item_fn.text().strip():
+                        break
+                    start_row -= 1
+                
+                fn_item = self.table.item(start_row, 7)
                 if not fn_item: continue
                 fn = fn_item.text().strip()
+                if not fn: continue
                 
-                if fn not in table_dict:
+                if fn not in table_dict or fn in written_files:
                     continue
                 
                 td = table_dict[fn]
@@ -7030,6 +7249,7 @@ class SMUGUI(QMainWindow):
                         ws.Cells(curr_row, c_idx).Value = val
 
 
+                written_files.add(fn)
                 saved_count += 1
 
             wb.Save()
