@@ -1,5 +1,41 @@
+# ==============================================================================
+# [인프라 가드레일] 가상환경 자동 자가 이주(Self Re-execution) 및 무한루프 자폭 방어벽
+# ==============================================================================
 import sys
 import os
+import subprocess
+
+# 1. 주님의 공장 전용 청정 3.12 파이썬 핵심부 절대 경로 지정
+TARGET_PYTHON = r"C:\Users\USER\venv_312\Scripts\python.exe"
+
+# 2. 검문소 가동: 현재 심장을 뛰게 만드는 뇌(sys.executable)가 청정 3.12가 맞는지 확인
+if sys.executable.lower() != TARGET_PYTHON.lower():
+    print(f"[*] 외부 환경 인지 (현재 런타임: {sys.executable})")
+    print(f"[*] [자가 이주 격발] 청정 안전지대({TARGET_PYTHON})로 선로를 강제 변경합니다.")
+    
+    # [데이터 검증 및 예외 처리 - Test Case] 
+    # 가상환경 공구함 폴더 자체가 물리적으로 파괴되거나 유실되었는지 선제 검사
+    if not os.path.exists(TARGET_PYTHON):
+        print("[CRITICAL ERROR] 지정된 가상환경 venv_312 핵심부가 컴퓨터 선반 위에 존재하지 않습니다.")
+        print("해결책: py -3.12 -m venv venv_312 명령어로 청정 방을 재건한 뒤 재가동하십시오.")
+        sys.exit(1) # 무한 재귀 루프 과열을 예방하기 위해 즉각 공장 폐쇄 (자폭)
+
+    try:
+        # 3. 매개변수 무결성 전달 배선 구축
+        # 외부 배치 파일(.bat) 등에서 넘겨준 파일 경로(sys.argv)를 자석처럼 그대로 이어 붙임
+        args = [TARGET_PYTHON, __file__] + sys.argv[1:]
+        
+        # 4. 청정 뇌를 가진 자식 프로세스를 복제 출격
+        subprocess.Popen(args)
+        
+        # 5. 오염된 전력(3.13)을 먹고 켜졌던 기존 부모 프로세스는 잔여물 없이 즉시 안전 자폭
+        sys.exit(0)
+        
+    except Exception as re_exec_err:
+        print(f"[ERROR] [이주 마찰 에러] 자가 이주 관문 통과 중 물리적 크래시 발생: {re_exec_err}")
+        sys.exit(1)
+# ==============================================================================
+
 import time
 import json
 import re
@@ -923,6 +959,33 @@ class SidebarButton(QPushButton):
             self.setToolTip("")
             self.setStyleSheet(self.styleSheet() + "padding-left: 15px; text-align: left; font-size: 13px;")
 
+def validate_composition_limits(text):
+    """
+    [무결성 검증 세부 저울 변수]
+    숫자가 지구의 물리법칙(100%)을 탈출했는지 수학적으로 계량하는 검문 규칙
+    """
+    if not text:
+        return False, "데이터 공란"
+        
+    # [오탐 방지 가드레일] CAS 번호 패턴(예: 64742-54-7 및 알파벳 오타 형태)을 사전에 제거하여 수치 오염 방어
+    clean_text = re.sub(r'[0-9a-zA-Z]{2,7}-[0-9a-zA-Z]{2}-[0-9a-zA-Z]{1}', '', text)
+    
+    # 텍스트 안에서 소수점이 포함된 모든 숫자들만 자석처럼 추출 (예: '157', '265')
+    raw_numbers = re.findall(r'[\d\.]+', clean_text)
+    
+    for num_str in raw_numbers:
+        # 마침표 점만 외롭게 남은 유령 문자 제외 필터링
+        if num_str.strip('.'):
+            try:
+                val = float(num_str)
+                # 🚨 물리적 상한선 검증 규칙 (100%를 초과하는 숫자가 단 하나라도 있으면 즉시 쇠창살 하강)
+                if val > 100.0:
+                    return False, f"함량 수치 과학적 한계선 초과 포착 ({val}%)"
+            except ValueError:
+                continue
+                
+    return True, "정상 데이터"
+
 class ExtractionWorker(QThread):
     """1단계: PDF에서 텍스트 기반 추출만 수행 (API 연동 없이)"""
     update_log_signal = pyqtSignal(str)
@@ -996,27 +1059,111 @@ class ExtractionWorker(QThread):
                         stats["regex"] += 1
                         continue
 
-                self.update_log_signal.emit("="*20 + f" [{fn} 추출 시작] " + "="*20)
-                # [주님 의도 복구] msds_core.py의 정류 필터를 태우기 위해 core.extract_from_pdf로 변경
-                ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit)
+                self.update_log_signal.emit("="*20 + f" [{fn} 하이브리드 가속 가동] " + "="*20)
+
+                # --------------------------------------------------------------
+                # [3단계 하이브리드 가속 엔진] 1단계: 좌측 1/3 세로 띠지 구역 정의 및 3번 간판 레이저 추적
+                # --------------------------------------------------------------
+                doc = fitz.open(path)
+                target_page_idx = 0
+                crop_rect = None
                 
+                for p_idx, page in enumerate(doc):
+                    w = page.rect.width
+                    h = page.rect.height
+                    
+                    # 종이의 왼쪽 1/3 공간만 가상의 세로 격실로 획정 (가로 0% ~ 33%)
+                    left_strip_zone = fitz.Rect(0, 0, w * 0.33, h)
+                    
+                    # 왼쪽 세로 띠지 안에서만 '3.' 또는 '구성성분' 간판 글자 수색
+                    keywords = ["3.", "구성성분", "구성 성분", "기재사항"]
+                    found_rect = None
+                    
+                    for kw in keywords:
+                        rects = page.search_for(kw, clip=left_strip_zone)
+                        if rects:
+                            found_rect = rects[0]
+                            break
+                    
+                    if found_rect:
+                        target_page_idx = p_idx
+                        start_y = found_rect.y0  # 3번 간판이 시작되는 정밀 높이 확보
+                        
+                        # 다음 번호인 4번 간판(안정성 등) 위치를 아래쪽에서 찾아 하단 한계선 계산
+                        end_y = h  # 기본값은 종이 맨 아래까지
+                        next_keywords = ["4.", "안정성", "유해성", "취급"]
+                        
+                        for n_kw in next_keywords:
+                            n_rects = page.search_for(n_kw, clip=left_strip_zone)
+                            # 3번 간판보다 아래에 있는 4번 간판의 높이 수집
+                            suitable_rects = [r for r in n_rects if r.y0 > start_y]
+                            if suitable_rects:
+                                end_y = suitable_rects[0].y0
+                                break
+                        
+                        # 글자가 잘려나가는 것을 막기 위해 위아래로 30픽셀씩 보너스 마진 부여
+                        crop_rect = fitz.Rect(0, max(0, start_y - 30), w, min(h, end_y + 30))
+                        break
+                
+                # --------------------------------------------------------------
+                # [3단계 하이브리드 가속 엔진] 2단계: 원본 종이에서 3번방 수평으로 쫙 펼쳐 가위질 (Crop)
+                # --------------------------------------------------------------
+                crop_success = False
+                ext_res = {}
+                
+                if crop_rect and hasattr(self.core, 'extract_from_cropped_image'):
+                    try:
+                        self.update_log_signal.emit(f"🎯 [가속 레이저] {target_page_idx + 1}페이지 좌측 1/3 구역에서 3번방 간판 포착.")
+                        self.update_log_signal.emit(f"✂️ [수평 재단] 높이 {int(crop_rect.y0)}px ~ {int(crop_rect.y1)}px 범위를 통째로 펼쳐서 도려냅니다.")
+                        
+                        page = doc[target_page_idx]
+                        # 해상도를 2배 높여서 글자가 깨지지 않게 돋보기 가속 바인딩
+                        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
+                        
+                        # 잘라낸 조각 자재만 로컬 분쇄기(Paddle)에 고속 피딩
+                        ext_res = self.core.extract_from_cropped_image(pix.tobytes("png"), log_func=self.update_log_signal.emit)
+                        
+                        # 🚨 [데이터 검증 및 예외 처리] 100% 초과 물리적 모순 검문소 격발
+                        if ext_res.get("components") and len(ext_res["components"]) > 0:
+                            comp_contents = " ".join([str(comp.get("content") or comp.get("percentage") or "") for comp in ext_res["components"] if isinstance(comp, dict)])
+                            is_valid, check_reason = validate_composition_limits(comp_contents)
+                            
+                            if is_valid:
+                                crop_success = True
+                                self.update_log_signal.emit("✅ [가속 완착] 조각 재단 분쇄 공정이 무결하게 마감되었습니다.")
+                            else:
+                                self.update_log_signal.emit(f"🔴 [검문 탈락] {check_reason} -> 유령 수치 유출 방지를 위해 3선 AI 정제 차선으로 강제 회군!")
+                        else:
+                            self.update_log_signal.emit("⚠️ [무결성 경고] 조각 재단 시 데이터 유실 위험 감지. 즉시 비상선으로 롤백합니다.")
+                    except Exception as crop_err:
+                        self.update_log_signal.emit(f"⚠️ [가속 마찰] 조각 재단 중 오작동 발생: {crop_err}")
+
+                # --------------------------------------------------------------
+                # [무결성 가드레일] 3단계: 가속 실패 혹은 경고 시 원본 전체 페이지 롤백 (Fallback)
+                # --------------------------------------------------------------
+                if not crop_success:
+                    self.update_log_signal.emit("🚀 [안전선 복구] 원본 전체 도면 스캔 방식으로 안전하게 회군합니다.")
+                    ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit)
+                
+                doc.close()
+
+                # [후행 처리 및 테이블 렌더링 파이프라인]
                 extracted_data = {
                     "f_hash": f_hash,
                     "product_name": ext_res.get("제품명", "미확인"),
                     "reliability": ext_res.get("신뢰도", "N/A"),
-                    "신호등": ext_res.get("신호등", "⚪"), 
+                    "신호등": ext_res.get("신호등", "⚪"),
                     "raw_content": ext_res.get("구성성분", ext_res.get("구성성분 및 함유량", "")),
-                    # 🚨 [V15.3 파이프 연결] 엔진이 강제로 쏴주는 '측정대상' 수신!
-                    "measure_target": ext_res.get("측정대상", ""), 
-                    "full_path": path, 
-                    "page": ext_res.get("page", 1), 
+                    "measure_target": ext_res.get("측정대상", ""),
+                    "full_path": path,
+                    "page": target_page_idx + 1,
                     "used_engine": ext_res.get("used_engine", "regex"),
-                    "engine_version": engine.VERSION, # [V17.2.9.9] 버전 낙인 찍기
+                    "engine_version": engine.VERSION,
                     "integrity_score": ext_res.get("integrity_score", 100),
                     "integrity_reason": ext_res.get("integrity_reason", "")
                 }
                 
-                # [NEW] 캐시에 저장 요청
+                # 캐시에 저장 요청
                 if f_hash:
                     self.cache_update_signal.emit(f_hash, extracted_data)
 
@@ -1314,7 +1461,8 @@ class ModernMappingPanel(QGroupBox):
             ("측정대상1", "M"), ("측정대상2", ""), # 측정대상을 복수로 저장하기 위해 두 칸으로 분리
             ("CAS 원본", "O"),
             ("공정명", "B"), ("제조/사용", "C"),
-            ("사용용도", "E"), ("월취급량", "S"), ("단위", "T")
+            ("사용용도", "E"), ("월취급량", "S"), ("단위", "T"),
+            ("신호등", ""), ("매칭 엔진", ""), ("무결성 점수", "")
         ]
 
         for i, (name, default) in enumerate(fields):
@@ -1392,7 +1540,8 @@ class ModernMappingPanel(QGroupBox):
             "측정대상1": "M", "측정대상2": "",
             "CAS 원본": "O",
             "공정명": "B", "제조/사용": "C",
-            "사용용도": "E", "월취급량": "S", "단위": "T"
+            "사용용도": "E", "월취급량": "S", "단위": "T",
+            "신호등": "", "매칭 엔진": "", "무결성 점수": ""
         }
         if not data:
             data = default_map
@@ -7162,6 +7311,22 @@ class SMUGUI(QMainWindow):
                     reg2_val = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
                     reg1_val = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
                     
+                    # [V24.5.6.0] self.results에서 원래 추출된 무결성 정보 획득
+                    origin_data = next((res for res in self.results if res.get("f_hash") == f_hash), {})
+                    traffic_val = origin_data.get("신호등", "⚪")
+                    if "🟢" in traffic_val or str(traffic_val).lower() == "green":
+                        traffic_str = "🟢 초록"
+                    elif "🟡" in traffic_val or str(traffic_val).lower() == "yellow":
+                        traffic_str = "🟡 노랑"
+                    elif "🔴" in traffic_val or str(traffic_val).lower() == "red":
+                        traffic_str = "🔴 빨강"
+                    else:
+                        traffic_str = traffic_val
+                    
+                    engine_val = origin_data.get("used_engine", "regex")
+                    score_val = origin_data.get("integrity_score", 100)
+                    score_str = f"{score_val}점 (청정)" if score_val == 100 else f"{score_val}점 (불량)"
+
                     if fn not in table_dict:
                         table_dict[fn] = {
                             "no": no_val,
@@ -7169,7 +7334,10 @@ class SMUGUI(QMainWindow):
                             "cas_list": [],
                             "measure_list": [],
                             "reg2_list": [],
-                            "reg1_list": []
+                            "reg1_list": [],
+                            "traffic_light": traffic_str,
+                            "matching_engine": engine_val,
+                            "integrity_score": score_str
                         }
                     
                     if no_val and not table_dict[fn]["no"]:
@@ -7249,6 +7417,9 @@ class SMUGUI(QMainWindow):
                     elif key == "2차 결과(규제)": val = td.get("reg2")
                     elif key == "1차 결과(전체)": val = td.get("reg1")
                     elif key == "순번/No": val = td.get("no")
+                    elif key == "신호등": val = td.get("traffic_light")
+                    elif key == "매칭 엔진": val = td.get("matching_engine")
+                    elif key == "무결성 점수": val = td.get("integrity_score")
                     
                     if val is not None:
                         # [V17.3.0.9] 주님 지침: GUI는 편집용(줄바꿈), 엑셀은 최종용(한 줄)으로 저장

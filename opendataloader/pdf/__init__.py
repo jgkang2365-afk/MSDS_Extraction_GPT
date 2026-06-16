@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import subprocess
 import tempfile
@@ -18,8 +19,8 @@ class PDFParser:
         # 1. 임시 디렉토리 생성
         tmp_dir = tempfile.mkdtemp()
         try:
-            # 2. OpenDataLoader CLI 호출 (json 포맷)
-            cmd = ["py", "-m", "opendataloader_pdf", pdf_path, "--format", "json", "--output-dir", tmp_dir, "--quiet"]
+            # 2. OpenDataLoader CLI 호출 (json 포맷) - 가상환경의 파이썬 인터프리터를 직접 매핑
+            cmd = [sys.executable, "-m", "opendataloader_pdf", pdf_path, "--format", "json", "--output-dir", tmp_dir, "--quiet"]
             result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode != 0:

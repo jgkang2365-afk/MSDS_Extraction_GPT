@@ -14,25 +14,24 @@ import gc
 _PADDLE_STRUCTURE_ENGINE = None
 
 def get_paddle_structure_engine(log_func=None):
-    """주님의 인텔 i7 CPU 환경에 찰떡인 OpenVINO 가속 기반의 싱글톤 엔진 로더"""
+    """주님의 인텔 i7 CPU 환경에 찰떡인 OpenVINO 가속 기반의 싱글톤 엔진 로더 (PPStructureV3 사용)"""
     global _PADDLE_STRUCTURE_ENGINE
     if _PADDLE_STRUCTURE_ENGINE is None:
         if log_func: log_func("   ├─ [엔진 로딩] 최초 가동: Paddle 로컬 두뇌 파일(약 25MB)을 메모리에 탑재합니다.")
-        from paddleocr import PPStructure
-        # 윈도우 환경 내 가성비 극대화를 위한 인텔 가속 옵션 주입
-        _PADDLE_STRUCTURE_ENGINE = PPStructure(
-            show_log=False,
-            image_orientation=False,
-            table=True,          # 표 레이아웃 인지 활성화
-            ocr=True,            # 한글/영문 자가 판독 활성화
-            lang='korean',       # CJK 아시아 문자 특화 모델 고정
-            use_gpu=False,       # 외장 그래픽 부재에 따른 CPU 단독 구동
-            ir_optim=True        # Intel OpenVINO 컴파일 최적화 스위치 ON
+        from paddleocr import PPStructureV3
+        # PaddleOCR 3.x/3.7 신규 API: 불필요한 모듈 차단으로 메모리 절약 및 가동 속도 최적화
+        _PADDLE_STRUCTURE_ENGINE = PPStructureV3(
+            lang='korean',                        # CJK 아시아 문자 특화 모델 고정
+            use_doc_orientation_classify=False,    # 문서 회전 감지 불필요 (MSDS 규격서)
+            use_doc_unwarping=False,               # 곡면 펴기 불필요
+            use_seal_recognition=False,            # 도장 인식 불필요
+            use_formula_recognition=False,         # 수학 수식 인식 불필요
+            use_chart_recognition=False,           # 차트 인식 불필요
         )
     return _PADDLE_STRUCTURE_ENGINE
 
 def extract_table_via_local_ocr(image_list, log_func=None):
-    """이미지 리스트에서 각 격실 좌표를 확보하여 부등호가 보존된 순수 HTML 표 문자열로 추출"""
+    """이미지 리스트에서 PPStructureV3로 표 구조를 분석하여 HTML 표 문자열 추출"""
     try:
         engine = get_paddle_structure_engine(log_func)
         html_results = []
@@ -58,15 +57,34 @@ def extract_table_via_local_ocr(image_list, log_func=None):
             image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
             img_np = np.array(image)
             
-            # PP-Structure 이미지 픽셀 매트릭스 스캔 실행
-            structure_res = engine(img_np)
+            # PPStructureV3 predict 실행 (HTML 표 변환 활성화)
+            results = engine.predict(
+                img_np,
+                use_table_recognition=True,
+                use_wired_table_cells_trans_to_html=True,
+                use_wireless_table_cells_trans_to_html=True,
+            )
             
-            for region in structure_res:
-                if region['type'] == 'table':
-                    html_str = region['res'].get('html', '')
-                    if html_str.strip():
-                        # 데이터 무결성 보강: 공백과 미세 기호 보존 규칙 적용
-                        html_results.append(html_str)
+            for res in results:
+                # 1순위: res.html 딕셔너리에서 table_N 키별 HTML 표 수거
+                html_dict = getattr(res, 'html', {}) or {}
+                page_html_parts = []
+                for table_key, html_str in html_dict.items():
+                    if html_str and html_str.strip():
+                        page_html_parts.append(html_str)
+                
+                # HTML 셀 품질 검증: 태그 제거 후 순수 텍스트가 100자 이상이면 유효 판정
+                combined_html = "\n".join(page_html_parts)
+                text_only = re.sub(r'<[^>]+>', '', combined_html)
+                if len(text_only.strip()) >= 100:
+                    html_results.extend(page_html_parts)
+                else:
+                    # HTML 셀이 빈약한 경우: 마크다운 텍스트에서 전체 OCR 내용 수거 (안전망)
+                    md_data = getattr(res, 'markdown', {}) or {}
+                    md_text = md_data.get('markdown_texts', '') if isinstance(md_data, dict) else ''
+                    if md_text and md_text.strip():
+                        if log_func: log_func(f"   ├─ [품질 전환] HTML 셀 빈약({len(text_only.strip())}자) -> 마크다운 OCR 전문 수거로 대체.")
+                        html_results.append(md_text)
         
         # [하네스 가드] 매 세션 완료 즉시 파이썬 힙 영역에 잔존하는 텐서 자산 강제 소멸
         gc.collect()
@@ -1675,6 +1693,152 @@ def check_golden_fingerprint(log_func=None):
     except Exception as e:
         if log_func: log_func(f" ⚠️ 지문 검문소 시스템 가동 실패: {e}")
 
+def verify_integrity_of_local_data(extracted_text):
+    """
+    로컬 OCR이 수거한 텍스트의 물리적 모순을 계측하는 무결성 검문소
+    """
+    if not extracted_text:
+        return False, "데이터 공란"
+
+    # 1. 괄호 안이나 텍스트 내부에 존재하는 모든 숫자/소수점 고속 수거
+    # (예: "157~265%" -> ['157', '265'])
+    numbers = [float(n) for n in re.findall(r'[\d\.]+', extracted_text) if n.strip('.')]
+
+    # 🚨 [데이터 검증 및 예외 처리] 지구상에 존재할 수 없는 100% 초과 유령 수치 검문
+    for num in numbers:
+        if num > 100.0:
+            # 저울 한계선 초과 즉시 검문 탈락 낙인 (Bypass 차단막 하강)
+            return False, f"물리적 모순 포착: 함량 수치 초과 ({num}%)"
+
+    # 2. 모든 성분의 최소 함량 합계가 상식선(예: 120%)을 초과하는지 2차 예외 검증
+    # (소수점 탈루로 인한 누적 오염 방어벽)
+    if sum(numbers) / max(1, len(numbers)) > 90.0 and len(numbers) >= 3:
+         return False, "누적 함량 비정상 비대화 감지"
+
+    return True, "무결성 통과"
+
+def scan_self_diagnosis(local_ocr_html, log_func=None):
+    """
+    [V24.5.6.0] 1단계 로컬 자가 검문소 (Self-Diagnosis)
+    스캔본에서 수거된 HTML 표 데이터를 인터넷 통신 없이 로컬에서 무결성 정밀 스캔합니다.
+    - CAS 번호 형태 내 알파벳 오타(찌그러짐) 감지.
+    - 물질명 칸과 함유량 부등호 수치 칸 1:1 정합성 검사.
+    반환값: (is_perfect, items_list, invalid_cas_dict)
+      - is_perfect: 정합성 100% 만족 여부 (True/False)
+      - items_list: 추출된 성분 리스트 (성공 시 반환할 목록)
+      - invalid_cas_dict: 오타 난 CAS 매핑
+    """
+    import re
+    if not local_ocr_html:
+        return False, [], {}
+
+    tr_pattern = re.compile(r'<tr>(.*?)</tr>', re.DOTALL | re.IGNORECASE)
+    td_pattern = re.compile(r'<td[^>]*>(.*?)</td>', re.DOTALL | re.IGNORECASE)
+    
+    rows = tr_pattern.findall(local_ocr_html)
+    cas_candidate_pattern = re.compile(r'(?<![\w-])([0-9a-zA-Z]{2,7}-[0-9a-zA-Z]{2}-[0-9a-zA-Z]{1})(?![\w-])')
+    
+    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "conc", "weight", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname"}
+    noise_keywords = {"twa", "stel", "pel", "tlv", "mg/m", "mg/㎥", "노출기준", "exposure"}
+
+    if log_func:
+        log_func(f" 🔍 [1선 하이브리드 검문] 수거된 성분 구조 정밀 스캔 중...")
+
+    has_invalid_cas = False
+    has_alignment_error = False
+    extracted_items = []
+    invalid_cas_dict = {}
+    total_valid_cas_count = 0
+
+    for tr_content in rows:
+        td_contents = td_pattern.findall(tr_content)
+        row_cells = [re.sub(r'<[^>]+>', '', td).strip() for td in td_contents]
+        
+        row_clean_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in row_cells}
+        if row_clean_set.intersection(header_keywords):
+            continue
+        if any(k in "".join(row_cells).lower() for k in noise_keywords):
+            continue
+            
+        row_text_full = " ".join(row_cells)
+        cas_candidates = cas_candidate_pattern.findall(row_text_full)
+        if not cas_candidates:
+            continue
+
+        name_candidates = []
+        content_candidates = []
+        
+        for c in row_cells:
+            if not c:
+                continue
+            if any(cand in c for cand in cas_candidates):
+                c_remain = c
+                for cand in cas_candidates:
+                    c_remain = c_remain.replace(cand, "")
+                c_remain = c_remain.strip()
+                if len(c_remain) >= 1 and not re.match(r'^[\d\s.,\-~%]+$', c_remain):
+                    name_candidates.append(c_remain)
+                continue
+                
+            norm_c = _normalize_single_content(c)
+            is_percent = '%' in c
+            is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) is not None
+            is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
+            is_range = ('-' in c or '–' in c or '—' in c) and not re.search(r'[a-zA-Z가-힣]', c)
+            
+            if (is_percent or is_pure_num or is_symbol or is_range) and norm_c != "미기재%" and re.search(r'\d', norm_c):
+                content_candidates.append(norm_c)
+            elif len(c) >= 1 and not re.match(r'^[\d\s.,\-~%]+$', c):
+                name_candidates.append(c)
+
+        for cas_cand in cas_candidates:
+            alphabet_matches = re.findall(r'[a-zA-Z]', cas_cand)
+            
+            matched_name = ""
+            if name_candidates:
+                valid_names = [n for n in name_candidates if len(n) < 50]
+                matched_name = max(valid_names, key=len) if valid_names else name_candidates[0]
+            
+            matched_content = content_candidates[0] if content_candidates else "미기재%"
+
+            if alphabet_matches:
+                has_invalid_cas = True
+                bad_char = alphabet_matches[0]
+                if log_func:
+                    log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> ⚠️ 오류 감지 (숫자 자리에 알파벳 '{bad_char}' 유입)")
+                invalid_cas_dict[cas_cand] = None 
+            else:
+                if verify_cas_number(cas_cand):
+                    if log_func:
+                        log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> 규격 일치 (정상)")
+                    total_valid_cas_count += 1
+                else:
+                    has_invalid_cas = True
+                    if log_func:
+                        log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> ⚠️ 오류 감지 (체크디지트 불일치)")
+            
+            if not matched_name or matched_content == "미기재%":
+                has_alignment_error = True
+                
+            extracted_items.append({
+                "name": matched_name,
+                "cas_no": cas_cand,
+                "content": matched_content,
+                "engine": "local_bypass"
+            })
+
+    is_perfect = (not has_invalid_cas) and (not has_alignment_error) and (total_valid_cas_count > 0)
+    
+    if is_perfect and extracted_items:
+        all_contents_text = " ".join([item["content"] for item in extracted_items if item.get("content")])
+        is_valid, reason = verify_integrity_of_local_data(all_contents_text)
+        if not is_valid:
+            if log_func:
+                log_func(f" ⚠️ [검문 탈락] {reason} -> 즉시 외부 AI(Gemini/GPT) 정제 차선으로 강제 회군합니다.")
+            is_perfect = False
+            
+    return is_perfect, extracted_items, invalid_cas_dict
+
 def process_pdf(pdf_path, log_func=None):
     start_time = time.time()
     current_sniper = get_next_sniper()
@@ -1784,7 +1948,19 @@ def process_pdf(pdf_path, log_func=None):
             found = cas_pattern.findall(str(c.get("cas") or c.get("cas_no") or ""))
             extracted_cas_set.update([f for f in found if verify_cas_number(f)])
             
-        if original_cas_count > 0 and len(extracted_cas_set) >= original_cas_count and not has_invalid_cas_1st:
+        # [무결성 가드레일] 1선 완착 결과 함량 수치 수학적 상한선 검증 저울 센서 추가 결착
+        is_integrity_valid = True
+        if checked_1st:
+            all_1st_contents = " ".join([str(c.get("content") or c.get("percentage") or "") for c in checked_1st])
+            is_integrity_valid, check_reason = verify_integrity_of_local_data(all_1st_contents)
+            if not is_integrity_valid:
+                if log_func:
+                    log_func(f" ⚠️ [1선 저울 센서 검문 탈락] {check_reason} -> 즉시 외부 AI 정제 차선으로 강제 회군합니다.")
+
+        if (original_cas_count > 0 and 
+            len(extracted_cas_set) >= original_cas_count and 
+            not has_invalid_cas_1st and
+            is_integrity_valid):
             has_perfect_1st_line = True
             if log_func: log_func(" 🟢 [1선 완착 통과] 1선 정규식/격자 엔진 결과의 무결성이 확인되어 AI 호출을 생략(Bypass)합니다.")
 
@@ -1838,18 +2014,76 @@ def process_pdf(pdf_path, log_func=None):
             # 차선 분기 게이트 제어 메커니즘
             # ------------------------------------------------------------------
             if local_ocr_success:
-                # [A 트랙: 청정 가성비 차선] 이미 칸막이가 굳은 HTML 텍스트만 실어 보내어 429 병목 완벽 면제
-                enriched_text_prompt = (
-                    f"{raw_prompt}\n\n"
-                    f"[🚨 로컬 정밀 OCR 수집 HTML 표 구조 데이터]\n"
-                    f"{local_ocr_html}\n\n"
-                    f"※ 지침: 상기 HTML 표는 로컬에서 수집한 원형이다. <td> 격실 내부에 보존된 미세 부등호 기호(>, <, %, ~)와 수치를 "
-                    f"절대 누락하거나 환각 데이터로 변조하지 말고, 유해성 관리 기준 룰북에 입각하여 최종 JSON 장부로 정제하라."
-                )
-                # 이미지 리스트를 강제로 비워 보내 텍스트 요금 스케줄(반값 단가 사양) 적용
-                ai_res = call_gemini_2_5_flash([], enriched_text_prompt, current_sniper, log_func, model="gemini-2.5-flash")
-                used_engine = "Local-PaddleOCR + Gemini-2.5-Flash (Text)"
-                is_ai_extracted = True
+                # [V24.5.6.0] 1단계 로컬 자가 검문소 (Self-Diagnosis) 격발
+                is_perfect, extracted_items, invalid_cas_dict = scan_self_diagnosis(local_ocr_html, log_func=log_func)
+                
+                if is_perfect:
+                    # [2단계] 청정 데이터 무정차 고속 패스 (Bypass)
+                    if log_func:
+                        log_func(" 🟢 [검문 통과] 데이터 무결성 100% 확정. 외부 AI 호출을 생략(Bypass)합니다.")
+                        log_func(" ✅ [고속 직행 완료] 외부 통신 없이 0초 만에 엑셀 장부 입고 성공! (used_engine: local_bypass)")
+                    
+                    ai_res = {
+                        "구성성분": extracted_items,
+                        "교정_사유": "1단계 자가 검문 통과 (Bypass)"
+                    }
+                    used_engine = "local_bypass"
+                    is_ai_extracted = False
+                else:
+                    # [3단계] 선택적 외주 정제 사격 (Targeted Fallback)
+                    if log_func:
+                        log_func(" 🔴 [검문 탈락] 오염 위험 데이터 포착. 즉시 외부 AI 정제 세척선으로 핀포인트 외주 송출.")
+                    
+                    enriched_text_prompt = (
+                        f"{raw_prompt}\n\n"
+                        f"[🚨 로컬 정밀 OCR 수집 HTML 표 구조 데이터]\n"
+                        f"{local_ocr_html}\n\n"
+                        f"※ 지침: 상기 HTML 표는 로컬에서 수집한 원형이다. 오타(숫자 자리에 알파벳 유입)나 뒤틀린 행을 문맥에 맞게 수정하여 정밀한 JSON 장부 형태로 교정하라. "
+                        f"예를 들어, '13463-6l-7'과 같은 오타 CAS 번호는 올바른 '13463-67-7'로 복원해야 한다. <td> 격실 내부에 보존된 미세 부등호 기호(>, <, %, ~)와 수치를 "
+                        f"절대 누락하거나 환각 데이터로 변조하지 말고, 유해성 관리 기준 룰북에 입각하여 최종 JSON 장부로 정제하라."
+                    )
+                    
+                    # Gemini 2.5 Flash 정제 요청 (텍스트 단독 전송)
+                    ai_res = call_gemini_2_5_flash([], enriched_text_prompt, current_sniper, log_func, model="gemini-2.5-flash")
+                    used_engine = "gemini_cleaner"
+                    
+                    # Gemini 호출 실패(None인 경우) 시 비상 최종 3선(OpenAI GPT-4o-mini) 격발
+                    if ai_res is None:
+                        if log_func:
+                            log_func("   🚨 [Gemini 정제 장애] API 호출 실패 또는 타임아웃 발생 -> OpenAI(GPT-4o-mini) 헬기 출격.")
+                        ai_res = call_gpt_4o_mini([], enriched_text_prompt, log_func=log_func)
+                        used_engine = "openai_cleaner"
+                    
+                    # 정제 결과에서 오타 수정 내역 로그 출력
+                    if ai_res and "구성성분" in ai_res:
+                        is_ai_extracted = True
+                        refined_comps = ai_res["구성성분"]
+                        for old_cas in list(invalid_cas_dict.keys()):
+                            normalized_old = re.sub(r'[oO]', '0', old_cas)
+                            normalized_old = re.sub(r'[lL]', '1', normalized_old)
+                            normalized_old = re.sub(r'[iI]', '1', normalized_old)
+                            normalized_old = re.sub(r'[zZ]', '2', normalized_old)
+                            normalized_old = re.sub(r'[sS]', '5', normalized_old)
+                            
+                            matching_new = next((c.get("cas_no") or c.get("cas") for c in refined_comps if (c.get("cas_no") or c.get("cas") or "").strip() == normalized_old), None)
+                            if not matching_new:
+                                for c in refined_comps:
+                                    c_cas = (c.get("cas_no") or c.get("cas") or "").strip()
+                                    if c_cas and c_cas.split('-')[0] == old_cas.split('-')[0]:
+                                        matching_new = c_cas
+                                        break
+                                        
+                            if matching_new:
+                                invalid_cas_dict[old_cas] = matching_new
+                                if log_func:
+                                    cleaner_label = "Gemini" if used_engine == "gemini_cleaner" else "OpenAI"
+                                    log_func(f" 🎯 [{cleaner_label} 정제 완착] 오타 수선 완료: '{old_cas}' -> '{matching_new}' 복원 성공.")
+                        
+                        if log_func:
+                            log_func(f" ✅ [정제 완료] 데이터 무결성 세척 후 엑셀 장부 입고 완료. (used_engine: {used_engine})")
+                    else:
+                        if log_func:
+                            log_func(" ❌ [정제 실패] 외부 AI 정제 결과 오류.")
             else:
                 # [B 트랙: 비상 예비 클라우드 멀티모달 차선] 로컬 에러 발생 시 기존의 검증된 비전 라인으로 무정차 이송
                 if log_func: log_func("   ⚠️ [비상 차선 복구] 클라우드 비전 파이프라인 긴급 복구 및 정식 Gemini 2.5 Flash 격발.")

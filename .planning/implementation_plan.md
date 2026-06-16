@@ -13,8 +13,10 @@
 ### [Tree] 정밀 수정 단계
 
 #### 🛠️ Task 1: ODL 테이블 헤더 인식 유연화 (`msds_engine_v5.py`)
-- Section 3의 시작 지점을 찾는 정규식을 보강하여, 1페이지 하단이나 2페이지 상단에 걸쳐 있는 테이블을 놓치지 않게 함.
-- 테이블 병합 시 CAS 번호가 있는 행은 무조건 '유효 행'으로 간주하도록 ODL 파서 규칙 완화.
+- [/] HTML 표 문자열 파싱 헬퍼 함수 (`parse_html_table_to_components`) 구현
+- [/] `process_pdf` 함수 내 스캔본의 선제적 로컬 OCR 격발 및 데이터 수집부 개선
+- [/] `has_perfect_1st_line` 자가 진단 조건 고도화 (CAS 체크섬, 함유량 포맷, 성분명 유효성, 마스터 DB 대조 제외)
+- [/] 디지털/스캔본 하이브리드 라우팅 통합
 
 #### 🛠️ Task 2: 고분자 전용 '논리적 행 결합' 엔진 (`extract_from_text_regex`)
 - 단순 Proximity Search가 아닌, **물질명-CAS-함량**을 하나의 튜플로 인식하는 로직 구현.
