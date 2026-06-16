@@ -14,9 +14,18 @@ def clean_content_text(text: str) -> str:
         return ""
     # 연속된 개행 및 공백 평탄화
     text = re.sub(r'\s+', ' ', text)
-    # 매칭 규칙: (\d+)\s*이상\s*~\s*(\d+)\s*%?\s*미만 -> \1~\2%
-    pattern = r'(\d+)\s*이상\s*~\s*(\d+)\s*%?\s*미만'
-    text = re.sub(pattern, r'\1~\2%', text)
+    # 한글 혼용 범위어 매칭 규칙 적용: 이상 ~ 미만 형태를 물결과 백분율로 평탄화 (실수 지원 및 상한 1/1.0일 때만 미만 보존)
+    pattern = r'(\d+(?:\.\d+)?)\s*이상\s*~\s*(\d+(?:\.\d+)?)\s*%?\s*미만'
+    def replace_match(match):
+        v1 = match.group(1)
+        v2 = match.group(2)
+        try:
+            if abs(float(v2) - 1.0) < 1e-9:
+                return f"{v1}~<{v2}%"
+        except:
+            pass
+        return f"{v1}~{v2}%"
+    text = re.sub(pattern, replace_match, text)
     return text.strip()
 
 def is_valid_cas(cas):
@@ -83,8 +92,11 @@ def format_content(content, log_callback=None):
         v1_str = int(v1) if v1.is_integer() else v1
         v2_str = int(v2) if v2.is_integer() else v2
         
-        # [수정] 범위형에서도 미만(<) 기호 보존
-        v2_prefix = "<" if any(c in content_str for c in ["<", "미만", "below", "less"]) else ""
+        # [수정] 범위형 상한선이 정확히 1 또는 1.0일 때만 미만(<) 기호 보존
+        v2_prefix = ""
+        if any(c in content_str for c in ["<", "미만", "below", "less"]):
+            if abs(v2 - 1.0) < 1e-9:
+                v2_prefix = "<"
         return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
     
     # 수학 기호(≤, ≥) 완벽 인식 (공백 제거)
@@ -149,7 +161,12 @@ def clean_percentage(content_str):
         if v1 > v2: v1, v2 = v2, v1
         v1_str = int(v1) if v1.is_integer() else v1
         v2_str = int(v2) if v2.is_integer() else v2
-        v2_prefix = "<" if any(c in content_lower for c in ["<", "미만", "below", "less"]) else ""
+        
+        # [수정] 범위형 상한선이 정확히 1 또는 1.0일 때만 미만(<) 기호 보존
+        v2_prefix = ""
+        if any(c in content_lower for c in ["<", "미만", "below", "less"]):
+            if abs(v2 - 1.0) < 1e-9:
+                v2_prefix = "<"
         return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
     
     if any(c in content_lower for c in ["<", "미만", "below"]): prefix = "<"

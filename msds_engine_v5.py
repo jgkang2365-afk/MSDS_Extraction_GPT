@@ -139,9 +139,9 @@ def refine_msds_components_strict(raw_components):
     
     for comp in raw_components:
         # KOSHA API와 기존 추출 스트림이 확보한 국문 물질명 및 호환 자산 키 누락 방지 매핑
-        name = comp.get('name', '').strip() or comp.get('chemical_name', '').strip()
-        cas = comp.get('cas', '').strip() or comp.get('cas_no', '').strip()
-        pct = comp.get('percentage', '').strip() or comp.get('content', '').strip()
+        name = (comp.get('name') or '').strip() or (comp.get('chemical_name') or '').strip()
+        cas = (comp.get('cas') or '').strip() or (comp.get('cas_no') or '').strip()
+        pct = (comp.get('percentage') or '').strip() or (comp.get('content') or '').strip()
         page_val = comp.get('page', '')
         engine_val = comp.get('engine', 'Unknown')
         
@@ -515,8 +515,12 @@ def _normalize_single_content(content_str):
             if v.count('+') >= 2 or v.count('이상') >= 2:
                 return f"≥{n1}%"
 
-            if n2 > 1.0 and s_sym in ["<", "≤"]: 
-                if n2 != 1.0: s_sym = ""
+            # [수정] 범위형 상한 수치가 정확히 1 또는 1.0인 경우에만 미만 기호를 '<'로 변환 및 보존
+            if s_sym in ["<", "≤"]:
+                if abs(float(n2) - 1.0) < 1e-9:
+                    s_sym = "<"
+                else:
+                    s_sym = ""
             
             if not s_sym: return f"{n1}~{n2}%"
             return f"{n1}~{s_sym}{n2}%"
@@ -673,31 +677,69 @@ def extract_table_by_density_clustering(page):
     words = page.get_text("words")
     if not words:
         return []
-        
-    # 1. 세로 격리 기전: 세로 오차범위 3.0포인트 이내의 활자들을 동일 수평 행(Row) 바구니로 격리
-    words.sort(key=lambda w: w[1]) # y0(top) 기준으로 정렬
-    
-    rows = []
+
+    # 중간값을 구하는 로컬 헬퍼 함수
+    def _get_median(lst):
+        if not lst:
+            return 0.0
+        sorted_lst = sorted(lst)
+        n = len(sorted_lst)
+        if n % 2 == 1:
+            return sorted_lst[n // 2]
+        else:
+            return (sorted_lst[n // 2 - 1] + sorted_lst[n // 2]) / 2.0
+
+    # 1. 페이지 내부 전체 활자 높이의 통계치 파악 (대표 스케일 뼈대 수립)
+    heights = [w[3] - w[1] for w in words]
+    base_scale = _get_median(heights)
+
+    # 2. 임시 세로 격리 및 활자 간 간격(gap)의 중간값 동적 산출
+    # 수직 오차범위는 비교 대상 활자 높이 중 작은 쪽의 25% 비율을 적용
+    words.sort(key=lambda w: w[1]) # y0(top) 기준으로 임시 정렬
+    temp_rows = []
     current_row = []
-    prev_y = None
     
     for w in words:
-        y = w[1]
-        if prev_y is None:
-            current_row.append(w)
-            prev_y = y
-        elif abs(y - prev_y) <= 3.0:
+        if not current_row:
             current_row.append(w)
         else:
-            rows.append(current_row)
-            current_row = [w]
-            prev_y = y
+            w_prev = current_row[-1]
+            h_curr = w[3] - w[1]
+            h_prev = w_prev[3] - w_prev[1]
+            min_h = min(h_curr, h_prev)
+            vertical_threshold = min_h * 0.25 # 동적 수직 오차 임계값
+            
+            if abs(w[1] - w_prev[1]) <= vertical_threshold:
+                current_row.append(w)
+            else:
+                temp_rows.append(current_row)
+                current_row = [w]
     if current_row:
-        rows.append(current_row)
-        
-    extracted_components = []
+        temp_rows.append(current_row)
+
+    # 각 임시 행 내에서 인접 활자 상자 간의 가로 gap 수집
+    all_gaps = []
+    for r in temp_rows:
+        r_sorted = sorted(r, key=lambda w: w[0])
+        for i in range(len(r_sorted) - 1):
+            gap = r_sorted[i+1][0] - r_sorted[i][2]
+            if gap > 0:
+                all_gaps.append(gap)
+
+    # 가로 간격의 중간값 산출 (기본값은 활자 높이 중간값의 50% 비율 연동)
+    median_gap = _get_median(all_gaps) if all_gaps else base_scale * 0.5
     
-    # 2. 가로 동적 분할 기전 및 오염 차단 필터
+    # 활자 크기와 페이지 통계치에 연동되는 동적 가로 여백 비율 공식 수립 (상수 배제)
+    horizontal_ratio = median_gap / base_scale if base_scale > 0 else 0.5
+
+    # 3. 최종 세로 격리 및 시각적 상하 순서 강제 정렬
+    rows = temp_rows
+    # 각 행의 대표 y0 좌표(중간값)를 기준으로 오름차순 정렬 집행 (위에서 아래로 수집 강제)
+    rows.sort(key=lambda r: _get_median([w[1] for w in r]))
+
+    extracted_components = []
+
+    # 4. 가로 동적 분할 기전 및 오염 차단 필터
     for row in rows:
         row_words = sorted(row, key=lambda w: w[0]) # x0(left) 기준으로 정렬
         cells = []
@@ -711,8 +753,8 @@ def extract_table_by_density_clustering(page):
                 char_height = w_prev[3] - w_prev[1]
                 gap = w[0] - w_prev[2]
                 
-                # gap이 앞 글자의 높이 비율(char_height * 0.6)보다 크면 동적 칸막이 경계선으로 선포하고 분할
-                if gap > char_height * 0.6:
+                # gap이 현재 활자 높이에 실시간 연동된 가로 여백 비율보다 크면 동적 경계선 분할
+                if gap > char_height * horizontal_ratio:
                     cells.append(current_cell)
                     current_cell = [w]
                 else:
@@ -740,9 +782,10 @@ def extract_table_by_density_clustering(page):
                 cas_candidate = cas_matches[0]
                 continue
                 
-            # 오염 차단 필터: 순수 숫자로만 구성된 타 열의 거대 식별 ID 번호(예: 17036, 28257 등) 무상 차단 폐기
+            # 오염 차단 필터: 순수 숫자로만 구성된 타 열의 거대 식별 ID 번호(예: 병풀잎추출물의 17036) 무상 차단 폐기
             if re.match(r'^\d+$', txt.strip()):
                 val = int(txt.strip())
+                # 100% 한계선을 기준으로 차단
                 if val > 100:
                     continue
                     
@@ -872,28 +915,29 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     text_val = re.sub(r'\d', 'X', text_val)
             words.append((w[0], w[1], w[2], w[3], text_val, w[5], w[6], w[7]))
 
-        # 🚨 [V24.0.0.0] 블랙홀 차단: Y축 기준선(Baseline) 강제 고정 (문단이 하나의 줄로 합쳐지는 것 원천 차단)
+        # 🚨 [V24.0.0.0] 블랙홀 차단: Y축 기준선(Baseline) 강제 고정 (동적 수직 격리 및 시각적 정렬 이식)
         physical_lines = []
         if words:
             current_line_words = [words[0]]
             line_top = words[0][1]    
             line_bottom = words[0][3] 
-            line_height = line_bottom - line_top
 
             for i in range(1, len(words)):
                 curr_w = words[i]
-                curr_top = curr_w[1]
-                curr_bottom = curr_w[3]
-
-                overlap = max(0, min(line_bottom, curr_bottom) - max(line_top, curr_top))
-
-                # 줄바꿈 및 미세 인쇄 오차로 인해 '1 이상'과 '~ 10% 미만'이 찢어지는 현상을 방지하기 위해 결합 마진 임계치 확장
-                if overlap > (line_height * 0.2) or abs(curr_top - line_top) <= (line_height * 0.8) or abs(curr_bottom - line_bottom) <= (line_height * 0.8):
+                w_prev = current_line_words[-1]
+                
+                h_curr = curr_w[3] - curr_w[1]
+                h_prev = w_prev[3] - w_prev[1]
+                min_h = min(h_curr, h_prev)
+                
+                # 활자 크기와 페이지 배치 통계에 연동되는 동적 세로 오차 임계값 수립
+                vertical_threshold = min_h * 0.25
+                
+                # 두 활자 상자의 세로 차이가 동적 임계값 이내이면 동일 행으로 병합 및 격리
+                if abs(curr_w[1] - w_prev[1]) <= vertical_threshold:
                     current_line_words.append(curr_w)
-                    # [회귀 방지] 가변형 하단선 확장 알고리즘 적용하여 웨이브/수직 개행 텍스트를 유연하게 흡수
-                    line_bottom = max(line_bottom, curr_bottom)
-                    line_top = min(line_top, curr_top)
-                    line_height = line_bottom - line_top
+                    line_top = min(line_top, curr_w[1])
+                    line_bottom = max(line_bottom, curr_w[3])
                 else:
                     current_line_words.sort(key=lambda w: w[0])
                     physical_lines.append({
@@ -904,7 +948,6 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     current_line_words = [curr_w]
                     line_top = curr_w[1]
                     line_bottom = curr_w[3]
-                    line_height = line_bottom - line_top
 
             if current_line_words:
                 current_line_words.sort(key=lambda w: w[0])
@@ -913,6 +956,9 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                     "text": " ".join([w[4] for w in current_line_words]),
                     "words": current_line_words
                 })
+
+            # 시각적 상하 순서 강제 정렬: 대표 세로 좌표 기준으로 오름차순 강제 정렬
+            physical_lines.sort(key=lambda pl: pl["y"])
 
         # physical_lines 빌드 후 y_start 정밀 재검색 및 교정
         y_start_refined = 0.0
@@ -1765,11 +1811,19 @@ analyze_msds = process_pdf
 
 def self_test_regression():
     """[DEPRECATED] 정답지 기반 검증 제거. 로직의 본질적 견고함에 집중."""
+    # [하네스 안전 잠금 검증벽] 상한 수치가 1.0이 아닌 범위값의 미만 기호 필터링 여부 확인
+    for input_str, expected in [("15~<20%", "15~20%"), ("1~<5", "1~5%")]:
+        res_val = _normalize_single_content(input_str)
+        if unicodedata.normalize("NFKC", res_val) != unicodedata.normalize("NFKC", expected):
+            raise RuntimeError(f"[하네스 안전 잠금 붕괴] '{input_str}' 정제 결과가 '{expected}'가 아닌 '{res_val}'로 기호가 새어 나갔습니다.")
+            
     fail_count = 0
     pass_count = 0
     
     # 1. 부등호 및 범위 표준화 테스트
     test_cases = [
+        ("15~<20%", "15~20%", "1% 앵커 외 범위형 미만 기호 필터링 실패"),
+        ("1~<5", "1~5%", "1% 앵커 외 범위형 미만 기호 필터링 실패"),
         ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
         ("0.01이내", "\u22640.01%", "이내(Within) 변환 실패"),
         ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
