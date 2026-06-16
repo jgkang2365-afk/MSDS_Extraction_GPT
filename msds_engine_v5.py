@@ -418,6 +418,8 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
 
 def _normalize_single_content(content_str):
     """[V17.3.2.25] 부등호 정밀 복구 및 단위(g) 환각 방지"""
+    # 한글 혼용 범위어 평탄화 연동
+    content_str = msds_utils_v3.clean_content_text(str(content_str))
     raw = str(content_str).strip()
     if not raw: return "미기재%"
 
@@ -663,6 +665,126 @@ cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼�
 cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
 
+
+def extract_table_by_density_clustering(page):
+    """
+    [V24.5.0.0] 밀도 기반 클러스터링 테이블 추출기
+    """
+    words = page.get_text("words")
+    if not words:
+        return []
+        
+    # 1. 세로 격리 기전: 세로 오차범위 3.0포인트 이내의 활자들을 동일 수평 행(Row) 바구니로 격리
+    words.sort(key=lambda w: w[1]) # y0(top) 기준으로 정렬
+    
+    rows = []
+    current_row = []
+    prev_y = None
+    
+    for w in words:
+        y = w[1]
+        if prev_y is None:
+            current_row.append(w)
+            prev_y = y
+        elif abs(y - prev_y) <= 3.0:
+            current_row.append(w)
+        else:
+            rows.append(current_row)
+            current_row = [w]
+            prev_y = y
+    if current_row:
+        rows.append(current_row)
+        
+    extracted_components = []
+    
+    # 2. 가로 동적 분할 기전 및 오염 차단 필터
+    for row in rows:
+        row_words = sorted(row, key=lambda w: w[0]) # x0(left) 기준으로 정렬
+        cells = []
+        current_cell = []
+        
+        for w in row_words:
+            if not current_cell:
+                current_cell.append(w)
+            else:
+                w_prev = current_cell[-1]
+                char_height = w_prev[3] - w_prev[1]
+                gap = w[0] - w_prev[2]
+                
+                # gap이 앞 글자의 높이 비율(char_height * 0.6)보다 크면 동적 칸막이 경계선으로 선포하고 분할
+                if gap > char_height * 0.6:
+                    cells.append(current_cell)
+                    current_cell = [w]
+                else:
+                    current_cell.append(w)
+        if current_cell:
+            cells.append(current_cell)
+            
+        # 각 셀을 텍스트로 병합
+        cell_texts = []
+        for cell in cells:
+            cell.sort(key=lambda w: w[0])
+            cell_text = " ".join([w[4] for w in cell]).strip()
+            cell_texts.append(cell_text)
+            
+        # CAS, 함량, 명칭 후보 추출
+        cas_candidate = None
+        content_candidate = None
+        name_candidates = []
+        
+        for txt in cell_texts:
+            clean_txt = txt.replace(" ", "")
+            # CAS 번호 매칭
+            cas_matches = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', clean_txt)
+            if cas_matches:
+                cas_candidate = cas_matches[0]
+                continue
+                
+            # 오염 차단 필터: 순수 숫자로만 구성된 타 열의 거대 식별 ID 번호(예: 17036, 28257 등) 무상 차단 폐기
+            if re.match(r'^\d+$', txt.strip()):
+                val = int(txt.strip())
+                if val > 100:
+                    continue
+                    
+            # 함량 후보 판별 (한글 조건어 평탄화 적용 후 검증)
+            cleaned_txt = msds_utils_v3.clean_content_text(txt)
+            norm_val = _normalize_single_content(cleaned_txt)
+            if norm_val != "미기재%" and re.search(r'\d', norm_val):
+                content_candidate = norm_val
+                continue
+                
+            # 그 외 텍스트는 명칭 후보로 수집
+            if len(txt) > 1 and not re.match(r'^[\d\s.,\-~%]+$', txt):
+                name_candidates.append(txt)
+                
+        # 유효한 CAS 번호가 발견된 행에 한해 데이터 수집
+        if cas_candidate:
+            name = ""
+            if name_candidates:
+                # 국문명 우선 확보
+                ko_names = [n for n in name_candidates if re.search(r'[가-힣]', n)]
+                if ko_names:
+                    name = ko_names[0]
+                else:
+                    name = max(name_candidates, key=len)
+            else:
+                name = "CAS 기반 자동 매핑"
+                
+            pct = content_candidate if content_candidate else "미기재%"
+            combined_text = f"{name}({pct})[{cas_candidate}]"
+            
+            extracted_components.append({
+                "name": name,
+                "chemical_name": name,
+                "cas": cas_candidate,
+                "cas_no": cas_candidate,
+                "percentage": pct,
+                "content": pct,
+                "engine": "DensityClusteringTable",
+                "combined_format": combined_text
+            })
+            
+    return extracted_components
 
 def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
     """[V24.0.0.0] 분업의 철칙: 블랙홀 차단(엄격한 행 분리) 및 GHS 노이즈 필터링 (AI 토스 최적화)"""
@@ -1380,7 +1502,7 @@ def check_golden_fingerprint(log_func=None):
             current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
             
             # 💡 [생산성 허브] 최초 실행 시 하단 안내 로그에 출력되는 16자리 지문 값을 여기에 박제하시면 동결 잠금이 활성화됩니다.
-            GOLDEN_HASH = "9a8b7c6d5e4f3a2b" 
+            GOLDEN_HASH = "3b4a279585235b92" 
             
             if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                 if log_func: 
@@ -1436,6 +1558,7 @@ def process_pdf(pdf_path, log_func=None):
 
     # [V24.4.3.13] 1선 ODL 정밀 격자 분석기 전격 복구 및 선제 장부 확보
     odl_components = []
+    density_components = []
     if not is_scanned and pages:
         try:
             parser = PDFParser()
@@ -1444,6 +1567,20 @@ def process_pdf(pdf_path, log_func=None):
             if log_func: log_func(f" 🔍 [1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
         except Exception as e:
             if log_func: log_func(f" ⚠️ [1선 ODL 예외] 분석 스킵: {e}")
+
+        # 밀도 클러스터링 기반 테이블 추출 수행
+        try:
+            doc_dc = fitz.open(pdf_path)
+            for p_idx in pages:
+                if p_idx < len(doc_dc):
+                    p_comps = extract_table_by_density_clustering(doc_dc[p_idx])
+                    for pc in p_comps:
+                        pc["page"] = p_idx + 1
+                    density_components.extend(p_comps)
+            doc_dc.close()
+            if log_func: log_func(f" 🔍 [밀도 클러스터링 성공] {len(density_components)}건의 성분 확보.")
+        except Exception as e:
+            if log_func: log_func(f" ⚠️ [밀도 클러스터링 예외] 분석 스킵: {e}")
 
     # [V24.4.3.13] 2단계 딥시크 마스터 요원 기동 및 데이터 자산 입고
     if log_func: log_func(f" 🚀 [2단계 주력 가동] DeepSeek-OCR-2 통합 데이터 정제 및 수거 개시.")
@@ -1526,10 +1663,18 @@ def process_pdf(pdf_path, log_func=None):
     # [V24.4.3.13] ODL 선제 자산과 딥시크 AI 수거물의 무결성 융합 (CAS 기준 상호 보완 메커니즘)
     merged_map = {}
     
-    # 1. 1선 ODL 규칙 엔진 결과를 장부에 선제 수록
+    # 1. 1선 ODL 규칙 엔진 및 밀도 클러스터링 결과를 장부에 선제 수록
     for c in odl_components:
         cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
         if cas:
+            merged_map[cas] = c
+            
+    for c in density_components:
+        cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
+        if cas:
+            existing = merged_map.get(cas)
+            if existing and str(existing.get("content")) != "미기재%" and str(c.get("content", "")) == "미기재%":
+                continue
             merged_map[cas] = c
             
     # 2. 2단계 딥시크 AI 결과를 상호 병합 (AI의 정제 가치를 반영하되 ODL이 찾은 알맹이는 보존)
@@ -1722,5 +1867,76 @@ def self_test_regression():
     else:
         print(f"--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
 
+def run_production_integrity_test_cases():
+    """
+    [V24.5.0.0] 015번 및 036번 자재에 대한 프로덕션 무결성 검증 케이스
+    """
+    print("\n==================================================")
+    print("[*] 가동: run_production_integrity_test_cases()")
+    print("==================================================")
+    
+    import glob
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    test_file_dir = os.path.join(base_dir, "TEST_File")
+    
+    # 윈도우 인코딩 불일치 방지를 위해 glob 패턴으로 경로 동적 조회
+    files_015 = glob.glob(os.path.join(test_file_dir, "*015*.pdf"))
+    file_015 = files_015[0] if files_015 else os.path.join(test_file_dir, "015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf")
+    
+    files_036 = glob.glob(os.path.join(test_file_dir, "*036*.pdf"))
+    file_036 = files_036[0] if files_036 else os.path.join(test_file_dir, "036_아이생각수성내부프로 (M-BASE)_GHS국문.pdf")
+    
+    success_015 = False
+    success_036 = False
+    
+    # [Test 1] 015번 자재 검증
+    print("\n[Test 1] 015번 자재의 거대 INCI ID(17036) 오인입 차단 검증 시작...")
+    if not os.path.exists(file_015):
+        print(f"❌ 오류: 테스트 파일 없음: {file_015}")
+    else:
+        try:
+            res = process_pdf(file_015, log_func=print)
+            comp_str = res.get("구성성분", "")
+            print(f"  └─ 추출 결과: {comp_str}")
+            # '17036' 이 결과 문자열에 포함되지 않았고, '84696-21-9' 에 '54.98%' 가 정상 매핑되었는지 확인
+            if "17036" in comp_str:
+                print("❌ 실패: 거대 INCI ID(17036)가 결과에 오인입되었습니다.")
+            elif "54.98" not in comp_str:
+                print("❌ 실패: 병풀잎추출물의 함량(54.98%)이 누락되었습니다.")
+            else:
+                print("🟢 [성공] [Test 1] 015번 자재 거대 INCI ID 오인입 차단 및 정상 함량 검증 통과")
+                success_015 = True
+        except Exception as e:
+            print(f"❌ 예외 발생: {e}")
+            
+    # [Test 2] 036번 자재 검증
+    print("\n[Test 2] 036번 한글 조건어 결착 서식 물결 평탄화 검증 시작...")
+    if not os.path.exists(file_036):
+        print(f"❌ 오류: 테스트 파일 없음: {file_036}")
+    else:
+        try:
+            res = process_pdf(file_036, log_func=print)
+            comp_str = res.get("구성성분", "")
+            print(f"  └─ 추출 결과: {comp_str}")
+            # 물(7732-18-5)에 대해 '40~50%'가 매핑되었는지 확인
+            if "7732-18-5" in comp_str and "40~50" in comp_str:
+                print("🟢 [성공] [Test 2] 036번 한글 조건어 결착 서식 물결 평탄화 검증 통과")
+                success_036 = True
+            else:
+                print("❌ 실패: 한글 조건어가 물결 기호로 올바르게 평탄화되지 못했습니다.")
+        except Exception as e:
+            print(f"❌ 예외 발생: {e}")
+            
+    print("\n==================================================")
+    if success_015 and success_036:
+        print("🟢 모든 프로덕션 통합 무결성 테스트 케이스 [성공]")
+        print("==================================================")
+        return True
+    else:
+        print("🔴 일부 테스트 케이스 실패")
+        print("==================================================")
+        return False
+
 if __name__ == "__main__":
     self_test_regression()
+    run_production_integrity_test_cases()

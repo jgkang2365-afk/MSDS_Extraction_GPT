@@ -6,6 +6,19 @@
 import re
 import unicodedata
 
+def clean_content_text(text: str) -> str:
+    """
+    한글 혼용 범위어 조건을 표준 물결 기호 형태로 세척합니다.
+    """
+    if not text:
+        return ""
+    # 연속된 개행 및 공백 평탄화
+    text = re.sub(r'\s+', ' ', text)
+    # 매칭 규칙: (\d+)\s*이상\s*~\s*(\d+)\s*%?\s*미만 -> \1~\2%
+    pattern = r'(\d+)\s*이상\s*~\s*(\d+)\s*%?\s*미만'
+    text = re.sub(pattern, r'\1~\2%', text)
+    return text.strip()
+
 def is_valid_cas(cas):
     """CAS 번호 체크디지트 검증 (유효성 99% 보장)"""
     if not cas or not isinstance(cas, str): return False
@@ -37,6 +50,8 @@ def is_garbage(text):
 
 def format_content(content, log_callback=None):
     if not content: return "함유량미기재"
+    # 한글 혼용 범위어 평탄화 적용
+    content = clean_content_text(str(content))
     content_str = str(content).lower()
     
     # [수정] 영문 GHS 유해성 코드 추가 방어
@@ -116,6 +131,8 @@ def normalize_text(text):
 
 def clean_percentage(content_str):
     if not content_str: return ""
+    # 한글 혼용 범위어 평탄화 적용
+    content_str = clean_content_text(content_str)
     content_str = unicodedata.normalize('NFKC', content_str).strip()
     
     # [주님 지시 고정 가드선] 상류에서 정제된 고정 표준 단어는 숫자 연산을 우회하여 원형 보존

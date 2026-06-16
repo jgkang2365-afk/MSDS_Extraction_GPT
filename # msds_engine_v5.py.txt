@@ -1,0 +1,884 @@
+# msds_engine_v5.py
+import os
+import base64
+import sys
+import re
+import time
+import json
+import fitz 
+import unicodedata
+import requests
+from opendataloader.pdf import PDFParser
+import msds_utils_v3
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv(override=True)
+
+# [V17.3.3.7] 윈도우 터미널 인코딩 노이즈 방어 (안전한 설정 방식)
+if sys.platform == 'win32':
+    # 이미 UTF-8이거나 GUI 환경(idna 등)인 경우 재정의하지 않음
+    if getattr(sys.stdout, 'encoding', '').lower() != 'utf-8':
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except AttributeError:
+            pass
+
+def refine_msds_components_strict(raw_components):
+    """[신형 완전판] KOSHA API 추출 국문명 원형 유지, 인위적 사칙연산 완전 폐기, 함유량 표준화 및 기존 호환 키 100% 보존"""
+    refined = []
+    
+    for comp in raw_components:
+        name = comp.get('name', '').strip() or comp.get('chemical_name', '').strip()
+        cas = comp.get('cas', '').strip() or comp.get('cas_no', '').strip()
+        pct = comp.get('percentage', '').strip() or comp.get('content', '').strip()
+        page_val = comp.get('page', '')
+        engine_val = comp.get('engine', 'Unknown')
+        
+        # 1. 표준 CAS 정규식 가드레일 (없으면 함유량 불문 즉시 전수 파기)
+        clean_cas = re.sub(r'\s+', '', cas)
+        if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
+            continue
+            
+        # 2. 함유량 특이 텍스트 이원화 표준화 관문
+        if any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
+            pct = "Rem."
+        elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
+            pct = "미기재"
+            
+        # 3. N열(1차 가공 성분 결과) 안전 안착을 위한 독점 복합 포맷 생성
+        combined_text = f"{name}({pct})[{clean_cas}]"
+        
+        refined.append({
+            'name': name,
+            'chemical_name': name,
+            'cas': clean_cas,
+            'cas_no': clean_cas,
+            'percentage': pct,
+            'content': pct,
+            'page': page_val,
+            'engine': engine_val,
+            'combined_format': combined_text
+        })
+        
+    return refined
+
+def verify_cas_number(cas_string, grounding_text=None):
+    """[V17.3.2.25] CAS 번호 검증 (Grounding 우선 원칙: 문서에 적혀 있으면 체크섬 무관하게 통과)"""
+    if not cas_string: return False
+    
+    if re.match(r'^\d{4}-\d{2}-\d{2}$', cas_string):
+        return False
+
+    if grounding_text and cas_string in grounding_text:
+        return True
+        
+    if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-", "해당없음", "None"]):
+        return True
+        
+    if grounding_text:
+        clean_cas = cas_string.replace(" ", "")
+        clean_grounding = grounding_text.replace(" ", "")
+        if clean_cas in clean_grounding:
+            return True
+        
+    clean_cas = re.sub(r'[^0-9-]', '', cas_string).strip()
+    parts = clean_cas.split('-')
+    
+    if len(parts) != 3: return False
+    
+    try:
+        check_digit = int(parts[2])
+        digits = parts[0] + parts[1]
+        total = sum(int(digit) * i for i, digit in enumerate(reversed(digits), 1))
+        return (total % 10) == check_digit
+    except:
+        return False
+
+def _get_sorted_and_normalized_text(page):
+    """[V17.3.2.25] PyMuPDF 페이지에서 텍스트를 읽기 순서대로 정렬 및 정규화하여 추출"""
+    blocks = page.get_text("blocks")
+    blocks.sort(key=lambda b: (b[1], b[0]))
+    text_list = []
+    for b in blocks:
+        text_list.append(unicodedata.normalize("NFKC", b[4]))
+    return "\n".join(text_list)
+
+VERSION = "24.4.3.21"
+
+def load_prompt(prompt_type, version):
+    """[V17.4.2.8] 프롬프트 로드 (Priority: Root(Versionless) -> Root(Versioned) -> archive/)"""
+    mapping = {
+        "vision_extractor": "prompt_vision_extractor",
+        "product_name": "prompt_product_name"
+    }
+    prefix = mapping.get(prompt_type)
+    if not prefix: raise ValueError(f"알 수 없는 프롬프트 타입: {prompt_type}")
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    search_paths = [
+        os.path.join(base_dir, f"{prefix}.txt"),
+        os.path.join(base_dir, f"{prefix}_{version}.txt"),
+        os.path.join(base_dir, "archive", f"{prefix}_{version}.txt")
+    ]
+    
+    for path in search_paths:
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                return f.read().strip()
+                
+    msg = f"[Version Lock Error] 프롬프트 파일을 찾을 수 없습니다.\n탐색한 경로:\n" + "\n".join([f" - {p}" for p in search_paths])
+    raise RuntimeError(msg)
+
+# 프롬프트 초기화 (지휘 체계 단일화)
+try:
+    VISION_EXTRACTOR_PROMPT = load_prompt("vision_extractor", VERSION)
+    PRODUCT_NAME_PROMPT = load_prompt("product_name", VERSION)
+    print(f"[*] 프롬프트 엔진 표준화 및 로드 완료 (엔진 버전: {VERSION})")
+except Exception as e:
+    print(f"[ERROR] 프롬프트 로드 중 치명적 오류: {e}")
+    raise
+
+# [V17.3.2.25] MES 마스터 데이터 로드 (사후 안내를 위한 에러 캡처 방식 적용)
+MES_MASTER_MAP = {}
+MES_MASTER_LOAD_ERROR = None
+try:
+    master_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'MES_MASTER_LOOKUP.json')
+    if not os.path.exists(master_path):
+        MES_MASTER_LOAD_ERROR = f"마스터 데이터 파일이 존재하지 않습니다: {master_path}"
+    else:
+        with open(master_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            items_list = data.get("master_list", []) if isinstance(data, dict) and "master_list" in data else []
+            if not items_list:
+                MES_MASTER_LOAD_ERROR = "JSON 파일 내에 'master_list' 배열이 없거나 데이터가 비어 있습니다."
+            else:
+                for info in items_list:
+                    cas_raw = str(info.get("CAS번호", "")).strip()
+                    cas = re.sub(r'^0+', '', cas_raw)
+                    std_name = info.get("물질명") or info.get("상용명")
+                    if cas and std_name:
+                        MES_MASTER_MAP[cas] = std_name.strip()
+except Exception as e:
+    MES_MASTER_LOAD_ERROR = f"마스터 DB 초기화 중 오류 발생: {e}"
+
+EXCEPTION_REGISTRY = {
+    "CR-13_SERIES": {
+        "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
+        "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
+        "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
+        "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
+    }
+}
+
+def _normalize_single_content(content_str):
+    """[V17.3.2.25] 부등호 정밀 복구 및 단위(g) 환각 방지"""
+    raw = str(content_str).strip()
+    if not raw: return "미기재%"
+
+    if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
+        return "미기재%"
+
+    v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥').replace('=<', '≤').replace('=>', '≥')
+    v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
+    
+    has_trailing_less = re.search(r'\d\s*(<|미\s*[만맊먄]|below|less)$', v, re.I)
+    has_trailing_more = re.search(r'\d\s*(>|초\s*과|more|over)$', v, re.I)
+    has_trailing_le = re.search(r'\d\s*(≤|이\s*[하핚내]|up\s*to|max)$', v, re.I)
+    has_trailing_ge = re.search(r'\d\s*(≥|이\s*상|above|from|min|\+)$', v, re.I)
+
+    sym_less = "<" if re.search(r'(<|미\s*[만맊먄]|below|less)', v, re.I) else ("≤" if re.search(r'(≤|이\s*[하핚내]|up\s*to|max)', v, re.I) else "")
+    sym_more = "≥" if re.search(r'(≥|이\s*상|above|from|min|\+)', v, re.I) else (">" if re.search(r'(>|초\s*과|more|over)', v, re.I) else "")
+
+    if any(k in v.lower() for k in ["balance", "잔량", "rem", "residual"]): return "Rem.%"
+    
+    pm_match = re.search(r'([0-9.]+)\s*(?:±|\+\s*-\s*|\+/?-)\s*([0-9.]+)', v)
+    if pm_match:
+        try:
+            val, pm = float(pm_match.group(1)), float(pm_match.group(2))
+            return f"{val-pm:g}~{val+pm:g}%"
+        except: pass
+
+    raw_lower = v.lower()
+    v_shield = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', v)
+    v_shield = re.sub(r'\b20[0-2]\d년?\b', ' ', v_shield)
+    
+    nums = re.findall(r'(\d+\.?\d*|\.\d+)', v_shield)
+    if not nums: return "미기재%"
+    
+    is_less = any(k in raw_lower for k in ["<", "미만", "below", "less"])
+    is_le = any(k in raw_lower for k in ["≤", "이하", "max", "upto"])
+    is_more = any(k in raw_lower for k in [">", "초과", "over", "above"])
+    is_ge = any(k in raw_lower for k in ["≥", "이상", "min", "from", "+"])
+    has_range_sep = any(k in raw_lower for k in ["~", "∼", "～", "-", "to"])
+
+    if len(nums) == 1:
+        if has_trailing_less: is_more, is_less, is_le, is_ge = True, False, False, False
+        if has_trailing_more: is_less, is_more, is_le, is_ge = True, False, False, False
+        if has_trailing_le:   is_le, is_ge, is_less, is_more = True, False, False, False
+        if has_trailing_ge:   is_ge, is_le, is_less, is_more = True, False, False, False
+
+    pref = "≥" if is_ge else (">" if is_more else ("≤" if is_le else ("<" if is_less else "")))
+    suff = "≤" if is_le else ("<" if is_less else "")
+
+    if len(nums) == 1:
+        v1 = nums[0]
+        try:
+            f1 = float(v1)
+            n1 = int(f1) if f1.is_integer() else f1
+            if n1 > 110: return "미기재%"
+            if (is_ge or is_more) and has_range_sep: return f"≥{n1}%"
+            return f"{pref}{n1}%"
+        except: return "미기재%"
+
+    elif len(nums) >= 2:
+        try:
+            f1_orig, f2_orig = float(nums[0]), float(nums[1])
+            is_swapped = f1_orig > f2_orig
+            f1, f2 = (f2_orig, f1_orig) if is_swapped else (f1_orig, f2_orig)
+            n1, n2 = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
+            
+            parts = re.split(r'\s*(?:~|∼|～|\-|to|and)\s*', v, maxsplit=1)
+            s_sym = ""
+            
+            if len(parts) == 2:
+                v_left, v_right = parts[0], parts[1]
+                target_part = v_left if is_swapped else v_right
+                
+                if any(k in target_part for k in ["<", "≤", "below", "미만"]): 
+                    s_sym = "≤" if any(k in target_part for k in ["≤", "이하"]) else "<"
+                elif any(k in target_part for k in [">", "≥", "above", "이상", "+"]):
+                    s_sym = "≥" if any(k in target_part for k in ["≥", "이상", "+"]) else ">"
+            
+            if v.count('+') >= 2 or v.count('이상') >= 2:
+                return f"≥{n1}%"
+
+            if n2 > 1.0 and s_sym in ["<", "≤"]: 
+                if n2 != 1.0: s_sym = ""
+            
+            if not s_sym: return f"{n1}~{n2}%"
+            return f"{n1}~{s_sym}{n2}%"
+        except: 
+            return "미기재%"
+    
+    return "미기재%"
+
+def final_quality_control(components, full_text, is_ai=True, log_func=None):
+    """[V17.3.2.25] Fuzzy Shield 3단계 적용 Grounding"""
+    refined_dict = {}  
+    has_invalid = False
+    norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
+    
+    for comp in components:
+        raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
+        clean_cas = re.sub(r'\s+', '', raw_cas_field)
+        raw_content = str(comp.get("content", "")).strip()
+        
+        has_any_valid_cas = bool(re.search(r'\d{2,7}-\d{2}-\d', clean_cas))
+        
+        if not has_any_valid_cas:
+            raw_content = ""
+        elif not raw_content or raw_content.strip() in ["-", "", "None", "N/A"]:
+            raw_content = "미기재%"
+
+        clean_cas_field = re.sub(r'\s+', '', raw_cas_field)
+        cas_list = re.findall(r'(?<![\d-])(\d{1,7}-\d{2}-\d)(?![\d-])', clean_cas_field)
+        
+        if not cas_list:
+            if any(k in raw_cas_field for k in ["영업비밀", "비공개", "해당없음", "Secret", "Proprietary"]):
+                cas_list = [raw_cas_field]
+            else:
+                continue
+        
+        content_parts = [_normalize_single_content(c) for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
+        if not content_parts: content_parts = [""]
+        page_val = comp.get("page", "")
+        origin_engine = comp.get("engine", "Unknown")
+        
+        loop_content = content_parts if len(cas_list) == len(content_parts) else [content_parts[0] if content_parts else ""] * len(cas_list)
+        
+        full_text = full_text.replace('̻', '').replace('̸', '')
+        norm_text = re.sub(r'\s+', '', full_text).upper()
+        
+        for cas_raw, cv in zip(cas_list, loop_content):
+            cas = re.sub(r'^0+', '', cas_raw)
+            
+            if is_ai and not verify_cas_number(cas, grounding_text=full_text):
+                valid_text_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', full_text)
+                valid_text_cas = [v for v in valid_text_cas if verify_cas_number(v, grounding_text=full_text)]
+                
+                for v_cas in valid_text_cas:
+                    diff_count = sum(1 for a, b in zip(cas, v_cas) if a != b) if len(cas) == len(v_cas) else 99
+                    if diff_count <= 1:
+                        cas = v_cas
+                        break
+                else:
+                    if log_func: log_func(f" 🔴 [Fuzzy 방어] 3단계 퍼지 쉴드 붕괴. 환각 CAS 영구 폐기: {cas}")
+                    has_invalid = True
+                    continue 
+
+            if cas in refined_dict:
+                old_cont = refined_dict[cas].get("content", "미기재%")
+                if old_cont == "미기재%" and cv and cv != "미기재%":
+                    refined_dict[cas]["content"] = cv
+                    if comp.get("name"): refined_dict[cas]["name"] = comp.get("name")
+                
+                try:
+                    if page_val:
+                        old_p = refined_dict[cas].get("page", 999)
+                        if int(page_val) < int(old_p):
+                            refined_dict[cas]["page"] = page_val
+                except: pass
+            else:
+                refined_dict[cas] = {
+                    "cas": cas,
+                    "name": comp.get("name", ""),
+                    "content": cv if cv else "미기재%",
+                    "page": page_val,
+                    "engine": origin_engine
+                }
+
+    refined = list(refined_dict.values()) 
+    return refined, has_invalid
+
+def find_section3_pages(doc):
+    """[V17.3.2.25] 섹션 탐색 조기 종료 가드 강화 (Page 번호 노이즈 차단)"""
+    pages = []
+    found_section3 = False
+    
+    exit_pattern = re.compile(r'^(?:SECTION\s*)?[4-9][항\s.:]*(?:응급|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)', re.I | re.M)
+    
+    for i in range(len(doc)):
+        text = doc[i].get_text("text")
+        
+        if not found_section3:
+            if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
+                found_section3 = True
+        
+        if found_section3:
+            pages.append(i)
+            if len(pages) >= 2:
+                return sorted(list(set(pages)))
+            
+            lines = [l.strip() for l in text.split('\n') if l.strip()]
+            for line in lines:
+                if exit_pattern.match(line) and "Page" not in line:
+                    return sorted(list(set(pages)))
+                
+    return sorted(list(set(pages)))
+
+cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
+cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
+cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+
+def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
+    """[V24.0.0.0] 분업의 철칙: 블랙홀 차단(엄격한 행 분리) 및 GHS 노이즈 필터링 (AI 토스 최적화)"""
+    if log_func: log_func("  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
+    found = []
+    product_id_found = []
+    
+    try:
+        raw_words = page.get_text("words")
+        if not raw_words: return [], inherited_x_range
+
+        merged_words = []
+        for w in raw_words:
+            font_h = w[3] - w[1]
+            merged = False
+            for j, u in enumerate(merged_words):
+                if u[4] == w[4]:
+                    if abs(u[0] - w[0]) < max(12, font_h * 0.8) and abs(u[1] - w[1]) < max(8, font_h * 0.5):
+                        merged_words[j] = (min(u[0],w[0]), min(u[1],w[1]), max(u[2],w[2]), max(u[3],w[3]), u[4], u[5], u[6], u[7])
+                        merged = True
+                        break
+            if not merged:
+                merged_words.append(w)
+        raw_words = merged_words
+        
+        raw_words.sort(key=lambda w: (w[1], w[0]))
+
+        blocks = page.get_text("blocks")
+        blocks.sort(key=lambda b: b[1])
+        
+        y_start, y_end = 0.0, 9999.0
+        y_start_orig = 0.0
+        for b in blocks:
+            b_text = re.sub(r'\s+', '', b[4]).upper()
+            if y_start_orig == 0.0:
+                if any(k in b_text for k in ["구성성분", "성분및", "COMPONENTS", "INGREDIENTS", "COMPOSITION", "조성물"]):
+                    y_start_orig = b[1] - 30
+                    y_start = y_start_orig
+            if y_start_orig > 0.0 and b[1] > y_start_orig:
+                if any(k in b_text for k in ["응급조치", "FIRSTAID", "FIRSTAIDMEASURES"]):
+                    y_end = b[1]
+                    break
+                    
+        if raw_words and y_start > raw_words[-1][1] * 0.75:
+            y_start = 0.0
+            
+        raw_words = [w for w in raw_words if y_start <= w[1] < y_end]
+
+        is_left_arranged = False
+        has_global_percent = False
+        content_x_mid = 9999
+        
+        y_header_ref = y_start_orig if y_start_orig > 0.0 else y_start
+        header_words = [w for w in raw_words if y_header_ref - 30 <= w[1] <= y_header_ref + 150]
+        header_text = " ".join([w[4] for w in header_words]).upper()
+        
+        if "%" in header_text or "퍼센트" in header_text:
+            has_global_percent = True
+            
+        cas_x_min = 9999
+        content_x_min = 9999
+        for w in header_words:
+            txt = w[4].upper()
+            if "CAS" in txt:
+                cas_x_min = min(cas_x_min, w[0])
+            if any(k in txt for k in ["함유량", "함량", "CONTENT", "CONC", "%", "농도"]):
+                content_x_min = min(content_x_min, w[0])
+                if content_x_mid == 9999:
+                    content_x_mid = (w[0] + w[2]) / 2
+                
+        if content_x_min < cas_x_min and cas_x_min != 9999:
+            is_left_arranged = True
+
+        words = []
+        for w in raw_words:
+            text_val = w[4]
+            if any(c.isdigit() for c in text_val) and any(c.isalpha() for c in text_val):
+                check_val = re.sub(r'\s+', '', text_val)
+                if not cas_pattern.search(text_val) and not any(k in check_val for k in ["미만", "이상", "이하", "초과", "%", "~", "∼", "to"]):
+                    text_val = re.sub(r'\d', 'X', text_val)
+            words.append((w[0], w[1], w[2], w[3], text_val, w[5], w[6], w[7]))
+
+        physical_lines = []
+        if words:
+            current_line_words = [words[0]]
+            line_top = words[0][1]    
+            line_bottom = words[0][3] 
+            line_height = line_bottom - line_top
+
+            for i in range(1, len(words)):
+                curr_w = words[i]
+                curr_top = curr_w[1]
+                curr_bottom = curr_w[3]
+
+                overlap = max(0, min(line_bottom, curr_bottom) - max(line_top, curr_top))
+
+                if overlap > (line_height * 0.2) or abs(curr_top - line_top) <= (line_height * 0.8) or abs(curr_bottom - line_bottom) <= (line_height * 0.8):
+                    current_line_words.append(curr_w)
+                    line_bottom = max(line_bottom, curr_bottom)
+                    line_top = min(line_top, curr_top)
+                    line_height = line_bottom - line_top
+                else:
+                    current_line_words.sort(key=lambda w: w[0])
+                    physical_lines.append({
+                        "y": line_top, 
+                        "text": " ".join([w[4] for w in current_line_words]),
+                        "words": current_line_words
+                    })
+                    current_line_words = [curr_w]
+                    line_top = curr_w[1]
+                    line_bottom = curr_w[3]
+                    line_height = line_bottom - line_top
+
+            if current_line_words:
+                current_line_words.sort(key=lambda w: w[0])
+                physical_lines.append({
+                    "y": line_top, 
+                    "text": " ".join([w[4] for w in current_line_words]),
+                    "words": current_line_words
+                })
+
+        y_start_refined = 0.0
+        for pl in physical_lines:
+            line_text = pl["text"]
+            if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', line_text, re.I):
+                y_start_refined = pl["y"] - 10
+                break
+                
+        if y_start_refined > 0.0:
+            y_start_orig = y_start_refined
+            if raw_words and y_start_refined > raw_words[-1][1] * 0.75:
+                y_start = 0.0
+            else:
+                y_start = y_start_refined
+                
+            raw_words = [w for w in raw_words if y_start <= w[1] < y_end]
+            y_header_ref = y_start_orig
+            header_words = [w for w in raw_words if y_header_ref - 30 <= w[1] <= y_header_ref + 150]
+            header_text = " ".join([w[4] for w in header_words]).upper()
+            has_global_percent = "%" in header_text or "퍼센트" in header_text
+
+        logical_rows = []
+        pending_lines = []
+        current_row = None
+
+        for line in physical_lines:
+            if line["y"] < y_start: continue
+            row_text = line["text"]
+            if re.search(r'SECTION\s*[3456]', row_text, re.I):
+                continue
+            cas_list = cas_pattern.findall(row_text)
+            
+            if cas_list:
+                is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
+                current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
+                for p_line in pending_lines:
+                    current_row["words"].extend(p_line["words"])
+                pending_lines = []
+                current_row["words"].extend(line["words"])
+                logical_rows.append(current_row)
+            else:
+                is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
+                if current_row and (line["y"] - current_row["last_y"]) < 40 and not is_new_ingredient_line:
+                    current_row["words"].extend(line["words"])
+                    current_row["last_y"] = line["y"]
+                else:
+                    current_row = None
+                    pending_lines.append(line)
+
+        last_valid_info = None 
+        
+        for row in logical_rows:
+            row_words = row.get("words", [])
+            if content_x_mid != 9999:
+                content_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) <= 45]
+                other_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) > 45]
+                
+                content_words.sort(key=lambda w: (w[1], w[0]))
+                other_words.sort(key=lambda w: (w[1], w[0]))
+                sorted_words = other_words + content_words
+            else:
+                sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
+
+            safe_word_texts = [w[4] for w in sorted_words]
+            row_full_text = " ".join(safe_word_texts)
+            
+            for target_cas in row["cas_list"]:
+                clean_text = row_full_text
+                for other_cas in row["cas_list"]:
+                    if other_cas != target_cas:
+                        clean_text = clean_text.replace(other_cas, " [OTHER_CAS] ")
+                clean_text = clean_text.replace(target_cas, "[CAS_ANCHOR]")
+                
+                clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
+                clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
+                clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만")
+                clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
+                clean_text = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', clean_text)
+
+                matches_with_pos = []
+                for m in cont_pattern.finditer(clean_text):
+                    val = m.group(1).strip()
+                    if not val: continue
+                    
+                    start_idx = m.start()
+                    prefix = clean_text[:start_idx]
+                    if prefix.count('(') > prefix.count(')'):
+                        last_open = prefix.rfind('(')
+                        context_window = clean_text[max(0, last_open-30):start_idx]
+                        if "[CAS_ANCHOR]" not in context_window:
+                            continue
+                    matches_with_pos.append((val, start_idx)) 
+                    
+                content = "미기재%"
+                if matches_with_pos:
+                    def score_match(match_tuple):
+                        m_val, match_pos = match_tuple
+                        
+                        has_percent = "%" in m_val
+                        
+                        if re.search(r'%\s*:', clean_text[match_pos:match_pos+len(m_val)+5]):
+                            return -5000
+                            
+                        context_area = clean_text[max(0, match_pos-30):min(len(clean_text), match_pos+len(m_val)+30)].lower()
+                        tight_context = clean_text[max(0, match_pos-10):min(len(clean_text), match_pos+len(m_val)+10)].lower()
+                        
+                        absolute_noises = ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]
+                        if any(noise in tight_context for noise in absolute_noises):
+                            return -5000
+                            
+                        if not has_percent:
+                            if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']):
+                                return -5000
+                                
+                            weak_noises = ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", 
+                                           "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", 
+                                           "분자량", "molecular weight", "mw", "항", "section", "japan", "formula",
+                                           "ingredient", "component", "composition", "구성성분", "함유량", "명칭", "화학물질명", "관용명", "이명"]
+                            if any(noise in context_area for noise in weak_noises):
+                                return -5000
+                                
+                        layout_noises = ["쪽", "page", "페이지"]
+                        if any(noise in clean_text[max(0, match_pos-20):match_pos].lower() for noise in layout_noises) and not has_percent: 
+                            return -5000 
+                            
+                        core_m_val = m_val.strip(' -∼~<>\u2013\u2014≤≥=')
+                        if core_m_val.count('-') >= 2 or core_m_val.count('\u2013') >= 2: return -5000
+                            
+                        anchor_pos = clean_text.find("[CAS_ANCHOR]")
+                        
+                        start_search = min(anchor_pos, match_pos)
+                        end_search = max(anchor_pos, match_pos)
+                        text_between = clean_text[start_search:end_search]
+                        if "[OTHER_CAS]" in text_between:
+                            return -10000
+                            
+                        dist_char = abs(anchor_pos - match_pos)
+                        if dist_char > 120: 
+                            return -5000
+
+                        score = 0
+                        if has_percent: score += 500
+                        elif has_global_percent: score += 400 
+
+                        if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상', '\u2013', '\u2014']): score += 300
+                        if '.' in m_val: score += 100
+                        
+                        if match_pos > anchor_pos: score += 200 
+                        else:
+                            if is_left_arranged: score += 200 
+                            else: score -= 50  
+                        
+                        score -= (dist_char * 3) 
+                        
+                        m_nums = re.findall(r'\d+\.?\d*', m_val)
+                        if content_x_mid != 9999 and m_nums:
+                            for w in row_words:
+                                if abs((w[0] + w[2])/2 - content_x_mid) <= 45:
+                                    if any(num in w[4] for num in m_nums):
+                                        score += 1500
+                                        break
+                        if m_nums:
+                            for num_str in m_nums:
+                                try:
+                                    val = float(num_str)
+                                    if val > 110: score -= 3000; break 
+                                    if 1990 <= val <= 2030: score -= 1000 
+                                except: pass
+                        return score
+                    
+                    best_match_tuple = max(matches_with_pos, key=score_match)
+                    if score_match(best_match_tuple) > -500:
+                        content = _normalize_single_content(best_match_tuple[0])
+                
+                if content == "미기재%":
+                    single_matches = []
+                    for m in cont_pattern_single.finditer(clean_text):
+                        val = m.group(1).strip()
+                        if val: single_matches.append((val, m.start()))
+                    if single_matches:
+                        valid_singles = [m for m in single_matches if score_match(m) > -500]
+                        if valid_singles:
+                            best_single = max(valid_singles, key=score_match)
+                            content = _normalize_single_content(best_single[0])
+                    
+                target_word = next((w for w in row["words"] if target_cas in w[4]), None)
+                if target_word:
+                    curr_x, curr_y = target_word[0], target_word[1]
+                    if content == "미기재%" and last_valid_info:
+                        prev_x, prev_y, prev_content = last_valid_info
+                        if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
+                            content = f"{prev_content} (병합추정)"
+                            if log_func: log_func(f"   [수직 상속] CAS {target_cas} -> 병합 셀 함량({content}) 상속 완료")
+                            
+                    if content != "미기재%":
+                        base_content = content.replace(" (병합추정)", "")
+                        last_valid_info = (curr_x, curr_y, base_content)
+                
+                name_str = MES_MASTER_MAP.get(target_cas, "")
+                if not name_str:
+                    temp_name = row_full_text
+                    temp_name = temp_name.replace(target_cas, "")
+                    if matches_with_pos:
+                        temp_name = temp_name.replace(best_match_tuple[0], "")
+                    temp_name = re.sub(r'(?i)cas|no|번호|함량|함유량|content|percentage|이상|미만|이하|초과|[\d\.\-\~\<\>\=\≤\≥\%\|\;\:\(\)\[\]]', ' ', temp_name)
+                    name_str = " ".join(temp_name.split()).strip()
+                    if not name_str:
+                        name_str = "CAS 기반 자동 매핑"
+
+                if log_func: log_func(f"   [Regex-Recovery] 물질명: {name_str} | CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
+                
+                combined_text = f"{name_str}({content})[{target_cas}]"
+                item_obj = {
+                    "name": name_str, 
+                    "chemical_name": name_str,
+                    "cas": target_cas,
+                    "cas_no": target_cas, 
+                    "percentage": content,
+                    "content": content, 
+                    "engine": "Regex-Recovery",
+                    "combined_format": combined_text
+                }
+                if row.get("is_product_id"):
+                    product_id_found.append(item_obj)
+                else:
+                    found.append(item_obj)
+
+    except Exception as e:
+        if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
+        
+    if not found and product_id_found:
+        found.extend(product_id_found)
+        
+    return found, inherited_x_range
+
+def _clean_content_odl(text):
+    if any(k in str(text).lower() for k in ["balance", "잔량", "rem", "residual"]): return "Rem.%"
+    return text
+
+def parse_row_robust_v2(row, priority_col_idx=-1):
+    """[V17.3.1.6] 열 우선순위(priority_col_idx) 반영 로직"""
+    header_keywords = {"cas", "casno", "cas번호", "cas-no", "함유량", "함량", "content", "구성성분", "화학물질명", "substance", "물질명", "명칭", "chemicalname", "weight"}
+    noise_keywords = {"twa", "stel", "pel", "tlv", "mg/m", "mg/㎥", "노출기준", "exposure"}
+    
+    raw_cells = [c.text or "" for c in row.cells]
+    cell_lower_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in raw_cells}
+    
+    if cell_lower_set.intersection(header_keywords): return None
+    if any(k in "".join(raw_cells).lower() for k in noise_keywords): return None
+
+    indexed_cells = []
+    for i, c in enumerate(row.cells):
+        text = re.sub(r'\s*\n\s*', ' ', (c.text or "")).strip()
+        if text: indexed_cells.append((i, text))
+    
+    if len(indexed_cells) < 2: return None
+
+    if priority_col_idx >= 0:
+        indexed_cells.sort(key=lambda x: 0 if x[0] == priority_col_idx else 1)
+    else:
+        indexed_cells.reverse()
+
+    cas_list, name_candidates = [], []
+    strong_content, weak_content = None, None
+
+    for col_idx, raw_cell in indexed_cells:
+        c = raw_cell.strip()
+        if not c: continue
+
+        c = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', c)
+
+        found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)
+        if found_cas:
+            cas_list.extend(found_cas)
+            c_remain = re.sub(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', '', c).strip()
+            if not c_remain: continue
+            c = c_remain
+
+        norm_c = _normalize_single_content(c)
+        if norm_c != "미기재%" and re.search(r'\d', norm_c):
+            is_percent = '%' in c
+            is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) 
+            is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
+            is_range = ('-' in c or '–' in c or '—' in c) and not re.search(r'[a-zA-Z가-힣]', c)
+
+            if is_percent or is_pure_num:
+                is_priority_cell = (col_idx == priority_col_idx)
+                
+                if is_priority_cell:
+                    strong_content = _clean_content_odl(norm_c)
+                    break
+                elif not strong_content:
+                    strong_content = _clean_content_odl(norm_c)
+            elif not strong_content and (is_symbol or is_range):
+                strong_content = _clean_content_odl(norm_c)
+            else:
+                try:
+                    clean_val = float(re.sub(r'[^\d.]', '', norm_c))
+                    if clean_val <= 100 and not weak_content: 
+                        weak_content = _clean_content_odl(norm_c)
+                except: pass
+            continue
+
+        if len(c) > 1 and not re.match(r'^[\d\s.,\-~]+$', c) and col_idx != priority_col_idx:
+            name_candidates.append(c)
+
+    if not cas_list: return None
+
+    name = ""
+    if name_candidates:
+        valid_names = [n for n in name_candidates if len(n) < 50]
+        name = max(valid_names, key=len) if valid_names else name_candidates[0]
+
+    final_content = strong_content or weak_content or "미기재%"
+
+    final_comps = []
+    for cas in cas_list:
+        final_comps.append({
+            "name": name,
+            "cas_no": cas,
+            "content": final_content,
+            "engine": "ODL-v3.0_Priority" 
+        })
+    return final_comps
+
+def extract_components_odl_robust(odl_doc, target_pages, pdf_path, log_func=None):
+    components = []
+    if not target_pages or not odl_doc or not odl_doc.pages: return components
+
+    try:
+        fitz_doc = fitz.open(pdf_path)
+    except Exception as e:
+        fitz_doc = None
+        if log_func: log_func(f"  ⚠️ ODL 보완용 fitz_doc 개방 실패: {e}")
+
+    inherited_x_range = None
+    
+    for p_idx in target_pages:
+        if p_idx >= len(odl_doc.pages): continue
+        
+        page_items = []
+        tables = [el for el in getattr(odl_doc.pages[p_idx], 'elements', []) if getattr(el, 'type', '') == "TABLE"]
+        for table in tables:
+            priority_col_idx = -1
+            for row in table.rows:
+                row_texts = [c.text or "" for c in row.cells]
+                row_clean_texts = [re.sub(r'[\s\(\)\.%\|_]', '', t.lower()) for t in row_texts]
+                
+                if any(k in "".join(row_clean_texts) for k in ["함유량", "함량", "content", "conc", "weight"]):
+                    for i, t in enumerate(row_texts):
+                        clean_t = re.sub(r'\s+', '', t.lower())
+                        if '%' in t or '함량' in clean_t or 'content' in clean_t:
+                            priority_col_idx = i
+                            break
+                    if priority_col_idx >= 0: break
+            
+            for row in table.rows:
+                parsed_comps = parse_row_robust_v2(row, priority_col_idx=priority_col_idx)
+                if parsed_comps:
+                    page_items.extend(parsed_comps)
+                elif page_items and page_items[-1]["content"] == "미기재%":
+                    row_raw_texts = [c.text for c in row.cells if c.text]
+                    for txt in row_raw_texts:
+                        norm = _normalize_single_content(txt)
+                        if norm != "미기재%" and re.search(r'\d', norm):
+                            idx = len(page_items) - 1
+                            while idx >= 0 and page_items[idx]["content"] == "미기재%":
+                                page_items[idx]["content"] = norm
+                                idx -= 1
+                            break
+        
+        if fitz_doc:
+            text_comps, detected_x = extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
+            if detected_x:
+                inherited_x_range = detected_x
+            
+            for tc in text_comps:
+                target_cas = tc["cas_no"]
+                existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
+                if existing_item:
+                    if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                        existing_item["content"] = tc["content"]
+                        existing_item["engine"] = "Regex-Recovery"
+                else:
+                    page_items.append(tc)
+                    
+        components.extend(page_items)
+
+    if fitz_doc: fitz_doc.close()
+    return components
