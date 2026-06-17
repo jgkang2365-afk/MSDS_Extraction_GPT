@@ -34,16 +34,15 @@ def get_paddle_structure_engine(log_func=None):
 
 def verify_mathematical_천칭_filter(text):
     """
-    [무결성 검증 저울 규칙]
-    2단계 분리 계량 회로 센서 조율:
-    1. 개별 성분 저울: 텍스트 내의 모든 숫자 중 단 하나라도 100.0%를 초과하는 모순 포착 시 차단막 작동.
-    2. 범위 최대치 합계 저울: 각 성분 최대값(Max)들의 총합계가 110.0%를 초과할 때만 차단막 작동.
+    [수학적 천칭 검문소 2단계 분리 계량 규칙]
+    ① [개별 성분 저울]: 단 하나의 개별 성분 수치라도 단독으로 '100.0%'를 초과하는 오독 모순 적발 시 즉시 차단막 작동.
+    ② [범위 최대치 합계 저울]: 각 성분 최대값(Max)들의 총합계가 '110.0%'를 초과할 때만 오독 노이즈로 판정하고 차단.
     """
     if not text:
         return False, "데이터 공란"
     
-    # 공백이 포함된 CAS 번호 패턴 및 날짜 패턴(YYYY-MM-DD, YYYY.MM.DD)은 수치 검증에서 전처리 제거
-    clean_text = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', text)
+    # 0. CAS 번호(공백 및 알파벳 오타 포함) 및 날짜/연도 전처리 소거
+    clean_text = re.sub(r'(?<![\w-])[0-9a-zA-Z]{2,7}\s*-\s*[0-9a-zA-Z]{2}\s*-\s*[0-9a-zA-Z]{1}(?![\w-])', ' ', text)
     clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', clean_text)
     clean_text = re.sub(r'\b20[0-2]\d년?\b', ' ', clean_text)
     
@@ -58,7 +57,7 @@ def verify_mathematical_천칭_filter(text):
             except ValueError:
                 continue
     
-    # 2단계 범위 최대치 합계 저울: 진짜 함량 수치 매칭들의 최대값 합산 검사
+    # 2단계 범위 최대치 합계 저울: 성분 함량 범위 수치들의 최대값 합산 검사
     local_cont_pattern = re.compile(
         r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', 
         re.IGNORECASE
@@ -81,12 +80,12 @@ def verify_mathematical_천칭_filter(text):
         if not nums:
             continue
             
-        # 각 성분의 최대값(Max) 구하기 (이미 1단계에서 100% 초과 여부는 걸러짐)
+        # 각 성분의 최대값(Max) 구하기
         max_val = max(nums)
-        if max_val <= 110.0:
+        if max_val <= 100.0:
             component_max_values.append(max_val)
             
-    # ② [범위 최대치 합계 저울] 검증: 최대값들의 총합계가 110.0%를 초과하는지 검사
+    # 범위 최대치 합계 저울 검증: 최대값들의 총합계가 110.0%를 초과하는지 검사
     total_max_sum = sum(component_max_values)
     if total_max_sum > 110.0:
         return False, f"범위 최대치 합계 초과: {total_max_sum}% (기준: 110.0% 이하)"
@@ -668,61 +667,182 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None
             continue
     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
 
-def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
-    """[V24.5.6.8] 제품명: 비전 주도 + 텍스트 참고 표준형 모델"""
-    if not current_sniper or not image_list: return "", "실패"
-    
-    # 1번 섹션 핀포인트 조준 격리
-    pinned_text = ""
-    if text_chunk:
-        start_patterns = [
-            r'1\.\s*화학\s*제품\s*과\s*회사',
-            r'1\.\s*화학\s*제품',
-            r'SECTION\s*1',
-            r'1\.\s*IDENTIFICATION',
-            r'1\s*화학제품'
-        ]
-        end_patterns = [
-            r'2\.\s*유해성\s*[\.\·\-\/]?\s*위험성',
-            r'2\.\s*유해성',
-            r'2\.\s*위험성',
-            r'SECTION\s*2',
-            r'2\.\s*HAZARDS',
-            r'2\s*유해성'
-        ]
-        
-        start_idx = -1
-        for pat in start_patterns:
-            m = re.search(pat, text_chunk, re.IGNORECASE)
-            if m:
-                start_idx = m.start()
-                break
-        if start_idx == -1:
-            start_idx = 0
-            
-        end_idx = -1
-        for pat in end_patterns:
-            # 1섹션 시작점 이후부터 2섹션 경계를 탐색합니다.
-            m = re.search(pat, text_chunk[start_idx:], re.IGNORECASE)
-            if m:
-                end_idx = start_idx + m.start()
-                break
-                
-        if end_idx != -1 and end_idx > start_idx:
-            pinned_text = text_chunk[start_idx:end_idx].strip()
-        else:
-            # 2섹션 경계를 찾지 못했거나 범위가 뒤바뀐 경우 1섹션 시작점 기준 최대 1200자로 크롭합니다.
-            pinned_text = text_chunk[start_idx:start_idx + 1200].strip()
-            
-    # 오직 1섹션 울타리 내부 텍스트만 칼같이 오려내어 공급 (감지 실패 시 공란)
-    text_hint = pinned_text if pinned_text else ""
-    first_page_img = image_list[0]
-    b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
-    mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
+def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None, pdf_path=None, is_scanned_strict=False):
+    """
+    [자재 형태별 1섹션 격리 수거 회로]
+    - 디지털 텍스트 PDF 인입 시: 로컬 문자열 집게 요원(String Parser)을 가동하여 1섹션 텍스트만 복사해 Gemini 2.5 Flash에게 전달 (비전 완전 배제).
+    - 스캔 이미지 PDF 인입 시: 로컬 Y축 좌표 추적기를 가동해 1페이지의 1번 및 2번 대간판 Y좌표를 추적, 해당 물리 영역만 수평 크롭 후 로컬 OCR로 빻아낸 청정 글자 가루만 Gemini 2.5 Flash에게 전달 (비전 완전 배제).
+    """
+    if not current_sniper:
+        return "", "실패"
 
-    # 텍스트 레이어는 환각 방지용 힌트로만 제공
-    combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[Text Layer Hint for Verification]:\n{text_hint}"
-    payload = {"contents": [{"parts": [{"text": combined_prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
+    text_hint = ""
+
+    # [디지털 텍스트 PDF 인입 시]
+    if not is_scanned_strict:
+        if log_func:
+            log_func(" 🔍 [디지털 텍스트 1섹션 수거] 로컬 문자열 집게 요원(String Parser) 가동.")
+        
+        # 1번 섹션 핀포인트 조준 격리 (1. 화학제품과 회사 ~ 2. 유해성·위험성 직전)
+        pinned_text = ""
+        if text_chunk:
+            start_patterns = [
+                r'1\.\s*화학\s*제품\s*과\s*회사',
+                r'1\.\s*화학\s*제품',
+                r'SECTION\s*1',
+                r'1\.\s*IDENTIFICATION',
+                r'1\s*화학제품'
+            ]
+            end_patterns = [
+                r'2\.\s*유해성\s*[\.\·\-\/]?\s*위험성',
+                r'2\.\s*유해성',
+                r'2\.\s*위험성',
+                r'SECTION\s*2',
+                r'2\.\s*HAZARDS',
+                r'2\s*유해성'
+            ]
+            
+            start_idx = -1
+            for pat in start_patterns:
+                m = re.search(pat, text_chunk, re.IGNORECASE)
+                if m:
+                    start_idx = m.start()
+                    break
+            if start_idx == -1:
+                start_idx = 0
+                
+            end_idx = -1
+            for pat in end_patterns:
+                m = re.search(pat, text_chunk[start_idx:], re.IGNORECASE)
+                if m:
+                    end_idx = start_idx + m.start()
+                    break
+                    
+            if end_idx != -1 and end_idx > start_idx:
+                pinned_text = text_chunk[start_idx:end_idx].strip()
+            else:
+                pinned_text = text_chunk[start_idx:start_idx + 1200].strip()
+                
+        text_hint = pinned_text if pinned_text else ""
+        if log_func:
+            log_func(f"  └─ 수거된 텍스트 크기: {len(text_hint)}자")
+
+    # [스캔 이미지 PDF 인입 시]
+    else:
+        if log_func:
+            log_func(" 🔍 [스캔 이미지 1섹션 수거] 로컬 Y축 좌표 추적기 격발 및 크롭 추출 가동.")
+        
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                # 1. 로컬 Y축 좌표 추적기 기동
+                paddle_ocr_instance = get_paddle_structure_engine(log_func=log_func)
+                doc = fitz.open(pdf_path)
+                page = doc[0]
+                w, h = page.rect.width, page.rect.height
+                
+                # 좌측 1/3 세로 영역 이미지 추출 (가성비 크롭)
+                left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
+                pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=left_strip_rect)
+                img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                
+                raw_results = paddle_ocr_instance.predict(img_np)
+                
+                strip_ocr_results = []
+                for region in raw_results:
+                    region_res = region.get("res") if isinstance(region, dict) else getattr(region, 'res', [])
+                    if isinstance(region_res, list):
+                        for line_item in region_res:
+                            if isinstance(line_item, dict):
+                                strip_ocr_results.append(line_item)
+                            elif len(line_item) >= 2 and isinstance(line_item[1], tuple):
+                                pts = line_item[0]
+                                txt = line_item[1][0]
+                                xs = [p[0] for p in pts]
+                                ys = [p[1] for p in pts]
+                                bbox = [min(xs), min(ys), max(xs), max(ys)]
+                                strip_ocr_results.append({"text": txt, "bbox": bbox})
+                
+                y_start = None
+                y_end = None
+                
+                pattern_sec1 = re.compile(r'(1|일)\b.*?([화학|제품|회사|제조|공급|공명|IDENTIFICATION]{2,})')
+                pattern_sec2 = re.compile(r'(2|이)\b.*?([유해성|위험성|유해|위험|HAZARDS]{2,})')
+                
+                for line in strip_ocr_results:
+                    text = line.get("text", "").replace(" ", "")
+                    box = line.get("bbox", [0, 0, 0, 0])
+                    mid_y = (box[1] + box[3]) / 2.0 / 2.0  # Matrix(2.0) 해상도 보정
+                    
+                    if y_start is None and pattern_sec1.search(text):
+                        y_start = mid_y
+                        if log_func: log_func(f"  ├─ [1번 간판 검출] 높이: {int(y_start)}px (간판: '{text}')")
+                        continue
+                        
+                    if y_start is not None and y_end is None and pattern_sec2.search(text):
+                        y_end = mid_y
+                        if log_func: log_func(f"  ├─ [2번 간판 검출] 높이: {int(y_end)}px (간판: '{text}')")
+                        break
+                
+                doc.close()
+                
+                # 안전망 가드레일 (Y축 범위 확정)
+                if y_start is None:
+                    y_start = 0.0
+                if y_end is None or y_end <= y_start:
+                    y_end = min(h, y_start + 450.0) # 기본 폭 450픽셀 강제 설정
+                
+                if log_func:
+                    log_func(f"  ├─ [수평 재단 설정] {int(y_start)}px ~ {int(y_end)}px 크롭 실행.")
+                
+                # 2. 물리 영역 수평 크롭
+                doc_crop = fitz.open(pdf_path)
+                page_crop = doc_crop[0]
+                crop_rect = fitz.Rect(0, max(0, y_start - 20), w, min(h, y_end + 20))
+                pix_crop = page_crop.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
+                img_crop_bytes = pix_crop.tobytes("png")
+                doc_crop.close()
+                
+                # 3. 크롭된 이미지에서 로컬 OCR로 글자 가루(텍스트) 빻아내기
+                from PIL import Image
+                import io
+                image_pil = Image.open(io.BytesIO(img_crop_bytes)).convert("RGB")
+                img_crop_np = np.array(image_pil)
+                
+                ocr_engine = get_ocr_engine()
+                ocr_result = ocr_engine.ocr(img_crop_np, cls=False)
+                
+                lines = []
+                if ocr_result and isinstance(ocr_result, list):
+                    for res in ocr_result:
+                        if not res: continue
+                        for line in res:
+                            if len(line) >= 2 and isinstance(line[1], tuple):
+                                lines.append(line[1][0])
+                
+                text_hint = "\n".join(lines).strip()
+                if log_func:
+                    log_func(f"  └─ 로컬 OCR 추출 글자 가루 크기: {len(text_hint)}자")
+            except Exception as e:
+                if log_func:
+                    log_func(f"  ⚠️ [스캔 이미지 1섹션 가속 실패] 원인: {e} -> 기존 텍스트 힌트 회군.")
+                text_hint = ""
+        else:
+            text_hint = ""
+
+    # [Gemini 2.5 Flash 호출]
+    # 주변 대량 줄글 노이즈가 완전히 세척된 콤팩트한 1섹션 알맹이 안에서만 문맥을 유연하게 추론하여 제품명 독점 판단
+    # (이미지/비전 데이터는 전면 배제)
+    combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{text_hint}"
+    
+    # payload에서 inlineData(이미지) 부분을 완전히 배제하고 텍스트만 전달
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": combined_prompt}
+            ]
+        }]
+    }
+
     # 429 에러 대응 및 재시도 로직
     for attempt in range(3):
         try:
@@ -734,9 +854,9 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
                     cleaned_pn = msds_utils_v3.clean_candidate(pn_ai)
                     cleaned_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', cleaned_pn)
-                    if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Flash): {cleaned_pn[:40]}")
-                    return cleaned_pn, "Vision"
-                break # 유효하지 않은 결과인 경우 Fallback 대기
+                    if log_func: log_func(f" ├─ [제품명 스캔] ✅ 1섹션 텍스트 독점 판독 성공(Flash): {cleaned_pn[:40]}")
+                    return cleaned_pn, "Vision" # 호환을 위해 엔진 키는 "Vision"을 유지
+                break
         except Exception as e:
             if "429" in str(e):
                 if log_func: log_func(f"  ⚠️ [Retry] {attempt+1}차 시도 실패(429). 잠시 대기 중...")
@@ -745,16 +865,16 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
                 continue
             break
             
-    # 최종 병기 GPT-4o-mini 투입
-    if log_func: log_func(" 🚀 [최종 병기] Gemini 쿼터 초과. GPT-4o-mini 긴급 투입...")
+    # 최종 병기 GPT-4o-mini 투입 (역시 텍스트만 전달하여 비용 및 비전 엔진 차단)
+    if log_func: log_func(" 🚀 [최종 병기] Gemini 쿼터 초과. GPT-4o-mini 긴급 투입 (텍스트 전용)...")
     try:
         gpt_prompt = f"{combined_prompt}\n\n[IMPORTANT]: 반드시 JSON 형식으로 응답하라. 예: {{\"제품명\": \"추출된이름\"}}"
-        gpt_res = call_gpt_4o_mini(image_list, prompt=gpt_prompt, log_func=log_func)
+        gpt_res = call_gpt_4o_mini(None, prompt=gpt_prompt, log_func=log_func)
         if gpt_res:
             pn_gpt = gpt_res.get("제품명", "") if isinstance(gpt_res, dict) else str(gpt_res)
             if pn_gpt and len(pn_gpt) < 100:
                 cleaned_pn = msds_utils_v3.clean_candidate(pn_gpt)
-                if log_func: log_func(f" ├─ [제품명 스캔] ✅ GPT 긴급 구출 성공: {cleaned_pn[:40]}")
+                if log_func: log_func(f" ├─ [제품명 스캔] ✅ GPT 긴급 구출 성공(텍스트 전용): {cleaned_pn[:40]}")
                 return cleaned_pn, "GPT-Fallback"
     except Exception as e:
         if log_func: log_func(f"  ❌ GPT Fallback 실패: {e}")
@@ -2123,7 +2243,14 @@ def process_pdf(pdf_path, log_func=None):
         blacklist = ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']
         return any(k in name_clean for k in blacklist)
 
-    hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
+    hybrid_pn, _ = extract_product_name_hybrid(
+        text_chunk=first_page_text,
+        image_list=cover_img,
+        current_sniper=current_sniper,
+        log_func=log_func,
+        pdf_path=pdf_path,
+        is_scanned_strict=is_scanned_strict
+    )
 
     # [최종 출구 파일명 검문소] AI가 판독한 제품명과 파일명을 상호 교차 대조하여 오독 방어
     filename_clean = os.path.splitext(os.path.basename(pdf_path))[0]
