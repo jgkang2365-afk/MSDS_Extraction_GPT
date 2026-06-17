@@ -63,7 +63,7 @@ def verify_mathematical_천칭_filter(text):
         r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', 
         re.IGNORECASE
     )
-    local_cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+    local_cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
     
     matches = local_cont_pattern.findall(clean_text)
     if not matches:
@@ -524,7 +524,7 @@ def _get_sorted_and_normalized_text(page):
         text_list.append(unicodedata.normalize("NFKC", b[4]))
     return "\n".join(text_list)
 
-VERSION = "24.4.3.21" # [V24.4.3.21] 한국어 대제목 노이즈 차단벽 확장 및 HTTP 429 트래픽 댐 통합판
+VERSION = "24.4.3.22" # [V24.4.3.22] 머크사 복합 부등호 수선 및 제품명 최종 출구 검문소 장착 통합판
 
 def clean_ocr_text_to_json(ocr_text, system_prompt, current_sniper, log_func=None):
     """
@@ -1011,7 +1011,35 @@ cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
 # [V17.4.0.9] 특수 대시 및 전각 부등호 대응 강화: –, — (En/Em Dash), \uff1c, \uff1e 및 공백 유연화
 cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
 # 보조 패턴: 단일 수치 및 전각 부등호 대응
-cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+
+def check_complex_bounds_format(text):
+    """
+    [복합 부등호 감지 센서]
+    텍스트 내에 부등호 기호가 2개 이상 교차 분산되어 있거나
+    하이픈(-) 또는 물결표 등으로 연결된 복합 서식이 포착되는지 판별합니다.
+    """
+    if not text:
+        return False
+    # 부등호 기호 목록
+    inequalities = [r'>=', r'<=', r'>', r'<', r'≥', r'≤', r'＜', r'＞']
+    
+    # 1. 부등호 기호가 2개 이상 포함되어 있는지 검사
+    pattern_ineq = '|'.join(inequalities)
+    matches_ineq = re.findall(pattern_ineq, text)
+    if len(matches_ineq) >= 2:
+        return True
+        
+    # 2. 부등호 기호가 최소 1개 있고, 하이픈(-)이나 물결표 등 범위 지시자가 있는지 검사
+    # 단, CAS 번호 자체의 하이픈과의 혼동을 막기 위해 CAS 번호 마스킹 처리
+    temp_text = re.sub(r'\d{2,7}-\d{2}-\d', '[CAS]', text)
+    has_ineq = len(matches_ineq) >= 1
+    has_range_indicator = re.search(r'[-~∼～to]', temp_text) is not None
+    
+    if has_ineq and has_range_indicator:
+        return True
+        
+    return False
 
 
 
@@ -2097,11 +2125,43 @@ def process_pdf(pdf_path, log_func=None):
 
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
 
-    # 블랙리스트에 걸렸거나 비어 있는 경우 파일명 힌트 명칭으로 보정
-    if is_blacklisted_pn(hybrid_pn) or not hybrid_pn.strip():
-        if file_pn_hint:
-            if log_func: log_func(f" ├─ [제품명 교정] 오독('{hybrid_pn}') 감지 -> 파일명 파싱 명칭('{file_pn_hint}')으로 강제 교체")
-            hybrid_pn = file_pn_hint
+    # [최종 출구 파일명 검문소] AI가 판독한 제품명과 파일명을 상호 교차 대조하여 오독 방어
+    filename_clean = os.path.splitext(os.path.basename(pdf_path))[0]
+    filename_clean = re.sub(r'^\d+[\s_★\-]*', '', filename_clean)
+    filename_clean = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', filename_clean).strip()
+    
+    # 파일명에서 유효한 한글/영문 키워드 리스트 추출
+    name_keywords = []
+    brackets_content = re.findall(r'\(([^)]+)\)', filename_clean)
+    for bc in brackets_content:
+        bc_clean = bc.strip()
+        if bc_clean and len(bc_clean) >= 2:
+            name_keywords.append(bc_clean)
+            
+    outer_content = re.sub(r'\([^)]*\)', ' ', filename_clean)
+    for word in re.split(r'[\s_★\-]+', outer_content):
+        word_clean = word.strip()
+        if word_clean and len(word_clean) >= 2 and not any(k in word_clean.upper() for k in ['MSDS', 'SDS', 'GHS', '국문', '개정', 'KOR']):
+            name_keywords.append(word_clean)
+            
+    is_misread = False
+    if hybrid_pn and name_keywords:
+        matched_any = False
+        hybrid_pn_upper = hybrid_pn.upper().replace(" ", "")
+        for kw in name_keywords:
+            kw_upper = kw.upper().replace(" ", "")
+            if kw_upper in hybrid_pn_upper or hybrid_pn_upper in kw_upper:
+                matched_any = True
+                break
+        if not matched_any:
+            is_misread = True
+            
+    # AI 결과가 유령 답변(오독), 블랙리스트이거나 빈값인 경우 파일명 기반의 청정 명칭으로 강제 대체
+    if is_misread or is_blacklisted_pn(hybrid_pn) or not hybrid_pn.strip():
+        if log_func:
+            log_func(f" ├─ [파일명 검문소] 오독 감지: AI 결과('{hybrid_pn}') vs 파일명 키워드 {name_keywords} 불일치.")
+            log_func(f" └─ 파일명 기반 청정 단어('{filename_clean}')로 제품명을 강제 수정 입고합니다.")
+        hybrid_pn = filename_clean
 
     used_engine = ""
     is_ai_extracted = False
@@ -2183,12 +2243,116 @@ def process_pdf(pdf_path, log_func=None):
                 if log_func:
                     log_func(f" ⚠️ [1선 저울 센서 검문 탈락] {check_reason} -> 즉시 외부 AI 정제 차선으로 강제 회군합니다.")
 
+        # 1선 ODL/밀도 추출 결과 내에 '미기재%'가 존재하는지 정밀 스캔
+        has_migi_jae_1st = any(str(c.get("content") or c.get("percentage") or "").strip() == "미기재%" for c in checked_1st)
+
+        # 1선 ODL/밀도 추출 결과 내에 복합 부등호 서식이 존재하는지 정밀 스캔
+        has_complex_bounds_1st = False
+        complex_bounds_cas_set = set()
+        for c in checked_1st:
+            target_cas = c.get("cas") or c.get("cas_no")
+            if not target_cas: continue
+            
+            # 해당 CAS 번호가 발견되는 문맥 수집
+            lines = grounding_pool.split('\n')
+            context_lines = []
+            for idx, line in enumerate(lines):
+                if target_cas in line:
+                    start = max(0, idx - 2)
+                    end = min(len(lines), idx + 13)
+                    context_lines.extend(lines[start:end])
+            context_chunk = "\n".join(list(set(context_lines))).strip()
+            
+            if check_complex_bounds_format(context_chunk) or check_complex_bounds_format(str(c.get("content") or c.get("percentage") or "")):
+                has_complex_bounds_1st = True
+                complex_bounds_cas_set.add(target_cas)
+
+        # 1선 기본 요건 충족 및 미기재% 예외 상황 또는 복합 부등호 감지 시 핀포인트 청소부(Gemini-2.5-Flash-Lite) 기동
         if (original_cas_count > 0 and 
             len(extracted_cas_set) >= original_cas_count and 
             not has_invalid_cas_1st and
-            is_integrity_valid):
+            is_integrity_valid and 
+            (has_migi_jae_1st or has_complex_bounds_1st)):
+            
+            if log_func: log_func(" ⚠️ [보험 가드레일 격발] 미기재% 누수 또는 복합 부등호 감지 -> 2선 청소부(Gemini-2.5-Flash-Lite) 핀포인트 출동!")
+            
+            cleaned_any = False
+            for c in checked_1st:
+                current_pct = str(c.get("content") or c.get("percentage") or "").strip()
+                target_cas = c.get("cas") or c.get("cas_no")
+                
+                # 청소 대상: 미기재% 이거나 복합 부등호가 감지된 CAS 번호인 경우
+                if current_pct == "미기재%" or target_cas in complex_bounds_cas_set:
+                    # 1섹션과 3섹션 등 본문 텍스트 내에서 해당 CAS 번호 주변의 상하 문맥(줄글 조각) 수집
+                    lines = grounding_pool.split('\n')
+                    context_lines = []
+                    for idx, line in enumerate(lines):
+                        if target_cas in line:
+                            start = max(0, idx - 2)
+                            end = min(len(lines), idx + 13)
+                            context_lines.extend(lines[start:end])
+                    context_chunk = "\n".join(list(set(context_lines))).strip()
+                    
+                    if context_chunk:
+                        # 2선 청소부 전용 초경량 함량 복원 프롬프트 구축 (복합 부등호 수선 가이드 대폭 강화)
+                        cleaner_prompt = (
+                            f"제공된 텍스트 조각에서 CAS 번호 '{target_cas}'의 물질이 가진 정확한 함유량(Percentage/Content)을 추출하라.\n"
+                            f"줄바꿈 오독으로 인해 수치 기호(%, >, <, ~)가 아랫줄로 찢어져 있을 수 있으니 문맥을 결합하여 복구하라.\n\n"
+                            f"특히, '>= 45 - < 50 %'와 같은 유럽형 복합 부등호 서식은 반드시 실무 표준 규격인 '45~50%' 형태로 정제하여야 하며,\n"
+                            f"'< 1 %'와 같은 형태는 '<1%' 포맷으로 공백 없이 깔끔하게 조립하여라.\n\n"
+                            f"[텍스트 조각]:\n{context_chunk}\n\n"
+                            f"[응답 규칙]:\n반드시 다른 텍스트 설명 없이 정확히 '{target_cas}(함유량)' 포맷으로만 응답하라. (예: {target_cas}(45~50%))\n"
+                            f"함유량이 전혀 명시되어 있지 않은 경우에만 '{target_cas}(미기재%)'로 출력하라."
+                        )
+                        
+                        payload = {
+                            "contents": [{"parts": [{"text": cleaner_prompt}]}],
+                            "generationConfig": {"temperature": 0.0}
+                        }
+                        
+                        try:
+                            # 2선 청소부 출격
+                            res_clean = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
+                            if res_clean:
+                                cleaned_output = res_clean.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                                # 괄호 내부의 정화된 수치 획득
+                                match_pct = re.search(r'\(([^)]+)\)', cleaned_output)
+                                if match_pct:
+                                    clean_val = match_pct.group(1).strip()
+                                    if clean_val != "미기재%":
+                                        c["content"] = clean_val
+                                        c["percentage"] = clean_val
+                                        cleaned_any = True
+                                        if log_func: log_func(f"   ├─ [줄바꿈 수선] CAS {target_cas} -> 함량 '{clean_val}' 복구 완착.")
+                        except Exception as err:
+                            if log_func: log_func(f"   ❌ [청소부 장애] {err}")
+            
+            # 정제 적용 후 상태 재계측
+            if cleaned_any:
+                has_migi_jae_1st = any(str(c.get("content") or c.get("percentage") or "").strip() == "미기재%" for c in checked_1st)
+                
+                # 정제 후에도 여전히 복합 부등호 포맷이 남아있는지 재계측
+                has_complex_bounds_1st = False
+                for c in checked_1st:
+                    current_pct = str(c.get("content") or c.get("percentage") or "").strip()
+                    if check_complex_bounds_format(current_pct):
+                        has_complex_bounds_1st = True
+                        break
+                        
+                all_1st_contents_retry = " ".join([str(c.get("content") or c.get("percentage") or "") for c in checked_1st])
+                is_integrity_valid, check_reason = verify_integrity_of_local_data(all_1st_contents_retry)
+                if not is_integrity_valid and log_func:
+                    log_func(f" ⚠️ [수선 후 검문 탈락] {check_reason}")
+
+        # 모든 미기재%가 치료되었고 수학적 천칭을 통과했으며 복합 부등호가 처리된 경우에만 최종 Bypass 허용
+        if (original_cas_count > 0 and 
+            len(extracted_cas_set) >= original_cas_count and 
+            not has_invalid_cas_1st and
+            is_integrity_valid and 
+            not has_migi_jae_1st and
+            not has_complex_bounds_1st):
             has_perfect_1st_line = True
-            if log_func: log_func(" 🟢 [1선 완착 통과] 1선 정규식/격자 엔진 결과의 무결성이 확인되어 AI 호출을 생략(Bypass)합니다.")
+            if log_func: log_func(" 🟢 [1선 완착 통과] 1선 엔진 결과 및 2선 청소부 수선 완료로 무결성이 확보되어 AI 호출을 생략(Bypass)합니다.")
 
     # 라우팅 제어관문 격발
     ai_components = []
@@ -2197,7 +2361,7 @@ def process_pdf(pdf_path, log_func=None):
     is_ai_extracted = False
     
     if has_perfect_1st_line:
-        components = odl_density_comps
+        components = checked_1st
     else:
         # [무결성 보존 가드레일] image_list 내의 이미지 파일 주소 또는 딕셔너리 base64 데이터를 안전하게 선제 가공
         image_base64_list = []
