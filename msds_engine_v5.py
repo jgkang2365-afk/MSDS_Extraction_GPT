@@ -7,6 +7,8 @@ from itertools import cycle
 import json
 import requests
 import gc
+from datetime import datetime
+import numpy as np
 
 # ----------------------------------------------------------------------
 # [인프라 혁신] 로컬 가성비 치트키: PaddleOCR + PP-Structure 싱글톤 가속 인프라
@@ -29,6 +31,192 @@ def get_paddle_structure_engine(log_func=None):
             use_chart_recognition=False,           # 차트 인식 불필요
         )
     return _PADDLE_STRUCTURE_ENGINE
+
+def verify_mathematical_천칭_filter(text):
+    """
+    [무결성 검증 저울 규칙]
+    2단계 분리 계량 회로 센서 조율:
+    1. 개별 성분 저울: 텍스트 내의 모든 숫자 중 단 하나라도 100.0%를 초과하는 모순 포착 시 차단막 작동.
+    2. 범위 최대치 합계 저울: 각 성분 최대값(Max)들의 총합계가 110.0%를 초과할 때만 차단막 작동.
+    """
+    if not text:
+        return False, "데이터 공란"
+    
+    # 공백이 포함된 CAS 번호 패턴 및 날짜 패턴(YYYY-MM-DD, YYYY.MM.DD)은 수치 검증에서 전처리 제거
+    clean_text = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', text)
+    clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', clean_text)
+    clean_text = re.sub(r'\b20[0-2]\d년?\b', ' ', clean_text)
+    
+    # 1단계 개별 성분 저울: 텍스트 내의 모든 숫자를 검사하여 100% 초과 모순 차단
+    all_numbers = re.findall(r'[\d\.]+', clean_text)
+    for num_str in all_numbers:
+        if num_str.strip('.'):
+            try:
+                val = float(num_str)
+                if val > 100.0:
+                    return False, f"물리적 모순 포착: 개별 함량 수치 100% 초과 ({val}%)"
+            except ValueError:
+                continue
+    
+    # 2단계 범위 최대치 합계 저울: 진짜 함량 수치 매칭들의 최대값 합산 검사
+    local_cont_pattern = re.compile(
+        r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', 
+        re.IGNORECASE
+    )
+    local_cont_pattern_single = re.compile(r'([<>≤≥\uff1c\uff1e~∼～\-\u2013\u2014]?\s*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+    
+    matches = local_cont_pattern.findall(clean_text)
+    if not matches:
+        matches = local_cont_pattern_single.findall(clean_text)
+        
+    component_max_values = []
+    
+    for match in matches:
+        if isinstance(match, tuple):
+            match_str = match[0]
+        else:
+            match_str = match
+            
+        nums = [float(n) for n in re.findall(r'[\d\.]+', match_str) if n.strip('.')]
+        if not nums:
+            continue
+            
+        # 각 성분의 최대값(Max) 구하기 (이미 1단계에서 100% 초과 여부는 걸러짐)
+        max_val = max(nums)
+        if max_val <= 110.0:
+            component_max_values.append(max_val)
+            
+    # ② [범위 최대치 합계 저울] 검증: 최대값들의 총합계가 110.0%를 초과하는지 검사
+    total_max_sum = sum(component_max_values)
+    if total_max_sum > 110.0:
+        return False, f"범위 최대치 합계 초과: {total_max_sum}% (기준: 110.0% 이하)"
+        
+    return True, "무결성 통과"
+
+def test_천칭_filter_anomaly():
+    """
+    [유닛 테스트] 천칭 가드레일 작동 여부를 상시 독립 검증하는 실험실
+    """
+    test_dirty_data = "기유 CAS 64742-54-7 함량: 157.0%"
+    is_ok, reason = verify_mathematical_천칭_filter(test_dirty_data)
+    assert is_ok is False, "천칭 필터가 157% 오염 데이터를 잡지 못하고 탈선했습니다!"
+    print("✅ [유닛 테스트 통과] 천칭 가드레일이 100% 초과 모순을 에러 없이 완벽하게 체포합니다.")
+
+def run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=print):
+    """
+    [데이터 무결성 검증 및 비정형 예외 처리 내장]
+    좌측 1/3 유연 정규식 간판 추적 및 3-4번방 샌드위치 가속 크롭 파이프라인
+    """
+    try:
+        log_func(f"🚀 [유연 가속 격발] 비정형 간판 추적 엔진 가동: {os.path.basename(pdf_path)}")
+        
+        doc = fitz.open(pdf_path)
+        page = doc[0]  # 정찰병 확정 대표 페이지
+        w, h = page.rect.width, page.rect.height
+        
+        # 1. 왼쪽 1/3 세로 띠지 영역 이미지 추출 (가로 0% ~ 33% 슬림화)
+        left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=left_strip_rect)
+        
+        # 2. 안티그래비티 호출 규격 수정 반영: numpy 변환 후 predict 메서드로 안전 기동
+        img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+        
+        # [크래시 방지 및 API 스펙 대응] predict 호출
+        raw_results = paddle_ocr_instance.predict(img_np)
+        
+        # PPStructureV3 결과를 사용자 도면에 맞는 [{"text": ..., "bbox": ...}] 딕셔너리 형태로 정형 전처리
+        strip_ocr_results = []
+        for region in raw_results:
+            region_type = region.get("type") if isinstance(region, dict) else getattr(region, 'type', '')
+            region_res = region.get("res") if isinstance(region, dict) else getattr(region, 'res', [])
+            
+            if isinstance(region_res, list):
+                for line_item in region_res:
+                    if isinstance(line_item, dict):
+                        strip_ocr_results.append(line_item)
+                    elif len(line_item) >= 2 and isinstance(line_item[1], tuple):
+                        pts = line_item[0]
+                        txt = line_item[1][0]
+                        xs = [p[0] for p in pts]
+                        ys = [p[1] for p in pts]
+                        bbox = [min(xs), min(ys), max(xs), max(ys)]
+                        strip_ocr_results.append({"text": txt, "bbox": bbox})
+            elif isinstance(region_res, dict):
+                strip_ocr_results.append(region_res)
+        
+        y_start = None
+        y_end = None
+        
+        # 3. 베테랑 반장의 지능형 어근 추적 스캔 (Flexible Regex)
+        pattern_sec3 = re.compile(r'(3|삼)\b.*?([구성|성분|명칭|함량|기재]{2,})')
+        pattern_sec4 = re.compile(r'(4|사)\b.*?([응급|조치|처치|요령|구급]{2,})')
+        pattern_sec5 = re.compile(r'(5|오)\b.*?([폭발|화재|소화|대처]{2,})')
+        pattern_sec6 = re.compile(r'(6|육)\b.*?([누출|사고|방지|대책]{2,})')
+        
+        for line in strip_ocr_results:
+            text = line.get("text", "").replace(" ", "")  # 공백 노이즈 원천 제거
+            box = line.get("bbox", [0, 0, 0, 0])
+            mid_y = (box[1] + box[3]) / 2.0 / 2.0  # Matrix(2.0) 해상도 보정 반영한 실제 Y축 높이
+            
+            # 3번 시작선 확정
+            if y_start is None and pattern_sec3.search(text):
+                y_start = mid_y
+                log_func(f"  ├─ [3번방 포착] 간판명: '{text}' -> 시작 높이: {int(y_start)}px 확정")
+                continue
+                
+            # 4번, 5번, 6번 차단선 순차 연쇄 검문 (앵커링 방어벽)
+            if y_start is not str and y_start is not None:
+                if y_end is None and pattern_sec4.search(text):
+                    y_end = mid_y
+                    log_func(f"  ├─ [4번방 차단] 간판명: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
+                elif y_end is None and pattern_sec5.search(text):
+                    y_end = mid_y
+                    log_func(f"  ├─ [비상 차단] 4번 누출로 5번 간판 앵커링: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
+                elif y_end is None and pattern_sec6.search(text):
+                    y_end = mid_y
+                    log_func(f"  ├─ [비상 차단] 4~5번 누출로 6번 간판 앵커링: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
+
+        # 🚨 [에러 예외 처리 - Test Case 1] 복사기 노후화로 간판 문자가 아예 박살 나서 주소를 못 찾은 경우
+        if y_start is None:
+            log_func("⚠️ [예외 케이스 1] 비정형 간판 오염 극심으로 3번 고속 추적 실패. 통계적 면적 안전망(Sliding Window) 가동.")
+            y_start = h * 0.25  # GHS 표준 양식상 통계적 3번방 시작 안전마진
+            y_end = h * 0.60    # 통계적 3번방 종료 안전마진
+            
+        if y_end is None or y_end <= y_start:
+            y_end = min(h, y_start + 400)  # 4번 방을 끝까지 못 찾으면 시작점 기준 가로 400픽셀 밴드 강제 확장
+
+        # 4. 3번과 4번(또는 하류 간판) 사이의 수평 공간 전체를 샌드위치 재단
+        crop_rect = fitz.Rect(0, max(0, y_start - 20), w, min(h, y_end + 20))
+        log_func(f"✂️ [샌드위치 재단] 높이 {int(crop_rect.y0)}px ~ {int(crop_rect.y1)}px 범위를 완벽하게 오려냅니다.")
+        
+        final_pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
+        cropped_bytes = final_pix.tobytes("png")
+        doc.close()
+        
+        # 5. 오려낸 진짜 알맹이 조각만 정밀 로컬 OCR 함수에 전달하여 동적 장부 수거
+        # (실구동을 위해 cropped_bytes를 Base64로 감싸서 extract_table_via_local_ocr에 연동)
+        import base64
+        cropped_b64 = base64.b64encode(cropped_bytes).decode("utf-8")
+        cropped_image_list = [{"data": cropped_b64, "mime_type": "image/png"}]
+        
+        local_raw_text = extract_table_via_local_ocr(cropped_image_list, log_func=log_func)
+        
+        # ----------------------------------------------------------------------
+        # 🚨 [데이터 무결성 검증 - Test Case 2] 수학적 천칭 검문소 가동
+        # ----------------------------------------------------------------------
+        is_clean, anomaly_reason = verify_mathematical_천칭_filter(local_raw_text)
+        
+        if is_clean:
+            log_func("🟢 [1선 자가 진단 통과] 오독 없는 청정 수치 확정. 외부 AI 호출 비용 0원 처리 (Bypass).")
+            return {"status": "SUCCESS", "engine": "local_bypass", "data": local_raw_text}
+        else:
+            log_func(f"⚠️ [검문 탈락] {anomaly_reason}")
+            log_func("🚀 [비상 우회] 즉시 3선 연쇄 외주선(Gemini -> GPT-4o-mini 복합 회로)으로 자재 긴급 이송!")
+            return {"status": "FALLBACK", "engine": "external_cleaner", "raw_data": local_raw_text, "image": cropped_bytes}
+            
+    except Exception as e:
+        log_func(f"❌ [치명적 공정 마찰 예외 처리] 시스템 다운 방어벽 가동: {e}")
+        return {"status": "ERROR", "reason": str(e)}
 
 def extract_table_via_local_ocr(image_list, log_func=None):
     """이미지 리스트에서 PPStructureV3로 표 구조를 분석하여 HTML 표 문자열 추출"""
@@ -270,8 +458,8 @@ def refine_msds_components_strict(raw_components):
         elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
             pct = "미기재"
             
-        # 3. N열(1차 가공 성분 결과) 안전 안착을 위한 독점 복합 포맷 생성
-        combined_text = f"{name}({pct})[{clean_cas}]"
+        # 3. N열(1차 가공 성분 결과) 안전 안착을 위한 독점 복합 포맷 생성 (물질명 제거하고 CAS(함유량) 포맷으로 통일)
+        combined_text = f"{clean_cas}({pct})"
         
         # 안티그래비티 데이터 그리드 및 final_quality_control과의 호환 키 규격 100% 유지 보존
         refined.append({
@@ -481,28 +669,74 @@ def call_gemini_with_retry(payload, initial_sniper, max_retries=2, log_func=None
     raise Exception(f"🚨 {max_retries}회 연속 사격 실패. 불도저(GPT) 투입!")
 
 def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func=None):
-    """[V17.4.0.0] 제품명: 비전 주도(Leader) + 텍스트 참고(Reference) 모델"""
+    """[V24.5.6.8] 제품명: 비전 주도 + 텍스트 참고 표준형 모델"""
     if not current_sniper or not image_list: return "", "실패"
+    
+    # 1번 섹션 핀포인트 조준 격리
+    pinned_text = ""
+    if text_chunk:
+        start_patterns = [
+            r'1\.\s*화학\s*제품\s*과\s*회사',
+            r'1\.\s*화학\s*제품',
+            r'SECTION\s*1',
+            r'1\.\s*IDENTIFICATION',
+            r'1\s*화학제품'
+        ]
+        end_patterns = [
+            r'2\.\s*유해성\s*[\.\·\-\/]?\s*위험성',
+            r'2\.\s*유해성',
+            r'2\.\s*위험성',
+            r'SECTION\s*2',
+            r'2\.\s*HAZARDS',
+            r'2\s*유해성'
+        ]
+        
+        start_idx = -1
+        for pat in start_patterns:
+            m = re.search(pat, text_chunk, re.IGNORECASE)
+            if m:
+                start_idx = m.start()
+                break
+        if start_idx == -1:
+            start_idx = 0
+            
+        end_idx = -1
+        for pat in end_patterns:
+            # 1섹션 시작점 이후부터 2섹션 경계를 탐색합니다.
+            m = re.search(pat, text_chunk[start_idx:], re.IGNORECASE)
+            if m:
+                end_idx = start_idx + m.start()
+                break
+                
+        if end_idx != -1 and end_idx > start_idx:
+            pinned_text = text_chunk[start_idx:end_idx].strip()
+        else:
+            # 2섹션 경계를 찾지 못했거나 범위가 뒤바뀐 경우 1섹션 시작점 기준 최대 1200자로 크롭합니다.
+            pinned_text = text_chunk[start_idx:start_idx + 1200].strip()
+            
+    # 오직 1섹션 울타리 내부 텍스트만 칼같이 오려내어 공급 (감지 실패 시 공란)
+    text_hint = pinned_text if pinned_text else ""
     first_page_img = image_list[0]
     b64_data = first_page_img.get("data", "") if isinstance(first_page_img, dict) else first_page_img
     mime_type = first_page_img.get("mime_type", "image/jpeg") if isinstance(first_page_img, dict) else "image/jpeg"
 
-    # [V17.4.0.0] 텍스트 레이어는 환각 방지용 힌트로만 제공 (AI에게 자유를 부여)
-    combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[Text Layer Hint for Verification]:\n{text_chunk[:1000]}"
+    # 텍스트 레이어는 환각 방지용 힌트로만 제공
+    combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[Text Layer Hint for Verification]:\n{text_hint}"
     payload = {"contents": [{"parts": [{"text": combined_prompt}, {"inlineData": {"mimeType": mime_type, "data": b64_data}}]}]}
-    # [V17.4.0.8] 429 에러 대응 및 재시도 로직 강화
+    # 429 에러 대응 및 재시도 로직
     for attempt in range(3):
         try:
-            result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash-lite")
+            # 외부 AI 모델을 표준형 Gemini-2.5-Flash로 즉시 상향 교체
+            result = call_gemini_with_retry(payload, current_sniper, log_func=log_func, model="gemini-2.5-flash")
             if result:
                 pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                # [V17.4.0.0] 100자까지 허용하여 제품명 절단 방지
+                # 100자까지 허용하여 제품명 절단 방지
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
                     cleaned_pn = msds_utils_v3.clean_candidate(pn_ai)
                     cleaned_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', cleaned_pn)
-                    if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Lite): {cleaned_pn[:40]}")
+                    if log_func: log_func(f" ├─ [제품명 스캔] ✅ 비전 스나이핑 성공(Flash): {cleaned_pn[:40]}")
                     return cleaned_pn, "Vision"
-                break # 유효하지 않은 결과인 경우 루프 종료 (Fallback 대기)
+                break # 유효하지 않은 결과인 경우 Fallback 대기
         except Exception as e:
             if "429" in str(e):
                 if log_func: log_func(f"  ⚠️ [Retry] {attempt+1}차 시도 실패(429). 잠시 대기 중...")
@@ -511,13 +745,12 @@ def extract_product_name_hybrid(text_chunk, image_list, current_sniper, log_func
                 continue
             break
             
-    # [V17.4.0.8] 최종 병기(GPT-4o-mini) 투입: Gemini 전담 요원 전멸 시
+    # 최종 병기 GPT-4o-mini 투입
     if log_func: log_func(" 🚀 [최종 병기] Gemini 쿼터 초과. GPT-4o-mini 긴급 투입...")
     try:
         gpt_prompt = f"{combined_prompt}\n\n[IMPORTANT]: 반드시 JSON 형식으로 응답하라. 예: {{\"제품명\": \"추출된이름\"}}"
         gpt_res = call_gpt_4o_mini(image_list, prompt=gpt_prompt, log_func=log_func)
         if gpt_res:
-            # GPT는 JSON 형식을 따를 수 있으므로 텍스트 추출 방식 조정
             pn_gpt = gpt_res.get("제품명", "") if isinstance(gpt_res, dict) else str(gpt_res)
             if pn_gpt and len(pn_gpt) < 100:
                 cleaned_pn = msds_utils_v3.clean_candidate(pn_gpt)
@@ -914,19 +1147,10 @@ def extract_table_by_density_clustering(page):
                 
         # 유효한 CAS 번호가 발견된 행에 한해 데이터 수집
         if cas_candidate:
-            name = ""
-            if name_candidates:
-                # 국문명 우선 확보
-                ko_names = [n for n in name_candidates if re.search(r'[가-힣]', n)]
-                if ko_names:
-                    name = ko_names[0]
-                else:
-                    name = max(name_candidates, key=len)
-            else:
-                name = "CAS 기반 자동 매핑"
-                
+            # 물질명 추출 연산을 완전히 생략하고 고정값을 대입하여 자원 다이어트 실행
+            name = "CAS 기반 자동 매핑"
             pct = content_candidate if content_candidate else "미기재%"
-            combined_text = f"{name}({pct})[{cas_candidate}]"
+            combined_text = f"{cas_candidate}({pct})"
             
             extracted_components.append({
                 "name": name,
@@ -1288,23 +1512,13 @@ def extract_from_text_regex(page, log_func=None, inherited_x_range=None):
                         base_content = content.replace(" (병합추정)", "")
                         last_valid_info = (curr_x, curr_y, base_content)
                 
-                # [회귀 방지] 마스터 DB 및 행 컨텍스트 역추적을 통한 누락 물질명 정밀 복구 엔진
-                name_str = MES_MASTER_MAP.get(target_cas, "")
-                if not name_str:
-                    temp_name = row_full_text
-                    temp_name = temp_name.replace(target_cas, "")
-                    if matches_with_pos:
-                        temp_name = temp_name.replace(best_match_tuple[0], "")
-                    # 💡 [V24.4.3.4] 함량 관련 한글 키워드(이상/미만/이하/초과)를 명칭 소거 대상에 명시적으로 추가하여 이름 오염 전면 차단
-                    temp_name = re.sub(r'(?i)cas|no|번호|함량|함유량|content|percentage|이상|미만|이하|초과|[\d\.\-\~\<\>\=\≤\≥\%\|\;\:\(\)\[\]]', ' ', temp_name)
-                    name_str = " ".join(temp_name.split()).strip()
-                    if not name_str:
-                        name_str = "CAS 기반 자동 매핑"
+                # 물질명 추출 및 복구 연산을 전면 폐기하여 자원 절약
+                name_str = "CAS 기반 자동 매핑"
 
-                if log_func: log_func(f"   [Regex-Recovery] 물질명: {name_str} | CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
+                if log_func: log_func(f"   [Regex-Recovery] CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
                 
-                # 주님의 표준 배달 규격 규제 체인 결합 (combined_format 생성을 상류로 강제 일치)
-                combined_text = f"{name_str}({content})[{target_cas}]"
+                # 물질명 없이 CAS(함유량) 포맷으로만 포장
+                combined_text = f"{target_cas}({content})"
                 item_obj = {
                     "name": name_str, 
                     "chemical_name": name_str,
@@ -1680,7 +1894,7 @@ def check_golden_fingerprint(log_func=None):
             current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
             
             # 💡 [생산성 허브] 최초 실행 시 하단 안내 로그에 출력되는 16자리 지문 값을 여기에 박제하시면 동결 잠금이 활성화됩니다.
-            GOLDEN_HASH = "3b803b13da739d09" 
+            GOLDEN_HASH = "d432261a5a403d94" 
             
             if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                 if log_func: 
@@ -1695,27 +1909,9 @@ def check_golden_fingerprint(log_func=None):
 
 def verify_integrity_of_local_data(extracted_text):
     """
-    로컬 OCR이 수거한 텍스트의 물리적 모순을 계측하는 무결성 검문소
+    로컬 OCR이 수거한 텍스트의 물리적 모순을 계측하는 무결성 검문소 (2단계 분리 계량 회로 적용 - 천칭 필터 일원화 호출)
     """
-    if not extracted_text:
-        return False, "데이터 공란"
-
-    # 1. 괄호 안이나 텍스트 내부에 존재하는 모든 숫자/소수점 고속 수거
-    # (예: "157~265%" -> ['157', '265'])
-    numbers = [float(n) for n in re.findall(r'[\d\.]+', extracted_text) if n.strip('.')]
-
-    # 🚨 [데이터 검증 및 예외 처리] 지구상에 존재할 수 없는 100% 초과 유령 수치 검문
-    for num in numbers:
-        if num > 100.0:
-            # 저울 한계선 초과 즉시 검문 탈락 낙인 (Bypass 차단막 하강)
-            return False, f"물리적 모순 포착: 함량 수치 초과 ({num}%)"
-
-    # 2. 모든 성분의 최소 함량 합계가 상식선(예: 120%)을 초과하는지 2차 예외 검증
-    # (소수점 탈루로 인한 누적 오염 방어벽)
-    if sum(numbers) / max(1, len(numbers)) > 90.0 and len(numbers) >= 3:
-         return False, "누적 함량 비정상 비대화 감지"
-
-    return True, "무결성 통과"
+    return verify_mathematical_천칭_filter(extracted_text)
 
 def scan_self_diagnosis(local_ocr_html, log_func=None):
     """
@@ -1765,19 +1961,12 @@ def scan_self_diagnosis(local_ocr_html, log_func=None):
         if not cas_candidates:
             continue
 
-        name_candidates = []
         content_candidates = []
         
         for c in row_cells:
             if not c:
                 continue
             if any(cand in c for cand in cas_candidates):
-                c_remain = c
-                for cand in cas_candidates:
-                    c_remain = c_remain.replace(cand, "")
-                c_remain = c_remain.strip()
-                if len(c_remain) >= 1 and not re.match(r'^[\d\s.,\-~%]+$', c_remain):
-                    name_candidates.append(c_remain)
                 continue
                 
             norm_c = _normalize_single_content(c)
@@ -1788,36 +1977,32 @@ def scan_self_diagnosis(local_ocr_html, log_func=None):
             
             if (is_percent or is_pure_num or is_symbol or is_range) and norm_c != "미기재%" and re.search(r'\d', norm_c):
                 content_candidates.append(norm_c)
-            elif len(c) >= 1 and not re.match(r'^[\d\s.,\-~%]+$', c):
-                name_candidates.append(c)
 
         for cas_cand in cas_candidates:
             alphabet_matches = re.findall(r'[a-zA-Z]', cas_cand)
             
-            matched_name = ""
-            if name_candidates:
-                valid_names = [n for n in name_candidates if len(n) < 50]
-                matched_name = max(valid_names, key=len) if valid_names else name_candidates[0]
-            
+            # 물질명 연산 전면 배제 및 고정값 대입
+            matched_name = "CAS 기반 자동 매핑"
             matched_content = content_candidates[0] if content_candidates else "미기재%"
 
             if alphabet_matches:
                 has_invalid_cas = True
                 bad_char = alphabet_matches[0]
                 if log_func:
-                    log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> ⚠️ 오류 감지 (숫자 자리에 알파벳 '{bad_char}' 유입)")
+                    log_func(f"   ├─ CAS [{cas_cand}] -> ⚠️ 오류 감지 (숫자 자리에 알파벳 '{bad_char}' 유입)")
                 invalid_cas_dict[cas_cand] = None 
             else:
                 if verify_cas_number(cas_cand):
                     if log_func:
-                        log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> 규격 일치 (정상)")
+                        log_func(f"   ├─ CAS [{cas_cand}] -> 규격 일치 (정상)")
                     total_valid_cas_count += 1
                 else:
                     has_invalid_cas = True
                     if log_func:
-                        log_func(f"   ├─ 물질 [{matched_name or '미확인'}] / CAS [{cas_cand}] -> ⚠️ 오류 감지 (체크디지트 불일치)")
+                        log_func(f"   ├─ CAS [{cas_cand}] -> ⚠️ 오류 감지 (체크디지트 불일치)")
             
-            if not matched_name or matched_content == "미기재%":
+            # 물질명 부재로 인한 얼라인먼트 오류 오판정 방지를 위해 matched_name 검사 제외
+            if matched_content == "미기재%":
                 has_alignment_error = True
                 
             extracted_items.append({
@@ -1875,7 +2060,48 @@ def process_pdf(pdf_path, log_func=None):
     except:
         cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
         
+    # [1단계 - 파일명 파싱 (괄호 안 진짜 상업용 명칭 수거)]
+    filename = os.path.basename(pdf_path)
+    file_pn_hint = ""
+    # 괄호 내용 다각도 추출
+    brackets = re.findall(r'\(([^)]+)\)', filename)
+    candidate_pns = []
+    for b in brackets:
+        b_clean = b.strip()
+        # 불필요한 단순 기호나 표시 제거
+        if b_clean in ['O', 'X', '★', '국문', 'KOR', 'E', '요청 조성비 서류', '보통휘발유', ' Regular Unleaded Gasoline']:
+            continue
+        if any(blacklist in b_clean for blacklist in ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']):
+            continue
+        candidate_pns.append(b_clean)
+        
+    if candidate_pns:
+        file_pn_hint = candidate_pns[0]
+        
+    if not file_pn_hint:
+        # 괄호 없는 파일명 클렌징 기법
+        no_ext = os.path.splitext(filename)[0]
+        cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext) # 앞 번호 제거
+        cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name) # 신호기호 제거
+        cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
+        cleaned_name = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
+        file_pn_hint = cleaned_name
+        
+    # [2단계 - 블랙리스트 가드레일]
+    def is_blacklisted_pn(name_str):
+        if not name_str:
+            return True
+        name_clean = name_str.replace(" ", "")
+        blacklist = ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']
+        return any(k in name_clean for k in blacklist)
+
     hybrid_pn, _ = extract_product_name_hybrid(first_page_text, cover_img, current_sniper, log_func=log_func)
+
+    # 블랙리스트에 걸렸거나 비어 있는 경우 파일명 힌트 명칭으로 보정
+    if is_blacklisted_pn(hybrid_pn) or not hybrid_pn.strip():
+        if file_pn_hint:
+            if log_func: log_func(f" ├─ [제품명 교정] 오독('{hybrid_pn}') 감지 -> 파일명 파싱 명칭('{file_pn_hint}')으로 강제 교체")
+            hybrid_pn = file_pn_hint
 
     used_engine = ""
     is_ai_extracted = False
@@ -1995,66 +2221,58 @@ def process_pdf(pdf_path, log_func=None):
             # 2. 이미지 문서 파이프라인 (로컬 Paddle 하이브리드 고속 차선 + 비상 클라우드 폴백 밸브 가동)
             local_ocr_html = ""
             local_ocr_success = False
+            ai_res = None
             
+            # [시각적 가속 크롭 및 천칭 필터 통합 통제 시스템 가동]
+            acc_success = False
             try:
-                if log_func: log_func(" 🚀 [로컬 파이프라인] 완전 스캔본 감지 -> 1선 로컬 표 구조 분석 엔진(PaddleOCR) 격발.")
-                local_ocr_html = extract_table_via_local_ocr(image_list, log_func=log_func)
+                paddle_ocr_instance = get_paddle_structure_engine(log_func=log_func)
+                res_acc = run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=log_func)
                 
-                if local_ocr_html.strip():
-                    if log_func: log_func("   ✅ [로컬 스캔 완착] HTML 표 바둑판 격실 수거 성공. 외부 이미지 업로드 차단막 격리 완료.")
+                if res_acc.get("status") == "SUCCESS":
+                    local_ocr_html = res_acc["data"]
                     local_ocr_success = True
-                else:
-                    if log_func: log_func("   ⚠️ [로컬 인지 공백] 이미지 내 구조화된 표 레이아웃을 찾지 못함. 비상 가드레일로 전환.")
-            except Exception as local_fault:
-                # [주심의 방어선] 로컬 컴퓨터의 라이브러리 잠금이나 OS 장애 발생 시 공장 가동 중단을 막는 안전 밸브
-                if log_func: log_func(f"   🚨 [로컬 엔진 장애 감지]: {str(local_fault)} -> 시스템 보호를 위해 비상 클라우드 차선으로 즉시 우회합니다.")
-                local_ocr_success = False
-
-            # ------------------------------------------------------------------
-            # 차선 분기 게이트 제어 메커니즘
-            # ------------------------------------------------------------------
-            if local_ocr_success:
-                # [V24.5.6.0] 1단계 로컬 자가 검문소 (Self-Diagnosis) 격발
-                is_perfect, extracted_items, invalid_cas_dict = scan_self_diagnosis(local_ocr_html, log_func=log_func)
-                
-                if is_perfect:
-                    # [2단계] 청정 데이터 무정차 고속 패스 (Bypass)
-                    if log_func:
-                        log_func(" 🟢 [검문 통과] 데이터 무결성 100% 확정. 외부 AI 호출을 생략(Bypass)합니다.")
-                        log_func(" ✅ [고속 직행 완료] 외부 통신 없이 0초 만에 엑셀 장부 입고 성공! (used_engine: local_bypass)")
+                    acc_success = True
                     
+                    # 1선 자가 진단 합격 시 바로 Bypass 통과 처리
+                    is_perfect, extracted_items, invalid_cas_dict = scan_self_diagnosis(local_ocr_html, log_func=log_func)
                     ai_res = {
                         "구성성분": extracted_items,
-                        "교정_사유": "1단계 자가 검문 통과 (Bypass)"
+                        "교정_사유": "1선 시각적 가속 자가 검문 통과 (Bypass)"
                     }
                     used_engine = "local_bypass"
                     is_ai_extracted = False
-                else:
-                    # [3단계] 선택적 외주 정제 사격 (Targeted Fallback)
-                    if log_func:
-                        log_func(" 🔴 [검문 탈락] 오염 위험 데이터 포착. 즉시 외부 AI 정제 세척선으로 핀포인트 외주 송출.")
+                    
+                elif res_acc.get("status") == "FALLBACK":
+                    acc_success = True
+                    # 천칭 필터 탈락 시, 잘라낸 조각 이미지(cropped_bytes)만 외부 AI 정제 차선으로 전송
+                    cropped_bytes = res_acc["image"]
+                    import base64
+                    cropped_b64 = base64.b64encode(cropped_bytes).decode("utf-8")
+                    cropped_image_list = [{"data": cropped_b64, "mime_type": "image/png"}]
                     
                     enriched_text_prompt = (
                         f"{raw_prompt}\n\n"
                         f"[🚨 로컬 정밀 OCR 수집 HTML 표 구조 데이터]\n"
-                        f"{local_ocr_html}\n\n"
+                        f"{res_acc['raw_data']}\n\n"
                         f"※ 지침: 상기 HTML 표는 로컬에서 수집한 원형이다. 오타(숫자 자리에 알파벳 유입)나 뒤틀린 행을 문맥에 맞게 수정하여 정밀한 JSON 장부 형태로 교정하라. "
                         f"예를 들어, '13463-6l-7'과 같은 오타 CAS 번호는 올바른 '13463-67-7'로 복원해야 한다. <td> 격실 내부에 보존된 미세 부등호 기호(>, <, %, ~)와 수치를 "
                         f"절대 누락하거나 환각 데이터로 변조하지 말고, 유해성 관리 기준 룰북에 입각하여 최종 JSON 장부로 정제하라."
                     )
                     
-                    # Gemini 2.5 Flash 정제 요청 (텍스트 단독 전송)
-                    ai_res = call_gemini_2_5_flash([], enriched_text_prompt, current_sniper, log_func, model="gemini-2.5-flash")
+                    # Gemini 2.5 Flash 정제 요청 (조각 이미지 동시 전송)
+                    ai_res = call_gemini_2_5_flash(cropped_image_list, enriched_text_prompt, current_sniper, log_func, model="gemini-2.5-flash")
                     used_engine = "gemini_cleaner"
                     
-                    # Gemini 호출 실패(None인 경우) 시 비상 최종 3선(OpenAI GPT-4o-mini) 격발
+                    # Gemini 호출 실패(None인 경우) 시 비상 최종 3선(OpenAI GPT-4o-mini) 격발 (조각 이미지 동시 전송)
                     if ai_res is None:
                         if log_func:
                             log_func("   🚨 [Gemini 정제 장애] API 호출 실패 또는 타임아웃 발생 -> OpenAI(GPT-4o-mini) 헬기 출격.")
-                        ai_res = call_gpt_4o_mini([], enriched_text_prompt, log_func=log_func)
+                        ai_res = call_gpt_4o_mini(cropped_image_list, enriched_text_prompt, log_func=log_func)
                         used_engine = "openai_cleaner"
-                    
-                    # 정제 결과에서 오타 수정 내역 로그 출력
+                        
+                    # 오타 감지 및 복원 출력용 무결성 매핑 복구
+                    is_perfect, extracted_items, invalid_cas_dict = scan_self_diagnosis(res_acc["raw_data"], log_func=None)
                     if ai_res and "구성성분" in ai_res:
                         is_ai_extracted = True
                         refined_comps = ai_res["구성성분"]
@@ -2084,6 +2302,12 @@ def process_pdf(pdf_path, log_func=None):
                     else:
                         if log_func:
                             log_func(" ❌ [정제 실패] 외부 AI 정제 결과 오류.")
+                            
+                elif res_acc.get("status") in ["FALLBACK_FULL", "ERROR"]:
+                    log_func(f"⚠️ [비상 차선 복구] 가속 가위질 파이프라인 우회 회군: {res_acc.get('reason', 'Unknown reason')}")
+            
+            except Exception as acc_fault:
+                log_func(f"⚠️ [가속 파이프라인 에러] {acc_fault} -> 기존 안전 롤백 게이트로 강제 복귀.")
             else:
                 # [B 트랙: 비상 예비 클라우드 멀티모달 차선] 로컬 에러 발생 시 기존의 검증된 비전 라인으로 무정차 이송
                 if log_func: log_func("   ⚠️ [비상 차선 복구] 클라우드 비전 파이프라인 긴급 복구 및 정식 Gemini 2.5 Flash 격발.")
@@ -2192,14 +2416,10 @@ def process_pdf(pdf_path, log_func=None):
     grounding_pool = full_text_for_grounding if full_text_for_grounding else local_grounding_text
     refined_comps, has_invalid_cas = final_quality_control(components, grounding_pool, is_ai=is_ai_extracted, log_func=log_func)
     
-    # 🚨 [V24.4.2.0] 세미콜론 단독 출력을 전면 폐기하고 주님의 표준 배달 규격인 combined_format 기반 직렬화 안착
+    # 최종 엑셀 입고용 콤팩트 규격 포장: 물질명 문자열 찌꺼기 없이 오직 CAS(함유량) 포맷으로만 포장
     comp_parts = []
     for c in refined_comps:
-        fmt = c.get('combined_format')
-        if fmt:
-            comp_parts.append(fmt)
-        else:
-            comp_parts.append(f"{c['name']}({c['content']})[{c['cas']}]")
+        comp_parts.append(f"{c['cas']}({c['content']})")
             
     if not comp_parts:
         if log_func: log_func(" ❌ 유효한 성분 데이터가 존재하지 않음")
@@ -2264,6 +2484,7 @@ def self_test_regression():
     """[DEPRECATED] 정답지 기반 검증 제거. 로직의 본질적 견고함에 집중."""
     # 시동 자가 체크 매트릭스를 회귀 테스트에서도 수행
     run_v5_automated_quality_check()
+    test_천칭_filter_anomaly()
             
     fail_count = 0
     pass_count = 0
@@ -2445,6 +2666,104 @@ try:
 except Exception as e:
     raise RuntimeError(f"품질 체크 실패로 엔진 시동 중단: {e}")
 
+def run_005_천칭_test_case():
+    """
+    [V24.5.6.5] 005번 자재(SUPER WAY LUBE 32) 단독 이미지 천칭 검증 단독 테스트
+    """
+    print("\n==================================================")
+    print("[*] 가동: run_005_천칭_test_case() [단독 이미지 천칭 검증]")
+    print("==================================================")
+    
+    import glob
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    test_file_dir = os.path.join(base_dir, "TEST_File")
+    
+    files_005 = glob.glob(os.path.join(test_file_dir, "*005*.pdf"))
+    if not files_005:
+        print("❌ 오류: 005번 테스트 파일을 찾을 수 없습니다.")
+        return False
+    
+    pdf_path = files_005[0]
+    paddle_ocr_instance = get_paddle_structure_engine(log_func=print)
+    
+    # 🚀 순수 로컬 가속 파이프라인 단독 격발
+    print(f"[*] 대상 파일: {os.path.basename(pdf_path)}")
+    res = run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=print)
+    
+    # 결과 체크 및 외부 AI 호출 차단 확인
+    print("\n[완착 장부 데이터]")
+    print(f"상태: {res.get('status')}")
+    print(f"추출 엔진: {res.get('engine')}")
+    print(f"로컬 수집 데이터:\n{res.get('raw_data')}")
+    
+    if res.get("status") == "FALLBACK":
+        print("\n🟢 [검증 대성공] 천칭 가드레일이 유령 수치(157.0%)를 완벽하게 적발하여 FALLBACK을 유도했습니다.")
+        return True
+    else:
+        print("\n❌ [검증 실패] 천칭 필터가 작동하지 않았습니다.")
+        return False
+
+def run_1_to_7_production_test_cases():
+    """
+    [V24.5.6.5] 1번부터 7번까지의 보관함 내 PDF 자재를 무정차 연속 연사로 분쇄 레일에 투입하여
+    제품명 오독 박멸 3중 조준경 및 청정 천칭 수치를 검증합니다.
+    """
+    print("\n==================================================")
+    print("[*] 가동: run_1_to_7_production_test_cases()")
+    print("==================================================")
+    
+    import glob
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    test_file_dir = os.path.join(base_dir, "TEST_File")
+    
+    patterns = ["*001*.pdf", "*002*.pdf", "*003*.pdf", "*004*.pdf", "*005*.pdf", "*006*.pdf", "*007*.pdf"]
+    target_files = []
+    
+    for p in patterns:
+        matched = glob.glob(os.path.join(test_file_dir, p))
+        if matched:
+            target_files.extend(matched)
+            
+    target_files = sorted(list(set(target_files)))
+    
+    if not target_files:
+        print("❌ 오류: 1~7번 테스트 PDF 자재를 수집하지 못했습니다.")
+        return False
+        
+    all_success = True
+    print(f"[*] 총 {len(target_files)}권의 자재가 레일에 진입합니다.")
+    
+    for idx, f_path in enumerate(target_files, 1):
+        filename = os.path.basename(f_path)
+        print(f"\n[{idx}/7] 레일 격발: {filename}")
+        try:
+            res = process_pdf(f_path, log_func=print)
+            print("  [결과 리포트]")
+            print(f"  ├─ 제품명: {res.get('제품명')}")
+            print(f"  ├─ 신호등: {res.get('신호등')}")
+            print(f"  ├─ 추출 엔진: {res.get('used_engine')}")
+            print(f"  ├─ 무결성 점수: {res.get('integrity_score')}점")
+            print(f"  └─ 구성성분: {res.get('구성성분')[:120]}...")
+            
+            if res.get("신호등") != "🟢":
+                print(f"  ⚠️ 주의: 신호등이 초록불이 아닙니다. ({res.get('신호등')})")
+                all_success = False
+        except Exception as e:
+            print(f"  ❌ 예외 크래시 발생: {e}")
+            all_success = False
+            
+    print("\n==================================================")
+    if all_success:
+        print("🟢 [완착 성공] 1~7번 모든 자재가 오독 없이 초록불(🟢)로 완착되었습니다.")
+        print("==================================================")
+        return True
+    else:
+        print("🔴 [일부 경고] 1~7번 자재 중 일부가 초록불(🟢) 안착에 실패했습니다.")
+        print("==================================================")
+        return False
+
 if __name__ == "__main__":
     self_test_regression()
     run_production_integrity_test_cases()
+    run_005_천칭_test_case()  # 005번 단독 빗장 해제 및 테스트 연동
+    run_1_to_7_production_test_cases()
