@@ -8,7 +8,10 @@ import requests
 import gc
 from datetime import datetime
 import numpy as np
-import fitz 
+
+import fitz
+from google.oauth2 import service_account
+import google.auth.transport.requests 
 import unicodedata
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
@@ -131,13 +134,13 @@ except Exception as e:
 class MSDSEngineV6:
     def __init__(self):
         """
-        [데이터 검증 가드레일 01] 기계 가동 전 대장 키 장착 여부 확인
+        [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인
         """
-        self.main_api_key = os.getenv("MAIN_GEMINI_API_KEY")
-        if not self.main_api_key:
-            print("🚨 [설정 마비] 시스템 환경설정에 'MAIN_GEMINI_API_KEY'(대장 키)가 누락되었습니다.")
-            sys.exit("[가동 중단] 무결한 Key가 없으므로 공장 기동을 전면 거부합니다.")
-        print("🟢 [엔진 기동] 무료 용병 라인 전면 철거 완료. 대장 유료 단독 직렬 고속도로 선로가 개통되었습니다.")
+        key_path = "vertex_key.json"
+        if not os.path.exists(key_path):
+            print("🚨 [[Vertex AI] 마스터 열쇠 사증 실패] 로컬에 vertex_key.json 파일이 존재하지 않습니다.")
+        else:
+            print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
 
     def extract_section_1(self, pdf_type, raw_pdf_content, log_func=None):
         """
@@ -147,7 +150,7 @@ class MSDSEngineV6:
             raise ValueError("인입된 PDF 자재의 알맹이가 비어있습니다. (데이터 무결성 실패)")
 
         if pdf_type == "digital":
-            if log_func: log_func("📋 [디지털 선로] 로컬 문자열 집게 요원이 '1. 화학제품' 간판 행을 포착하여 가위질을 집행합니다.")
+            if log_func: log_func("📋 [[상표명 정찰병] 디지털 선로] 로컬 문자열 집게 요원이 '1. 화학제품' 간판 행을 포착하여 가위질을 집행합니다.")
             text_chunk = raw_pdf_content
             pinned_text = ""
             start_patterns = [
@@ -190,7 +193,7 @@ class MSDSEngineV6:
             return pinned_text
 
         elif pdf_type == "scanned":
-            if log_func: log_func("📸 [스캔 선로] 로컬 Y축 레이더 가동 -> 1번~2번 대간판 물리 공간 크롭 후 글자 가루 복원.")
+            if log_func: log_func("📸 [[상표명 정찰병] 스캔 선로] 로컬 Y축 레이더 가동 -> 1번~2번 대간판 물리 공간 크롭 후 글자 가루 복원.")
             pdf_path = raw_pdf_content
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"스캔본 PDF 파일이 존재하지 않습니다: {pdf_path}")
@@ -284,7 +287,7 @@ class MSDSEngineV6:
         [데이터 검증 가드레일 02] 후방 수학적 천칭 검문소 (2단계 분리 계량 회로)
         """
         if not component_list:
-            if log_func: log_func("⚠️ [검문소 경보] 성분 명세 장부가 비어있습니다. 무결성 검증 탈락.")
+            if log_func: log_func("⚠️ [[함량 검문소] 경보] 성분 명세 장부가 비어있습니다. 무결성 검증 탈락.")
             return False
 
         total_max_sum = 0.0
@@ -302,26 +305,79 @@ class MSDSEngineV6:
 
             # ① 1단계: 개별 성분 저울 (단독 100% 초과 모순 적발)
             if max_val > 100.0:
-                if log_func: log_func(f"⚠️ [검문 탈락] 물리적 모순 포착: 성분 [{name}]의 단독 수치 100% 초과 ({max_val}%)")
+                if log_func: log_func(f"⚠️ [[함량 검문소] 검문 탈락] 물리적 모순 포착: 성분 [{name}]의 단독 수치 100% 초과 ({max_val}%)")
                 return False
             
             total_max_sum += max_val
 
         # ② 2단계: 범위 최대치 합계 저울 (실무 표준 110% 허용한계 조율)
         if total_max_sum > 110.0:
-            if log_func: log_func(f"⚠️ [검문 탈락] 실무 허용한계 초과: 각 성분 최대값의 총합계 110% 초과 ({total_max_sum}%)")
+            if log_func: log_func(f"⚠️ [[함량 검문소] 검문 탈락] 실무 허용한계 초과: 각 성분 최대값의 총합계 110% 초과 ({total_max_sum}%)")
             return False
 
-        if log_func: log_func(f"🟢 [검문 통과] 천칭 계량 완료 (총합: {total_max_sum}%). 청정 데이터로 판정하여 Bypass 허용.")
+        if log_func: log_func(f"🟢 [[함량 검문소] 검문 통과] 천칭 계량 완료 (총합: {total_max_sum}%). 청정 데이터로 판정하여 Bypass 허용.")
         return True
 
-    def call_gemini_with_retry(self, payload, max_retries=5, log_func=None, model="gemini-2.5-flash"):
+    def call_vertex_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
         """
-        [A2 수선] Novita AI API를 통해 deepseek/deepseek-v4-flash 모델을 단독으로 안전 호출
+        [Vertex AI] vertex_key.json 기반으로 GCP Vertex AI API를 직접 REST 호출
+        """
+        key_path = "vertex_key.json"
+        if not os.path.exists(key_path):
+            if log_func: log_func(" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (파일 미존재)")
+            return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
+            
+        access_token = None
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                key_path,
+                scopes=['https://www.googleapis.com/auth/cloud-platform']
+            )
+            auth_req = google.auth.transport.requests.Request()
+            credentials.refresh(auth_req)
+            access_token = credentials.token
+        except Exception as auth_err:
+            if log_func: log_func(f" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (인증 실패): {auth_err}")
+            return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
+            
+        project_id = "msds-engine-v6"
+        location = "us-central1"
+        url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model}:generateContent"
+        
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Vertex AI REST API는 role: user를 필수로 요구하므로 안전하게 보정 주입
+        if "contents" in payload:
+            for c in payload["contents"]:
+                if "role" not in c:
+                    c["role"] = "user"
+                    
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=headers, json=payload, timeout=30)
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    if log_func: log_func(f"  🔴 [Vertex AI Retry] 호출 실패 (HTTP {response.status_code}) - {response.text}")
+                    time.sleep(1.0)
+                    continue
+            except Exception as e:
+                if log_func: log_func(f"  🔴 [Vertex AI Retry] {attempt+1}차 장애 사유: {e}")
+                time.sleep(1.0)
+                continue
+                
+        if log_func: log_func(" ❌ [Vertex AI] 호출 최종 실패")
+        return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
+
+    def call_deepseek_with_retry(self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash"):
+        """
+        [DeepSeek] 15초 타임아웃 가드레일을 얹은 Novita AI 단독 호출
         """
         api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("NOVITA_API_KEY")
         if not api_key:
-            if log_func: log_func(" ❌ [인프라 마비] .env 파일 내 DEEPSEEK_API_KEY가 누락되었습니다.")
             raise ValueError("DEEPSEEK_API_KEY 누락")
             
         url = "https://api.novita.ai/v3/openai/chat/completions"
@@ -330,7 +386,6 @@ class MSDSEngineV6:
             "Content-Type": "application/json"
         }
         
-        # Gemini 페이로드로부터 텍스트 데이터 추출
         gemini_text = ""
         contents = payload.get("contents", [])
         if contents:
@@ -338,7 +393,6 @@ class MSDSEngineV6:
             text_parts = [p.get("text", "") for p in parts if "text" in p]
             gemini_text = "\n".join(text_parts)
             
-        # JSON 포맷 감지 및 변환
         gen_config = payload.get("generationConfig", {})
         response_format = None
         if gen_config.get("responseMimeType") == "application/json":
@@ -346,7 +400,7 @@ class MSDSEngineV6:
             
         openai_messages = [{"role": "user", "content": gemini_text}]
         openai_payload = {
-            "model": "deepseek/deepseek-v4-flash",
+            "model": model,
             "messages": openai_messages,
             "temperature": 0.0
         }
@@ -355,12 +409,11 @@ class MSDSEngineV6:
             
         for attempt in range(max_retries):
             try:
-                response = requests.post(url, headers=headers, json=openai_payload, timeout=60)
+                # 15초 타임아웃 가드레일 장착
+                response = requests.post(url, headers=headers, json=openai_payload, timeout=15)
                 if response.status_code == 200:
                     res_json = response.json()
                     content_str = res_json["choices"][0]["message"]["content"]
-                    
-                    # Gemini 파싱 규격에 맞춰 모방 응답 반환
                     return {
                         "candidates": [
                             {
@@ -372,18 +425,28 @@ class MSDSEngineV6:
                             }
                         ]
                     }
-                elif response.status_code == 401:
-                    if log_func: log_func(" ❌ [DeepSeek 401] API 키 인증 실패.")
-                    raise Exception("HTTP 401 Unauthorized")
                 else:
-                    if log_func: log_func(f"  🔴 DeepSeek 호출 실패(HTTP {response.status_code}) - {response.text}")
-                    time.sleep(2.0)
-                    continue
+                    raise Exception(f"HTTP {response.status_code}")
             except Exception as e:
                 if log_func: log_func(f"   [DeepSeek Retry] {attempt+1}차 시도 실패 사유: {e}")
-                time.sleep(2.0)
-                continue
+                if attempt < max_retries - 1:
+                    time.sleep(1.0)
         raise Exception("DeepSeek API 호출 최종 실패")
+
+    def call_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+        """
+        [Failover 관문] 1선 DeepSeek(15초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
+        """
+        try:
+            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (15초 타임아웃 가드)")
+            # 1선 DeepSeek 호출 (최대 1회 시도)
+            return self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
+        except Exception as ds_err:
+            if log_func:
+                log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
+                log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
+            # 2선 버텍스 제미나이 호출
+            return self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
 
     def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
@@ -505,7 +568,7 @@ class MSDSEngineV6:
                     hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
                     hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
         except Exception as e:
-            if log_func: log_func(f" ⚠️ [제품명 대장 호출 실패] {e}")
+            if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
             hybrid_pn = ""
 
         # [최종 출구 파일명 검문소] AI가 판독한 제품명과 파일명을 상호 교차 대조하여 오독 방어
@@ -540,7 +603,7 @@ class MSDSEngineV6:
                 
         if is_misread or is_blacklisted_pn(hybrid_pn) or not hybrid_pn.strip():
             if log_func:
-                log_func(f" ├─ [파일명 검문소] 오독 감지: AI 결과('{hybrid_pn}') vs 파일명 키워드 {name_keywords} 불일치.")
+                log_func(f" ├─ [[상표명 정찰병] 파일명 검문소] 오독 감지: AI 결과('{hybrid_pn}') vs 파일명 키워드 {name_keywords} 불일치.")
                 log_func(f" └─ 파일명 기반 청정 단어('{filename_clean}')로 제품명을 강제 수정 입고합니다.")
             hybrid_pn = filename_clean
 
@@ -556,7 +619,7 @@ class MSDSEngineV6:
                 parser = PDFParser()
                 odl_doc = parser.parse(pdf_path)
                 odl_components = self.extract_components_odl_robust(odl_doc, pages, pdf_path, log_func=log_func)
-                if log_func: log_func(f" 🔍 [1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
+                if log_func: log_func(f" 🔍 [[정규식] 1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [1선 ODL 예외] 분석 스킵: {e}")
 
@@ -615,7 +678,7 @@ class MSDSEngineV6:
             if checked_1st:
                 is_integrity_valid = self.validate_chemical_balances(checked_1st, log_func=None)
                 if not is_integrity_valid:
-                    if log_func: log_func(" ⚠️ [1선 저울 센서 검문 탈락] 수학적 천칭 검증 실패 -> 외부 AI 정제 차선으로 전송합니다.")
+                    if log_func: log_func(" ⚠️ [[함량 검문소] 1선 검문 탈락] 수학적 천칭 검증 실패 -> 외부 AI 정제 차선으로 전송합니다.")
 
             has_migi_jae_1st = any(str(c.get("content") or c.get("percentage") or "").strip() == "미기재%" for c in checked_1st)
             
@@ -645,7 +708,7 @@ class MSDSEngineV6:
                 is_integrity_valid and 
                 (has_migi_jae_1st or has_complex_bounds_1st)):
                 
-                if log_func: log_func(" ⚠️ [보험 가드레일 격발] 미기재% 누수 또는 복합 부등호 감지 -> 2선 청소부(Gemini-2.5-Flash-Lite) 핀포인트 출동!")
+                if log_func: log_func(" ⚠️ [보험 가드레일 격발] 미기재% 누수 또는 복합 부등호 감지 -> [상표명 성분 감별사] 2선 청소부(Gemini-2.5-Flash-Lite) 핀포인트 출동!")
                 
                 cleaned_any = False
                 for c in checked_1st:
@@ -691,7 +754,7 @@ class MSDSEngineV6:
                                             cleaned_any = True
                                             if log_func: log_func(f"   ├─ [줄바꿈 수선] CAS {target_cas} -> 함량 '{clean_val}' 복구 완착.")
                             except Exception as err:
-                                if log_func: log_func(f"   ❌ [청소부 장애] {err}")
+                                if log_func: log_func(f"   ❌ [[상표명 성분 감별사] 2선 청소부 장애] {err}")
                 
                 if cleaned_any:
                     has_migi_jae_1st = any(str(c.get("content") or c.get("percentage") or "").strip() == "미기재%" for c in checked_1st)
@@ -1056,7 +1119,7 @@ class MSDSEngineV6:
                 return {"status": "SUCCESS", "engine": "local_bypass", "data": local_raw_text}
             else:
                 if log_func:
-                    log_func(f"⚠️ [검문 탈락] {anomaly_reason}")
+                    log_func(f"⚠️ [[함량 검문소] 검문 탈락] {anomaly_reason}")
                     log_func("🚀 [비상 우회] 즉시 3선 AI 정제 차선으로 자재 긴급 이송!")
                 return {"status": "FALLBACK", "engine": "external_cleaner", "raw_data": local_raw_text, "image": cropped_bytes}
                 
