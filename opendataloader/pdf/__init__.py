@@ -19,9 +19,16 @@ class PDFParser:
         # 1. 임시 디렉토리 생성
         tmp_dir = tempfile.mkdtemp()
         try:
+            # 한글 경로 문제 및 손상된 PDF 구조 방어를 위해 fitz로 열어 클리닝 임시 PDF로 저장
+            import fitz
+            tmp_pdf_path = os.path.join(tmp_dir, "input.pdf")
+            doc = fitz.open(pdf_path)
+            doc.save(tmp_pdf_path, garbage=4, deflate=True, clean=True)
+            doc.close()
+            
             # 2. OpenDataLoader CLI 호출 (json 포맷) - 가상환경의 파이썬 인터프리터를 직접 매핑
-            cmd = [sys.executable, "-m", "opendataloader_pdf", pdf_path, "--format", "json", "--output-dir", tmp_dir, "--quiet"]
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd = [sys.executable, "-m", "opendataloader_pdf", "input.pdf", "--format", "json", "--output-dir", ".", "--quiet"]
+            result = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_dir)
             
             if result.returncode != 0:
                 print(f"⚠️ [ODL Bridge] CLI 실행 실패 (Return Code: {result.returncode})")

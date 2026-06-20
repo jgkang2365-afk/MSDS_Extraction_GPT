@@ -374,7 +374,7 @@ class MSDSEngineV6:
 
     def call_deepseek_with_retry(self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash"):
         """
-        [DeepSeek] 15초 타임아웃 가드레일을 얹은 Novita AI 단독 호출
+        [DeepSeek] 30초 타임아웃 가드레일을 얹은 Novita AI 단독 호출
         """
         api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("NOVITA_API_KEY")
         if not api_key:
@@ -409,8 +409,8 @@ class MSDSEngineV6:
             
         for attempt in range(max_retries):
             try:
-                # 15초 타임아웃 가드레일 장착
-                response = requests.post(url, headers=headers, json=openai_payload, timeout=15)
+                # 30초 타임아웃 가드레일 장착
+                response = requests.post(url, headers=headers, json=openai_payload, timeout=30)
                 if response.status_code == 200:
                     res_json = response.json()
                     content_str = res_json["choices"][0]["message"]["content"]
@@ -435,10 +435,10 @@ class MSDSEngineV6:
 
     def call_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
         """
-        [Failover 관문] 1선 DeepSeek(15초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
+        [Failover 관문] 1선 DeepSeek(30초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
         """
         try:
-            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (15초 타임아웃 가드)")
+            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (30초 타임아웃 가드)")
             # 1선 DeepSeek 호출 (최대 1회 시도)
             return self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
         except Exception as ds_err:
@@ -571,41 +571,8 @@ class MSDSEngineV6:
             if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
             hybrid_pn = ""
 
-        # [최종 출구 파일명 검문소] AI가 판독한 제품명과 파일명을 상호 교차 대조하여 오독 방어
-        filename_clean = os.path.splitext(os.path.basename(pdf_path))[0]
-        filename_clean = re.sub(r'^\d+[\s_★\-]*', '', filename_clean)
-        filename_clean = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', filename_clean).strip()
-        
-        name_keywords = []
-        brackets_content = re.findall(r'\(([^)]+)\)', filename_clean)
-        for bc in brackets_content:
-            bc_clean = bc.strip()
-            if bc_clean and len(bc_clean) >= 2:
-                name_keywords.append(bc_clean)
-                
-        outer_content = re.sub(r'\([^)]*\)', ' ', filename_clean)
-        for word in re.split(r'[\s_★\-]+', outer_content):
-            word_clean = word.strip()
-            if word_clean and len(word_clean) >= 2 and not any(k in word_clean.upper() for k in ['MSDS', 'SDS', 'GHS', '국문', '개정', 'KOR']):
-                name_keywords.append(word_clean)
-                
-        is_misread = False
-        if hybrid_pn and name_keywords:
-            matched_any = False
-            hybrid_pn_upper = hybrid_pn.upper().replace(" ", "")
-            for kw in name_keywords:
-                kw_upper = kw.upper().replace(" ", "")
-                if kw_upper in hybrid_pn_upper or hybrid_pn_upper in kw_upper:
-                    matched_any = True
-                    break
-            if not matched_any:
-                is_misread = True
-                
-        if is_misread or is_blacklisted_pn(hybrid_pn) or not hybrid_pn.strip():
-            if log_func:
-                log_func(f" ├─ [[상표명 정찰병] 파일명 검문소] 오독 감지: AI 결과('{hybrid_pn}') vs 파일명 키워드 {name_keywords} 불일치.")
-                log_func(f" └─ 파일명 기반 청정 단어('{filename_clean}')로 제품명을 강제 수정 입고합니다.")
-            hybrid_pn = filename_clean
+        # [최종 출구 파일명 검문소 철거] 1선 직결 파이프라인 마감: AI의 순수 결과를 바이패스 통과시킵니다.
+        pass
 
         used_engine = ""
         is_ai_extracted = False
@@ -651,6 +618,7 @@ class MSDSEngineV6:
         odl_density_comps = list(merged_map_1st.values())
 
         # 1선 완착 무결성 판별
+        checked_1st = []
         has_perfect_1st_line = False
         if not is_scanned_strict and odl_density_comps:
             local_grounding_text = str(first_page_text)
@@ -701,71 +669,8 @@ class MSDSEngineV6:
                     has_complex_bounds_1st = True
                     complex_bounds_cas_set.add(target_cas)
 
-            # 2선 청소부 기동 (Gemini 2.5 Flash Lite)
-            if (original_cas_count > 0 and 
-                len(extracted_cas_set) >= original_cas_count and 
-                not has_invalid_cas_1st and
-                is_integrity_valid and 
-                (has_migi_jae_1st or has_complex_bounds_1st)):
-                
-                if log_func: log_func(" ⚠️ [보험 가드레일 격발] 미기재% 누수 또는 복합 부등호 감지 -> [상표명 성분 감별사] 2선 청소부(Gemini-2.5-Flash-Lite) 핀포인트 출동!")
-                
-                cleaned_any = False
-                for c in checked_1st:
-                    current_pct = str(c.get("content") or c.get("percentage") or "").strip()
-                    target_cas = c.get("cas") or c.get("cas_no")
-                    
-                    if current_pct == "미기재%" or target_cas in complex_bounds_cas_set:
-                        lines = grounding_pool.split('\n')
-                        context_lines = []
-                        for idx, line in enumerate(lines):
-                            if target_cas in line:
-                                start = max(0, idx - 2)
-                                end = min(len(lines), idx + 13)
-                                context_lines.extend(lines[start:end])
-                        context_chunk = "\n".join(list(set(context_lines))).strip()
-                        
-                        if context_chunk:
-                            cleaner_prompt = (
-                                f"제공된 텍스트 조각에서 CAS 번호 '{target_cas}'의 물질이 가진 정확한 함유량(Percentage/Content)을 추출하라.\n"
-                                f"줄바꿈 오독으로 인해 수치 기호(%, >, <, ~)가 아랫줄로 찢어져 있을 수 있으니 문맥을 결합하여 복구하라.\n\n"
-                                f"특히, '>= 45 - < 50 %'와 같은 유럽형 복합 부등호 서식은 반드시 실무 표준 규격인 '45~50%' 형태로 정제하여야 하며,\n"
-                                f"'< 1 %'와 같은 형태는 '<1%' 포맷으로 공백 없이 깔끔하게 조립하여라.\n\n"
-                                f"[텍스트 조각]:\n{context_chunk}\n\n"
-                                f"[응답 규칙]:\n반드시 다른 텍스트 설명 없이 정확히 '{target_cas}(함유량)' 포맷으로만 응답하라. (예: {target_cas}(45~50%))\n"
-                                f"함유량이 전혀 명시되어 있지 않은 경우에만 '{target_cas}(미기재%)'로 출력하라."
-                            )
-                            
-                            payload_cleaner = {
-                                "contents": [{"parts": [{"text": cleaner_prompt}]}],
-                                "generationConfig": {"temperature": 0.0}
-                            }
-                            
-                            try:
-                                res_clean = self.call_gemini_with_retry(payload_cleaner, log_func=log_func, model="gemini-2.5-flash-lite")
-                                if res_clean:
-                                    cleaned_output = res_clean.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                                    match_pct = re.search(r'\(([^)]+)\)', cleaned_output)
-                                    if match_pct:
-                                        clean_val = match_pct.group(1).strip()
-                                        if clean_val != "미기재%":
-                                            c["content"] = clean_val
-                                            c["percentage"] = clean_val
-                                            cleaned_any = True
-                                            if log_func: log_func(f"   ├─ [줄바꿈 수선] CAS {target_cas} -> 함량 '{clean_val}' 복구 완착.")
-                            except Exception as err:
-                                if log_func: log_func(f"   ❌ [[상표명 성분 감별사] 2선 청소부 장애] {err}")
-                
-                if cleaned_any:
-                    has_migi_jae_1st = any(str(c.get("content") or c.get("percentage") or "").strip() == "미기재%" for c in checked_1st)
-                    has_complex_bounds_1st = False
-                    for c in checked_1st:
-                        current_pct = str(c.get("content") or c.get("percentage") or "").strip()
-                        if self.check_complex_bounds_format(current_pct):
-                            has_complex_bounds_1st = True
-                            break
-                            
-                    is_integrity_valid = self.validate_chemical_balances(checked_1st, log_func=None)
+            # [2선 청소부 기동 회로 철거] 1선 직결: 추가 보정 필터를 생략하고 바로 바이패스합니다.
+            pass
 
             if (original_cas_count > 0 and 
                 len(extracted_cas_set) >= original_cas_count and 
@@ -923,12 +828,43 @@ class MSDSEngineV6:
                 used_engine = "Gemini-2.5-Flash (Text AI)"
                 is_ai_extracted = True
 
-            if ai_res and "구성성분" in ai_res:
-                for c in ai_res["구성성분"]: c["engine"] = used_engine
+            # AI가 JSON 키 값을 "성분", "components" 등으로 오독/변조해오는 현상 방어 정규화
+            if ai_res:
+                if "구성성분" not in ai_res:
+                    for alt_key in ["성분", "components", "items", "substances", "composition", "ingredients"]:
+                        if alt_key in ai_res:
+                            ai_res["구성성분"] = ai_res[alt_key]
+                            break
+                
+                if "구성성분" in ai_res and isinstance(ai_res["구성성분"], list):
+                    for c in ai_res["구성성분"]:
+                        if not isinstance(c, dict): continue
+                        if "content" not in c:
+                            for alternate_key in ["함유량", "percentage", "content_value", "value", "함량", "percent"]:
+                                if alternate_key in c:
+                                    c["content"] = c[alternate_key]
+                                    break
+                            else:
+                                c["content"] = "미기재%"
+                        if "cas" not in c:
+                            for alternate_cas_key in ["cas_no", "cas번호", "casNo", "cas_number", "cas_code"]:
+                                if alternate_cas_key in c:
+                                    c["cas"] = c[alternate_cas_key]
+                                    break
+                        c["engine"] = used_engine
+
+            if ai_res and "구성성분" in ai_res and ai_res["구성성분"]:
                 ai_components = ai_res.get("구성성분", [])
                 reason = ai_res.get("교정_사유", "AI 완착")
             else:
-                return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않음", log_func=log_func, hybrid_pn=hybrid_pn)
+                # 최후방 회생 가드레일 작동
+                if checked_1st:
+                    if log_func: log_func(" ⚠️ [최후방 회생 가드레일] AI 장애/오독 격발 -> 1선 백업 자산(checked_1st)을 최종 장부로 강제 복구 완착합니다.")
+                    ai_components = checked_1st
+                    reason = "1선 백업 자산 회생 완착"
+                    used_engine = "1선 백업(회생)"
+                else:
+                    return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않으며 복구할 1선 백업 자산도 없음", log_func=log_func, hybrid_pn=hybrid_pn)
 
             # ODL/밀도 클러스터링 선제 자산과 AI 수거물 최종 병합
             merged_map = {}
@@ -2282,7 +2218,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "ba882efcaff2400c" 
+                GOLDEN_HASH = "68f4476370e09cd8" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")

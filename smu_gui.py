@@ -7269,6 +7269,9 @@ class SMUGUI(QMainWindow):
                     if not fn:
                         continue
                     
+                    # [V24.6.0.1] f_hash 정의를 루프 최상단으로 이동시켜 모든 하위 분기에서 안전하게 참조되도록 보장
+                    f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else ""
+                    
                     # 버튼(성상 미선택 버튼) 또는 일반 텍스트 상태에 따라 데이터 추출
                     measure_widget = self.table.cellWidget(r, 4)
                     
@@ -7293,7 +7296,6 @@ class SMUGUI(QMainWindow):
                                 
                             # 캐시에 선택 정보 영구 저장
                             selected_code = first_cand.get("정렬코드")
-                            f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else ""
                             if f_hash and f_hash in self.cache and cas_no:
                                 if "manual_data" not in self.cache[f_hash]:
                                     self.cache[f_hash]["manual_data"] = {}
@@ -7428,7 +7430,12 @@ class SMUGUI(QMainWindow):
                             # 연속된 공백 제거 (깔끔한 세미콜론 정렬용)
                             val = re.sub(r'\s{2,}', ' ', val)
                         
-                        ws.Cells(curr_row, c_idx).Value = val
+                        # [무결성 가드레일] 엑셀의 문자열 포맷을 강제 유지하여 물결표(~) 및 하이픈(-) 유실을 원천 차단
+                        try:
+                            ws.Cells(curr_row, c_idx).NumberFormat = "@"
+                        except:
+                            pass
+                        ws.Cells(curr_row, c_idx).Value = str(val)
 
 
                 written_files.add(fn)
