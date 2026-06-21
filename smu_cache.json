@@ -110,5 +110,173 @@
             "reg1": [],
             "reg2": []
         }
+    },
+    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+        "product_name": "Super Way Lube 32",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "107-21-1(50~60%); 111-46-6(1~5%); 149-57-5(1~5%); 19766-89-3(1~5%); 532-32-1(1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "Super Way Lube 32",
+            "raw_content": "107-21-1(50~60%); 111-46-6(1~5%); 149-57-5(1~5%); 19766-89-3(1~5%); 532-32-1(1~5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "Super Way Lube 32",
+            "raw_content": "107-21-1(50~60%); 111-46-6(1~5%); 149-57-5(1~5%); 19766-89-3(1~5%); 532-32-1(1~5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac": {
+        "f_hash": "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac",
+        "product_name": "순&수 우드스테인 BASE",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/006_MSDS(순앤수 우드스테인 BASE)(O).pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "순&수 우드스테인 BASE",
+            "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "순&수 우드스테인 BASE",
+            "raw_content": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
+        "f_hash": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
+        "product_name": "프로스테인 네오-PC100(크리어)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/007_MSDS(프로스테인)(O).pdf",
+        "page": 2,
+        "used_engine": "flash",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "프로스테인 네오-PC100(크리어)",
+            "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "프로스테인 네오-PC100(크리어)",
+            "raw_content": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~1%); 96-29-7(0.1~1%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d": {
+        "f_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+        "product_name": "사라퐁",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(≥60%); 1310-73-2(1~5%); 7757-79-1(1~5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/008_msds_사라퐁(O).pdf",
+        "page": 2,
+        "used_engine": "flash",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "사라퐁",
+            "raw_content": "7732-18-5(≥60%); 1310-73-2(1~5%); 7757-79-1(1~5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "사라퐁",
+            "raw_content": "7732-18-5(≥60%); 1310-73-2(1~5%); 7757-79-1(1~5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8": {
+        "f_hash": "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8",
+        "product_name": "수피아 모이스쳐 핸드워시",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/009_수피아물비누-MSDS(O).pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "수피아 모이스쳐 핸드워시",
+            "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "수피아 모이스쳐 핸드워시",
+            "raw_content": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127": {
+        "f_hash": "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127",
+        "product_name": "Formaldehyde solution, 36.5-38%",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "50-00-0(35~40%); 67-56-1(15~20%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/010_포름알데하이드_시그마.pdf",
+        "page": 3,
+        "used_engine": "flash",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "v2.0_Clean": {
+            "product_name": "Formaldehyde solution, 36.5-38%",
+            "raw_content": "50-00-0(35~40%); 67-56-1(15~20%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "Formaldehyde solution, 36.5-38%",
+            "raw_content": "50-00-0(35~40%); 67-56-1(15~20%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
     }
 }

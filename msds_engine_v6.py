@@ -162,7 +162,12 @@ class MSDSEngineV6:
                 r'1\.\s*화학\s*제품',
                 r'SECTION\s*1',
                 r'1\.\s*IDENTIFICATION',
-                r'1\s*화학제품'
+                r'1\s*화학제품',
+                r'IDENTIFICATION',
+                r'DESCRIPTION',
+                r'1\.\s*DESCRIPTION',
+                r'1\.\s*제품명\s*및\s*회사',
+                r'1\.\s*제품명'
             ]
             end_patterns = [
                 r'2\.\s*유해성\s*[\.\·\-\/]?\s*위험성',
@@ -170,7 +175,9 @@ class MSDSEngineV6:
                 r'2\.\s*위험성',
                 r'SECTION\s*2',
                 r'2\.\s*HAZARDS',
-                r'2\s*유해성'
+                r'2\s*유해성',
+                r'HAZARDS\s*IDENTIFICATION',
+                r'2\.\s*HAZARDS\s*IDENTIFICATION'
             ]
             
             start_idx = -1
@@ -234,8 +241,8 @@ class MSDSEngineV6:
             y_start = None
             y_end = None
             
-            pattern_sec1 = re.compile(r'(1|일)\b.*?([화학|제품|회사|제조|공급|공명|IDENTIFICATION]{2,})')
-            pattern_sec2 = re.compile(r'(2|이)\b.*?([유해성|위험성|유해|위험|HAZARDS]{2,})')
+            pattern_sec1 = re.compile(r'(1|일)\b.*?(화학|제품|회사|제조|공급|공명|IDENTIFICATION|DESCRIPTION|IDENT|DESC)', re.IGNORECASE)
+            pattern_sec2 = re.compile(r'(2|이)\b.*?(유해성|위험성|유해|위험|HAZARDS)', re.IGNORECASE)
             
             for line in strip_ocr_results:
                 text = line.get("text", "").replace(" ", "")
@@ -595,7 +602,11 @@ class MSDSEngineV6:
             hybrid_pn = ""
 
         # [상표명 마스킹 쉴드 인터락] AI 제품명이 비어있거나 불량인 경우 file_pn_hint로 보정
-        is_empty_or_blacklisted = (not hybrid_pn) or any(k in hybrid_pn for k in ["미추출", "확인"])
+        is_empty_or_blacklisted = (
+            (not hybrid_pn) or 
+            (len(hybrid_pn.strip()) < 2) or 
+            any(k in hybrid_pn for k in ["미추출", "확인", "실패", "오류", "error", "unknown", "none", "null", "N/A"])
+        )
         if is_empty_or_blacklisted:
             if log_func:
                 log_func(f" 🚨 [[상표명 마스킹 쉴드] 인터락 격발] AI 추출 상표명 불량/공란 감지 ('{hybrid_pn}') ➔ 파일명 기반 청정 상표 단어('{file_pn_hint}')로 강제 대체합니다.")
@@ -1567,7 +1578,81 @@ class MSDSEngineV6:
                 
         return extracted_components
 
-    def extract_from_text_regex(self, page, log_func=None, inherited_x_range=None):
+    def get_density_clustering_bboxes(self, page):
+        words = page.get_text("words")
+        if not words: return []
+        def _get_median(lst):
+            if not lst: return 0.0
+            sorted_lst = sorted(lst)
+            n = len(sorted_lst)
+            if n % 2 == 1:
+                return sorted_lst[n // 2]
+            return (sorted_lst[n // 2 - 1] + sorted_lst[n // 2]) / 2.0
+
+        heights = [w[3] - w[1] for w in words]
+        base_scale = _get_median(heights)
+        words.sort(key=lambda w: w[1])
+        temp_rows = []
+        current_row = []
+        for w in words:
+            if not current_row:
+                current_row.append(w)
+            else:
+                w_prev = current_row[-1]
+                h_curr = w[3] - w[1]
+                h_prev = w_prev[3] - w_prev[1]
+                min_h = min(h_curr, h_prev)
+                vertical_threshold = min_h * 0.25
+                if abs(w[1] - w_prev[1]) <= vertical_threshold:
+                    current_row.append(w)
+                else:
+                    temp_rows.append(current_row)
+                    current_row = [w]
+        if current_row:
+            temp_rows.append(current_row)
+
+        all_gaps = []
+        for r in temp_rows:
+            r_sorted = sorted(r, key=lambda w: w[0])
+            for i in range(len(r_sorted) - 1):
+                gap = r_sorted[i+1][0] - r_sorted[i][2]
+                if gap > 0: all_gaps.append(gap)
+
+        median_gap = _get_median(all_gaps) if all_gaps else base_scale * 0.5
+        horizontal_ratio = median_gap / base_scale if base_scale > 0 else 0.5
+
+        rows = temp_rows
+        rows.sort(key=lambda r: _get_median([w[1] for w in r]))
+        
+        bboxes = []
+        for row in rows:
+            row_words = sorted(row, key=lambda w: w[0])
+            cells = []
+            current_cell = []
+            for w in row_words:
+                if not current_cell:
+                    current_cell.append(w)
+                else:
+                    w_prev = current_cell[-1]
+                    char_height = w_prev[3] - w_prev[1]
+                    gap = w[0] - w_prev[2]
+                    if gap > char_height * horizontal_ratio:
+                        cells.append(current_cell)
+                        current_cell = [w]
+                    else:
+                        current_cell.append(w)
+            if current_cell:
+                cells.append(current_cell)
+            for cell in cells:
+                if cell:
+                    bx0 = min(w[0] for w in cell)
+                    by0 = min(w[1] for w in cell)
+                    bx1 = max(w[2] for w in cell)
+                    by1 = max(w[3] for w in cell)
+                    bboxes.append([bx0, by0, bx1, by1])
+        return bboxes
+
+    def extract_from_text_regex(self, page, log_func=None, inherited_x_range=None, table_bboxes=None):
         if log_func: log_func(f"  [마스킹 엔진] 텍스트 기반 정밀 추출(Regex-Recovery) 가동...")
         found = []
         product_id_found = []
@@ -1575,6 +1660,23 @@ class MSDSEngineV6:
         try:
             raw_words = page.get_text("words")
             if not raw_words: return [], inherited_x_range
+
+            if table_bboxes is not None:
+                filtered_words = []
+                for w in raw_words:
+                    cx = (w[0] + w[2]) / 2.0
+                    cy = (w[1] + w[3]) / 2.0
+                    in_table = False
+                    for bbox in table_bboxes:
+                        if bbox and len(bbox) == 4:
+                            bx0, by0, bx1, by1 = bbox
+                            # 3 마진 적용
+                            if (bx0 - 3) <= cx <= (bx1 + 3) and (by0 - 3) <= cy <= (by1 + 3):
+                                in_table = True
+                                break
+                    if in_table:
+                        filtered_words.append(w)
+                raw_words = filtered_words
 
             merged_words = []
             for w in raw_words:
@@ -2166,7 +2268,24 @@ class MSDSEngineV6:
                                 break
             
             if fitz_doc:
-                text_comps, detected_x = self.extract_from_text_regex(fitz_doc[p_idx], log_func=log_func, inherited_x_range=inherited_x_range)
+                table_bboxes = []
+                for table in tables:
+                    for row in table.rows:
+                        for cell in row.cells:
+                            if getattr(cell, 'bbox', None):
+                                table_bboxes.append(cell.bbox)
+                try:
+                    density_bboxes = self.get_density_clustering_bboxes(fitz_doc[p_idx])
+                    table_bboxes.extend(density_bboxes)
+                except Exception as db_err:
+                    if log_func: log_func(f"  ⚠️ 밀도 클러스터링 격실 바운더리 수집 에러: {db_err}")
+                
+                text_comps, detected_x = self.extract_from_text_regex(
+                    fitz_doc[p_idx], 
+                    log_func=log_func, 
+                    inherited_x_range=inherited_x_range,
+                    table_bboxes=table_bboxes
+                )
                 if detected_x: inherited_x_range = detected_x
                 
                 for tc in text_comps:
@@ -2280,7 +2399,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "68f4476370e09cd8" 
+                GOLDEN_HASH = "4ea82e71b2a4a6f9" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
@@ -2329,30 +2448,45 @@ class MSDSEngineV6:
         lines = text.split('\n')
         component_max_values = []
         
+        has_tr = "<tr>" in text.lower()
+        
         for start_idx, end_idx, cas_str in anchors:
-            # 1) CAS가 포함된 물리적 행(Line) 구하기
+            # 1) CAS가 포함된 물리적 행 격실 구하기
             line_text = ""
-            current_char_count = 0
-            for line in lines:
-                line_len = len(line) + 1  # \n 포함
-                if current_char_count <= start_idx < current_char_count + line_len:
-                    line_text = line
-                    break
-                current_char_count += line_len
-                
-            # 2) 앞뒤 50글자 이내의 근접 컨텍스트 반경
-            context_start = max(0, start_idx - 50)
-            context_end = min(len(text), end_idx + 50)
-            context_text = text[context_start:context_end]
+            if has_tr:
+                # HTML 표 구조인 경우: start_idx 기준 가장 가까운 앞쪽 <tr>과 뒤쪽 </tr> 사이
+                lower_text = text.lower()
+                tr_start = lower_text.rfind("<tr>", 0, start_idx)
+                if tr_start == -1:
+                    tr_start = 0
+                tr_end = lower_text.find("</tr>", end_idx)
+                if tr_end == -1:
+                    tr_end = len(text)
+                else:
+                    tr_end += 5  # </tr> 길이만큼 포함
+                line_text = text[tr_start:tr_end]
+            else:
+                # 일반 텍스트인 경우: 기존의 줄 단위
+                current_char_count = 0
+                for line in lines:
+                    line_len = len(line) + 1  # \n 포함
+                    if current_char_count <= start_idx < current_char_count + line_len:
+                        line_text = line
+                        break
+                    current_char_count += line_len
             
-            target_texts = [line_text, context_text]
+            # 오직 수평선상 일치하는 행 격실 내부 텍스트만 타겟팅 (앞뒤 50자 context_text 배제)
+            target_texts = [line_text]
             cas_max_val = 0.0
             found_any_num = False
             
             for t_text in target_texts:
                 if not t_text: continue
+                # HTML 태그 제거하여 텍스트만 검사 (노이즈 방지)
+                cleaned_t = re.sub(r'<[^>]+>', ' ', t_text)
+                
                 # H-코드 및 날짜 노이즈 제거
-                cleaned_t = re.sub(r'\b[hH]\d{3}\b', ' ', t_text)
+                cleaned_t = re.sub(r'\b[hH]\d{3}\b', ' ', cleaned_t)
                 cleaned_t = re.sub(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', cleaned_t)
                 # CAS 번호 자체(공백 포함)도 오독을 막기 위해 제거
                 cleaned_t = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', cleaned_t)

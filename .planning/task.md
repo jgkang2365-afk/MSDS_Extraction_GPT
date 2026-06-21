@@ -1,44 +1,7 @@
-# Task Progress: V15.8.7 Final Evolution & GUI Persistence
+# MSDS 엔진 v6 무결성 가드레일 패키지 작업 목록
 
-- [x] [Step 1] K-308 2차 결과에 철 성분 반영 (smu_gui.py의 regenerate_validation_results 수정)
-- [x] [Step 2] 정리/교정기 내 용접 철 성분 누락 자동 감지 및 범용 동적 주입 로직 구현 (smu_gui.py의 clean_substances_excel 수정)
-- [x] JSON ➔ Excel 변환 스크립트(json_to_excel.py) 작성 및 실행
-- [x] 생성된 msds_index_edit.xlsx 검증
-- [x] Excel ➔ JSON 역변환 스크립트(excel_to_json.py) 작성
-- [x] 역변환 후 기존 json과의 데이터 정합성 검증
-- [x] [GUI버그-1] perform_standard_save 엑셀 저장 시 동일 파일명 성분 병합/세미콜론 조인 적용
-- [x] [GUI버그-2] on_table_item_changed 해시 복구 장착 및 성분 단위 직접 편집 리셋 방어 구현
-- [x] **[Task 3] 물리적 행 분리 및 물질명 내 영문 삭제 & '규제 접두사 측정대상 한정' 집행**
-  - [x] 테이블 정렬 기능(`setSortingEnabled`) 비활성화(QTableWidget 레이아웃 붕괴 방지)
-  - [x] `add_result_to_table` 개편: 성분 개수만큼 물리적 독립 행 분리 생성 및 `setSpan` 셀 병합
-  - [x] `update_validation_row` 개편: 각 성분의 독립 행에 유효성 데이터 1:1 매핑 기입
-  - [x] 코샤/마스터 물질명 내 영문 알파벳 및 영문 괄호 전량 삭제 헬퍼 함수 구현 및 적용
-  - [x] 접두사(`[특별]`, `[특검]`, `[허가]`)를 오직 4번 열(측정대상)에만 한정 결합 및 타 열 부착 금지
-  - [x] 규제 비대상 성분 행의 4번/5번 열을 깨끗한 빈칸(`""`)으로 두어 수평선 수평 지향성 유지
-- [x] **[Task 4] 직접 타이핑 수정 신호 차단 무한 루프 차단 및 우클릭 원복**
-  - [x] `on_table_item_changed` 슬롯 수정: `blockSignals(True)` 선제 차단 및 값 갱신/락 주입 후 `blockSignals(False)` 복구
-  - [x] 테이블 마우스 우클릭 컨텍스트 메뉴 개설 및 `[수동 수정 취소 및 기계 원본 복원]` 액션 구현
-  - [x] 우클릭 복원 시 `v2.0_Clean` 캐시 원본 스냅샷 복원 및 `is_manual = False`로 리셋
-- [x] **[Task 5] 후단 엑셀 저장 시 정밀 단어 경계 중복 제거 및 공백 기각 공정 (용접 이원화 최종본)**
-  - [x] `perform_standard_save` 엑셀 저장 시 측정대상 공백 행 기각(탈락) 및 위로 밀착 압축 적재
-  - [x] 토큰 단위 Exact Token Match(100% 완전 일치) 방식의 중복 제거 구현 (화학식 쉼표 보호)
-  - [x] 엑셀 최종 기록 전 마스터 DB 고유 정렬코드 순서에 의한 레이아웃 재정렬 교정
-  - [x] 용접봉 독립 처리 (이원 분기 판정 회로):
-    - [x] ① CR-13 단독 루트: 3종 고정 규격 성분(철, 망간, 이산화티타늄) 강제 기입 및 일반 정비 스킵
-    - [x] ② 일반 용접 공정 루트: 공정/용도 스캔 후 '용접' 키워드 포착 시 I열(비고) 및 J열(MSDS) 전체에서 분진류 성분을 완전 삭제(화이트 전체 파쇄 대안 B)하고 `용접흄`, `산화철(분진, 흄)` 강제 조립 추가
-- [x] **[검증 및 사후 관리]**
-  - [x] 파이썬 컴파일 자가 진단 및 검증 성공
-  - [x] 단위 테스트(`verify_regression.py` 등) 실행 통과 확인
-  - [x] 실 구동 환경에서 엑셀 정리 교정 후 정상 보정 여부 최종 검증
-- [x] **[Task 6] 엑셀 저장 시 병합 셀의 빈 파일명으로 인한 2개 행 분리 저장 버그 해결**
-  - [x] `smu_gui.py`의 `perform_standard_save` 메서드에서 병합된 행의 시작 행(`start_row`)을 역산하여 파일명, 제품명, 해시를 조회하도록 수정
-  - [ ] 실 구동 환경에서 엑셀 저장 검증 (하나의 파일명에 대해 하나의 행으로만 통합 기입되는지 확인)
-- [x] **[Task 7] 성상 선택 팝업 내 복수 선택 동적 제어 기능 탑재**
-  - [x] SubstanceSelectDialog 내 복수 선택 여부 설정 체크박스(`cb_multi_select`) 추가
-  - [x] 크롬 성상 또는 기존 복수 데이터가 저장된 경우에만 디폴트로 체크 활성화
-  - [x] 비활성화 시에는 목록 내 체크박스들이 단수 선택(라디오 버튼)처럼 상호 베타적으로 작동하도록 제어 이벤트 이식
-- [x] **[Task 8] 측정대상(4번 열) 텍스트 셀 직접 타이핑 수정 기능 차단 해제**
-  - [x] HTMLDelegate의 `createEditor` 메서드에서 4번 열에 대해 버튼 상태가 아니거나 팝업 대상이 아닐 때 에디터가 정상 작동하도록 조건부 제한 해제
-  - [x] 사용자가 직접 수정한 텍스트가 캐시에 실시간 업데이트되고 화면 갱신 시 최우선 보존 렌더링되는지 확인
-
-
+- `[x]` Step 1: extract_section_1 의미 단락 고도화 및 제품명 마스킹 쉴드 인터락 강화
+- `[x]` Step 2: verify_mathematical_천칭_filter 수평선상 동격 계량 로직 개조
+- `[x]` Step 3: extract_from_text_regex 격실 좌표계 락다운 (Boundary Lockdown) 설계 및 적용
+- `[x]` Step 4: check_golden_fingerprint 골든 해시 갱신 및 동기화
+- `[x]` Step 5: scratch/test_004.py 및 마스터 테스트 기차 주행을 통한 🟢 최종 사증
