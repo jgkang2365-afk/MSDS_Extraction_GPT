@@ -16,6 +16,10 @@ import unicodedata
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
 from dotenv import load_dotenv
+import socket
+
+# 모든 소켓 통신의 기본 타임아웃을 20초로 강제 설정하여 API 지연 시 프로세스 영구 블로킹 방어
+socket.setdefaulttimeout(20.0)
 
 # .env 파일 로드
 load_dotenv(override=True)
@@ -409,8 +413,8 @@ class MSDSEngineV6:
             
         for attempt in range(max_retries):
             try:
-                # 30초 타임아웃 가드레일 장착
-                response = requests.post(url, headers=headers, json=openai_payload, timeout=30)
+                # 1선 DeepSeek 호출 타임아웃(커넥션 5초, 읽기 12초)을 얹은 Novita AI 호출
+                response = requests.post(url, headers=headers, json=openai_payload, timeout=(5, 12))
                 if response.status_code == 200:
                     res_json = response.json()
                     content_str = res_json["choices"][0]["message"]["content"]
@@ -433,20 +437,30 @@ class MSDSEngineV6:
                     time.sleep(1.0)
         raise Exception("DeepSeek API 호출 최종 실패")
 
-    def call_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+    def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False):
         """
         [Failover 관문] 1선 DeepSeek(30초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
+        (단, is_scanned_strict가 True인 경우 DeepSeek를 Bypass하고 곧바로 Gemini 비전 채널로 다이렉트 직결)
         """
+        if is_scanned_strict:
+            if log_func:
+                log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
+            res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
+            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
+            return res
+            
         try:
-            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (30초 타임아웃 가드)")
-            # 1선 DeepSeek 호출 (최대 1회 시도)
-            return self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
+            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (12초 타임아웃 가드)")
+            res = self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
+            if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
+            return res
         except Exception as ds_err:
             if log_func:
                 log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
                 log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
-            # 2선 버텍스 제미나이 호출
-            return self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
+            res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
+            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
+            return res
 
     def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
@@ -554,14 +568,23 @@ class MSDSEngineV6:
         compact_context = self.extract_section_1(pdf_type, raw_content, log_func=log_func)
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
+        # 스캔본 이미지일 경우 cover_img의 데이터를 inlineData 형식으로 payload에 추가
+        if is_scanned_strict and 'cover_img' in locals() and cover_img:
+            parts = [
+                {"text": combined_prompt},
+                {"inlineData": {"mimeType": "image/png", "data": cover_img[0]["data"]}}
+            ]
+        else:
+            parts = [{"text": combined_prompt}]
+            
         payload_pn = {
-            "contents": [{"parts": [{"text": combined_prompt}]}]
+            "contents": [{"parts": parts}]
         }
 
         hybrid_pn = ""
         try:
-            # 대장 키 단독 호출로 제품명 확정
-            result = self.call_gemini_with_retry(payload_pn, log_func=log_func, model="gemini-2.5-flash")
+            # 명칭 오인 결선 수정: call_llm_router를 사용하며 is_scanned_strict 신호 전달
+            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
             if result:
                 pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
@@ -570,6 +593,13 @@ class MSDSEngineV6:
         except Exception as e:
             if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
             hybrid_pn = ""
+
+        # [상표명 마스킹 쉴드 인터락] AI 제품명이 비어있거나 불량인 경우 file_pn_hint로 보정
+        is_empty_or_blacklisted = (not hybrid_pn) or any(k in hybrid_pn for k in ["미추출", "확인"])
+        if is_empty_or_blacklisted:
+            if log_func:
+                log_func(f" 🚨 [[상표명 마스킹 쉴드] 인터락 격발] AI 추출 상표명 불량/공란 감지 ('{hybrid_pn}') ➔ 파일명 기반 청정 상표 단어('{file_pn_hint}')로 강제 대체합니다.")
+            hybrid_pn = file_pn_hint
 
         # [최종 출구 파일명 검문소 철거] 1선 직결 파이프라인 마감: AI의 순수 결과를 바이패스 통과시킵니다.
         pass
@@ -754,7 +784,7 @@ class MSDSEngineV6:
                         }
                         
                         # A2 규격: OpenAI 백업 없이 오직 대장 키 Gemini 2.5 Flash 호출
-                        raw_ai = self.call_gemini_with_retry(payload_vision, log_func=log_func, model="gemini-2.5-flash")
+                        raw_ai = self.call_llm_router(payload_vision, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
                         ai_res = None
                         if raw_ai:
                             try:
@@ -769,7 +799,7 @@ class MSDSEngineV6:
                         used_engine = "gemini_cleaner"
                         
                         is_perfect, extracted_items, invalid_cas_dict = self.scan_self_diagnosis(res_acc["raw_data"], log_func=None)
-                        if ai_res and "구성성분" in ai_res:
+                        if ai_res and "구성성분" in ai_res and ai_res["구성성분"]:
                             is_ai_extracted = True
                             refined_comps = ai_res["구성성분"]
                             for old_cas in list(invalid_cas_dict.keys()):
@@ -794,7 +824,41 @@ class MSDSEngineV6:
                             
                             if log_func: log_func(" ✅ [정제 완료] 데이터 무결성 세척 후 엑셀 장부 입고 완료.")
                         else:
-                            return self._get_graceful_error_dict(pdf_path, "외부 AI 호출 실패 또는 정제 에러", log_func=log_func, hybrid_pn=hybrid_pn)
+                            # [안전 롤백 게이트 격발] 크롭 이미지 분석 결과 성분이 0건인 경우, 원본 전체 페이지 스캔 방식으로 회군
+                            if log_func: log_func(" ⚠️ [안전 롤백 게이트 격발] 크롭 분석 결과 성분 0건 ➔ 원본 전체 페이지 스캔 방식으로 회군합니다.")
+                            rollback_parts = [{"text": raw_prompt}]
+                            for img in image_list:
+                                rollback_parts.append({"inlineData": {"mimeType": "image/png", "data": img.get("data", "")}})
+                                
+                            payload_rollback = {
+                                "contents": [{"parts": rollback_parts}],
+                                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
+                            }
+                            
+                            raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+                            rollback_success = False
+                            if raw_ai_rollback:
+                                try:
+                                    text_response = raw_ai_rollback.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                                    clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
+                                    clean_json = re.sub(r'```\s*$', '', clean_json)
+                                    ai_res_rb = json.loads(clean_json.strip())
+                                    if ai_res_rb and "구성성분" not in ai_res_rb:
+                                        for alt_key in ["성분", "components", "items", "substances", "composition", "ingredients"]:
+                                            if alt_key in ai_res_rb:
+                                                ai_res_rb["구성성분"] = ai_res_rb[alt_key]
+                                                break
+                                    if ai_res_rb and "구성성분" in ai_res_rb and ai_res_rb["구성성분"]:
+                                        ai_res = ai_res_rb
+                                        is_ai_extracted = True
+                                        used_engine = "gemini_cleaner_rollback"
+                                        rollback_success = True
+                                        if log_func: log_func(f" 🟢 [롤백 회군 정제 완료] 성분 {len(ai_res_rb['구성성분'])}건 확보 완착.")
+                                except Exception as rollback_err:
+                                    if log_func: log_func(f" ⚠️ [롤백 회군 호출 실패] {rollback_err}")
+                            
+                            if not rollback_success:
+                                return self._get_graceful_error_dict(pdf_path, "외부 AI 호출 실패 또는 정제 에러 (롤백 포함)", log_func=log_func, hybrid_pn=hybrid_pn)
                             
                     elif res_acc.get("status") in ["FALLBACK_FULL", "ERROR"]:
                         return self._get_graceful_error_dict(pdf_path, f"가속 크롭 예외: {res_acc.get('reason')}", log_func=log_func, hybrid_pn=hybrid_pn)
@@ -808,14 +872,12 @@ class MSDSEngineV6:
                 if log_func: log_func(" 🚀 [텍스트 2선] 대장 유료 키 단독 고속 호출 기동.")
                 
                 parts = [{"text": raw_prompt}]
-                for img in image_list:
-                    parts.append({"inlineData": {"mimeType": "image/png", "data": img.get("data", "")}})
                 payload_text_ai = {
                     "contents": [{"parts": parts}],
                     "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                 }
                 
-                raw_ai = self.call_gemini_with_retry(payload_text_ai, log_func=log_func, model="gemini-2.5-flash")
+                raw_ai = self.call_llm_router(payload_text_ai, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
                 ai_res = None
                 if raw_ai:
                     try:
@@ -2236,39 +2298,96 @@ class MSDSEngineV6:
         [수학적 천칭 검문소 2단계 분리 계량 규칙]
         """
         if not text: return False, "데이터 공란"
-        clean_text = re.sub(r'(?<![\w-])[0-9a-zA-Z]{2,7}\s*-\s*[0-9a-zA-Z]{2}\s*-\s*[0-9a-zA-Z]{1}(?![\w-])', ' ', text)
-        clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', clean_text)
-        clean_text = re.sub(r'\b20[0-2]\d년?\b', ' ', clean_text)
         
-        all_numbers = re.findall(r'[\d\.]+', clean_text)
-        for num_str in all_numbers:
-            if num_str.strip('.'):
-                try:
-                    val = float(num_str)
-                    if val > 100.0:
-                        return False, f"물리적 모순 포착: 개별 함량 수치 100% 초과 ({val}%)"
-                except ValueError:
-                    continue
-        
-        local_cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
-        local_cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
-        
-        matches = local_cont_pattern.findall(clean_text)
-        if not matches:
-            matches = local_cont_pattern_single.findall(clean_text)
-            
-        component_max_values = []
-        for match in matches:
-            match_str = match[0] if isinstance(match, tuple) else match
-            nums = [float(n) for n in re.findall(r'[\d\.]+', match_str) if n.strip('.')]
-            if not nums: continue
-            max_val = max(nums)
-            if max_val <= 100.0:
-                component_max_values.append(max_val)
+        # 1. 본문 내 유효한 CAS 번호 패턴 위치(Anchor)를 전부 파악
+        local_cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
+        anchors = []
+        for m in local_cas_pattern.finditer(text):
+            cas_candidate = m.group(1)
+            if self.verify_cas_number(cas_candidate, grounding_text=text):
+                anchors.append((m.start(), m.end(), cas_candidate))
                 
+        if not anchors:
+            return False, "유효한 CAS 번호 패턴 미검출"
+                
+        # 2. 함량 수치 패턴 선언 (% 기호 또는 부등호 결착 수치)
+        content_val_pat = re.compile(
+            r'(?:'
+            r'\b\d+(?:\.\d+)?\s*%'  # 50%
+            r'|'
+            r'[<>≤≥=\uff1c\uff1e\uff1d~∼～\-]\s*\d+(?:\.\d+)?'  # <50, ~50, -50
+            r'|'
+            r'\b\d+(?:\.\d+)?\s*[<>≤≥=\uff1c\uff1e\uff1d~∼～\-]'  # 50<, 50~
+            r'|'
+            r'\b\d+(?:\.\d+)?\s*(?:이상|미만|이하|초과|above|below|under|over|to|max|min)\b' # 50 이상
+            r'|'
+            r'\b(?:이상|미만|이하|초과|above|below|under|over|max|min)\s*\d+(?:\.\d+)?\b' # 이상 50
+            r')',
+            re.IGNORECASE
+        )
+        
+        lines = text.split('\n')
+        component_max_values = []
+        
+        for start_idx, end_idx, cas_str in anchors:
+            # 1) CAS가 포함된 물리적 행(Line) 구하기
+            line_text = ""
+            current_char_count = 0
+            for line in lines:
+                line_len = len(line) + 1  # \n 포함
+                if current_char_count <= start_idx < current_char_count + line_len:
+                    line_text = line
+                    break
+                current_char_count += line_len
+                
+            # 2) 앞뒤 50글자 이내의 근접 컨텍스트 반경
+            context_start = max(0, start_idx - 50)
+            context_end = min(len(text), end_idx + 50)
+            context_text = text[context_start:context_end]
+            
+            target_texts = [line_text, context_text]
+            cas_max_val = 0.0
+            found_any_num = False
+            
+            for t_text in target_texts:
+                if not t_text: continue
+                # H-코드 및 날짜 노이즈 제거
+                cleaned_t = re.sub(r'\b[hH]\d{3}\b', ' ', t_text)
+                cleaned_t = re.sub(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', cleaned_t)
+                # CAS 번호 자체(공백 포함)도 오독을 막기 위해 제거
+                cleaned_t = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', cleaned_t)
+                
+                for m in content_val_pat.finditer(cleaned_t):
+                    match_str = m.group(0)
+                    start_pos = m.start()
+                    end_pos = m.end()
+                    
+                    # 주변 15글자 내 절대 노이즈 제거
+                    surrounding = cleaned_t[max(0, start_pos - 15):min(len(cleaned_t), end_pos + 15)].lower()
+                    absolute_noises = ["g/mol", "mg/m", "ppm", "twa", "stel", "pel", "oel", "분자량", "mw", "molecular"]
+                    if any(noise in surrounding for noise in absolute_noises):
+                        continue
+                        
+                    # 수치 추출
+                    nums = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', match_str)]
+                    if not nums: continue
+                    max_num = max(nums)
+                    
+                    if max_num > 100.0:
+                        return False, f"물리적 모순 포착: 개별 함량 수치 100% 초과 ({max_num}%)"
+                        
+                    if max_num > cas_max_val:
+                        cas_max_val = max_num
+                        found_any_num = True
+                        
+            if found_any_num:
+                component_max_values.append(cas_max_val)
+                
+        # 3. 합산 저울에 누적
         total_max_sum = sum(component_max_values)
         if total_max_sum > 110.0:
             return False, f"범위 최대치 합계 초과: {total_max_sum}% (기준: 110.0% 이하)"
+            
         return True, "무결성 통과"
 
     def parse_html_table_to_components(self, html_content, log_func=None):

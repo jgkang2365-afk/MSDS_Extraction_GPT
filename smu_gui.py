@@ -5234,6 +5234,12 @@ class SMUGUI(QMainWindow):
             try: os.remove("smu_cache.json")
             except: pass
             
+        # [V24.4.3.18] GUI 초기화 시 엔진의 캐시 레지스트리 파일도 함께 물리적으로 삭제
+        registry_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "msds_cache_registry.json")
+        if os.path.exists(registry_path):
+            try: os.remove(registry_path)
+            except: pass
+            
         self.table.setRowCount(0)
         self.log_view.clear()
         self.progress.setValue(0)
@@ -5251,6 +5257,13 @@ class SMUGUI(QMainWindow):
             if os.path.exists("smu_cache.json"):
                 try: os.remove("smu_cache.json")
                 except: pass
+                
+            # [V24.4.3.18] 엔진 새로고침 시 엔진의 캐시 레지스트리 파일도 함께 물리적으로 삭제
+            registry_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "msds_cache_registry.json")
+            if os.path.exists(registry_path):
+                try: os.remove(registry_path)
+                except: pass
+                
             self.cache = {}
             # [V24.4.3.17] 엔진 새로고침 시 테이블 데이터 및 분석 결과 초기화
             if hasattr(self, 'table'):
