@@ -742,6 +742,10 @@ class MSDSEngineV6:
         reason = "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)"
         used_engine = "1선 정규식/격자"
         is_ai_extracted = False
+
+        # [통합 패치]: 1선 추출 성공 시 검수 로그 및 AI 관로 즉시 봉쇄 로그 출력
+        if components:
+            if log_func: log_func("✅ [AI 통신 셧다운] 1선 정규식/격자 엔진에서 자산 확보 완료. 외부 AI 호출을 건너뜁니다.")
         
 # ==============================================================================
 # 🛠️ [Chunk 12] msds_engine_v6.py ➔ 스캔본 구출을 위한 지능형 인터락 분기 패치
@@ -845,7 +849,12 @@ class MSDSEngineV6:
         }
         
         traffic_light = res_obj.get("신호등", "⚪")
-        if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 신호등: {traffic_light}, 소요시간: {time.time()-start_time:.2f}초)")
+        if log_func:
+            if refined_comps:
+                log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+                log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps]))
+            else:
+                log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (사유: 자산 미검출)")
         return res_obj
 
     def _trigger_ai_extraction(self, pdf_path, log_func=None, hybrid_pn=""):
@@ -1094,7 +1103,12 @@ class MSDSEngineV6:
         }
         
         traffic_light = res_obj.get("신호등", "⚪")
-        if log_func: log_func(f" ✅ [{VERSION}] 완료 (엔진: {used_engine}, 신호등: {traffic_light}, 소요시간: {time.time()-start_time:.2f}초)")
+        if log_func:
+            if refined_comps:
+                log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+                log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps]))
+            else:
+                log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (사유: 자산 미검출)")
         return res_obj
 
     # ----------------------------------------------------------------------
