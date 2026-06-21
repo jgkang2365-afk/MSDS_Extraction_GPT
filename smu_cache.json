@@ -4,7 +4,7 @@
         "product_name": "RED No. 227",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "3567-66-6(미기재%)",
+        "raw_content": "3567-66-6(>85%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/021_RED(적색)227_MSDS(E)_190730.pdf",
         "page": 2,
@@ -17,17 +17,55 @@
         "comp_engine": "정규식",
         "v2.0_Clean": {
             "product_name": "RED No. 227",
-            "raw_content": "3567-66-6(미기재%)",
+            "raw_content": "3567-66-6(>85%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "RED No. 227",
-            "raw_content": "3567-66-6(미기재%)",
+            "raw_content": "",
             "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
+            "reg1": [
+                "D&C적NO.33[3567-66-6(>85%)]"
+            ],
+            "reg2": [
+                ""
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "3567-66-6",
+                "name": "D&C적NO.33",
+                "content": ">85%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "D&C적NO.33()[3567-66-6]"
+            }
+        ]
     }
 }

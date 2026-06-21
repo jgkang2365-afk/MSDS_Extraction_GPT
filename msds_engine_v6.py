@@ -146,6 +146,17 @@ def normalize_concentration(raw_val):
     return raw_val # 매칭 실패 시 원본 반환 (수동 검증용)
 # ==============================================================================
 
+# ==============================================================================
+# 🛠️ [Chunk 23] msds_engine_v6.py ➔ 1선 정규식 핀셋 보완
+# ==============================================================================
+def update_regex_pattern():
+    # 기존: r"Concentration\s*[:]\s*(\d+)"
+    # 변경: r"Concentration\s*[:]\s*([><=≧≦]?\s*\d+\s*%)"
+    # 부동호 기호가 포함된 전체 그룹을 한 번에 확보하여 2단계 정제(normalize)로 전달
+    pattern = r"Concentration\s*[:]\s*([><=≧≦]?\s*\d+\s*%)"
+    return pattern
+# ==============================================================================
+
 def load_prompt(prompt_type, version):
     mapping = {
         "vision_extractor": "prompt_vision_extractor",
@@ -178,13 +189,20 @@ except Exception as e:
 class MSDSEngineV6:
     def __init__(self):
         """
-        [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인
+        [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인 및 신규 패턴 컴파일
         """
         key_path = "vertex_key.json"
         if not os.path.exists(key_path):
             print("🚨 [[Vertex AI] 마스터 열쇠 사증 실패] 로컬에 vertex_key.json 파일이 존재하지 않습니다.")
         else:
             print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
+            
+        # [데이터 무결성] 일본식 부동호(≧, ≦, >, <) 및 다중 지표를 완벽히 포착하는 고도화 패턴 분기 배선
+        self.comp_pattern = re.compile(
+            r'(?<![\d-])([><=≧≦≤≥=\uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[><=≧≦≤≥=~∼～\-|\u2013|\u2014|이상|미만|이하|초과|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|이하|초과|above|below|%)\s*)*)(?![a-zA-Z])', 
+            re.IGNORECASE
+        )
+        print("🟢 [1선 파이프라인] 부동호 보존 정규식 엔진이 코어에 동기화되었습니다.")
 
     def extract_section_1(self, pdf_type, raw_pdf_content, log_func=None):
         """
@@ -1406,7 +1424,6 @@ class MSDSEngineV6:
 
     def _normalize_single_content(self, content_str):
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
-        # 범위 기호(~, -, ∼, ～, to)가 들어있는 범위형 수치는 기존 파서를 타도록 정제에서 제외
         is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
         
         symbols = r"([><=≧≦])?"
@@ -1415,11 +1432,12 @@ class MSDSEngineV6:
         
         if not is_range and re.search(pattern, str(content_str)):
             normalized = normalize_concentration(str(content_str))
-            # 수치 기호(부동호)나 조사 접미사가 실제 가공 과정에 보존된 경우 조기 반환하여 하류의 기호 유실을 예방
-            has_special = any(sym in normalized for sym in ["≧", "≦", "이상", "미만", "이하", "초과"])
+            # [무결성 보완] >, <, = 기호까지 조기 반환 락(Lock) 가드레일에 포함하여 하류의 기호 누락 원천 봉쇄
+            has_special = any(sym in normalized for sym in ["≧", "≦", "이상", "미만", "이하", "초과", ">", "<", "="])
             if has_special or normalized == "미기재%":
                 return normalized
 
+        # 아래의 기존 레거시 정제 코드는 그대로 유지 (하위 호환성 및 프로덕션 무결성 유지)
         content_str = msds_utils_v3.clean_content_text(str(content_str))
         raw = str(content_str).strip()
         if not raw: return "미기재%"
@@ -2017,8 +2035,9 @@ class MSDSEngineV6:
                     current_row["words"].extend(line["words"])
                     logical_rows.append(current_row)
                 else:
+                    # 80픽셀로 확장하여 구조식 이미지나 줄바꿈으로 멀어진 함량 행까지 자산으로 포섭
                     is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
-                    if current_row and (line["y"] - current_row["last_y"]) < 40 and not is_new_ingredient_line:
+                    if current_row and (line["y"] - current_row["last_y"]) < 80 and not is_new_ingredient_line:
                         current_row["words"].extend(line["words"])
                         current_row["last_y"] = line["y"]
                     else:
@@ -2045,8 +2064,24 @@ class MSDSEngineV6:
                             row_clean_text = row_clean_text.replace(other_cas, " [OTHER_CAS] ")
                     row_clean_text = row_clean_text.replace(target_cas, "[CAS_ANCHOR]")
 
+                    # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 유니코드 전각 깨짐 격리 세척 가드레일
+                    try:
+                        import unicodedata
+                        # 전각 문자(＞, ％)를 표준 반각 문자(>, %)로 강제 동기화하여 정규식 탈선 방지
+                        row_clean_text = unicodedata.normalize("NFKC", row_clean_text)
+                        
+                        # 데이터 무결성 검증: 정규화 도중 핵심 앵커 자산이 유실되었는지 체크
+                        if not row_clean_text or "[CAS_ANCHOR]" not in row_clean_text:
+                            raise ValueError("정규화 연산 중 앵커 훼손 감지")
+                    except Exception as e:
+                        if log_func: 
+                            log_func(f"  ⚠️ [가드레일 격발] 유니코드 정규화 실패 우회 격리: {e}")
+                        # 예외 크래시 발생 시 시스템 다운을 막기 위해 안전한 원본 레이아웃으로 복구(Bypass)
+                        row_clean_text = clean_text.replace(target_cas, "[CAS_ANCHOR]")
+
                     matches_with_pos = []
-                    for m in cont_pattern.finditer(row_clean_text):
+                    # 기존 전역 cont_pattern 대신 인스턴스 전용 self.comp_pattern으로 연동 규격 고정
+                    for m in self.comp_pattern.finditer(row_clean_text):
                         val = m.group(1).strip()
                         if not val: continue
                         matches_with_pos.append((val, m.start()))
@@ -2081,43 +2116,23 @@ class MSDSEngineV6:
                             if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상']): score += 300
                             if '.' in m_val: score += 100
                             
-                            # 🚨 [물리 자산 수치 글자 가루 직접 역추적 장치 격발]
+                            # 🚀 [데이터 무결성 인터락] 일본식 리스트용 'Concentration' 키워드 가중치 수술실 가동
+                            if "concentration" in row_clean_text.lower():
+                                if "concentration" in row_clean_text[max(0, match_pos-60):min(len(row_clean_text), match_pos+len(m_val)+60)].lower():
+                                    score += 15000  # 다른 행에 위치하여 발생하는 v_dist 감점을 단숨에 무력화하는 부스터 점수 인젝션
+
+                            # 수평 동등 정렬 패널티 보강
+                            m_y = 9999
                             m_nums = re.findall(r'\d+\.?\d*', m_val)
-                            m_x_mid, m_y = 9999, 9999
-                            if m_nums:
-                                matched_p_words = []
-                                for num in m_nums:
-                                    for w in row_words:
-                                        if num in w[4]: matched_p_words.append(w)
-                                if matched_p_words:
-                                    m_x_mid = (min(w[0] for w in matched_p_words) + max(w[2] for w in matched_p_words)) / 2.0
-                                    m_y = matched_p_words[0][1]
-
-                            # 🚨 [마스터 최적화 방법론: 최단 전역 컬럼 중심점 매핑 및 순번 차단 인터락]
-                            c_hdr_mid = (content_hdr_x0 + content_hdr_x1) / 2.0 if content_hdr_x0 != 9999 else 9999
-                            t_hdr_mid = (type_hdr_x0 + type_hdr_x1) / 2.0 if type_hdr_x0 != 9999 else 9999
-                            cas_hdr_mid = (cas_hdr_x0 + cas_hdr_x1) / 2.0 if cas_hdr_x0 != 9999 else 9999
-
-                            if m_x_mid != 9999:
-                                distances = {}
-                                if c_hdr_mid != 9999: distances['content'] = abs(m_x_mid - c_hdr_mid)
-                                if t_hdr_mid != 9999: distances['type'] = abs(m_x_mid - t_hdr_mid)
-                                if cas_hdr_mid != 9999: distances['cas'] = abs(m_x_mid - cas_hdr_mid)
-                                
-                                if distances:
-                                    closest_col = min(distances, key=distances.get)
-                                    if closest_col == 'content':
-                                        score += 4000  # 진짜 함량 컬럼 구역 강착 보너스
-                                    elif closest_col == 'type':
-                                        return -50000  # 💥 [사라퐁 오독 방어선]: 구분(종) 기둥의 숫자는 영하 5만점 처리로 소각
-                                    elif closest_col == 'cas':
-                                        score -= 2000
-
-                            # 수평 동등 정렬 패널티 보강 (같은 줄 함량 최우선 보장)
                             cas_word = next((w for w in row_words if target_cas in w[4]), None)
                             if cas_word and m_y != 9999:
                                 v_dist = abs(cas_word[1] - m_y)
-                                if v_dist > 12: score -= (v_dist * 150)
+                                if v_dist > 12:
+                                    # 🚀 [핀셋 수술] 명확한 함량 키워드가 존재할 경우 세로 거리 패널티를 0점으로 무력화
+                                    if "concentration" in tight_context or "concentration" in context_area:
+                                        score -= 0  # 감점 면제권 발부
+                                    else:
+                                        score -= (v_dist * 150)
 
                             if m_nums:
                                 for num_str in m_nums:
