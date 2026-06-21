@@ -734,238 +734,20 @@ class MSDSEngineV6:
                 has_perfect_1st_line = True
                 if log_func: log_func(" 🟢 [1선 완착 통과] 1선 엔진 결과 및 2선 청소부 수선 완료로 무결성이 확보되어 AI 호출을 생략(Bypass)합니다.")
 
-        ai_components = []
-        reason = "1선 규칙 엔진 완착"
+# ==============================================================================
+# 🛠️ [Chunk 07] msds_engine_v6.py ➔ 구형 AI 호출 및 병합 회로 통째로 도려내기 영역
+# ==============================================================================
+        # 🚨 [소장님 최종 지시 마스터 완착] 외부 AI 개입 전면 배제 및 1선 청정 자산 고정 락(Lock) 직결 관로
+        components = checked_1st
+        reason = "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)"
         used_engine = "1선 정규식/격자"
         is_ai_extracted = False
-
-        if has_perfect_1st_line:
-            components = checked_1st
-        else:
-            # 3선 AI 호출을 위한 이미지 리스트 정비
-            image_base64_list = []
-            for img_item in image_list:
-                try:
-                    if isinstance(img_item, dict):
-                        b64_data = img_item.get("data", "")
-                        if b64_data: image_base64_list.append(b64_data)
-                    elif isinstance(img_item, str) and os.path.exists(img_item):
-                        with open(img_item, "rb") as image_file:
-                            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-                            image_base64_list.append(encoded_string)
-                except Exception as e:
-                    if log_func: log_func(f" ⚠️ [인코더 오류] 이미지 변환 실패: {e}")
-
-            raw_prompt = f"{VISION_EXTRACTOR_PROMPT}\n\n[🚨 CONTEXT CAPTURE]:\n{section3_text[:2000]}"
-
-            if is_scanned_strict:
-                local_ocr_html = ""
-                ai_res = None
-                
-                # 시각적 가속 크롭 및 천칭 필터 제어
-                acc_success = False
-                try:
-                    paddle_ocr_instance = get_ocr_engine()
-                    res_acc = self.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=log_func)
-                    
-                    if res_acc.get("status") == "SUCCESS":
-                        local_ocr_html = res_acc["data"]
-                        acc_success = True
-                        is_perfect, extracted_items, invalid_cas_dict = self.scan_self_diagnosis(local_ocr_html, log_func=log_func)
-                        ai_res = {
-                            "구성성분": extracted_items,
-                            "교정_사유": "1선 시각적 가속 자가 검문 통과 (Bypass)"
-                        }
-                        used_engine = "local_bypass"
-                        is_ai_extracted = False
-                        
-                    elif res_acc.get("status") == "FALLBACK":
-                        acc_success = True
-                        # 천칭 검문에서 탈락(물리적 모순 감지)
-                        cropped_bytes = res_acc["image"]
-                        cropped_b64 = base64.b64encode(cropped_bytes).decode("utf-8")
-                        cropped_image_list = [{"data": cropped_b64, "mime_type": "image/png"}]
-                        
-                        enriched_text_prompt = (
-                            f"{raw_prompt}\n\n"
-                            f"[🚨 로컬 정밀 OCR 수집 HTML 표 구조 데이터]\n"
-                            f"{res_acc['raw_data']}\n\n"
-                            f"※ 지침: 상기 HTML 표는 로컬에서 수집한 원형이다. 오타(숫자 자리에 알파벳 유입)나 뒤틀린 행을 문맥에 맞게 수정하여 정밀한 JSON 장부 형태로 교정하라. "
-                            f"<td> 격실 내부에 보존된 미세 부등호 기호(>, <, %, ~)와 수치를 절대 누락하거나 환각 데이터로 변조하지 말고, 유해성 관리 기준 룰북에 입각하여 최종 JSON 장부로 정제하라."
-                        )
-                        
-                        payload_vision = {
-                            "contents": [
-                                {
-                                    "parts": [
-                                        {"text": enriched_text_prompt},
-                                        {"inlineData": {"mimeType": "image/png", "data": cropped_b64}}
-                                    ]
-                                }
-                            ],
-                            "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-                        }
-                        
-                        # A2 규격: OpenAI 백업 없이 오직 대장 키 Gemini 2.5 Flash 호출
-                        raw_ai = self.call_llm_router(payload_vision, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
-                        ai_res = None
-                        if raw_ai:
-                            try:
-                                text_response = raw_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                                if log_func:
-                                    log_func(f" 디버그: 3선 AI 원본 응답 = {text_response}")
-                                clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
-                                clean_json = re.sub(r'```\s*$', '', clean_json)
-                                ai_res = json.loads(clean_json.strip())
-                            except Exception as parse_err:
-                                if log_func: log_func(f" ⚠️ [Gemini Vision 파싱 실패] {parse_err}")
-                        used_engine = "gemini_cleaner"
-                        
-                        is_perfect, extracted_items, invalid_cas_dict = self.scan_self_diagnosis(res_acc["raw_data"], log_func=None)
-                        if ai_res and "구성성분" in ai_res and ai_res["구성성분"]:
-                            is_ai_extracted = True
-                            refined_comps = ai_res["구성성분"]
-                            for old_cas in list(invalid_cas_dict.keys()):
-                                normalized_old = re.sub(r'[oO]', '0', old_cas)
-                                normalized_old = re.sub(r'[lL]', '1', normalized_old)
-                                normalized_old = re.sub(r'[iI]', '1', normalized_old)
-                                normalized_old = re.sub(r'[zZ]', '2', normalized_old)
-                                normalized_old = re.sub(r'[sS]', '5', normalized_old)
-                                
-                                matching_new = next((c.get("cas_no") or c.get("cas") for c in refined_comps if (c.get("cas_no") or c.get("cas") or "").strip() == normalized_old), None)
-                                if not matching_new:
-                                    for c in refined_comps:
-                                        c_cas = (c.get("cas_no") or c.get("cas") or "").strip()
-                                        if c_cas and c_cas.split('-')[0] == old_cas.split('-')[0]:
-                                            matching_new = c_cas
-                                            break
-                                            
-                                if matching_new:
-                                    invalid_cas_dict[old_cas] = matching_new
-                                    if log_func:
-                                        log_func(f" 🎯 [Gemini 정제 완착] 오타 수선 완료: '{old_cas}' -> '{matching_new}' 복원 성공.")
-                            
-                            if log_func: log_func(" ✅ [정제 완료] 데이터 무결성 세척 후 엑셀 장부 입고 완료.")
-                        else:
-                            # [안전 롤백 게이트 격발] 크롭 이미지 분석 결과 성분이 0건인 경우, 원본 전체 페이지 스캔 방식으로 회군
-                            if log_func: log_func(" ⚠️ [안전 롤백 게이트 격발] 크롭 분석 결과 성분 0건 ➔ 원본 전체 페이지 스캔 방식으로 회군합니다.")
-                            rollback_parts = [{"text": raw_prompt}]
-                            for img in image_list:
-                                rollback_parts.append({"inlineData": {"mimeType": "image/png", "data": img.get("data", "")}})
-                                
-                            payload_rollback = {
-                                "contents": [{"parts": rollback_parts}],
-                                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-                            }
-                            
-                            raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
-                            rollback_success = False
-                            if raw_ai_rollback:
-                                try:
-                                    text_response = raw_ai_rollback.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                                    clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
-                                    clean_json = re.sub(r'```\s*$', '', clean_json)
-                                    ai_res_rb = json.loads(clean_json.strip())
-                                    if ai_res_rb and "구성성분" not in ai_res_rb:
-                                        for alt_key in ["성분", "components", "items", "substances", "composition", "ingredients"]:
-                                            if alt_key in ai_res_rb:
-                                                ai_res_rb["구성성분"] = ai_res_rb[alt_key]
-                                                break
-                                    if ai_res_rb and "구성성분" in ai_res_rb and ai_res_rb["구성성분"]:
-                                        ai_res = ai_res_rb
-                                        is_ai_extracted = True
-                                        used_engine = "gemini_cleaner_rollback"
-                                        rollback_success = True
-                                        if log_func: log_func(f" 🟢 [롤백 회군 정제 완료] 성분 {len(ai_res_rb['구성성분'])}건 확보 완착.")
-                                except Exception as rollback_err:
-                                    if log_func: log_func(f" ⚠️ [롤백 회군 호출 실패] {rollback_err}")
-                            
-                            if not rollback_success:
-                                return self._get_graceful_error_dict(pdf_path, "외부 AI 호출 실패 또는 정제 에러 (롤백 포함)", log_func=log_func, hybrid_pn=hybrid_pn)
-                            
-                    elif res_acc.get("status") in ["FALLBACK_FULL", "ERROR"]:
-                        return self._get_graceful_error_dict(pdf_path, f"가속 크롭 예외: {res_acc.get('reason')}", log_func=log_func, hybrid_pn=hybrid_pn)
-                
-                except Exception as acc_fault:
-                    if log_func: log_func(f"⚠️ [가속 파이프라인 장애 발생] {acc_fault}")
-                    return self._get_graceful_error_dict(pdf_path, f"가속 파이프라인 장애: {acc_fault}", log_func=log_func, hybrid_pn=hybrid_pn)
-            else:
-                # 1. 텍스트 문서 파이프라인 (정규식 누락 복구용 AI 호출)
-                # A2 규격에 따라 DeepSeek-OCR 등 무료/타사 API 라인은 차단하고 즉시 대장 키 Gemini 2.5 Flash를 직접 호출
-                if log_func: log_func(" 🚀 [텍스트 2선] 대장 유료 키 단독 고속 호출 기동.")
-                
-                parts = [{"text": raw_prompt}]
-                payload_text_ai = {
-                    "contents": [{"parts": parts}],
-                    "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-                }
-                
-                raw_ai = self.call_llm_router(payload_text_ai, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
-                ai_res = None
-                if raw_ai:
-                    try:
-                        text_response = raw_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                        clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
-                        clean_json = re.sub(r'```\s*$', '', clean_json)
-                        ai_res = json.loads(clean_json.strip())
-                    except Exception as parse_err:
-                        if log_func: log_func(f" ⚠️ [Gemini Text 파싱 실패] {parse_err}")
-                used_engine = "Gemini-2.5-Flash (Text AI)"
-                is_ai_extracted = True
-
-            # AI가 JSON 키 값을 "성분", "components" 등으로 오독/변조해오는 현상 방어 정규화
-            if ai_res:
-                if "구성성분" not in ai_res:
-                    for alt_key in ["성분", "components", "items", "substances", "composition", "ingredients"]:
-                        if alt_key in ai_res:
-                            ai_res["구성성분"] = ai_res[alt_key]
-                            break
-                
-                if "구성성분" in ai_res and isinstance(ai_res["구성성분"], list):
-                    for c in ai_res["구성성분"]:
-                        if not isinstance(c, dict): continue
-                        if "content" not in c:
-                            for alternate_key in ["함유량", "percentage", "content_value", "value", "함량", "percent"]:
-                                if alternate_key in c:
-                                    c["content"] = c[alternate_key]
-                                    break
-                            else:
-                                c["content"] = "미기재%"
-                        if "cas" not in c:
-                            for alternate_cas_key in ["cas_no", "cas번호", "casNo", "cas_number", "cas_code"]:
-                                if alternate_cas_key in c:
-                                    c["cas"] = c[alternate_cas_key]
-                                    break
-                        c["engine"] = used_engine
-
-            if ai_res and "구성성분" in ai_res and ai_res["구성성분"]:
-                ai_components = ai_res.get("구성성분", [])
-                reason = ai_res.get("교정_사유", "AI 완착")
-            else:
-                # 최후방 회생 가드레일 작동
-                if checked_1st:
-                    if log_func: log_func(" ⚠️ [최후방 회생 가드레일] AI 장애/오독 격발 -> 1선 백업 자산(checked_1st)을 최종 장부로 강제 복구 완착합니다.")
-                    ai_components = checked_1st
-                    reason = "1선 백업 자산 회생 완착"
-                    used_engine = "1선 백업(회생)"
-                else:
-                    return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않으며 복구할 1선 백업 자산도 없음", log_func=log_func, hybrid_pn=hybrid_pn)
-
-            # ODL/밀도 클러스터링 선제 자산과 AI 수거물 최종 병합
-            merged_map = {}
-            for c in odl_density_comps:
-                cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
-                if cas: merged_map[cas] = c
-            for c in ai_components:
-                cas = str(c.get("cas") or c.get("cas_no", "")).replace(" ", "").strip()
-                if cas:
-                    existing = merged_map.get(cas)
-                    if existing and str(existing.get("percentage") or existing.get("content", "미기재%")) != "미기재%":
-                        if not existing.get("name") and c.get("name"):
-                            existing["name"] = c.get("name")
-                        continue
-                    merged_map[cas] = c
-            components = list(merged_map.values())
+        
+        # [데이터 검증 및 에러 예외 처리 - Test Case]: 1선 자산이 물리적으로 완전히 전무한 극한의 공란 상황 방어선 매설
+        if not components:
+            if log_func: log_func("⚠️ [무결성 가드레일] 1선 정규식 수거 자산이 전무합니다. 그레이스풀 에러 격리 회로로 전송합니다.")
+            return self._get_graceful_error_dict(pdf_path, "1선 수거 자산 전무 및 AI 개입 배제 인터락 발동", log_func=log_func, hybrid_pn=hybrid_pn)
+# ==============================================================================
         
         components = self.refine_msds_components_strict(components)
         
@@ -990,6 +772,13 @@ class MSDSEngineV6:
             grounding_pool = full_text_for_grounding if full_text_for_grounding else local_grounding_text
 
         refined_comps, has_invalid_cas = self.final_quality_control(components, grounding_pool, is_ai=is_ai_extracted, log_func=log_func)
+        components = refined_comps
+
+        # 🚨 [소장님 지시 완착]: 최종 추출 자산 즉시 인쇄 로그 배선 (개별 항목 가독성 확보)
+        if log_func:
+            log_func(f"  ✅ [최종 확정 자산 명세]")
+            for item in components:
+                log_func(f"    ├─ CAS {item.get('cas')} -> 함량 {item.get('content')}")
         
         # 엑셀 입고용 콤팩트 포장
         comp_parts = []
@@ -1322,6 +1111,17 @@ class MSDSEngineV6:
             except: return "미기재%"
 
         elif len(nums) >= 2:
+            # 🚨 [소장님 지적 오독 최종 수선 인터락]: 범위 연결 기호(~, -)가 없으면서 단일 부등호만 단 1개 포착된 복합 파편(예: 3 < 1) 적발 시,
+            # 전방의 순번 노이즈 숫자를 완전히 거세하고 후방의 진짜 함량 수치(<1%)만 단독 추출하여 강착시킴 (데이터 무결성 완벽 보장)
+            ineq_count = sum(v.count(k) for k in ["<", ">", "≤", "≥", "이상", "미만", "이하", "초과"])
+            if len(nums) == 2 and not has_range_sep and ineq_count == 1:
+                try:
+                    f2 = float(nums[1])
+                    n2 = int(f2) if f2.is_integer() else f2
+                    if n2 <= 110:
+                        return f"{pref}{n2}%"
+                except: pass
+
             try:
                 f1_orig, f2_orig = float(nums[0]), float(nums[1])
                 is_swapped = f1_orig > f2_orig
@@ -1682,7 +1482,6 @@ class MSDSEngineV6:
                     for bbox in table_bboxes:
                         if bbox and len(bbox) == 4:
                             bx0, by0, bx1, by1 = bbox
-                            # 3 마진 적용
                             if (bx0 - 3) <= cx <= (bx1 + 3) and (by0 - 3) <= cy <= (by1 + 3):
                                 in_table = True
                                 break
@@ -1725,6 +1524,24 @@ class MSDSEngineV6:
                 y_start = 0.0
                 
             raw_words = [w for w in raw_words if y_start <= w[1] < y_end]
+
+            # 🚨 [전역 컬럼 대간판 레이아웃 탐색 레이다 활성화]
+            content_hdr_x0, content_hdr_x1 = 9999, -9999
+            type_hdr_x0, type_hdr_x1 = 9999, -9999
+            cas_hdr_x0, cas_hdr_x1 = 9999, -9999
+
+            for w in raw_words:
+                txt = w[4].upper()
+                if y_start <= w[1] <= y_start + 250:
+                    if any(k in txt for k in ["함유량", "함량", "CONTENT", "CONC", "%", "농도"]):
+                        content_hdr_x0 = min(content_hdr_x0, w[0])
+                        content_hdr_x1 = max(content_hdr_x1, w[2])
+                    if any(k in txt for k in ["구분", "종"]):
+                        type_hdr_x0 = min(type_hdr_x0, w[0])
+                        type_hdr_x1 = max(type_hdr_x1, w[2])
+                    if "CAS" in txt:
+                        cas_hdr_x0 = min(cas_hdr_x0, w[0])
+                        cas_hdr_x1 = max(cas_hdr_x1, w[2])
 
             is_left_arranged = False
             has_global_percent = False
@@ -1848,112 +1665,103 @@ class MSDSEngineV6:
             last_valid_info = None 
             for row in logical_rows:
                 row_words = row.get("words", [])
-                if content_x_mid != 9999:
-                    content_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) <= 45]
-                    other_words = [w for w in row_words if abs((w[0] + w[2])/2 - content_x_mid) > 45]
-                    content_words.sort(key=lambda w: (w[1], w[0]))
-                    other_words.sort(key=lambda w: (w[1], w[0]))
-                    sorted_words = other_words + content_words
-                else:
-                    sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
-
+                sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
                 safe_word_texts = [w[4] for w in sorted_words]
                 row_full_text = " ".join(safe_word_texts)
                 
+                clean_text = row_full_text
+                clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
+                clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
+                clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
+                clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
+
                 for target_cas in row["cas_list"]:
-                    clean_text = row_full_text
+                    row_clean_text = clean_text
                     for other_cas in row["cas_list"]:
                         if other_cas != target_cas:
-                            clean_text = clean_text.replace(other_cas, " [OTHER_CAS] ")
-                    clean_text = clean_text.replace(target_cas, "[CAS_ANCHOR]")
-                    
-                    clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
-                    clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
-                    clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
-                    clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
-                    clean_text = re.sub(r'(\d)\s*([-~])\s*(\d)', r'\1\2\3', clean_text)
+                            row_clean_text = row_clean_text.replace(other_cas, " [OTHER_CAS] ")
+                    row_clean_text = row_clean_text.replace(target_cas, "[CAS_ANCHOR]")
 
                     matches_with_pos = []
-                    for m in cont_pattern.finditer(clean_text):
+                    for m in cont_pattern.finditer(row_clean_text):
                         val = m.group(1).strip()
                         if not val: continue
-                        
-                        start_idx = m.start()
-                        prefix = clean_text[:start_idx]
-                        if prefix.count('(') > prefix.count(')'):
-                            last_open = prefix.rfind('(')
-                            context_window = clean_text[max(0, last_open-30):start_idx]
-                            if "[CAS_ANCHOR]" not in context_window: continue
-                        matches_with_pos.append((val, start_idx)) 
-                        
+                        matches_with_pos.append((val, m.start()))
+
                     content = "미기재%"
                     if matches_with_pos:
                         def score_match(match_tuple):
                             m_val, match_pos = match_tuple
                             has_percent = "%" in m_val
                             
-                            if re.search(r'%\s*:', clean_text[match_pos:match_pos+len(m_val)+5]):
-                                return -5000
+                            if re.search(r'%\s*:', row_clean_text[match_pos:match_pos+len(m_val)+5]): return -5000
                                 
-                            context_area = clean_text[max(0, match_pos-30):min(len(clean_text), match_pos+len(m_val)+30)].lower()
-                            tight_context = clean_text[max(0, match_pos-10):min(len(clean_text), match_pos+len(m_val)+10)].lower()
+                            context_area = row_clean_text[max(0, match_pos-30):min(len(row_clean_text), match_pos+len(m_val)+30)].lower()
+                            tight_context = row_clean_text[max(0, match_pos-10):min(len(row_clean_text), match_pos+len(m_val)+10)].lower()
                             
-                            absolute_noises = ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]
-                            if any(noise in tight_context for noise in absolute_noises):
-                                return -5000
+                            if any(noise in tight_context for noise in ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]): return -5000
                                 
                             if not has_percent:
-                                if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']):
-                                    return -5000
-                                weak_noises = ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", 
-                                               "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", 
-                                               "분자량", "molecular weight", "mw", "항", "section", "japan", "formula",
-                                               "ingredient", "component", "composition", "구성성분", "함유량", "명칭", "화학물질명", "관용명", "이명"]
-                                if any(noise in context_area for noise in weak_noises): return -5000
+                                if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']): return -5000
+                                if any(noise in context_area for noise in ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", "분자량", "molecular weight", "mw", "항", "section"]): return -5000
                                     
-                            layout_noises = ["쪽", "page", "페이지"]
-                            if any(noise in clean_text[max(0, match_pos-20):match_pos].lower() for noise in layout_noises) and not has_percent: 
-                                return -5000 
+                            if any(noise in row_clean_text[max(0, match_pos-20):match_pos].lower() for noise in ["쪽", "page", "페이지"]) and not has_percent: return -5000 
+                            if m_val.strip(' -∼~<>\u2013\u2014≤≥=').count('-') >= 2: return -5000
                                 
-                            core_m_val = m_val.strip(' -∼~<>\u2013\u2014≤≥=')
-                            if core_m_val.count('-') >= 2 or core_m_val.count('\u2013') >= 2: return -5000
-                                
-                            anchor_pos = clean_text.find("[CAS_ANCHOR]")
-                            start_search = min(anchor_pos, match_pos)
-                            end_search = max(anchor_pos, match_pos)
-                            text_between = clean_text[start_search:end_search]
-                            if "[OTHER_CAS]" in text_between: return -10000
-                                
+                            anchor_pos = row_clean_text.find("[CAS_ANCHOR]")
                             dist_char = abs(anchor_pos - match_pos)
-                            if dist_char > 120: return -5000
+                            if dist_char > 220: return -8000
 
                             score = 0
                             if has_percent: score += 500
                             elif has_global_percent: score += 400 
-
-                            if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상', '\u2013', '\u2014']): score += 300
+                            if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상']): score += 300
                             if '.' in m_val: score += 100
                             
-                            if match_pos > anchor_pos: score += 200 
-                            else:
-                                if is_left_arranged: score += 200 
-                                else: score -= 50  
-                            
-                            score -= (dist_char * 3) 
-                            
+                            # 🚨 [물리 자산 수치 글자 가루 직접 역추적 장치 격발]
                             m_nums = re.findall(r'\d+\.?\d*', m_val)
-                            if content_x_mid != 9999 and m_nums:
-                                for w in row_words:
-                                    if abs((w[0] + w[2])/2 - content_x_mid) <= 45:
-                                        if any(num in w[4] for num in m_nums):
-                                            score += 1500
-                                            break
+                            m_x_mid, m_y = 9999, 9999
+                            if m_nums:
+                                matched_p_words = []
+                                for num in m_nums:
+                                    for w in row_words:
+                                        if num in w[4]: matched_p_words.append(w)
+                                if matched_p_words:
+                                    m_x_mid = (min(w[0] for w in matched_p_words) + max(w[2] for w in matched_p_words)) / 2.0
+                                    m_y = matched_p_words[0][1]
+
+                            # 🚨 [마스터 최적화 방법론: 최단 전역 컬럼 중심점 매핑 및 순번 차단 인터락]
+                            c_hdr_mid = (content_hdr_x0 + content_hdr_x1) / 2.0 if content_hdr_x0 != 9999 else 9999
+                            t_hdr_mid = (type_hdr_x0 + type_hdr_x1) / 2.0 if type_hdr_x0 != 9999 else 9999
+                            cas_hdr_mid = (cas_hdr_x0 + cas_hdr_x1) / 2.0 if cas_hdr_x0 != 9999 else 9999
+
+                            if m_x_mid != 9999:
+                                distances = {}
+                                if c_hdr_mid != 9999: distances['content'] = abs(m_x_mid - c_hdr_mid)
+                                if t_hdr_mid != 9999: distances['type'] = abs(m_x_mid - t_hdr_mid)
+                                if cas_hdr_mid != 9999: distances['cas'] = abs(m_x_mid - cas_hdr_mid)
+                                
+                                if distances:
+                                    closest_col = min(distances, key=distances.get)
+                                    if closest_col == 'content':
+                                        score += 4000  # 진짜 함량 컬럼 구역 강착 보너스
+                                    elif closest_col == 'type':
+                                        return -50000  # 💥 [사라퐁 오독 방어선]: 구분(종) 기둥의 숫자는 영하 5만점 처리로 소각
+                                    elif closest_col == 'cas':
+                                        score -= 2000
+
+                            # 수평 동등 정렬 패널티 보강 (같은 줄 함량 최우선 보장)
+                            cas_word = next((w for w in row_words if target_cas in w[4]), None)
+                            if cas_word and m_y != 9999:
+                                v_dist = abs(cas_word[1] - m_y)
+                                if v_dist > 12: score -= (v_dist * 150)
+
                             if m_nums:
                                 for num_str in m_nums:
                                     try:
                                         val = float(num_str)
-                                        if val > 110: score -= 3000; break 
-                                        if 1990 <= val <= 2030: score -= 1000 
+                                        if val > 110: score -= 5000; break 
+                                        if 1990 <= val <= 2030: score -= 2000 
                                     except: pass
                             return score
                         
@@ -1962,15 +1770,11 @@ class MSDSEngineV6:
                             content = self._normalize_single_content(best_match_tuple[0])
                     
                     if content == "미기재%":
-                        single_matches = []
-                        for m in cont_pattern_single.finditer(clean_text):
-                            val = m.group(1).strip()
-                            if val: single_matches.append((val, m.start()))
+                        single_matches = [(m.group(1).strip(), m.start()) for m in cont_pattern_single.finditer(row_clean_text) if m.group(1).strip()]
                         if single_matches:
                             valid_singles = [m for m in single_matches if score_match(m) > -500]
                             if valid_singles:
-                                best_single = max(valid_singles, key=score_match)
-                                content = self._normalize_single_content(best_single[0])
+                                content = self._normalize_single_content(max(valid_singles, key=score_match)[0])
                         
                     target_word = next((w for w in row["words"] if target_cas in w[4]), None)
                     if target_word:
@@ -1979,35 +1783,23 @@ class MSDSEngineV6:
                             prev_x, prev_y, prev_content = last_valid_info
                             if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
                                 content = f"{prev_content} (병합추정)"
-                                if log_func: log_func(f"   [수직 상속] CAS {target_cas} -> 병합 셀 함량({content}) 상속 완료")
-                                
                         if content != "미기재%":
-                            base_content = content.replace(" (병합추정)", "")
-                            last_valid_info = (curr_x, curr_y, base_content)
+                            last_valid_info = (curr_x, curr_y, content.replace(" (병합추정)", ""))
                     
                     name_str = "CAS 기반 자동 매핑"
-                    if log_func: log_func(f"   [Regex-Recovery] CAS {target_cas} -> 함량 {content} (신뢰도: 고)")
-                    
                     combined_text = f"{target_cas}({content})"
                     item_obj = {
-                        "name": name_str, 
-                        "chemical_name": name_str,
-                        "cas": target_cas,
-                        "cas_no": target_cas, 
-                        "percentage": content,
-                        "content": content, 
-                        "engine": "Regex-Recovery",
-                        "combined_format": combined_text
+                        "name": name_str, "chemical_name": name_str,
+                        "cas": target_cas, "cas_no": target_cas, 
+                        "percentage": content, "content": content, 
+                        "engine": "Regex-Recovery", "combined_format": combined_text
                     }
-                    if row.get("is_product_id"):
-                        product_id_found.append(item_obj)
-                    else:
-                        found.append(item_obj)
+                    if row.get("is_product_id"): product_id_found.append(item_obj)
+                    else: found.append(item_obj)
 
         except Exception as e:
             if log_func: log_func(f"  ⚠️ Regex-Recovery 오류: {e}")
             
-        # 고분자(polymer) 전용 논리적 행 결합 보강 엔진 이식
         for item in found:
             target_cas = item["cas"]
             cas_line_idx = -1
@@ -2015,94 +1807,41 @@ class MSDSEngineV6:
                 if target_cas in pl["text"]:
                     cas_line_idx = idx
                     break
-            
             is_polymer_candidate = False
             polymer_lines = []
             if cas_line_idx != -1:
-                # 위/아래 3줄 범위 내에서 polymer/고분자 키워드를 가진 줄을 찾음
                 start_idx = max(0, cas_line_idx - 3)
                 end_idx = min(len(physical_lines), cas_line_idx + 4)
-                
-                target_indices = []
-                for idx in range(start_idx, end_idx):
-                    pl_text = physical_lines[idx]["text"].lower()
-                    if "polymer" in pl_text or "고분자" in pl_text:
-                        target_indices.append(idx)
-                        
+                target_indices = [idx for idx in range(start_idx, end_idx) if any(k in physical_lines[idx]["text"].lower() for k in ["polymer", "고분자"])]
                 if target_indices:
                     is_polymer_candidate = True
-                    min_idx = min([cas_line_idx] + target_indices)
-                    max_idx = max([cas_line_idx] + target_indices)
-                    polymer_lines = physical_lines[min_idx:max_idx+1]
+                    polymer_lines = physical_lines[min([cas_line_idx] + target_indices):max([cas_line_idx] + target_indices)+1]
             
             current_pct = item.get("percentage", "미기재%")
-            is_imperfect_pct = current_pct == "미기재%" or "~" not in current_pct or current_pct.startswith("≥") or current_pct.startswith("<")
-            
-            if is_polymer_candidate and (is_imperfect_pct or "polymer" in item.get("name", "").lower()):
+            if is_polymer_candidate and (current_pct == "미기재%" or "~" not in current_pct or current_pct.startswith("≥") or current_pct.startswith("<") or "polymer" in item.get("name", "").lower()):
                 if polymer_lines:
                     nearby_text = "\n".join([pl["text"] for pl in polymer_lines])
-                    
                     cas_pos = nearby_text.find(target_cas)
-                    if cas_pos != -1:
-                        target_text = nearby_text[cas_pos:]
-                    else:
-                        target_text = nearby_text
-                        
-                    clean_nearby = target_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
-                    clean_nearby = re.sub(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', ' ', clean_nearby)
-                    clean_nearby = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', clean_nearby)
-                    clean_nearby = re.sub(r'\b20[0-2]\d년?\b', ' ', clean_nearby)
-                    
-                    # 줄바꿈으로 쪼개진 함량 범위(예: 1 이상 ~\n 10 % 미만)를 한 줄로 평탄화
-                    flat_nearby = re.sub(r'\s+', ' ', clean_nearby)
-                    
-                    nums = [float(n) for n in re.findall(r'\d+\.?\d*', flat_nearby)]
-                    valid_nums = []
-                    for n in nums:
-                        n_val = int(n) if n.is_integer() else n
-                        if 0.01 <= n_val <= 100.0:
-                            valid_nums.append(n_val)
-                            
+                    target_text = nearby_text[cas_pos:] if cas_pos != -1 else nearby_text
+                    clean_nearby = re.sub(r'(?<![\d-])(\d{2,7}-\d{2}-\d|\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b|\b20[0-2]\d년?\b)(?![\d-])', ' ', target_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하"))
+                    nums = [float(n) for n in re.findall(r'\d+\.?\d*', re.sub(r'\s+', ' ', clean_nearby))]
+                    valid_nums = [int(n) if n.is_integer() else n for n in nums if 0.01 <= n <= 100.0]
                     best_pct = "미기재%"
                     if len(valid_nums) == 2:
-                        n1, n2 = min(valid_nums), max(valid_nums)
-                        is_less = "미만" in flat_nearby or "<" in flat_nearby
-                        s_sym = ""
-                        if is_less:
-                            if abs(float(n2) - 1.0) < 1e-9:
-                                s_sym = "<"
-                        if s_sym:
-                            best_pct = f"{n1}~{s_sym}{n2}%"
-                        else:
-                            best_pct = f"{n1}~{n2}%"
+                        best_pct = f"{min(valid_nums)}~<{max(valid_nums)}%" if ("미만" in clean_nearby or "<" in clean_nearby) and abs(float(max(valid_nums)) - 1.0) < 1e-9 else f"{min(valid_nums)}~{max(valid_nums)}%"
                     elif len(valid_nums) == 1:
-                        n1 = valid_nums[0]
-                        is_less = "미만" in flat_nearby or "<" in flat_nearby
-                        is_more = "이상" in flat_nearby or ">" in flat_nearby or "≥" in flat_nearby
-                        pref = "<" if is_less else ("≥" if is_more else "")
-                        best_pct = f"{pref}{n1}%"
-                        
+                        best_pct = f"{'<' if '미만' in clean_nearby or '<' in clean_nearby else ('≥' if '이상' in clean_nearby or '>' in clean_nearby or '≥' in clean_nearby else '')}{valid_nums[0]}%"
                     if best_pct != "미기재%":
                         item["percentage"] = best_pct
                         item["content"] = best_pct
                         item["combined_format"] = f"{target_cas}({best_pct})"
-                        if log_func: log_func(f"   [고분자 결합 엔진] CAS {target_cas} -> 함량 {best_pct} 복구 완착.")
-                    
-                    polymer_words = []
-                    for pl in polymer_lines:
-                        if not cas_pattern.search(pl["text"]) and not cont_pattern.search(pl["text"]):
-                            polymer_words.append(pl["text"])
-                    
+                    polymer_words = [pl["text"] for pl in polymer_lines if not cas_pattern.search(pl["text"]) and not cont_pattern.search(pl["text"])]
                     if polymer_words:
-                        combined_name = " ".join(polymer_words)
-                        combined_name = re.sub(r'\s+', ' ', combined_name).strip()
-                        combined_name = combined_name.replace("ac rylate", "acrylate").replace("ac- rylate", "acrylate")
-                        combined_name = combined_name.replace("-e thylhexyl", "-ethylhexyl").replace("acrylate-s tyrene", "acrylate-styrene")
+                        combined_name = re.sub(r'\s+', ' ', " ".join(polymer_words)).strip().replace("ac rylate", "acrylate").replace("ac- rylate", "acrylate").replace("-e thylhexyl", "-ethylhexyl").replace("acrylate-s tyrene", "acrylate-styrene")
                         item["name"] = combined_name
                         item["chemical_name"] = combined_name
 
-        if not found and product_id_found:
-            found.extend(product_id_found)
+        if not found and product_id_found: found.extend(product_id_found)
         return found, inherited_x_range
 
     def extract_section3_images(self, pdf_path, log_func=None):
@@ -2621,10 +2360,10 @@ def run_v6_automated_quality_check():
         if unicodedata.normalize("NFKC", res_val) != unicodedata.normalize("NFKC", expected):
             raise RuntimeError(f"[품질 검증 오류] '{input_str}' -> '{res_val}' (기대값: '{expected}')")
 
-try:
-    run_v6_automated_quality_check()
-except Exception as e:
-    raise RuntimeError(f"품질 체크 실패로 V6 엔진 로드 차단: {e}")
+# try:
+#     run_v6_automated_quality_check()
+# except Exception as e:
+#     raise RuntimeError(f"품질 체크 실패로 V6 엔진 로드 차단: {e}")
 
 # ----------------------------------------------------------------------
 # 테스트 및 회귀 검증 전용 함수군
@@ -2880,8 +2619,17 @@ def run_1_to_7_production_test_cases():
         print("==================================================")
         return False
 
+# ==============================================================================
+# 🛠️ [Chunk 09] msds_engine_v6.py ➔ 최하단 메인 런타임 제어반 격리 영역
+# ==============================================================================
 if __name__ == "__main__":
+    # 🚨 [소장님 지시 완착]: 임포트 마찰을 일으키던 불심검문 차단기를 독립 실행 시에만 구동되도록 격리 이주
+    try:
+        run_v6_automated_quality_check()
+    except Exception as e:
+        print(f"🚨 품질 체크 실패로 V6 엔진 차단: {e}")
+        sys.exit(1)
+
     self_test_regression()
     run_production_integrity_test_cases()
-    # run_005_천칭_test_case() # run_1_to_7_production_test_cases와 Paddle 자원 충돌(데드락) 예방 차원에서 주석 처리
     run_1_to_7_production_test_cases()
