@@ -481,7 +481,7 @@ class MSDSEngineV6:
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
 
-    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None):
+    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
         
         pn_fallback = hybrid_pn
@@ -502,7 +502,10 @@ class MSDSEngineV6:
             "신호등": "🔴",
             "used_engine": "error_isolation",
             "integrity_score": 0,
-            "integrity_reason": "[품질점수: 0점] ➔ [❌추출실패]"
+            "integrity_reason": "[품질점수: 0점] ➔ [❌추출실패]",
+            "doc_type": doc_type if doc_type else "디지털",
+            "product_engine": product_engine if product_engine else "제미나이",
+            "comp_engine": comp_engine if comp_engine else "제미나이"
         }
 
     def process_msds_pipeline(self, pdf_path, log_func=None):
@@ -516,6 +519,10 @@ class MSDSEngineV6:
         """
         대장 키 단독 직렬 분쇄 메인 파이프라인 실체 (오류는 외부 쉴드에서 격리 수거)
         """
+        # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
+        original_log_func = log_func
+        log_func = None
+
         start_time = time.time()
         
         # 가동 직전 형상 무결성 전수 조사 실시
@@ -549,6 +556,12 @@ class MSDSEngineV6:
             doc.close()
         except:
             cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
+
+        # 1선 가동 직후 문서 유형 판별
+        raw_text = full_text_for_grounding
+        doc_type = "디지털" if len(raw_text.strip()) >= 500 else "스캔본"
+        if original_log_func:
+            original_log_func(f"🚀 [{doc_type} 문서] MSDSEngineV6 엔진 가동: {os.path.basename(pdf_path)}")
 
         # [1단계 - 파일명 파싱 (괄호 안 진짜 상업용 명칭 수거)]
         filename = os.path.basename(pdf_path)
@@ -601,6 +614,7 @@ class MSDSEngineV6:
         }
 
         hybrid_pn = ""
+        product_engine = "제미나이"
         try:
             # 명칭 오인 결선 수정: call_llm_router를 사용하며 is_scanned_strict 신호 전달
             result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
@@ -609,6 +623,11 @@ class MSDSEngineV6:
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
                     hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
                     hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
+                engine_label = result.get("actual_engine_label", "gemini")
+                if engine_label == "deepseek":
+                    product_engine = "딥시크"
+                else:
+                    product_engine = "제미나이"
         except Exception as e:
             if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
             hybrid_pn = ""
@@ -756,12 +775,11 @@ class MSDSEngineV6:
             is_scan_doc = (len(full_text_for_grounding.strip()) < 500) 
             
             if is_scan_doc:
-                if log_func: log_func("⚠️ [스캔본 감지] 1선 성분 미검출. 이미지 정밀 구출을 위해 AI 관로를 즉시 개방합니다.")
-                # 스캔본인 경우 격리하지 않고 AI 정밀 구출 선로로 연결
-                return self._trigger_ai_extraction(pdf_path, log_func=log_func, hybrid_pn=hybrid_pn)
+                # 스캔본인 경우 격리하지 않고 AI 정밀 구출 선로로 연결 (진짜 log_func인 original_log_func 전달)
+                return self._trigger_ai_extraction(pdf_path, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine)
             else:
-                if log_func: log_func("⚠️ [무결성 가드레일] 디지털 문서에서 성분 미검출. 공정을 안전하게 종료합니다.")
-                return self._get_graceful_error_dict(pdf_path, "1선 수거 자산 전무 및 AI 개입 배제 인터락 발동", log_func=log_func, hybrid_pn=hybrid_pn)
+                if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+                return self._get_graceful_error_dict(pdf_path, "1선 수거 자산 전무 및 AI 개입 배제 인터락 발동", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
 # ==============================================================================
 # ==============================================================================
         
@@ -845,19 +863,26 @@ class MSDSEngineV6:
             "신호등": "🟡" if (has_invalid_cas or not product_name) else "🟢",
             "used_engine": gui_engine_name,
             "integrity_score": score,
-            "integrity_reason": integrity_reason
+            "integrity_reason": integrity_reason,
+            "doc_type": doc_type,
+            "product_engine": product_engine if product_engine else "제미나이",
+            "comp_engine": "정규식"
         }
         
         traffic_light = res_obj.get("신호등", "⚪")
-        if log_func:
+        if original_log_func:
             if refined_comps:
-                log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
-                log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps]))
+                original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+                original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps]))
             else:
-                log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (사유: 자산 미검출)")
+                original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
         return res_obj
 
-    def _trigger_ai_extraction(self, pdf_path, log_func=None, hybrid_pn=""):
+    def _trigger_ai_extraction(self, pdf_path, log_func=None, hybrid_pn="", doc_type=None, product_engine=None):
+        # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
+        original_log_func = log_func
+        log_func = None
+
         # AI 정밀 구출 관로 가동
         start_time = time.time()
         is_scanned_strict = True
@@ -995,14 +1020,16 @@ class MSDSEngineV6:
                             if log_func: log_func(f" ⚠️ [롤백 회군 호출 실패] {rollback_err}")
                     
                     if not rollback_success:
-                        return self._get_graceful_error_dict(pdf_path, "외부 AI 호출 실패 또는 정제 에러 (롤백 포함)", log_func=log_func, hybrid_pn=hybrid_pn)
+                        if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+                        return self._get_graceful_error_dict(pdf_path, "외부 AI 호출 실패 또는 정제 에러 (롤백 포함)", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
                     
             elif res_acc.get("status") in ["FALLBACK_FULL", "ERROR"]:
-                return self._get_graceful_error_dict(pdf_path, f"가속 크롭 예외: {res_acc.get('reason')}", log_func=log_func, hybrid_pn=hybrid_pn)
+                if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+                return self._get_graceful_error_dict(pdf_path, f"가속 크롭 예외: {res_acc.get('reason')}", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
         
         except Exception as acc_fault:
-            if log_func: log_func(f"⚠️ [가속 파이프라인 장애 발생] {acc_fault}")
-            return self._get_graceful_error_dict(pdf_path, f"가속 파이프라인 장애: {acc_fault}", log_func=log_func, hybrid_pn=hybrid_pn)
+            if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+            return self._get_graceful_error_dict(pdf_path, f"가속 파이프라인 장애: {acc_fault}", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
 
         # AI가 JSON 키 값을 "성분", "components" 등으로 오독/변조해오는 현상 방어 정규화
         if ai_res:
@@ -1033,7 +1060,8 @@ class MSDSEngineV6:
             components = ai_res.get("구성성분", [])
             reason = ai_res.get("교정_사유", "AI 완착")
         else:
-            return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않음", log_func=log_func, hybrid_pn=hybrid_pn)
+            if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+            return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않음", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
 
         components = self.refine_msds_components_strict(components)
         
@@ -1055,7 +1083,8 @@ class MSDSEngineV6:
             comp_parts.append(f"{c['cas']}({c['content']})")
                 
         if not comp_parts:
-            return self._get_graceful_error_dict(pdf_path, "유효한 성분 데이터가 존재하지 않음", log_func=log_func, hybrid_pn=hybrid_pn)
+            if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+            return self._get_graceful_error_dict(pdf_path, "유효한 성분 데이터가 존재하지 않음", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
 
         comp_str = "; ".join(comp_parts)
         product_name = hybrid_pn
@@ -1093,13 +1122,17 @@ class MSDSEngineV6:
             
         integrity_reason = f"[품질점수: {score}점] ➔ " + " ".join(reason_tags)
         
+        comp_engine = "정규식" if used_engine == "local_bypass" else "제미나이"
         res_obj = {
             "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
             "교정_사유": reason,
             "신호등": "🟡" if (has_invalid_cas or not product_name) else "🟢",
             "used_engine": gui_engine_name,
             "integrity_score": score,
-            "integrity_reason": integrity_reason
+            "integrity_reason": integrity_reason,
+            "doc_type": doc_type,
+            "product_engine": product_engine if product_engine else "제미나이",
+            "comp_engine": comp_engine
         }
         
         traffic_light = res_obj.get("신호등", "⚪")
@@ -2865,6 +2898,14 @@ def run_1_to_7_production_test_cases():
     all_success = True
     print(f"[*] 총 {len(target_files)}권의 자재가 레일에 진입합니다.")
     
+    total_files = 0
+    digital_count = 0
+    image_count = 0
+    deepseek_product_count = 0
+    gemini_product_count = 0
+    regex_comp_count = 0
+    gemini_comp_count = 0
+    
     for idx, f_path in enumerate(target_files, 1):
         filename = os.path.basename(f_path)
         print(f"\n[{idx}/7] 레일 격발: {filename}")
@@ -2880,6 +2921,25 @@ def run_1_to_7_production_test_cases():
             if res.get("신호등") != "🟢":
                 print(f"  ⚠️ 주의: 신호등이 초록불이 아닙니다. ({res.get('신호등')})")
                 all_success = False
+                
+            total_files += 1
+            d_type = res.get("doc_type", "디지털")
+            if d_type == "디지털":
+                digital_count += 1
+            else:
+                image_count += 1
+                
+            p_eng = res.get("product_engine", "제미나이")
+            if p_eng == "딥시크":
+                deepseek_product_count += 1
+            else:
+                gemini_product_count += 1
+                
+            c_eng = res.get("comp_engine", "정규식")
+            if c_eng == "정규식":
+                regex_comp_count += 1
+            else:
+                gemini_comp_count += 1
         except Exception as e:
             print(f"  ❌ 예외 크래시 발생: {e}")
             all_success = False
@@ -2888,11 +2948,27 @@ def run_1_to_7_production_test_cases():
     if all_success:
         print("🟢 [완착 성공] 1~7번 모든 자재가 오독 없이 초록불(🟢)로 완착되었습니다.")
         print("==================================================")
-        return True
     else:
         print("🔴 [일부 경고] 1~7번 자재 중 일부가 초록불(🟢) 안착에 실패했습니다.")
         print("==================================================")
-        return False
+        
+    # ==============================================================================
+    # 🛠️ [Chunk 19] msds_engine_v6.py ➔ 최종 리포트 패치 (심플/명확)
+    # ==============================================================================
+    report_text = f"""
+MSDS 추출 가동 현황 보고
+
+총 처리 파일 : {total_files}건
+
+- 문서종류 : 디지털 {digital_count}건, 이미지 {image_count}건
+- 제품명   : 딥시크 {deepseek_product_count}건, 제미나이 {gemini_product_count}건
+- 구성성분 : 정규식 {regex_comp_count}건, 제미나이 {gemini_comp_count}건
+
+추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요.
+"""
+    print(report_text)
+    # ==============================================================================
+    return all_success
 
 # ==============================================================================
 # 🛠️ [Chunk 09] msds_engine_v6.py ➔ 최하단 메인 런타임 제어반 격리 영역
