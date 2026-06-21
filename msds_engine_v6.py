@@ -106,6 +106,46 @@ cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
 cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
 cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
 
+# ==============================================================================
+# 🛠️ [Chunk 21] msds_engine_v6.py ➔ 일본식 부동호 및 함량 보존 정제 로직
+# ==============================================================================
+def normalize_concentration(raw_val):
+    """
+    함량 값에서 일본식 부동호와 조사를 보존하면서 순수 수치값만 추출/정리
+    """
+    import re
+    # 범위 기호(~, -, ∼, ～, to)가 들어있는 범위형 수치는 ODL/정규식 범위형 파서로 넘겨야 하므로 정제 제외
+    if any(k in raw_val for k in ["~", "-", "∼", "～", "to"]):
+        return raw_val
+        
+    # 1. 보존할 부동호 기호 정의
+    symbols = r"([><=≧≦])?"
+    # 2. 숫자와 % 보존
+    digits = r"(\d+(?:\.\d+)?)\s*%"
+    
+    # 정규식 구성: 부동호 + 숫자 + % + (이상/미만 등)
+    pattern = rf"{symbols}\s*{digits}\s*(이상|미만|이하|초과)?"
+    
+    match = re.search(pattern, raw_val)
+    if match:
+        # 그룹별로 매칭하여 깔끔하게 재조립
+        symbol = match.group(1) or ""
+        value = match.group(2)
+        suffix = match.group(3) or ""
+        
+        # 110% 초과 모순 노이즈 필터링 적용 (기존 룰 및 한계치 승계)
+        try:
+            val_num = float(value)
+            if val_num > 110:
+                return "미기재%"
+        except:
+            pass
+            
+        return f"{symbol}{value}%{suffix}".strip()
+        
+    return raw_val # 매칭 실패 시 원본 반환 (수동 검증용)
+# ==============================================================================
+
 def load_prompt(prompt_type, version):
     mapping = {
         "vision_extractor": "prompt_vision_extractor",
@@ -1365,6 +1405,21 @@ class MSDSEngineV6:
         return "\n".join(text_list)
 
     def _normalize_single_content(self, content_str):
+        # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
+        # 범위 기호(~, -, ∼, ～, to)가 들어있는 범위형 수치는 기존 파서를 타도록 정제에서 제외
+        is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
+        
+        symbols = r"([><=≧≦])?"
+        digits = r"(\d+(?:\.\d+)?)\s*%"
+        pattern = rf"{symbols}\s*{digits}\s*(이상|미만|이하|초과)?"
+        
+        if not is_range and re.search(pattern, str(content_str)):
+            normalized = normalize_concentration(str(content_str))
+            # 수치 기호(부동호)나 조사 접미사가 실제 가공 과정에 보존된 경우 조기 반환하여 하류의 기호 유실을 예방
+            has_special = any(sym in normalized for sym in ["≧", "≦", "이상", "미만", "이하", "초과"])
+            if has_special or normalized == "미기재%":
+                return normalized
+
         content_str = msds_utils_v3.clean_content_text(str(content_str))
         raw = str(content_str).strip()
         if not raw: return "미기재%"

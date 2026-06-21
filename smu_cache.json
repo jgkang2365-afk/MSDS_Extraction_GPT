@@ -12,6 +12,9 @@
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
         "v2.0_Clean": {
             "product_name": "RED No. 227",
             "raw_content": "3567-66-6(미기재%)",

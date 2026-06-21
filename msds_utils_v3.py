@@ -187,3 +187,21 @@ def clean_percentage(content_str):
     v1 = float(nums[0])
     v1_str = int(v1) if v1.is_integer() else v1
     return f"{prefix}{v1_str}{suffix}"
+
+# ==============================================================================
+# 🛠️ [Chunk 22] msds_utils.py ➔ 코어 유틸리티: 함량 데이터 보존 로직 추가
+# ==============================================================================
+def clean_text_for_msds(text, mode="standard"):
+    """
+    모드 전환형 정제 로직: 
+    mode="standard" -> 기존대로 기호 삭제
+    mode="concentration" -> 일본식 부동호(>, <, =) 보존
+    """
+    if mode == "concentration":
+        # 수치, %, 그리고 부동호만 남기고 나머지만 제거
+        return re.sub(r'[^0-9\.\s%><=≧≦]', '', text)
+    
+    # 기존 standard 모드 (기존 정제 방식 유지)
+    return re.sub(r'[^\w\s]', '', text)
+# ==============================================================================
+
