@@ -1005,7 +1005,15 @@ class ExtractionWorker(QThread):
         self.is_running = False
 
     def run(self):
-        stats = {"regex": 0, "flash": 0, "bulldozer": 0}
+        stats = {
+            "total_files": 0,
+            "digital_count": 0,
+            "image_count": 0,
+            "deepseek_product_count": 0,
+            "gemini_product_count": 0,
+            "regex_comp_count": 0,
+            "gemini_comp_count": 0
+        }
         total = len(self.pdf_paths)
         for i, path in enumerate(self.pdf_paths):
             if not self.is_running: break
@@ -1056,7 +1064,24 @@ class ExtractionWorker(QThread):
                         }
                         self.result_signal.emit(res_data)
                         self.progress_signal.emit(int((i + 1) / total * 100))
-                        stats["regex"] += 1
+                        stats["total_files"] += 1
+                        d_type = cached_data.get("doc_type", "디지털")
+                        if d_type == "디지털":
+                            stats["digital_count"] += 1
+                        else:
+                            stats["image_count"] += 1
+                            
+                        p_eng = cached_data.get("product_engine", "제미나이")
+                        if p_eng == "딥시크":
+                            stats["deepseek_product_count"] += 1
+                        else:
+                            stats["gemini_product_count"] += 1
+                            
+                        c_eng = cached_data.get("comp_engine", "정규식")
+                        if c_eng == "정규식":
+                            stats["regex_comp_count"] += 1
+                        else:
+                            stats["gemini_comp_count"] += 1
                         continue
 
                 self.update_log_signal.emit("="*20 + f" [{fn} 하이브리드 가속 가동] " + "="*20)
@@ -1160,7 +1185,10 @@ class ExtractionWorker(QThread):
                     "used_engine": ext_res.get("used_engine", "regex"),
                     "engine_version": engine.VERSION,
                     "integrity_score": ext_res.get("integrity_score", 100),
-                    "integrity_reason": ext_res.get("integrity_reason", "")
+                    "integrity_reason": ext_res.get("integrity_reason", ""),
+                    "doc_type": ext_res.get("doc_type", "디지털"),
+                    "product_engine": ext_res.get("product_engine", "제미나이"),
+                    "comp_engine": ext_res.get("comp_engine", "정규식")
                 }
                 
                 # 캐시에 저장 요청
@@ -1172,11 +1200,24 @@ class ExtractionWorker(QThread):
                 res_data["status"] = "추출 완료"
                 
                 # 통계 집계
-                engine_type = res_data.get("used_engine", "regex")
-                if engine_type in stats:
-                    stats[engine_type] += 1
+                stats["total_files"] += 1
+                d_type = ext_res.get("doc_type", "디지털")
+                if d_type == "디지털":
+                    stats["digital_count"] += 1
                 else:
-                    stats["regex"] += 1
+                    stats["image_count"] += 1
+                    
+                p_eng = ext_res.get("product_engine", "제미나이")
+                if p_eng == "딥시크":
+                    stats["deepseek_product_count"] += 1
+                else:
+                    stats["gemini_product_count"] += 1
+                    
+                c_eng = ext_res.get("comp_engine", "정규식")
+                if c_eng == "정규식":
+                    stats["regex_comp_count"] += 1
+                else:
+                    stats["gemini_comp_count"] += 1
 
                 self.result_signal.emit(res_data)
                 self.progress_signal.emit(int((i + 1) / total * 100))
@@ -1192,6 +1233,11 @@ class ExtractionWorker(QThread):
                 }
                 self.result_signal.emit(err_data)
                 self.progress_signal.emit(int((i + 1) / total * 100))
+                
+                stats["total_files"] += 1
+                stats["digital_count"] += 1
+                stats["gemini_product_count"] += 1
+                stats["gemini_comp_count"] += 1
             
             # [지능형 속도 조절] 파일 간 최소 1초의 간격을 두어 RPM 제한 회피
             time.sleep(1.0)
@@ -5877,17 +5923,23 @@ class SMUGUI(QMainWindow):
         self.lbl_extraction_progress.setText(f"추출 완료: {len(self.pdf_paths)}건") # [NEW] 완료 표시
         self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
         
-        summary = (
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "   📊 MSDS 추출 가동 현황 보고\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"✅ 총 처리 파일: {sum(stats.values())}건\n\n"
-            f"🔹 REGEX (정규식/캐시): {stats.get('regex', 0)}건\n"
-            f"🔸 FLASH (Gemini 2.5): {stats.get('flash', 0)}건\n"
-            f"🚀 BULLDOZER (Fallback): {stats.get('bulldozer', 0)}건\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "추출된 데이터를 확인/수정한 후 [2단계 검증]을 진행하세요."
-        )
+        total_files = stats.get("total_files", 0)
+        digital_count = stats.get("digital_count", 0)
+        image_count = stats.get("image_count", 0)
+        deepseek_product_count = stats.get("deepseek_product_count", 0)
+        gemini_product_count = stats.get("gemini_product_count", 0)
+        regex_comp_count = stats.get("regex_comp_count", 0)
+        gemini_comp_count = stats.get("gemini_comp_count", 0)
+
+        summary = f"""MSDS 추출 가동 현황 보고
+
+총 처리 파일 : {total_files}건
+
+- 문서종류 : 디지털 {digital_count}건, 이미지 {image_count}건
+- 제품명   : 딥시크 {deepseek_product_count}건, 제미나이 {gemini_product_count}건
+- 구성성분 : 정규식 {regex_comp_count}건, 제미나이 {gemini_comp_count}건
+
+추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요."""
         QMessageBox.information(self, "추출 완료 리포트", summary)
         
         # [V17.3.0.8] 마스터 DB 로드 에러 사후 안내 (주님 지침: 1단계 종료 후 일괄 보고)
