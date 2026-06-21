@@ -5685,6 +5685,7 @@ class SMUGUI(QMainWindow):
             self.lbl_watermark.hide()
         try:
             f_hash = data.get("f_hash")
+            fn = data.get("filename", "")
             # 🚨 [V17.3.3.3] 기존 행 업데이트 로직 (Selective Extraction 대응)
             existing_row = -1
             if self.table.rowCount() > 0:

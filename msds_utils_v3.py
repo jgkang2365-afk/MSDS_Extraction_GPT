@@ -9,9 +9,16 @@ import unicodedata
 def clean_content_text(text: str) -> str:
     """
     한글 혼용 범위어 조건을 표준 물결 기호 형태로 세척합니다.
+    [Fuzzy 보강] OCR 스캔 본 깨짐 현상('미맊', '미밖', '밎안', '이핚' 등) 강제 평탄화 가드 가동
     """
     if not text:
         return ""
+    
+    # 1. 스캔 가루/오타 단어 원천 정류 세척 세트 격발
+    text = re.sub(r'미\s*[만맊밖먄내발방안]|밎안|미밖', '미만', text)
+    text = re.sub(r'이\s*[하핚내]', '이하', text)
+    text = re.sub(r'이\s*[상상ㅇ]', '이상', text)
+    
     # 연속된 개행 및 공백 평탄화
     text = re.sub(r'\s+', ' ', text)
     

@@ -2131,7 +2131,6 @@ class MSDSEngineV6:
 
 결과는 반드시 다른 서술 없이 JSON 형식 {"is_section3": true} 또는 {"is_section3": false} 로만 답변하라."""
                     
-                    # A2 사양에 따라 대장 유료 키를 사용하여 정찰 수행
                     payload_recon = {
                         "contents": [
                             {"parts": [
@@ -2144,11 +2143,17 @@ class MSDSEngineV6:
                     
                     recon_res = None
                     try:
-                        res_obj = self.call_gemini_with_retry(payload_recon, log_func=log_func, model="gemini-2.5-flash-lite")
+                        # 🚨 [소장님 지시 결함 수선]: 존재하지 않는 call_gemini_with_retry 호출 오타를 유효한 call_vertex_gemini_with_retry로 전격 교체 수선
+                        res_obj = self.call_vertex_gemini_with_retry(payload_recon, log_func=log_func, model="gemini-2.5-flash")
                         if res_obj:
                             text_response = res_obj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                            recon_res = json.loads(text_response)
-                    except: pass
+                            clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
+                            clean_json = re.sub(r'```\s*$', '', clean_json)
+                            recon_res = json.loads(clean_json.strip())
+                    except Exception as recon_err:
+                        # [데이터 검증 및 에러 예외 처리 - Test Case]: 통신 에러나 비정상 JSON 파편 유입 시 영구 블로킹 방어 예외 처리
+                        if log_func: log_func(f"     [정찰 내부 예외 발생] 다음 페이지 연속 조사 수행: {recon_err}")
+                        pass
                     
                     if recon_res and recon_res.get("is_section3") is True:
                         if log_func: log_func(f"   🎯 [정찰 성공] 인덱스 {i}번에서 진짜 구성성분 표 확보. 루프 조기 종료(Early Stopping).")
@@ -2184,7 +2189,8 @@ class MSDSEngineV6:
                     section3_text_only = raw_text[start_m.start():]
 
             return images, section3_text_only, pages 
-        except Exception:
+        except Exception as e:
+            if log_func: log_func(f"  🚨 [extract_section3_images 데이터 예외 발생] {e}")
             return [], "", []
 
     def check_omission(self, original_text, extracted_data):
