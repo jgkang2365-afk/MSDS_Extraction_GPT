@@ -5606,6 +5606,21 @@ class SMUGUI(QMainWindow):
             except: pass
 
     def run_extraction(self):
+        # 🚨 [과거 오염 장부 전면 소각 (Cache Purge)] 파일 정산 공정 시작부 국소 리셋 회로 결착
+        for cache_file in ["msds_cache_registry.json", "smu_cache.json"]:
+            if os.path.exists(cache_file):
+                try:
+                    os.remove(cache_file)
+                    self.log(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_file}")
+                except Exception as ex:
+                    self.log(f"[!] 캐시 파일 삭제 실패: {ex}")
+        
+        # 내부 메모리 캐시 사전 및 결과 강제 리셋
+        if hasattr(self, 'cache') and isinstance(self.cache, dict):
+            self.cache.clear()
+            self.save_cache() # 파일이 비어있는 상태로 강제 물리 갱신
+            self.log("[*] 내부 캐시 메모리가 완전히 리셋되었습니다.")
+
         if not hasattr(self, 'pdf_paths') or not self.pdf_paths:
             QMessageBox.warning(self, "경고", "먼저 분석할 PDF 파일을 선택하세요.")
             return
@@ -5706,8 +5721,17 @@ class SMUGUI(QMainWindow):
             elif emoji == "🟡": bg_color = QColor("#fff9db")
             elif emoji == "🟢": bg_color = QColor("#e1f7d5")
             
-            # [수정] 행 번호보다는 데이터의 순수 순번을 위해 row+1 사용 (정렬 후에도 고유하도록)
-            combined_idx = f"{emoji} {row + 1}"
+            # [수정] 파일명에서 순번 추출 시도 (정렬 후에도 고유하게 유지되도록)
+            match_no = re.match(r"^(\d+)", fn)
+            if match_no:
+                seq_num = f"{int(match_no.group(1)):03d}"
+            else:
+                try:
+                    file_idx = next(idx for idx, p in enumerate(self.pdf_paths) if os.path.basename(p) == fn)
+                    seq_num = f"{file_idx + 1:03d}"
+                except StopIteration:
+                    seq_num = "999"
+            combined_idx = f"{emoji} {seq_num}"
             
             item_seq = QTableWidgetItem(combined_idx)
             item_seq.setTextAlignment(Qt.AlignCenter)
@@ -6311,8 +6335,16 @@ class SMUGUI(QMainWindow):
             
         # 신호등 이모지 결정
         emoji = data.get("신호등", "⚪")
-        # 순번
-        seq_num = str(start_row // N + 1) if N > 1 else str(start_row + 1)
+        # [수정] 파일명에서 순번 추출 시도 (정렬 및 리프레시 시 고유한 파일 번호를 유지하도록)
+        match_no = re.match(r"^(\d+)", fn)
+        if match_no:
+            seq_num = f"{int(match_no.group(1)):03d}"
+        else:
+            try:
+                file_idx = next(idx for idx, p in enumerate(self.pdf_paths) if os.path.basename(p) == fn)
+                seq_num = f"{file_idx + 1:03d}"
+            except StopIteration:
+                seq_num = "999"
         
         # 배경색 결정 (신호등 상태 기준)
         bg_color = None
@@ -7411,8 +7443,12 @@ class SMUGUI(QMainWindow):
                 if fn not in table_dict or fn in written_files:
                     continue
                 
-                td = table_dict[fn]
-                curr_row = st_row + saved_count # 시각적 순서대로 연속된 행에 기록
+                # [수정] 파일의 본래 순서 인덱스를 기반으로 엑셀 행을 1:1 매핑 (밀림 현상 방지)
+                try:
+                    file_idx = next(i for i, path in enumerate(self.pdf_paths) if os.path.basename(path) == fn)
+                    curr_row = st_row + file_idx
+                except StopIteration:
+                    curr_row = st_row + saved_count
                 
                 # [V12.7] 매핑된 모든 컬럼에 데이터 기입 (유연한 확장)
                 for key, c_idx in mapping.items():

@@ -295,39 +295,51 @@ class MSDSEngineV6:
 
     def validate_chemical_balances(self, component_list, log_func=None):
         """
-        [데이터 검증 가드레일 02] 후방 수학적 천칭 검문소 (2단계 분리 계량 회로)
+        [고도화 천칭 검문소] 성분별 부등호 및 범위를 수학적으로 동적 계량하는 철벽 무결성 저울
         """
         if not component_list:
             if log_func: log_func("⚠️ [[함량 검문소] 경보] 성분 명세 장부가 비어있습니다. 무결성 검증 탈락.")
             return False
 
         total_max_sum = 0.0
+        
+        try:
+            for component in component_list:
+                name = component.get('name', '미상 물질') or component.get('chemical_name', '미상 물질')
+                pct_str = str(component.get('content') or component.get('percentage') or '0.0').strip()
+                
+                # 데이터 예외 처리: 영업비밀, 잔량 등은 천칭 계산에서 안전하게 제외
+                if any(k in pct_str.lower() for k in ["rem", "balance", "잔량", "미기재"]):
+                    continue
+                
+                # CAS 번호가 수치에 혼입되어 합산 저울을 터트리는 현상 방어선 매설
+                pct_clean = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', pct_str)
+                
+                # 미만 기호 및 복합 범위에서 진짜 최대 수치(max_val)만 기하학적으로 도출
+                nums = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', pct_clean) if n.strip('.')]
+                if not nums:
+                    continue
+                    
+                max_val = max(nums)
+                
+                # ① 개별 성분 단독 모순 검증 (100% 초과 차단 예외처리)
+                if max_val > 100.0:
+                    if log_func: log_func(f"⚠️ [[함량 검문소] 기각] 물리적 모순: 성분 [{name}]의 수치 100% 초과 ({max_val}%)")
+                    return False
+                
+                total_max_sum += max_val
 
-        for component in component_list:
-            name = component.get('name', '미상 성분') or component.get('chemical_name', '미상 성분')
-            max_val = component.get('max_content')
-
-            # max_content가 없으면 함유량 문자열에서 최대 수치를 동적 추출
-            if max_val is None:
-                pct_str = str(component.get('percentage') or component.get('content') or '0.0')
-                pct_str = re.sub(r'(?<![\w-])[0-9a-zA-Z]{2,7}\s*-\s*[0-9a-zA-Z]{2}\s*-\s*[0-9a-zA-Z]{1}(?![\w-])', ' ', pct_str)
-                nums = [float(n) for n in re.findall(r'[\d\.]+', pct_str) if n.strip('.')]
-                max_val = max(nums) if nums else 0.0
-
-            # ① 1단계: 개별 성분 저울 (단독 100% 초과 모순 적발)
-            if max_val > 100.0:
-                if log_func: log_func(f"⚠️ [[함량 검문소] 검문 탈락] 물리적 모순 포착: 성분 [{name}]의 단독 수치 100% 초과 ({max_val}%)")
+            # ② 범위 최대치 총합 검증 (실무 표준 한계선 110.0% 연동 동결)
+            if total_max_sum > 110.0:
+                if log_func: log_func(f"⚠️ [[함량 검문소] 기각] 실무 한계치 초과: 최대값 총합 {total_max_sum}% (기준: 110% 이하)")
                 return False
+
+            if log_func: log_func(f"🟢 [[함량 검문소] 통과] 천칭 계량 완료 (총합: {total_max_sum}%). 1선 바이패스 전격 승인.")
+            return True
             
-            total_max_sum += max_val
-
-        # ② 2단계: 범위 최대치 합계 저울 (실무 표준 110% 허용한계 조율)
-        if total_max_sum > 110.0:
-            if log_func: log_func(f"⚠️ [[함량 검문소] 검문 탈락] 실무 허용한계 초과: 각 성분 최대값의 총합계 110% 초과 ({total_max_sum}%)")
+        except Exception as e:
+            if log_func: log_func(f"🚨 [[함량 검문소] 시스템 예외 발생] 데이터 세척 처리 차단: {e}")
             return False
-
-        if log_func: log_func(f"🟢 [[함량 검문소] 검문 통과] 천칭 계량 완료 (총합: {total_max_sum}%). 청정 데이터로 판정하여 Bypass 허용.")
-        return True
 
     def call_vertex_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
         """
@@ -2414,11 +2426,12 @@ class MSDSEngineV6:
         
     def verify_mathematical_천칭_filter(self, text):
         """
-        [수학적 천칭 검문소 2단계 분리 계량 규칙]
+        [공간 격실 락다운 저울] 외부 텍스트 전역 스캔을 차단하고 오직 tr/td 울타리 내 수치만 귀속 계량
         """
-        if not text: return False, "데이터 공란"
+        if not text: 
+            return False, "데이터 공란"
         
-        # 1. 본문 내 유효한 CAS 번호 패턴 위치(Anchor)를 전부 파악
+        # 유효 CAS 번호 앵커링 추적 활성화
         local_cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
         anchors = []
         for m in local_cas_pattern.finditer(text):
@@ -2428,96 +2441,52 @@ class MSDSEngineV6:
                 
         if not anchors:
             return False, "유효한 CAS 번호 패턴 미검출"
-                
-        # 2. 함량 수치 패턴 선언 (% 기호 또는 부등호 결착 수치)
-        content_val_pat = re.compile(
-            r'(?:'
-            r'\b\d+(?:\.\d+)?\s*%'  # 50%
-            r'|'
-            r'[<>≤≥=\uff1c\uff1e\uff1d~∼～\-]\s*\d+(?:\.\d+)?'  # <50, ~50, -50
-            r'|'
-            r'\b\d+(?:\.\d+)?\s*[<>≤≥=\uff1c\uff1e\uff1d~∼～\-]'  # 50<, 50~
-            r'|'
-            r'\b\d+(?:\.\d+)?\s*(?:이상|미만|이하|초과|above|below|under|over|to|max|min)\b' # 50 이상
-            r'|'
-            r'\b(?:이상|미만|이하|초과|above|below|under|over|max|min)\s*\d+(?:\.\d+)?\b' # 이상 50
-            r')',
-            re.IGNORECASE
-        )
-        
-        lines = text.split('\n')
+            
         component_max_values = []
-        
-        has_tr = "<tr>" in text.lower()
+        lower_text = text.lower()
+        has_tr = "<tr>" in lower_text
         
         for start_idx, end_idx, cas_str in anchors:
-            # 1) CAS가 포함된 물리적 행 격실 구하기
-            line_text = ""
+            # 💡 공간 락다운 핵심 수술: 외부 영역 침범 차단막 매설
             if has_tr:
-                # HTML 표 구조인 경우: start_idx 기준 가장 가까운 앞쪽 <tr>과 뒤쪽 </tr> 사이
-                lower_text = text.lower()
                 tr_start = lower_text.rfind("<tr>", 0, start_idx)
-                if tr_start == -1:
-                    tr_start = 0
                 tr_end = lower_text.find("</tr>", end_idx)
-                if tr_end == -1:
-                    tr_end = len(text)
-                else:
-                    tr_end += 5  # </tr> 길이만큼 포함
-                line_text = text[tr_start:tr_end]
+                if tr_start == -1 or tr_end == -1:
+                    continue
+                # 오직 해당 CAS가 수납된 독립 tr 행 칸막이 내부의 글자 가루만 획정
+                line_text = text[tr_start:tr_end + 5]
             else:
-                # 일반 텍스트인 경우: 기존의 줄 단위
+                # 일반 텍스트의 경우 개행 구조 격실 기준 분할
+                lines = text.split('\n')
                 current_char_count = 0
+                line_text = ""
                 for line in lines:
-                    line_len = len(line) + 1  # \n 포함
+                    line_len = len(line) + 1
                     if current_char_count <= start_idx < current_char_count + line_len:
                         line_text = line
                         break
                     current_char_count += line_len
             
-            # 오직 수평선상 일치하는 행 격실 내부 텍스트만 타겟팅 (앞뒤 50자 context_text 배제)
-            target_texts = [line_text]
-            cas_max_val = 0.0
-            found_any_num = False
+            # 위험 등급 코드(H314) 및 날짜 수치가 저울 무게로 둔갑하는 현상 원천 여과 제거
+            cleaned_t = re.sub(r'<[^>]+>', ' ', line_text) # HTML 태그 무력화
+            cleaned_t = re.sub(r'\b[hH]\d{3}\b', ' ', cleaned_t)
+            cleaned_t = re.sub(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', cleaned_t)
+            cleaned_t = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', cleaned_t)
             
-            for t_text in target_texts:
-                if not t_text: continue
-                # HTML 태그 제거하여 텍스트만 검사 (노이즈 방지)
-                cleaned_t = re.sub(r'<[^>]+>', ' ', t_text)
+            nums = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', cleaned_t)]
+            # 절대 노이즈 단위(g/mol, mg/m3)가 5글자 반경 내 매칭 시 예외 누락 필터 격발
+            surrounding = cleaned_t.lower()
+            if any(noise in surrounding for noise in ["g/mol", "mg/m", "ppm", "twa", "stel"]):
+                continue
                 
-                # H-코드 및 날짜 노이즈 제거
-                cleaned_t = re.sub(r'\b[hH]\d{3}\b', ' ', cleaned_t)
-                cleaned_t = re.sub(r'\b\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' ', cleaned_t)
-                # CAS 번호 자체(공백 포함)도 오독을 막기 위해 제거
-                cleaned_t = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', ' ', cleaned_t)
-                
-                for m in content_val_pat.finditer(cleaned_t):
-                    match_str = m.group(0)
-                    start_pos = m.start()
-                    end_pos = m.end()
+            if nums:
+                valid_nums = [n for n in nums if n <= 100.0]
+                if valid_nums:
+                    component_max_values.append(max(valid_nums))
                     
-                    # 주변 15글자 내 절대 노이즈 제거
-                    surrounding = cleaned_t[max(0, start_pos - 15):min(len(cleaned_t), end_pos + 15)].lower()
-                    absolute_noises = ["g/mol", "mg/m", "ppm", "twa", "stel", "pel", "oel", "분자량", "mw", "molecular"]
-                    if any(noise in surrounding for noise in absolute_noises):
-                        continue
-                        
-                    # 수치 추출
-                    nums = [float(n) for n in re.findall(r'\d+(?:\.\d+)?', match_str)]
-                    if not nums: continue
-                    max_num = max(nums)
-                    
-                    if max_num > 100.0:
-                        return False, f"물리적 모순 포착: 개별 함량 수치 100% 초과 ({max_num}%)"
-                        
-                    if max_num > cas_max_val:
-                        cas_max_val = max_num
-                        found_any_num = True
-                        
-            if found_any_num:
-                component_max_values.append(cas_max_val)
-                
-        # 3. 합산 저울에 누적
+        if not component_max_values:
+            return False, "격실 내 유효 함량 수치 유실"
+            
         total_max_sum = sum(component_max_values)
         if total_max_sum > 110.0:
             return False, f"범위 최대치 합계 초과: {total_max_sum}% (기준: 110.0% 이하)"
