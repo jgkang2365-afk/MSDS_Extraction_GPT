@@ -1525,6 +1525,10 @@ class MSDSEngineV6:
         return "\n".join(text_list)
 
     def _normalize_single_content(self, content_str):
+        # 🛡️ [데이터 검증 및 에러 예외 처리 - 테스트 케이스] 표 구조 및 줄글 정규식 전 선로 통합 인터락: 이씨 번호 범위형 오독 원천 거세
+        if content_str:
+            content_str = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', str(content_str))
+
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
         is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
         
