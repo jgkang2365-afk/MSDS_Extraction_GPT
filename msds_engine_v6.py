@@ -545,6 +545,20 @@ class MSDSEngineV6:
     def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
         
+        # 🚀 [생산성 고도화] 실패 자재의 내역을 독립된 에러 장부에 실시간 무과금 자동 적출
+        try:
+            log_dir = os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else "."
+            ledger_path = os.path.join(log_dir, "ERROR_ISOLATION_LEDGER.log")
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            filename = os.path.basename(pdf_path)
+            
+            # 데이터 검증 및 안전한 이어쓰기 가드레일 가동
+            with open(ledger_path, "a", encoding="utf-8") as f:
+                f.write(f"[{timestamp}] 파일명: {filename} | 차단사유: {reason_msg}\n")
+        except Exception as file_err:
+            # 파일 쓰기 자체 실패 시 시스템 전체 런타임 크래시를 방지하는 2중 격리벽
+            if log_func: log_func(f" 🚨 [통제소 기록 실패] 로그 장부 기입 중 예외 격발: {file_err}")
+        
         pn_fallback = hybrid_pn
         if not pn_fallback:
             filename = os.path.basename(pdf_path)
