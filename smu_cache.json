@@ -1,12 +1,12 @@
 {
-    "cdf98dde21242d6c4c917c3c33e4e921aa7b87cfbbd6a51037811e62fb5c8d4e": {
-        "f_hash": "cdf98dde21242d6c4c917c3c33e4e921aa7b87cfbbd6a51037811e62fb5c8d4e",
-        "product_name": "Perchloric acid(70%)",
+    "36306ded5fc2f66d4917287af16aafac5fcfddc2565345d2ddd8c372935fb791": {
+        "f_hash": "36306ded5fc2f66d4917287af16aafac5fcfddc2565345d2ddd8c372935fb791",
+        "product_name": "질산은 (Silver nitrate)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
+        "raw_content": "7761-88-8(99.5%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/032_Perchloric acid 70% (준세이) 영문 210318.pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/040_질산은 7761-88-8.pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "Perchloric acid(70%)",
-            "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
+            "product_name": "질산은 (Silver nitrate)",
+            "raw_content": "7761-88-8(99.5%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Perchloric acid(70%)",
-            "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
+            "product_name": "질산은 (Silver nitrate)",
+            "raw_content": "7761-88-8(99.5%)",
             "measure": "",
             "reg1": [],
             "reg2": []

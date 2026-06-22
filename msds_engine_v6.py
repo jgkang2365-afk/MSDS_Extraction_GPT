@@ -2200,6 +2200,12 @@ class MSDSEngineV6:
                     for m in self.comp_pattern.finditer(row_clean_text):
                         val = m.group(1).strip()
                         if not val: continue
+                        
+                        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 후위 부등호 핀셋 구출 인터락 완착 (040번 질산은 자재 대응)
+                        after_str = row_clean_text[m.end():m.end()+3].strip()
+                        if after_str and after_str[0] in ["<", ">", "≤", "≥", "＜", "＞"]:
+                            val = f"{val}{after_str[0]}"
+                            
                         matches_with_pos.append((val, m.start()))
 
                     content = "미기재%"
@@ -3193,6 +3199,12 @@ class MSDSOfflineTester:
                 "raw_text": "Ingredient name:Water\nContent (%):Residual quantity of the ingredient mentioned above.\nChemical formula:H2O\nCAS No.:7732-18-5",
                 "target_cas": "7732-18-5",
                 "expected_concentration": "Rem.%"
+            },
+            {
+                "desc": "040번 질산은 후위 부등호 결착 서식 (핀셋 구출 방어 검증)",
+                "raw_text": "물질명:질산은(Silver nitrate)\nCAS 번호:7761-88-8\ncontent(%):99.5<",
+                "target_cas": "7761-88-8",
+                "expected_concentration": ">99.5%"
             }
         ]
 
