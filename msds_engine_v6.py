@@ -545,10 +545,10 @@ class MSDSEngineV6:
     def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
         
-        # 🚀 [생산성 고도화] 실패 자재의 내역을 독립된 에러 장부에 실시간 무과금 자동 적출
+        # 🚀 [생산성 고도화] 실패 자재의 내역을 식별성이 높은 ★별표 접두사 장부에 자동 적출
         try:
             log_dir = os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else "."
-            ledger_path = os.path.join(log_dir, "ERROR_ISOLATION_LEDGER.log")
+            ledger_path = os.path.join(log_dir, "★ERROR_ISOLATION_LEDGER.log")
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             filename = os.path.basename(pdf_path)
             
@@ -944,7 +944,22 @@ class MSDSEngineV6:
             "comp_engine": "정규식"
         }
         
-        traffic_light = res_obj.get("신호등", "⚪")
+        # 🚀 [생산성 고도화] 초록불 오독(False Green) 섀도우 교차 검문 및 별표 장부 자동 적출
+        if res_obj.get("신호등") == "🟢":
+            try:
+                unique_cas_in_pool = list(set(cas_pattern.findall(grounding_pool)))
+                valid_pool_cas_count = len([v for v in unique_cas_in_pool if self.verify_cas_number(v)])
+                if len(refined_comps) != valid_pool_cas_count:
+                    log_dir = os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else "."
+                    false_ledger_path = os.path.join(log_dir, "★FALSE_GREEN_LEDGER.log")
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    with open(false_ledger_path, "a", encoding="utf-8") as f:
+                        f.write(f"[{timestamp}] 파일명: {os.path.basename(pdf_path)} | 의심사유: CAS 개수 불일치 (원본 유효: {valid_pool_cas_count}개 vs 추출: {len(refined_comps)}개)\n")
+            except:
+                pass
+        
+        # 🛡️ [데이터 검증 및 예외 처리] 신호등 키 유실 시 고시인성 보라색 폴백 안전 수납 (KeyError 방어)
+        traffic_light = res_obj.get("신호등", "🟣")
         if original_log_func:
             if refined_comps:
                 original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
@@ -1276,7 +1291,8 @@ class MSDSEngineV6:
             "comp_engine": comp_engine
         }
         
-        traffic_light = res_obj.get("신호등", "⚪")
+        # 🛡️ [데이터 검증 및 예외 처리] AI 구출단 내 결함으로 신호등 미기재 시 보라색 비상등 강제 점등
+        traffic_light = res_obj.get("신호등", "🟣")
         if log_func:
             if refined_comps:
                 log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
@@ -1326,10 +1342,10 @@ class MSDSEngineV6:
             y_start = None
             y_end = None
             
-            pattern_sec3 = re.compile(r'(3|삼)\b.*?([구성|성분|명칭|함량|기재]{2,})')
-            pattern_sec4 = re.compile(r'(4|사)\b.*?([응급|조치|처치|요령|구급]{2,})')
-            pattern_sec5 = re.compile(r'(5|오)\b.*?([폭발|화재|소화|대처]{2,})')
-            pattern_sec6 = re.compile(r'(6|육)\b.*?([누출|사고|방지|대책]{2,})')
+            pattern_sec3 = re.compile(r'(3|삼)\s*항?.*?([구성|성분|명칭|함량|기재]{2,})')
+            pattern_sec4 = re.compile(r'(4|사)\s*항?.*?([응급|조치|처치|요령|구급]{2,})')
+            pattern_sec5 = re.compile(r'(5|오)\s*항?.*?([폭발|화재|소화|대처]{2,})')
+            pattern_sec6 = re.compile(r'(6|육)\s*항?.*?([누출|사고|방지|대책]{2,})')
             
             for line in strip_ocr_results:
                 text = line.get("text", "").replace(" ", "")
@@ -1711,7 +1727,7 @@ class MSDSEngineV6:
         for i in range(len(doc)):
             text = doc[i].get_text("text")
             if not found_section3:
-                if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
+                if re.search(r'(?:SECTION\s*)?[23][\s항.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
                     found_section3 = True
             
             if found_section3:
@@ -1979,11 +1995,11 @@ class MSDSEngineV6:
             for b in blocks:
                 b_text = re.sub(r'\s+', '', b[4]).upper()
                 if y_start_orig == 0.0:
-                    if any(k in b_text for k in ["구성성분", "성분및", "COMPONENTS", "INGREDIENTS", "COMPOSITION", "조성물"]):
+                    if any(k in b_text for k in ["구성성분", "성분및", "COMPONENTS", "INGREDIENTS", "COMPOSITION", "조성물"]) or re.search(r'3항', b_text):
                         y_start_orig = b[1] - 30
                         y_start = y_start_orig
                 if y_start_orig > 0.0 and b[1] > y_start_orig:
-                    if any(k in b_text for k in ["응급조치", "FIRSTAID", "FIRSTAIDMEASURES"]):
+                    if any(k in b_text for k in ["응급조치", "FIRSTAID", "FIRSTAIDMEASURES"]) or re.search(r'4항', b_text):
                         y_end = b[1]
                         break
                         
@@ -2085,7 +2101,7 @@ class MSDSEngineV6:
             y_start_refined = 0.0
             for pl in physical_lines:
                 line_text = pl["text"]
-                if re.search(r'(?:SECTION\s*)?[23][\s.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', line_text, re.I):
+                if re.search(r'(?:SECTION\s*)?[23][\s항.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', line_text, re.I):
                     y_start_refined = pl["y"] - 10
                     break
                     
@@ -2116,6 +2132,9 @@ class MSDSEngineV6:
                     is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
                     current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
                     for p_line in pending_lines:
+                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단
+                        if "%" in p_line["text"] or re.search(r'\d+\s*%', p_line["text"]) or re.search(r'\b\d{1,3}\.\d{2}\b', p_line["text"]):
+                            continue
                         current_row["words"].extend(p_line["words"])
                     pending_lines = []
                     current_row["words"].extend(line["words"])
@@ -2191,6 +2210,8 @@ class MSDSEngineV6:
                                     
                             if any(noise in row_clean_text[max(0, match_pos-20):match_pos].lower() for noise in ["쪽", "page", "페이지"]) and not has_percent: return -5000 
                             if m_val.strip(' -∼~<>\u2013\u2014≤≥=').count('-') >= 2: return -5000
+                            # 개정 버전 번호(Rev.03 등) 노이즈 가중치 거세 필터링
+                            if any(k in context_area for k in ["rev", "개정", "version", "제개정"]): score -= 8000
                                 
                             anchor_pos = row_clean_text.find("[CAS_ANCHOR]")
                             dist_char = abs(anchor_pos - match_pos)

@@ -1,12 +1,43 @@
 {
-    "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a": {
-        "f_hash": "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a",
-        "product_name": "RED No. 227",
+    "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906": {
+        "f_hash": "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906",
+        "product_name": "SinoWhite NCA(CG)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "3567-66-6(>85%)",
+        "raw_content": "98-92-0(100%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/021_RED(적색)227_MSDS(E)_190730.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/016_[SFG] SinoWhite NCA(CG) MSDS Kor. (Rev.03) 2025-06-09.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "SinoWhite NCA(CG)",
+            "raw_content": "98-92-0(100%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "SinoWhite NCA(CG)",
+            "raw_content": "98-92-0(100%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f": {
+        "f_hash": "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f",
+        "product_name": "Snail Secretion Filtrate(HD2)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7732-18-5(5%); 6920-22-5(3%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/017_[래디안]달팽이점액여과물(HD2)_영문 GHS MSDS(240429)삼정-씨엔티드림_요청 조성비 서류.pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,56 +47,80 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "RED No. 227",
-            "raw_content": "3567-66-6(>85%)",
+            "product_name": "Snail Secretion Filtrate(HD2)",
+            "raw_content": "7732-18-5(5%); 6920-22-5(3%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "RED No. 227",
-            "raw_content": "",
+            "product_name": "Snail Secretion Filtrate(HD2)",
+            "raw_content": "7732-18-5(5%); 6920-22-5(3%)",
             "measure": "",
-            "reg1": [
-                "D&C적NO.33[3567-66-6(>85%)]"
-            ],
-            "reg2": [
-                ""
-            ]
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42": {
+        "f_hash": "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42",
+        "product_name": "BENTONE GELÒ ISD V",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "108-32-7(2.5~10%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/019_Bentone Gel ISD V _ MSDS (KO).pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "BENTONE GELÒ ISD V",
+            "raw_content": "108-32-7(2.5~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
         },
-        "status": "검증 완료",
-        "components": [
-            {
-                "cas": "3567-66-6",
-                "name": "D&C적NO.33",
-                "content": ">85%",
-                "content_min": "100",
-                "content_max": "100",
-                "exposure": {
-                    "twa_ppm": "-",
-                    "twa_mg": "-",
-                    "stel_ppm": "-",
-                    "stel_mg": "-"
-                },
-                "osh": {
-                    "is_measured": false,
-                    "is_special": false,
-                    "is_managed": false,
-                    "is_special_mgmt": false,
-                    "is_permit": false,
-                    "is_prohibited": false,
-                    "raw_text": "해당없음"
-                },
-                "cca": {
-                    "acute": false,
-                    "chronic": false,
-                    "ecology": false,
-                    "accident": false,
-                    "prohibited": false,
-                    "restricted": false
-                },
-                "combined_format": "D&C적NO.33()[3567-66-6]"
-            }
-        ]
+        "v3.0_Final": {
+            "product_name": "BENTONE GELÒ ISD V",
+            "raw_content": "108-32-7(2.5~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03": {
+        "f_hash": "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03",
+        "product_name": "Suncide EPH",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "122-99-6(100%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/020_★[SFG] Suncide EPH MSDS Kor. (Rev.04) 2025-05-13.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "Suncide EPH",
+            "raw_content": "122-99-6(100%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "Suncide EPH",
+            "raw_content": "122-99-6(100%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
     }
 }
