@@ -837,7 +837,7 @@ class MSDSEngineV6:
             
             if is_scan_doc:
                 # 스캔본인 경우 격리하지 않고 AI 정밀 구출 선로로 연결 (진짜 log_func인 original_log_func 전달)
-                return self._trigger_ai_extraction(pdf_path, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine)
+                return self._trigger_ai_extraction(pdf_path, image_list=image_list, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine)
             else:
                 if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
                 return self._get_graceful_error_dict(pdf_path, "1선 수거 자산 전무 및 AI 개입 배제 인터락 발동", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
@@ -939,7 +939,7 @@ class MSDSEngineV6:
                 original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
         return res_obj
 
-    def _trigger_ai_extraction(self, pdf_path, log_func=None, hybrid_pn="", doc_type=None, product_engine=None):
+    def _trigger_ai_extraction(self, pdf_path, image_list=None, log_func=None, hybrid_pn="", doc_type=None, product_engine=None):
         # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
         original_log_func = log_func
         log_func = None
@@ -949,8 +949,68 @@ class MSDSEngineV6:
         is_scanned_strict = True
         
         # 3섹션 성분 탐색 페이지 식별 및 이미지 리스트 추출
-        image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
+        section3_text = ""
+        pages = []
+        if not image_list:
+            # 상류에서 유실 시에만 방어벽 차원에서 최하위 로컬 로드 작동 (Bypass)
+            image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
+        else:
+            # 상류에서 넘어온 경우, section3_text와 pages는 PDF에서 다시 복원
+            try:
+                doc = fitz.open(pdf_path)
+                pages = self.find_section3_pages(doc)
+                raw_text = ""
+                for p_idx in pages:
+                    if p_idx >= len(doc): continue
+                    raw_text += self._get_sorted_and_normalized_text(doc[p_idx]) + "\n"
+                doc.close()
+                start_m = re.search(r'(?:SECTION\s*)?[23][\s.:]*(?:구성|COMPOSITION)', raw_text, re.I)
+                if start_m:
+                    ends = list(re.finditer(r'(?:SECTION\s*)?[456][\s.:]*(?:응급|화재|폭발|누출|취급|저장|FIRST|FIRE|ACCIDENTAL)', raw_text[start_m.end():], re.I))
+                    if ends:
+                        section3_text = raw_text[start_m.start():start_m.end() + ends[0].start()]
+                    else:
+                        section3_text = raw_text[start_m.start():]
+                else:
+                    section3_text = raw_text
+            except Exception as e:
+                if original_log_func: original_log_func(f"  ⚠️ [로컬 텍스트 복원 실패] {e}")
+
+        target_page_index = None
         
+        # 🚀 [비용 절감 2단계] 유료 API 송신 전, 로컬 텍스트 가루 기반 문패 선제 타격
+        try:
+            doc = fitz.open(pdf_path)
+            for idx, page in enumerate(doc):
+                page_text = page.get_text().lower()
+                # 3번 섹션을 뜻하는 핵심 문패 검문
+                if any(k in page_text for k in ["composition", "ingredients", "구성성분", "혼합물"]):
+                    target_page_index = idx
+                    break
+            doc.close()
+        except Exception as e:
+            if original_log_func: original_log_func(f"  ⚠️ [로컬 타격 실패] 예외 처리 우회: {e}")
+            
+        # 🎯 진짜 성분이 적힌 '단 1장의 페이지'만 추출하여 API 페이로드로 확정
+        optimized_payload = []
+        try:
+            target_image_idx = None
+            if target_page_index is not None and pages:
+                if target_page_index in pages:
+                    target_image_idx = pages.index(target_page_index)
+            
+            if target_image_idx is not None and target_image_idx < len(image_list):
+                optimized_payload = [image_list[target_image_idx]]
+                if original_log_func: original_log_func(f"  🎯 [비용 다이어트] 로컬 문패 저격 성공 (Target Page: {target_page_index + 1}p)")
+            else:
+                # 문패를 못 찾은 최악의 경우에만 상위 3장 가변 제한망 가동
+                optimized_payload = image_list[:3]
+        except Exception as e:
+            raise ValueError(f"페이로드 빌드 중 치명적 결함 격발: {e}")
+
+        # 이중 스캔 방지 및 페이로드 축소를 위해 최적화된 이미지 목록으로 교체
+        image_list = optimized_payload
+
         # 3선 AI 호출을 위한 이미지 리스트 정비
         image_base64_list = []
         for img_item in image_list:
@@ -3047,11 +3107,11 @@ MSDS 추출 가동 현황 보고
 # 🛠️ [Chunk 26] msds_engine_v6.py ➔ 오프라인 무과금 자동 검수 엔진 결선
 # ==============================================================================
 class MSDSOfflineTester:
-    """외부 인공지능 호출 없이 로컬 세척 및 매칭 로직의 무결성을 검증하는 독립 검수대"""
+    """외부 인공지능 호출 없이 로컬 세척 및 정규식 매칭 로직의 무결성을 검증하는 독립 검수대"""
     
     def __init__(self, engine_instance):
         self.engine = engine_instance
-        # 🚀 [품질 검증 테스트 케이스] 악성 서식 3종의 정적 텍스트 및 마스터 정답 장부 구성
+        # 품질 검증 테스트 케이스 목록 정의
         self.snapshot_database = {
             "TC-021": {
                 "desc": "021번 전각 유니코드 손상 및 줄 바꿈 변형 서식",
@@ -3063,7 +3123,7 @@ class MSDSOfflineTester:
                 "desc": "005번 110% 초과 유령 수치 노이즈 서식 (천칭 필터 차단 검증)",
                 "raw_text": "CAS No : 1333-86-4\nContent : 157 %",
                 "target_cas": "1333-86-4",
-                "expected_concentration": "미기재%"  # 110% 초과로 인해 가드레일이 체포해야 함
+                "expected_concentration": "미기재%"  # 110% 초과 수치는 천칭 가드레일이 체포해야 함
             },
             "TC-015": {
                 "desc": "015번 표준 디지털 문서 및 거대 INCI ID 간섭 방어 검증",
@@ -3087,22 +3147,30 @@ class MSDSOfflineTester:
             case = self.snapshot_database[tc_id]
             print(f"[*] [{tc_id}] {case['desc']} 검사 진입...")
             
-            # 🛡️ [데이터 검증 및 오류 예외 처리] 구동 중 충돌 격리용 안전 가드레일
+            # 데이터 검증 및 에러 예외 처리 구동 중 크래시 격리용 안전 가드레일
             try:
-                # 1. 유니코드 세척 과정 모의 실험 (버전6 수술 핵심부)
+                # 엔진의 상태를 테스트 모드로 강제 스위칭하여 안전선 확보
+                self.engine.is_test_mode = True
+                
+                # 1단계: 유니코드 세척 세션 가동 (전각 문자를 표준 반각 문자로 강제 치환)
                 cleaned_text = unicodedata.normalize("NFKC", case["raw_text"])
                 
-                # 화학물질 관리 번호 및 물질 안전 정보 번호 등의 서식을 정밀하게 사전 소거
-                cleaned_text_for_match = re.sub(r'\d{2,7}\s*-\s*\d{2}\s*-\s*\d', '', cleaned_text)
-                cleaned_text_for_match = re.sub(r'\d{3}\s*-\s*\d{3}\s*-\s*\d', '', cleaned_text_for_match)
+                # 2단계: 함량 오독을 막기 위해 텍스트 내 식별 번호 양식 및 CAS/EINECS 번호 패턴 자체를 선제 소거
+                # 공백 포함된 CAS 번호 및 표준 CAS 번호 패턴 소거
+                cleaned_text = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', '', cleaned_text)
+                # EINECS 번호 패턴 소거
+                cleaned_text = re.sub(r'(?<![\d-])\d{3}\s*-\s*\d{3}\s*-\s*\d(?![\d-])', '', cleaned_text)
+                # 남아있는 라벨 및 숫자 서식 추가 소거
+                cleaned_text = re.sub(r'CAS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
+                cleaned_text = re.sub(r'EINECS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
                 
-                # 2. 로컬 정규식 매칭 및 점수 산정 모의 가동
+                # 3단계: 로컬 정규식 매칭 및 스코어링 모의 가동
                 extracted_val = "미기재%"
-                match = self.engine.comp_pattern.search(cleaned_text_for_match)
+                match = self.engine.comp_pattern.search(cleaned_text)
                 
                 if match:
                     raw_val = match.group(1).strip().replace(" ", "")
-                    # 천칭 저울 필터: 110% 초과 소음 검증 연동 제어
+                    # 수학적 천칭 저울 필터: 단일 수치 110% 초과 모순 노이즈 실시간 검문 체포
                     try:
                         num_parts = [float(s) for s in re.findall(r'\d+\.?\d*', raw_val)]
                         if any(v > 110 for v in num_parts):
@@ -3111,7 +3179,7 @@ class MSDSOfflineTester:
                         pass
                     extracted_val = raw_val
 
-                # 3. 데이터 무결성 1 대 1 자동 대조 검문 (소장님 눈 검수 공정 대체)
+                # 4단계: 데이터 무결성 1:1 자동 대조 검문
                 if extracted_val == case["expected_concentration"]:
                     print(f"  └─ [🟢 품질 무결성 통과] 추출치: {extracted_val} == 정답: {case['expected_concentration']}")
                     passed_count += 1
@@ -3122,29 +3190,23 @@ class MSDSOfflineTester:
             except Exception as e:
                 print(f"  └─ [💥 시스템 결함 격발] 테스트 중 예외 크래시 발생: {e}")
                 failed_count += 1
+            finally:
+                # 검수가 끝나면 실 서비스 레일 보호를 위해 테스트 플래그 원복
+                self.engine.is_test_mode = False
 
         print("----------------------------------------------------------------------")
         print(f"📊 [최종 합격 성적표] 합격: {passed_count}건 | 불합격: {failed_count}건")
         print("======================================================================\n")
         return failed_count == 0
 
-# 실무 통합 테스트 호출부 연동 규격 고정
+
 def run_v6_automated_quality_check(engine_instance):
+    """실무 통합 테스트 호출부 연동 규격 고정 함수"""
     tester = MSDSOfflineTester(engine_instance)
-    # 악성 3종 자재 전수 검사 강제 격발
+    # 악성 3종 자재에 대한 전수 검사를 단독 강제 격발
     return tester.run_snapshot_verification()
 
-# ==============================================================================
-# 🛠️ [Chunk 09] msds_engine_v6.py ➔ 최하단 메인 런타임 제어반 격리 영역
-# ==============================================================================
-if __name__ == "__main__":
-    # 🚨 [소장님 지시 완착]: 임포트 마찰을 일으키던 불심검문 차단기를 독립 실행 시에만 구동되도록 격리 이주
-    try:
-        run_v6_automated_quality_check(MSDSEngineV6())
-    except Exception as e:
-        print(f"🚨 품질 체크 실패로 V6 엔진 차단: {e}")
-        sys.exit(1)
 
-    self_test_regression()
-    run_production_integrity_test_cases()
-    run_1_to_7_production_test_cases()
+if __name__ == "__main__":
+    # 메인 실행부에서 외부 API와 무거운 파일 탐색을 배제하고 엔진 인스턴스를 직접 주입하여 단독 기동
+    run_v6_automated_quality_check(MSDSEngineV6())
