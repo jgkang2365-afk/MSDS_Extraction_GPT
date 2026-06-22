@@ -1,12 +1,12 @@
 {
-    "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb": {
-        "f_hash": "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb",
-        "product_name": "Glycine",
+    "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e": {
+        "f_hash": "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e",
+        "product_name": "염산 (Hydrochloric acid)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "56-40-6(미기재%)",
+        "raw_content": "7647-01-0(35~37%); 7732-18-5(35~37%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/020_클리신 56-40-6.pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/022_염화수소 7647-01-0.pdf",
         "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "Glycine",
-            "raw_content": "56-40-6(미기재%)",
+            "product_name": "염산 (Hydrochloric acid)",
+            "raw_content": "7647-01-0(35~37%); 7732-18-5(35~37%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Glycine",
-            "raw_content": "56-40-6(미기재%)",
+            "product_name": "염산 (Hydrochloric acid)",
+            "raw_content": "7647-01-0(35~37%); 7732-18-5(35~37%)",
             "measure": "",
             "reg1": [],
             "reg2": []

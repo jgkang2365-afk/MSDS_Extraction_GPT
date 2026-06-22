@@ -2277,10 +2277,14 @@ class MSDSEngineV6:
                     target_word = next((w for w in row["words"] if target_cas in w[4]), None)
                     if target_word:
                         curr_x, curr_y = target_word[0], target_word[1]
-                        if content == "미기재%" and last_valid_info:
-                            prev_x, prev_y, prev_content = last_valid_info
-                            if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
-                                content = f"{prev_content} (병합추정)"
+                        if content == "미기재%":
+                            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 문맥 내 잔량 키워드가 존재할 경우 좌표 복사 전 선제 가로채기 인터락 완착
+                            if any(k in row_clean_text.lower() for k in ["잔량", "잔여량", "rem", "balance"]):
+                                content = "Rem.%"
+                            elif last_valid_info:
+                                prev_x, prev_y, prev_content = last_valid_info
+                                if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
+                                    content = f"{prev_content} (병합추정)"
                         if content != "미기재%":
                             last_valid_info = (curr_x, curr_y, content.replace(" (병합추정)", ""))
                     
@@ -3172,11 +3176,17 @@ class MSDSOfflineTester:
                 "target_cas": "7732-18-5",
                 "expected_concentration": "10~20%"    
             },
-            "TC-043": {
+            "TC-042": {
                 "desc": "신종 TCI 시약류 수직 목록형 서식 (Glycine 요괴 완파 검증)",
                 "raw_text": "Section 3. Composition/information on ingredients\nIngredient name:Glycine\nContent (%):98.5~101.5\nChemical formula:C2H5NO2\nCAS No.:56-40-6",
                 "target_cas": "56-40-6",
                 "expected_concentration": "98.5~101.5%"
+            },
+            "TC-043": {
+                "desc": "022번 수직 목록형 문장식 잔량 서식 (하이재킹 역회전 방어 검증)",
+                "raw_text": "물질명 : 물 Water\n함유량 (%): 위 물질 양의 잔여량\nCAS 번호 : 7732-18-5",
+                "target_cas": "7732-18-5",
+                "expected_concentration": "Rem.%"
             }
         }
 
