@@ -1,12 +1,12 @@
 {
-    "1f34bc61c04f14ddc7330c02b6423c9209456a3062b98a8ef04e5d63bebb82cc": {
-        "f_hash": "1f34bc61c04f14ddc7330c02b6423c9209456a3062b98a8ef04e5d63bebb82cc",
-        "product_name": "Chromium standard solution 1 (Cr 100)",
+    "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb": {
+        "f_hash": "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb",
+        "product_name": "Glycine",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7778-50-9(0.029%)",
+        "raw_content": "56-40-6(미기재%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/042_Chromium Standard.pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/020_클리신 56-40-6.pdf",
         "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "Chromium standard solution 1 (Cr 100)",
-            "raw_content": "7778-50-9(0.029%)",
+            "product_name": "Glycine",
+            "raw_content": "56-40-6(미기재%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Chromium standard solution 1 (Cr 100)",
-            "raw_content": "7778-50-9(0.029%)",
+            "product_name": "Glycine",
+            "raw_content": "56-40-6(미기재%)",
             "measure": "",
             "reg1": [],
             "reg2": []

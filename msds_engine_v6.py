@@ -2140,9 +2140,10 @@ class MSDSEngineV6:
                     is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
                     current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
                     for p_line in pending_lines:
-                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단
+                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단 (단, 명시적 함량 키워드가 결착된 수직 서식은 제외)
                         if "%" in p_line["text"] or re.search(r'\d+\s*%', p_line["text"]) or re.search(r'\b\d{1,3}\.\d{2}\b', p_line["text"]):
-                            continue
+                            if not any(k in p_line["text"].lower() for k in ["content", "percentage", "함량", "함유량"]):
+                                continue
                         current_row["words"].extend(p_line["words"])
                     pending_lines = []
                     current_row["words"].extend(line["words"])
@@ -3169,7 +3170,13 @@ class MSDSOfflineTester:
                 "desc": "015번 표준 디지털 문서 및 거대 INCI ID 간섭 방어 검증",
                 "raw_text": "Chemical Name: Water\nCAS No: 7732-18-5\nComposition: 10 ~ 20 %",
                 "target_cas": "7732-18-5",
-                "expected_concentration": "10~20%"
+                "expected_concentration": "10~20%"    
+            },
+            "TC-043": {
+                "desc": "신종 TCI 시약류 수직 목록형 서식 (Glycine 요괴 완파 검증)",
+                "raw_text": "Section 3. Composition/information on ingredients\nIngredient name:Glycine\nContent (%):98.5~101.5\nChemical formula:C2H5NO2\nCAS No.:56-40-6",
+                "target_cas": "56-40-6",
+                "expected_concentration": "98.5~101.5%"
             }
         }
 
