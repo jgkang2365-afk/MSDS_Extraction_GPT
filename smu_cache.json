@@ -4,7 +4,7 @@
         "product_name": "Chromium standard solution 1 (Cr 100)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7778-50-9(231~906%)",
+        "raw_content": "7778-50-9(0.029%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/042_Chromium Standard.pdf",
         "page": 1,
@@ -17,14 +17,14 @@
         "comp_engine": "정규식",
         "v2.0_Clean": {
             "product_name": "Chromium standard solution 1 (Cr 100)",
-            "raw_content": "7778-50-9(231~906%)",
+            "raw_content": "7778-50-9(0.029%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "Chromium standard solution 1 (Cr 100)",
-            "raw_content": "7778-50-9(231~906%)",
+            "raw_content": "7778-50-9(0.029%)",
             "measure": "",
             "reg1": [],
             "reg2": []

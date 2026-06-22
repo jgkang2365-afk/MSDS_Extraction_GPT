@@ -1615,6 +1615,10 @@ class MSDSEngineV6:
                 f1, f2 = (f2_orig, f1_orig) if is_swapped else (f1_orig, f2_orig)
                 n1, n2 = (int(f1) if f1.is_integer() else f1), (int(f2) if f2.is_integer() else f2)
                 
+               # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 범위형 수치 110% 초과 모순 데이터 차단 가드레일 (EC 번호 범위 오독 방지)
+                if n1 > 110 or n2 > 110:
+                    return "미기재%"
+                
                 parts = re.split(r'\s*(?:~|∼|～|\-|to|and)\s*', v, maxsplit=1)
                 s_sym = ""
                 
