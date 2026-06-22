@@ -2212,6 +2212,8 @@ class MSDSEngineV6:
                             if m_val.strip(' -∼~<>\u2013\u2014≤≥=').count('-') >= 2: return -5000
                             # 개정 버전 번호(Rev.03 등) 노이즈 가중치 거세 필터링
                             if any(k in context_area for k in ["rev", "개정", "version", "제개정"]): score -= 8000
+                            # 🛡️ [데이터 검증 및 에러 예외 처리] 표 하단 비고란 및 각주 노이즈 가중치 거세 차단막 완착
+                            if any(k in tight_context for k in ["*", "contains", "note", "비고"]): score -= 12000
                                 
                             anchor_pos = row_clean_text.find("[CAS_ANCHOR]")
                             dist_char = abs(anchor_pos - match_pos)
