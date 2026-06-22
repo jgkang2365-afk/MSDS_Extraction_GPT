@@ -2148,9 +2148,10 @@ class MSDSEngineV6:
                     is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
                     current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
                     for p_line in pending_lines:
-                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단 (단, 명시적 함량 키워드가 결착된 수직 서식은 제외)
+                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단 (단, 명시적 함량/약어 키워드가 결착된 수직 서식은 제외)
                         if "%" in p_line["text"] or re.search(r'\d+\s*%', p_line["text"]) or re.search(r'\b\d{1,3}\.\d{2}\b', p_line["text"]):
-                            if not any(k in p_line["text"].lower() for k in ["content", "percentage", "함량", "함유량"]):
+                            # 데이터 무결성 보장: 폭발한계 등 타 섹션 오염 유발 위험이 높은 vol, vol., vol%는 전면 영외 격리 거세
+                            if not any(k in p_line["text"].lower() for k in ["content", "percentage", "함량", "함유량", "composition", "ingredients", "component", "ingredient", "concentration", "조성", "조성물", "구성", "구성성분", "min", "max", "approx", "wt"]):
                                 continue
                         current_row["words"].extend(p_line["words"])
                     pending_lines = []
@@ -2213,6 +2214,13 @@ class MSDSEngineV6:
                         after_str = row_clean_text[m.end():m.end()+3].strip()
                         if after_str and after_str[0] in ["<", ">", "≤", "≥", "＜", "＞"]:
                             val = f"{val}{after_str[0]}"
+                            
+                        # 🛡️ [데이터 검증 및 에러 예외 처리] 전위 약어 기호(min, max) 핀셋 구출 인터락 완착 (TC-008 칸토 자재 대응)
+                        before_str = row_clean_text[max(0, m.start()-15):m.start()].lower()
+                        if "min" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
+                            val = f"≥{val}"
+                        elif "max" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
+                            val = f"≤{val}"
                             
                         matches_with_pos.append((val, m.start()))
 
@@ -3213,6 +3221,12 @@ class MSDSOfflineTester:
                 "raw_text": "물질명:질산은(Silver nitrate)\nCAS 번호:7761-88-8\ncontent(%):99.5<",
                 "target_cas": "7761-88-8",
                 "expected_concentration": ">99.5%"
+            },
+            {
+                "desc": "4번 칸토 복합 대간판 및 영문 약어 서식 (광역 키워드 및 vol 노이즈 배제 검증)",
+                "raw_text": "Ingredients and composition : 1,5-Diphenylcarbonohydrazide min. 85%\nCAS No. : 140-22-7",
+                "target_cas": "140-22-7",
+                "expected_concentration": "≥85%"
             }
         ]
 
@@ -3260,6 +3274,13 @@ class MSDSOfflineTester:
                         after_str = cleaned_text[m.end():m.end()+3].strip()
                         if after_str and after_str[0] in ["<", ">", "≤", "≥", "＜", "＞"]:
                             val = f"{val}{after_str[0]}"
+                            
+                        # 🛡️ [데이터 검증 및 에러 예외 처리] 전위 약어 기호(min, max) 핀셋 구출 가드레일 동기화 완착
+                        before_str = cleaned_text[max(0, m.start()-15):m.start()].lower()
+                        if "min" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
+                            val = f"≥{val}"
+                        elif "max" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
+                            val = f"≤{val}"
                             
                         context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
                         if not any(k in context_prefix for k in ["section", "항"]):

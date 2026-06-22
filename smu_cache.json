@@ -1,13 +1,13 @@
 {
-    "36306ded5fc2f66d4917287af16aafac5fcfddc2565345d2ddd8c372935fb791": {
-        "f_hash": "36306ded5fc2f66d4917287af16aafac5fcfddc2565345d2ddd8c372935fb791",
-        "product_name": "질산은 (Silver nitrate)",
+    "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91": {
+        "f_hash": "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91",
+        "product_name": "1,5-Diphenylcarbonohydrazide",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7761-88-8(99.5%)",
+        "raw_content": "140-22-7(≥85%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/040_질산은 7761-88-8.pdf",
-        "page": 2,
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
+        "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "질산은 (Silver nitrate)",
-            "raw_content": "7761-88-8(99.5%)",
+            "product_name": "1,5-Diphenylcarbonohydrazide",
+            "raw_content": "140-22-7(≥85%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "질산은 (Silver nitrate)",
-            "raw_content": "7761-88-8(99.5%)",
+            "product_name": "1,5-Diphenylcarbonohydrazide",
+            "raw_content": "140-22-7(≥85%)",
             "measure": "",
             "reg1": [],
             "reg2": []
