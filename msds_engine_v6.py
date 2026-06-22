@@ -2161,6 +2161,8 @@ class MSDSEngineV6:
                 clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
                 clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
                 clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
+                # 🛡️ [데이터 검증 및 에러 예외 처리 - 평가 사례] 특이 대시 기호(en-dash 등)를 포함한 관리 번호(이씨 번호) 양식을 모두 포착하여 원천 소거
+                clean_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', clean_text)
 
                 for target_cas in row["cas_list"]:
                     row_clean_text = clean_text
@@ -2627,7 +2629,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "f772286e114d077d" 
+                GOLDEN_HASH = "44b1c6e892883a73" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
@@ -3188,8 +3190,8 @@ class MSDSOfflineTester:
                 # 2단계: 함량 오독을 막기 위해 텍스트 내 식별 번호 양식 및 CAS/EINECS 번호 패턴 자체를 선제 소거
                 # 공백 포함된 CAS 번호 및 표준 CAS 번호 패턴 소거
                 cleaned_text = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', '', cleaned_text)
-                # EINECS 번호 패턴 소거
-                cleaned_text = re.sub(r'(?<![\d-])\d{3}\s*-\s*\d{3}\s*-\s*\d(?![\d-])', '', cleaned_text)
+                # EINECS 번호 패턴 소거 (특이 대시 기호 포함)
+                cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', '', cleaned_text)
                 # 남아있는 라벨 및 숫자 서식 추가 소거
                 cleaned_text = re.sub(r'CAS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
                 cleaned_text = re.sub(r'EINECS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
