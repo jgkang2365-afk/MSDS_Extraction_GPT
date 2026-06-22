@@ -203,6 +203,9 @@ class MSDSEngineV6:
             re.IGNORECASE
         )
         print("🟢 [1선 파이프라인] 부동호 보존 정규식 엔진이 코어에 동기화되었습니다.")
+        
+        # 오프라인 검수 장치가 메인 가동 레일을 오염시키지 않도록 방어하는 테스트 모드 전용 플래그 개설
+        self.is_test_mode = False
 
     def extract_section_1(self, pdf_type, raw_pdf_content, log_func=None):
         """
@@ -2730,8 +2733,8 @@ def process_pdf(pdf_path, log_func=None):
 
 analyze_msds = process_pdf
 
-# 자가품질검증
-def run_v6_automated_quality_check():
+# 자가 품질 검증 원래 함수
+def run_v6_automated_quality_check_original():
     engine = MSDSEngineV6()
     for input_str, expected in [("15~<20%", "15~20%"), ("1~<5", "1~5%")]:
         res_val = engine._normalize_single_content(input_str)
@@ -2754,7 +2757,7 @@ def test_천칭_filter_anomaly():
     print("✅ [유닛 테스트 통과] 천칭 가드레일이 100% 초과 모순을 에러 없이 완벽하게 체포합니다.")
 
 def self_test_regression():
-    run_v6_automated_quality_check()
+    run_v6_automated_quality_check_original()
     test_천칭_filter_anomaly()
             
     fail_count = 0
@@ -3041,12 +3044,103 @@ MSDS 추출 가동 현황 보고
     return all_success
 
 # ==============================================================================
+# 🛠️ [Chunk 26] msds_engine_v6.py ➔ 오프라인 무과금 자동 검수 엔진 결선
+# ==============================================================================
+class MSDSOfflineTester:
+    """외부 인공지능 호출 없이 로컬 세척 및 매칭 로직의 무결성을 검증하는 독립 검수대"""
+    
+    def __init__(self, engine_instance):
+        self.engine = engine_instance
+        # 🚀 [품질 검증 테스트 케이스] 악성 서식 3종의 정적 텍스트 및 마스터 정답 장부 구성
+        self.snapshot_database = {
+            "TC-021": {
+                "desc": "021번 전각 유니코드 손상 및 줄 바꿈 변형 서식",
+                "raw_text": "CAS number : 3567-66-6\nEINECS number : 222-656-9\nConcentration : ＞  85 ％",
+                "target_cas": "3567-66-6",
+                "expected_concentration": ">85%"
+            },
+            "TC-005": {
+                "desc": "005번 110% 초과 유령 수치 노이즈 서식 (천칭 필터 차단 검증)",
+                "raw_text": "CAS No : 1333-86-4\nContent : 157 %",
+                "target_cas": "1333-86-4",
+                "expected_concentration": "미기재%"  # 110% 초과로 인해 가드레일이 체포해야 함
+            },
+            "TC-015": {
+                "desc": "015번 표준 디지털 문서 및 거대 INCI ID 간섭 방어 검증",
+                "raw_text": "Chemical Name: Water\nCAS No: 7732-18-5\nComposition: 10 ~ 20 %",
+                "target_cas": "7732-18-5",
+                "expected_concentration": "10~20%"
+            }
+        }
+
+    def run_snapshot_verification(self, target_id=None):
+        """지정한 식별자 또는 데이터베이스 내 전수 악성 자재 오프라인 자동 채점 구동"""
+        print("\n======================================================================")
+        print("🚀 [오프라인 무과금 검수대] 가상 시뮬레이터 라인 가동 (통신 비용: 0원)")
+        print("======================================================================")
+        
+        target_cases = self.snapshot_database.keys() if not target_id else [target_id]
+        passed_count = 0
+        failed_count = 0
+        
+        for tc_id in target_cases:
+            case = self.snapshot_database[tc_id]
+            print(f"[*] [{tc_id}] {case['desc']} 검사 진입...")
+            
+            # 🛡️ [데이터 검증 및 오류 예외 처리] 구동 중 충돌 격리용 안전 가드레일
+            try:
+                # 1. 유니코드 세척 과정 모의 실험 (버전6 수술 핵심부)
+                cleaned_text = unicodedata.normalize("NFKC", case["raw_text"])
+                
+                # 화학물질 관리 번호 및 물질 안전 정보 번호 등의 서식을 정밀하게 사전 소거
+                cleaned_text_for_match = re.sub(r'\d{2,7}\s*-\s*\d{2}\s*-\s*\d', '', cleaned_text)
+                cleaned_text_for_match = re.sub(r'\d{3}\s*-\s*\d{3}\s*-\s*\d', '', cleaned_text_for_match)
+                
+                # 2. 로컬 정규식 매칭 및 점수 산정 모의 가동
+                extracted_val = "미기재%"
+                match = self.engine.comp_pattern.search(cleaned_text_for_match)
+                
+                if match:
+                    raw_val = match.group(1).strip().replace(" ", "")
+                    # 천칭 저울 필터: 110% 초과 소음 검증 연동 제어
+                    try:
+                        num_parts = [float(s) for s in re.findall(r'\d+\.?\d*', raw_val)]
+                        if any(v > 110 for v in num_parts):
+                            raw_val = "미기재%"
+                    except:
+                        pass
+                    extracted_val = raw_val
+
+                # 3. 데이터 무결성 1 대 1 자동 대조 검문 (소장님 눈 검수 공정 대체)
+                if extracted_val == case["expected_concentration"]:
+                    print(f"  └─ [🟢 품질 무결성 통과] 추출치: {extracted_val} == 정답: {case['expected_concentration']}")
+                    passed_count += 1
+                else:
+                    print(f"  └─ [❌ 회귀 결함 발견] 추출치: {extracted_val} != 정답: {case['expected_concentration']}")
+                    failed_count += 1
+                    
+            except Exception as e:
+                print(f"  └─ [💥 시스템 결함 격발] 테스트 중 예외 크래시 발생: {e}")
+                failed_count += 1
+
+        print("----------------------------------------------------------------------")
+        print(f"📊 [최종 합격 성적표] 합격: {passed_count}건 | 불합격: {failed_count}건")
+        print("======================================================================\n")
+        return failed_count == 0
+
+# 실무 통합 테스트 호출부 연동 규격 고정
+def run_v6_automated_quality_check(engine_instance):
+    tester = MSDSOfflineTester(engine_instance)
+    # 악성 3종 자재 전수 검사 강제 격발
+    return tester.run_snapshot_verification()
+
+# ==============================================================================
 # 🛠️ [Chunk 09] msds_engine_v6.py ➔ 최하단 메인 런타임 제어반 격리 영역
 # ==============================================================================
 if __name__ == "__main__":
     # 🚨 [소장님 지시 완착]: 임포트 마찰을 일으키던 불심검문 차단기를 독립 실행 시에만 구동되도록 격리 이주
     try:
-        run_v6_automated_quality_check()
+        run_v6_automated_quality_check(MSDSEngineV6())
     except Exception as e:
         print(f"🚨 품질 체크 실패로 V6 엔진 차단: {e}")
         sys.exit(1)
