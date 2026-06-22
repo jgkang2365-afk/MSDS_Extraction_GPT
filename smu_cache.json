@@ -1,12 +1,12 @@
 {
-    "d968360d727ee1601535957c68391e18b4d2ec58e6b68765ecad42bdd4d86107": {
-        "f_hash": "d968360d727ee1601535957c68391e18b4d2ec58e6b68765ecad42bdd4d86107",
-        "product_name": "Nitric acid (1.38)",
+    "cdf98dde21242d6c4c917c3c33e4e921aa7b87cfbbd6a51037811e62fb5c8d4e": {
+        "f_hash": "cdf98dde21242d6c4c917c3c33e4e921aa7b87cfbbd6a51037811e62fb5c8d4e",
+        "product_name": "Perchloric acid(70%)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7697-37-2(60~62%); 7732-18-5(Rem.%)",
+        "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/031_Nitric Acid 60%(준세이) 영문 200309.pdf",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/032_Perchloric acid 70% (준세이) 영문 210318.pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "Nitric acid (1.38)",
-            "raw_content": "7697-37-2(60~62%); 7732-18-5(Rem.%)",
+            "product_name": "Perchloric acid(70%)",
+            "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Nitric acid (1.38)",
-            "raw_content": "7697-37-2(60~62%); 7732-18-5(Rem.%)",
+            "product_name": "Perchloric acid(70%)",
+            "raw_content": "7601-90-3(70~72%); 7732-18-5(Rem.%)",
             "measure": "",
             "reg1": [],
             "reg2": []

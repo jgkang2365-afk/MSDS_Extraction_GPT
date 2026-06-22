@@ -2278,8 +2278,8 @@ class MSDSEngineV6:
                     if target_word:
                         curr_x, curr_y = target_word[0], target_word[1]
                         if content == "미기재%":
-                            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 문맥 내 잔량 키워드가 존재할 경우 좌표 복사 전 선제 가로채기 인터락 완착
-                            if any(k in row_clean_text.lower() for k in ["잔량", "잔여량", "rem", "balance"]):
+                            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 광역 잔량 다형성 마스터 사전 가로채기 인터락 완착
+                            if any(k in row_clean_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
                                 content = "Rem.%"
                             elif last_valid_info:
                                 prev_x, prev_y, prev_content = last_valid_info
@@ -3156,7 +3156,7 @@ class MSDSOfflineTester:
     
     def __init__(self, engine_instance):
         self.engine = engine_instance
-        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 생산성 및 관리 무결성 극대화를 위해 순차 적층형 가변 배열(List) 구조로 개조
+        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 생산성 및 관리 무결성 극대화를 위해 순차 적층형 가변 배열(List) 구조로 개조 및 확장
         self.snapshot_database = [
             {
                 "desc": "021번 전각 유니코드 손상 및 줄 바꿈 변형 서식",
@@ -3187,6 +3187,12 @@ class MSDSOfflineTester:
                 "raw_text": "물질명 : 물 Water\n함유량 (%): 위 물질 양의 잔여량\nCAS 번호 : 7732-18-5",
                 "target_cas": "7732-18-5",
                 "expected_concentration": "Rem.%"
+            },
+            {
+                "desc": "032번 준세이 영문 문장식 잔량 서식 (광역 다형성 사전 방어 검증)",
+                "raw_text": "Ingredient name:Water\nContent (%):Residual quantity of the ingredient mentioned above.\nChemical formula:H2O\nCAS No.:7732-18-5",
+                "target_cas": "7732-18-5",
+                "expected_concentration": "Rem.%"
             }
         ]
 
@@ -3210,32 +3216,25 @@ class MSDSOfflineTester:
             case = mapped_database[tc_id]
             print(f"[*] [{tc_id}] {case['desc']} 검사 진입...")
             
-            # 데이터 검증 및 에러 예외 처리 구동 중 크래시 격리용 안전 가드레일
             try:
-                # 엔진의 상태를 테스트 모드로 강제 스위칭하여 안전선 확보
                 self.engine.is_test_mode = True
-                
-                # 1단계: 유니코드 세척 세션 가동 (전각 문자를 표준 반각 문자로 강제 치환)
                 cleaned_text = unicodedata.normalize("NFKC", case["raw_text"])
                 
-                # 2단계: 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 타겟 CAS 번호를 안심 앵커로 보존하여 노이즈 하이재킹 차단
+                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 타겟 CAS 번호를 안심 앵커로 보존하여 노이즈 하이재킹 차단
                 target_cas = case["target_cas"]
                 cleaned_text = cleaned_text.replace(target_cas, "[CAS_ANCHOR]")
-                
-                # 특이 대시 기호를 포함한 타사 관리 번호(EC 번호 양식 등) 노이즈만 정밀 격리 소거
                 cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', cleaned_text)
                 
-                # 3단계: 메인 코어 엔진의 문맥 가로채기 및 최접근 거리 가중치 알고리즘 동기화 가동
                 extracted_val = "미기재%"
                 
-                if any(k in cleaned_text.lower() for k in ["잔량", "잔여량", "rem", "balance"]):
+                # 🛡️ [데이터 검증 및 에러 예외 처리] 모의 채점판 내 광역 잔량 다형성 마스터 사전 가로채기 동기화
+                if any(k in cleaned_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
                     extracted_val = "Rem.%"
                 else:
                     matches = []
                     for m in self.engine.comp_pattern.finditer(cleaned_text):
                         val = m.group(1).strip()
                         if val:
-                            # 문맥 내 대간판(Section/항) 수치 노이즈 필터링 적용
                             context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
                             if not any(k in context_prefix for k in ["section", "항"]):
                                 matches.append((val, m.start()))
