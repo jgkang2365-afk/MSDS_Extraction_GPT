@@ -3218,29 +3218,33 @@ class MSDSOfflineTester:
                 # 1단계: 유니코드 세척 세션 가동 (전각 문자를 표준 반각 문자로 강제 치환)
                 cleaned_text = unicodedata.normalize("NFKC", case["raw_text"])
                 
-                # 2단계: 함량 오독을 막기 위해 텍스트 내 식별 번호 양식 및 CAS/EINECS 번호 패턴 자체를 선제 소거
-                # 공백 포함된 CAS 번호 및 표준 CAS 번호 패턴 소거
-                cleaned_text = re.sub(r'(?<![\d-])\d{2,7}\s*-\s*\d{2}\s*-\s*\d(?![\d-])', '', cleaned_text)
-                # EINECS 번호 패턴 소거 (특이 대시 기호 포함)
-                cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', '', cleaned_text)
-                # 남아있는 라벨 및 숫자 서식 추가 소거
-                cleaned_text = re.sub(r'CAS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
-                cleaned_text = re.sub(r'EINECS\s*(?:number|no)?\s*:\s*', '', cleaned_text, flags=re.IGNORECASE)
+                # 2단계: 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 타겟 CAS 번호를 안심 앵커로 보존하여 노이즈 하이재킹 차단
+                target_cas = case["target_cas"]
+                cleaned_text = cleaned_text.replace(target_cas, "[CAS_ANCHOR]")
                 
-                # 3단계: 로컬 정규식 매칭 및 스코어링 모의 가동
+                # 특이 대시 기호를 포함한 타사 관리 번호(EC 번호 양식 등) 노이즈만 정밀 격리 소거
+                cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', cleaned_text)
+                
+                # 3단계: 메인 코어 엔진의 문맥 가로채기 및 최접근 거리 가중치 알고리즘 동기화 가동
                 extracted_val = "미기재%"
-                match = self.engine.comp_pattern.search(cleaned_text)
                 
-                if match:
-                    raw_val = match.group(1).strip().replace(" ", "")
-                    # 수학적 천칭 저울 필터: 단일 수치 110% 초과 모순 노이즈 실시간 검문 체포
-                    try:
-                        num_parts = [float(s) for s in re.findall(r'\d+\.?\d*', raw_val)]
-                        if any(v > 110 for v in num_parts):
-                            raw_val = "미기재%"
-                    except:
-                        pass
-                    extracted_val = raw_val
+                if any(k in cleaned_text.lower() for k in ["잔량", "잔여량", "rem", "balance"]):
+                    extracted_val = "Rem.%"
+                else:
+                    matches = []
+                    for m in self.engine.comp_pattern.finditer(cleaned_text):
+                        val = m.group(1).strip()
+                        if val:
+                            # 문맥 내 대간판(Section/항) 수치 노이즈 필터링 적용
+                            context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
+                            if not any(k in context_prefix for k in ["section", "항"]):
+                                matches.append((val, m.start()))
+                    
+                    if matches:
+                        # [데이터 무결성]: 보존된 [CAS_ANCHOR] 위치와 물리적 거리가 가장 가까운 진짜 수치 자산을 정답으로 판정
+                        anchor_pos = cleaned_text.find("[CAS_ANCHOR]")
+                        best_match = min(matches, key=lambda x: abs(x[1] - anchor_pos))
+                        extracted_val = self.engine._normalize_single_content(best_match[0])
 
                 # 4단계: 데이터 무결성 1:1 자동 대조 검문
                 if extracted_val == case["expected_concentration"]:
