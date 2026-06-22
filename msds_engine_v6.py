@@ -3156,39 +3156,39 @@ class MSDSOfflineTester:
     
     def __init__(self, engine_instance):
         self.engine = engine_instance
-        # 품질 검증 테스트 케이스 목록 정의
-        self.snapshot_database = {
-            "TC-021": {
+        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 생산성 및 관리 무결성 극대화를 위해 순차 적층형 가변 배열(List) 구조로 개조
+        self.snapshot_database = [
+            {
                 "desc": "021번 전각 유니코드 손상 및 줄 바꿈 변형 서식",
                 "raw_text": "CAS number : 3567-66-6\nEINECS number : 222-656-9\nConcentration : ＞  85 ％",
                 "target_cas": "3567-66-6",
                 "expected_concentration": ">85%"
             },
-            "TC-005": {
+            {
                 "desc": "005번 110% 초과 유령 수치 노이즈 서식 (천칭 필터 차단 검증)",
                 "raw_text": "CAS No : 1333-86-4\nContent : 157 %",
                 "target_cas": "1333-86-4",
-                "expected_concentration": "미기재%"  # 110% 초과 수치는 천칭 가드레일이 체포해야 함
+                "expected_concentration": "미기재%"
             },
-            "TC-015": {
+            {
                 "desc": "015번 표준 디지털 문서 및 거대 INCI ID 간섭 방어 검증",
                 "raw_text": "Chemical Name: Water\nCAS No: 7732-18-5\nComposition: 10 ~ 20 %",
                 "target_cas": "7732-18-5",
-                "expected_concentration": "10~20%"    
+                "expected_concentration": "10~20%"
             },
-            "TC-042": {
+            {
                 "desc": "신종 TCI 시약류 수직 목록형 서식 (Glycine 요괴 완파 검증)",
                 "raw_text": "Section 3. Composition/information on ingredients\nIngredient name:Glycine\nContent (%):98.5~101.5\nChemical formula:C2H5NO2\nCAS No.:56-40-6",
                 "target_cas": "56-40-6",
                 "expected_concentration": "98.5~101.5%"
             },
-            "TC-043": {
+            {
                 "desc": "022번 수직 목록형 문장식 잔량 서식 (하이재킹 역회전 방어 검증)",
                 "raw_text": "물질명 : 물 Water\n함유량 (%): 위 물질 양의 잔여량\nCAS 번호 : 7732-18-5",
                 "target_cas": "7732-18-5",
                 "expected_concentration": "Rem.%"
             }
-        }
+        ]
 
     def run_snapshot_verification(self, target_id=None):
         """지정한 식별자 또는 데이터베이스 내 전수 악성 자재 오프라인 자동 채점 구동"""
@@ -3196,12 +3196,18 @@ class MSDSOfflineTester:
         print("🚀 [오프라인 무과금 검수대] 가상 시뮬레이터 라인 가동 (통신 비용: 0원)")
         print("======================================================================")
         
-        target_cases = self.snapshot_database.keys() if not target_id else [target_id]
+        # 🛡️ [데이터 검증 및 에러 예외 처리] 배열 순서대로 TC-001부터 일련번호를 강제 강착시키는 동적 인덱싱 게이트 활성화
+        mapped_database = {}
+        for idx, case in enumerate(self.snapshot_database, 1):
+            tc_key = f"TC-{idx:03d}"
+            mapped_database[tc_key] = case
+
+        target_cases = mapped_database.keys() if not target_id else [target_id]
         passed_count = 0
         failed_count = 0
         
         for tc_id in target_cases:
-            case = self.snapshot_database[tc_id]
+            case = mapped_database[tc_id]
             print(f"[*] [{tc_id}] {case['desc']} 검사 진입...")
             
             # 데이터 검증 및 에러 예외 처리 구동 중 크래시 격리용 안전 가드레일
