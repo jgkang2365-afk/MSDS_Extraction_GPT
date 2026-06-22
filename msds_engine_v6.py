@@ -991,6 +991,10 @@ class MSDSEngineV6:
         except Exception as e:
             if original_log_func: original_log_func(f"  ⚠️ [로컬 타격 실패] 예외 처리 우회: {e}")
             
+        # 스캔본인 경우 정찰병이 로컬에서 확보한 무과금 페이지 인덱스로 보완하여 결함 완천 방지
+        if target_page_index is None and pages:
+            target_page_index = pages[0]
+            
         # 🎯 진짜 성분이 적힌 '단 1장의 페이지'만 추출하여 API 페이로드로 확정
         optimized_payload = []
         try:
@@ -1036,7 +1040,9 @@ class MSDSEngineV6:
         res_acc = None
         try:
             paddle_ocr_instance = get_ocr_engine()
-            res_acc = self.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=log_func)
+            # 저격된 정밀 페이지 인덱스를 동적으로 인젝션하여 0번 페이지 맹목 스캔 현상 영구 해소
+            actual_page_idx = target_page_index if target_page_index is not None else 0
+            res_acc = self.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=log_func, target_page_idx=actual_page_idx)
             
             if res_acc.get("status") == "SUCCESS":
                 local_ocr_html = res_acc["data"]
@@ -1268,12 +1274,15 @@ class MSDSEngineV6:
     # ----------------------------------------------------------------------
     # 내부 서브 파이프라인 및 헬퍼 함수들 (클래스 메소드로 전환 및 self 바인딩)
     # ----------------------------------------------------------------------
-    def run_flexible_sandwich_pipeline(self, pdf_path, paddle_ocr_instance, log_func=print):
+    def run_flexible_sandwich_pipeline(self, pdf_path, paddle_ocr_instance, log_func=print, target_page_idx=0):
         try:
-            if log_func: log_func(f"🚀 [유연 가속 격발] 비정형 간판 추적 엔진 가동: {os.path.basename(pdf_path)}")
+            if log_func: log_func(f"🚀 [유연 가속 격발] 비정형 간판 추적 엔진 가동: {os.path.basename(pdf_path)} (대상 페이지: {target_page_idx + 1}p)")
             
             doc = fitz.open(pdf_path)
-            page = doc[0]
+            # 인덱스 초과 현상 가드레일 설치 (Test Case 에러 유실 방지)
+            if target_page_idx >= len(doc):
+                target_page_idx = 0
+            page = doc[target_page_idx]
             w, h = page.rect.width, page.rect.height
             
             left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
@@ -2297,46 +2306,30 @@ class MSDSEngineV6:
                 max_recon_pages = min(7, len(doc))
                 
                 for i in range(max_recon_pages):
-                    if log_func: log_func(f"   ├─ [정찰 진행] 인덱스 {i}번 이미지 검증 중... ({i+1}/{max_recon_pages})")
-                    
-                    pix = doc[i].get_pixmap(matrix=fitz.Matrix(0.8, 0.8))
-                    img_data = base64.b64encode(pix.tobytes("png")).decode("utf-8")
-                    single_image = {"mimeType": "image/png", "data": img_data}
-                    
-                    recon_prompt = """현재 입력된 1장의 이미지(MSDS 문서 페이지)를 분석하여, 이 페이지가 '3. 구성성분의 명칭 및 함유량' (또는 Composition / Information on Ingredients) 표가 시작되는 페이지가 맞는지 판단하라.
-
-[판단 필수 기준]
-1. 반드시 화학물질명(Substance Name), CAS 번호, 함유량(%)을 기재하기 위한 가로/세로 '표(Table Grid)' 구조가 시각적으로 보여야 한다.
-2. 🚨 [절대 금지 - 함정 차단]: 문서 후반부에 등장하는 '11. 독성에 관한 정보' 섹션 내에서 단순히 '성분 1', '성분 2' 등의 줄글 텍스트나 독성학적 데이터가 나열된 페이지는 절대로 3번 섹션이 아니다. 무조건 false로 답하라.
-
-결과는 반드시 다른 서술 없이 JSON 형식 {"is_section3": true} 또는 {"is_section3": false} 로만 답변하라."""
-                    
-                    payload_recon = {
-                        "contents": [
-                            {"parts": [
-                                {"text": recon_prompt},
-                                {"inlineData": {"mimeType": "image/png", "data": img_data}}
-                            ]}
-                        ],
-                        "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-                    }
+                    if log_func: log_func(f"   ├─ [로컬 정찰 진행] 인덱스 {i}번 무료 PaddleOCR 텍스트 검증 중... ({i+1}/{max_recon_pages})")
                     
                     recon_res = None
                     try:
-                        # 🚨 [소장님 지시 결함 수선]: 존재하지 않는 call_gemini_with_retry 호출 오타를 유효한 call_vertex_gemini_with_retry로 전격 교체 수선
-                        res_obj = self.call_vertex_gemini_with_retry(payload_recon, log_func=log_func, model="gemini-2.5-flash")
-                        if res_obj:
-                            text_response = res_obj.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                            clean_json = re.sub(r'```json\s*', '', text_response, flags=re.I)
-                            clean_json = re.sub(r'```\s*$', '', clean_json)
-                            recon_res = json.loads(clean_json.strip())
+                        # 🛡️ [데이터 검증 및 에러 예외 처리] 이미지 격실 변환 및 수치 안정선 확보를 위한 배선
+                        pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
+                        img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                        ocr_instance = get_ocr_engine()
+                        result = ocr_instance.ocr(img_np, cls=False)
+                        page_text = ""
+                        if result and result[0]:
+                            page_text = " ".join([line[1][0] for line in result[0]]).lower()
+                        
+                        # 3번 섹션을 명시하는 핵심 문패 검문 (외부 AI 통신 없이 비용 0원 격리)
+                        if any(k in page_text for k in ["구성성분", "composition", "ingredients", "혼합물", "함유량"]) and any(k in page_text for k in ["3", "삼"]):
+                            recon_res = {"is_section3": True}
+                        else:
+                            recon_res = {"is_section3": False}
                     except Exception as recon_err:
-                        # [데이터 검증 및 에러 예외 처리 - Test Case]: 통신 에러나 비정상 JSON 파편 유입 시 영구 블로킹 방어 예외 처리
-                        if log_func: log_func(f"     [정찰 내부 예외 발생] 다음 페이지 연속 조사 수행: {recon_err}")
-                        pass
+                        if log_func: log_func(f"     [로컬 정찰 예외 발생] 다음 페이지로 우회: {recon_err}")
+                        recon_res = {"is_section3": False}
                     
                     if recon_res and recon_res.get("is_section3") is True:
-                        if log_func: log_func(f"   🎯 [정찰 성공] 인덱스 {i}번에서 진짜 구성성분 표 확보. 루프 조기 종료(Early Stopping).")
+                        if log_func: log_func(f"   🎯 [로컬 정찰 성공] 인덱스 {i}번에서 진짜 구성성분 구역 확보. 루프 조기 종료.")
                         target_index = i
                         break
                 
