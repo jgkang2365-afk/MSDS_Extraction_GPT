@@ -1529,6 +1529,14 @@ class MSDSEngineV6:
         if content_str:
             content_str = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', str(content_str))
 
+        # 🛡️ [데이터 검증 및 에러 예외 처리] 후위 부등호 기호(99.5< 양식) 표준 전위 부등호(>99.5%)로 조기 평탄화 인터락 (msds_utils_v3 세척 사각지대 차단)
+        if content_str:
+            content_v = str(content_str).replace(" ", "")
+            if re.search(r'\d(?:\.\d+)?(?:<|미만|below|less)$', content_v, re.I):
+                content_str = ">" + re.sub(r'[^\d.]', '', content_v) + "%"
+            elif re.search(r'\d(?:\.\d+)?(?:>|초과|more|over)$', content_v, re.I):
+                content_str = "<" + re.sub(r'[^\d.]', '', content_v) + "%"
+
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
         is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
         
@@ -3238,24 +3246,24 @@ class MSDSOfflineTester:
                 cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', cleaned_text)
                 
                 extracted_val = "미기재%"
-                
-                # 🛡️ [데이터 검증 및 에러 예외 처리] 모의 채점판 내 광역 잔량 다형성 마스터 사전 가로채기 동기화
-                if any(k in cleaned_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
-                    extracted_val = "Rem.%"
-                else:
-                    matches = []
-                    for m in self.engine.comp_pattern.finditer(cleaned_text):
-                        val = m.group(1).strip()
-                        if val:
-                            context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
-                            if not any(k in context_prefix for k in ["section", "항"]):
-                                matches.append((val, m.start()))
+                matches = []
+                for m in self.engine.comp_pattern.finditer(cleaned_text):
+                    val = m.group(1).strip()
+                    if not val: continue
                     
-                    if matches:
-                        # [데이터 무결성]: 보존된 [CAS_ANCHOR] 위치와 물리적 거리가 가장 가까운 진짜 수치 자산을 정답으로 판정
-                        anchor_pos = cleaned_text.find("[CAS_ANCHOR]")
-                        best_match = min(matches, key=lambda x: abs(x[1] - anchor_pos))
-                        extracted_val = self.engine._normalize_single_content(best_match[0])
+                    # 후위 부등호 핀셋 구출 가드레일 동기화 완착
+                    after_str = cleaned_text[m.end():m.end()+3].strip()
+                    if after_str and after_str[0] in ["<", ">", "≤", "≥", "＜", "＞"]:
+                        val = f"{val}{after_str[0]}"
+                        
+                    context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
+                    if not any(k in context_prefix for k in ["section", "항"]):
+                        matches.append((val, m.start()))
+                
+                if matches:
+                    anchor_pos = cleaned_text.find("[CAS_ANCHOR]")
+                    best_match = min(matches, key=lambda x: abs(x[1] - anchor_pos))
+                    extracted_val = self.engine._normalize_single_content(best_match[0])
 
                 # 4단계: 데이터 무결성 1:1 자동 대조 검문
                 if extracted_val == case["expected_concentration"]:
