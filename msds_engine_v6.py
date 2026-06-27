@@ -627,6 +627,7 @@ class MSDSEngineV6:
         image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
         
         full_text_for_grounding = ""
+        doc_type = "스캔본"
         try:
             doc = fitz.open(pdf_path)
             first_page_text = self._get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
@@ -634,12 +635,23 @@ class MSDSEngineV6:
             pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
             doc.close()
+            
+            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 메인 관로 내 가변 데이터 무결성 표준 디지털 우선 가드레일 완착
+            # 메모리 포인터 소모 및 닫힌 스코프 호출 크래시를 방지하기 위해 상류에서 이미 수집 완료된 청정 변수(full_text_for_grounding)를 바이패스 직결
+            raw_pdf_text = full_text_for_grounding.strip()
+            
+            if len(raw_pdf_text) > 10 and any(k in raw_pdf_text.lower() for k in ["cas", "no", "물질", "함량", "구성", "성분"]):
+                doc_type = "디지털"
+            elif len(raw_pdf_text) < 50:
+                doc_type = "스캔본"
+            else:
+                doc_type = "디지털"
         except:
             cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
+            doc_type = "디지털" if len(full_text_for_grounding.strip()) >= 500 else "스캔본"
 
         # 1선 가동 직후 문서 유형 판별
         raw_text = full_text_for_grounding
-        doc_type = "디지털" if len(raw_text.strip()) >= 500 else "스캔본"
         if original_log_func:
             original_log_func(f"🚀 [{doc_type} 문서] MSDSEngineV6 엔진 가동: {os.path.basename(pdf_path)}")
 
@@ -1281,13 +1293,34 @@ class MSDSEngineV6:
             else:
                 reason_tags.append("[✅CAS정합]")
             
+        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 상표명-성분 문자열 직접 대조(Raw Token Cross-Match) 교차 검문소 완착 (046번 환각 초록불 오독 원천 거세)
+        if doc_type == "스캔본" and not is_exception_matched:
+            # 제품명의 핵심 단어 파편 도출 (명행정 수식 및 공용 키워드를 제외한 순수 물질 어휘 분리)
+            pn_clean = re.sub(r'[^\w]', ' ', product_name).strip()
+            pn_tokens = [t for t in pn_clean.split() if len(t) >= 2 and not any(k in t.lower() for k in ["msds", "sds", "시약", "덕산", "칸토", "준세이", "영문", "국문", "개정", "질산", "수성", "내부", "아이"])]
+            
+            if pn_tokens:
+                # 성분 문자열 및 매핑 데이터 전역에서 제품명 토큰이 단 1개도 검출되지 않는 극단적 환각 모순 검증
+                match_pool = comp_str.lower()
+                has_token_match = any(t.lower() in match_pool for t in pn_tokens)
+                
+                if not has_token_match:
+                    score = 0
+                    if "[✅제품명완착]" in reason_tags: reason_tags.remove("[✅제품명완착]")
+                    if "[✅CAS정합]" in reason_tags: reason_tags.remove("[✅CAS정합]")
+                    reason_tags.append("[❌상표성분모순환각적발]")
+                    has_invalid_cas = True
+                    # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 가짜 데이터가 1글자도 외부 장부에 섞이지 못하도록 알맹이 변수 강제 휘발 (Hard Wipe)
+                    comp_str = "미기재%"
+                    reason = f"교차 검문 차단: 제품명('{product_name}')과 추출 성분 간의 연관성 전무 (환각 오독 격리)"
+
         integrity_reason = f"[품질점수: {score}점] ➔ " + " ".join(reason_tags)
         
         comp_engine = "정규식" if used_engine == "local_bypass" else "제미나이"
         res_obj = {
             "구성성분": comp_str, "제품명": product_name, "측정대상": target_substances,
             "교정_사유": reason,
-            "신호등": "🟡" if (has_invalid_cas or not product_name) else "🟢",
+            "신호등": "🔴" if "[❌상표성분모순환각적발]" in reason_tags else ("🟡" if (has_invalid_cas or not product_name) else "🟢"),
             "used_engine": gui_engine_name,
             "integrity_score": score,
             "integrity_reason": integrity_reason,
@@ -2382,7 +2415,8 @@ class MSDSEngineV6:
                 if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 순차 탐색 가동...")
                 
                 target_index = None
-                max_recon_pages = min(7, len(doc))
+                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 046번 자재와 같은 텍스트 레이어 파손 시 7페이지 전수 스캔 폭주 방지용 3장 커트오프 가드레일 완착
+                max_recon_pages = min(3, len(doc))
                 
                 for i in range(max_recon_pages):
                     if log_func: log_func(f"   ├─ [로컬 정찰 진행] 인덱스 {i}번 무료 PaddleOCR 텍스트 검증 중... ({i+1}/{max_recon_pages})")
@@ -3238,6 +3272,12 @@ class MSDSOfflineTester:
                 "raw_text": "물질명:비닐/STPD 폴리다이메틸실록산\nCAS 번호:68083-19-2\n함유량(%):95% 이상",
                 "target_cas": "68083-19-2",
                 "expected_concentration": "≥95%"
+            },
+            {
+                "desc": "046번 덕산 THF 자재 레이어 오독 방어 및 정상 디지털 자산 수납 서식 (디지털 우선 및 강제 휘발 검증)",
+                "raw_text": "화학 물질명 : Tetrahydrofuran\nCAS NO: 109-99-9\n함유량 : 99-100%",
+                "target_cas": "109-99-9",
+                "expected_concentration": "99~100%"
             }
         ]
 

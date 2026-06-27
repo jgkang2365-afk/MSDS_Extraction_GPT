@@ -247,3 +247,7 @@
 - **EC 번호 특이 대시 광대역 필터 적용**: extract_from_text_regex 내부 및 가상 시뮬레이터 
 un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거할 때, 일반 하이픈 외에도 en-dash, em-dash, 물결 기호(전각/반각) 및 전후 공백을 완벽하게 커버하는 광대역 정규식 (?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])을 사용하여 선제적으로 소거하고 함량 오독을 차단하십시오.
 - **골든 마스터 지문(GOLDEN_HASH) 동기화**: extract_from_text_regex 함수의 로직을 변경한 경우, 자가 진단 무결성 체크 함수인 check_golden_fingerprint에서 무단 변조 경고가 격발되지 않도록 새로운 SHA-256 해시값 44b1c6e892883a73을 GOLDEN_HASH 변수에 정확하게 반영 및 동기화하십시오.
+
+### 37. 수집 완료 데이터 재활용 및 doc 객체 중복 순회 방지 규칙 (V24.6.3.6)
+- **데이터 중복 추출 및 순회 차단**: 이미 수집이 완료되어 소모된 `doc` 객체에 대해 스트림 종료(`doc.close()`) 직전 가변 데이터의 무결성을 재검사하는 관로에서 불필요하게 `"".join([p.get_text() for p in doc])` 등 `doc`을 재순회하여 리소스를 낭비하거나 이미 닫힌 스코프 내 호출 크래시를 발생시키지 않도록 하십시오.
+- **full_text_for_grounding 버퍼 재활용**: `doc.close()` 전의 판별 조건에서는 이미 상단에서 깨끗하게 문자열 추출 및 누적이 완료된 `full_text_for_grounding` 변수를 100% 재활용하여 `raw_pdf_text = full_text_for_grounding.strip()` 형태로 안정 배선하십시오.
