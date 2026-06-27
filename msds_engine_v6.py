@@ -111,29 +111,22 @@ cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\
 # ==============================================================================
 def normalize_concentration(raw_val):
     """
-    함량 값에서 일본식 부동호와 조사를 보존하면서 순수 수치값만 추출/정리
+    함량 값에서 한글 조사를 전위 부등호로 평탄화하여 꼬리 중복 기호 오염 원천 방어
     """
     import re
-    # 범위 기호(~, -, ∼, ～, to)가 들어있는 범위형 수치는 ODL/정규식 범위형 파서로 넘겨야 하므로 정제 제외
     if any(k in raw_val for k in ["~", "-", "∼", "～", "to"]):
         return raw_val
         
-    # 1. 보존할 부동호 기호 정의
-    symbols = r"([><=≧≦])?"
-    # 2. 숫자와 % 보존
+    symbols = r"([><=≧≦≤≥])?"
     digits = r"(\d+(?:\.\d+)?)\s*%"
-    
-    # 정규식 구성: 부동호 + 숫자 + % + (이상/미만 등)
     pattern = rf"{symbols}\s*{digits}\s*(이상|미만|이하|초과)?"
     
     match = re.search(pattern, raw_val)
     if match:
-        # 그룹별로 매칭하여 깔끔하게 재조립
         symbol = match.group(1) or ""
         value = match.group(2)
         suffix = match.group(3) or ""
         
-        # 110% 초과 모순 노이즈 필터링 적용 (기존 룰 및 한계치 승계)
         try:
             val_num = float(value)
             if val_num > 110:
@@ -141,9 +134,21 @@ def normalize_concentration(raw_val):
         except:
             pass
             
-        return f"{symbol}{value}%{suffix}".strip()
+        # 꼬리 오염 방지: 한글 조사 및 영문 접미사를 글로벌 표준 전위 부등호로 통일 전환
+        if suffix in ["이상", "above", "over"] or symbol in ["≥", "≧"]:
+            pref = "≥"
+        elif suffix in ["이하", "내", "이내", "max"] or symbol in ["≤", "≦"]:
+            pref = "≤"
+        elif suffix in ["미만", "below", "less"] or symbol == "<":
+            pref = "<"
+        elif suffix in ["초과", "more"] or symbol == ">":
+            pref = ">"
+        else:
+            pref = symbol
+            
+        return f"{pref}{value}%"
         
-    return raw_val # 매칭 실패 시 원본 반환 (수동 검증용)
+    return raw_val
 # ==============================================================================
 
 # ==============================================================================
@@ -1540,14 +1545,14 @@ class MSDSEngineV6:
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
         is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
         
-        symbols = r"([><=≧≦])?"
+        symbols = r"([><=≧≦≤≥])?"
         digits = r"(\d+(?:\.\d+)?)\s*%"
         pattern = rf"{symbols}\s*{digits}\s*(이상|미만|이하|초과)?"
         
         if not is_range and re.search(pattern, str(content_str)):
             normalized = normalize_concentration(str(content_str))
-            # [무결성 보완] >, <, = 기호까지 조기 반환 락(Lock) 가드레일에 포함하여 하류의 기호 누락 원천 봉쇄
-            has_special = any(sym in normalized for sym in ["≧", "≦", "이상", "미만", "이하", "초과", ">", "<", "="])
+            # [무결성 보완] 표준 부등호(≥, ≤)까지 조기 반환 락(Lock) 가드레일에 동기화하여 중복 기호 누출 완전 방어
+            has_special = any(sym in normalized for sym in ["≥", "≤", "≧", "≦", "이상", "미만", "이하", "초과", ">", "<", "="])
             if has_special or normalized == "미기재%":
                 return normalized
 
@@ -3227,6 +3232,12 @@ class MSDSOfflineTester:
                 "raw_text": "Ingredients and composition : 1,5-Diphenylcarbonohydrazide min. 85%\nCAS No. : 140-22-7",
                 "target_cas": "140-22-7",
                 "expected_concentration": "≥85%"
+            },
+            {
+                "desc": "036번 계열 한글 조사 결착 서식 (전위 평탄화 검증)",
+                "raw_text": "물질명:비닐/STPD 폴리다이메틸실록산\nCAS 번호:68083-19-2\n함유량(%):95% 이상",
+                "target_cas": "68083-19-2",
+                "expected_concentration": "≥95%"
             }
         ]
 

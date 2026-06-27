@@ -1,12 +1,12 @@
 {
-    "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91": {
-        "f_hash": "f1b58f783404816326b4f41db1faa8f496a0a9a6be8649480d264af22997eb91",
-        "product_name": "1,5-Diphenylcarbonohydrazide",
+    "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f": {
+        "f_hash": "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f",
+        "product_name": "CS006A",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "140-22-7(≥85%)",
+        "raw_content": "68083-19-2(≥95%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/045_ CS006A_MSDS.pdf",
         "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "1,5-Diphenylcarbonohydrazide",
-            "raw_content": "140-22-7(≥85%)",
+            "product_name": "CS006A",
+            "raw_content": "68083-19-2(≥95%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "1,5-Diphenylcarbonohydrazide",
-            "raw_content": "140-22-7(≥85%)",
+            "product_name": "CS006A",
+            "raw_content": "68083-19-2(≥95%)",
             "measure": "",
             "reg1": [],
             "reg2": []

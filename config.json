@@ -31,13 +31,14 @@
         "현황 화학물질명 열": "I"
     },
     "backup_path": "",
-    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/지제이종합건설 주식회사 25-F-00부대 실험실 신축 시설공사(4282)/★ 회사명(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
-    "clean_sheet_name": "화학물질입력_양식",
-    "measure_sheet_name": "화학물질입력_양식",
+    "clean_sheet_name": "기준목록",
+    "measure_sheet_name": "기준목록",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/24. 맑은물사업본부-급수과-수질실험실/4_1.5-Diphenylcarbonohydrazide- KANTO.pdf"
+        "C:/Users/USER/AppData/Local/Temp/BNZ.6a3de17d8f35a5d/4-오성락카-적색.pdf",
+        "C:/Users/USER/Downloads/YL-017 락카스프레이 - 적색(320) MSDS.pdf"
     ]
 }
