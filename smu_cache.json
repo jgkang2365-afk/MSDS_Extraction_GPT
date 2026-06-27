@@ -1,1 +1,33 @@
-{}
+{
+    "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
+        "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
+        "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+        "reliability": "N/A",
+        "신호등": "🔴",
+        "raw_content": "",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_THF_MSDS.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 0,
+        "integrity_reason": "[품질점수: 0점] ➔ [❌상표성분모순환각적발]",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
+        "v2.0_Clean": {
+            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+            "raw_content": "",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+            "raw_content": "",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    }
+}

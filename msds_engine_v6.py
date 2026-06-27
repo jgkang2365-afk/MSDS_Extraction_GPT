@@ -1,4 +1,5 @@
 import os
+print("📍 [현재 실행 중인 진짜 도면 위치]:", os.path.abspath(__file__))
 import base64
 import sys
 import re
@@ -552,14 +553,22 @@ class MSDSEngineV6:
         
         # 🚀 [생산성 고도화] 실패 자재의 내역을 식별성이 높은 ★별표 접두사 장부에 자동 적출
         try:
+            import traceback
             log_dir = os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else "."
             ledger_path = os.path.join(log_dir, "★ERROR_ISOLATION_LEDGER.log")
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             filename = os.path.basename(pdf_path)
             
-            # 데이터 검증 및 안전한 이어쓰기 가드레일 가동
+            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 파이썬 원본 호출 스택(Traceback) 상세 추출
+            tb_str = traceback.format_exc()
+            if not tb_str or tb_str.strip() == "NoneType: None":
+                tb_str = "  └─ [안전 안내]: 명시적인 논리 조건문 인터락에 의한 격리 수거 (시스템 에러 크래시 없음)\n"
+            
+            # 데이터 검증 및 안전한 이어쓰기 가드레일 가동 (Traceback 내용 추가)
             with open(ledger_path, "a", encoding="utf-8") as f:
                 f.write(f"[{timestamp}] 파일명: {filename} | 차단사유: {reason_msg}\n")
+                f.write(f"--- 🚨 시스템 상세 충돌 경로 (Traceback Board) ---\n{tb_str}")
+                f.write("======================================================================\n")
         except Exception as file_err:
             # 파일 쓰기 자체 실패 시 시스템 전체 런타임 크래시를 방지하는 2중 격리벽
             if log_func: log_func(f" 🚨 [통제소 기록 실패] 로그 장부 기입 중 예외 격발: {file_err}")
@@ -861,7 +870,7 @@ class MSDSEngineV6:
 # ==============================================================================
 # 🛠️ [Chunk 12] msds_engine_v6.py ➔ 스캔본 구출을 위한 지능형 인터락 분기 패치
 # ==============================================================================
-        # 🚨 [소장님 지시 완착]: 1선 자산 전무 시, 문서 유형별 AI 호출 자동 분기 (스캔본 구출)
+        # 🚨 [소장님 지시 완착]: 1선 자산 전무 시, 문서 유형별 AI 호출 자동 분기 (스캔본 구출 및 디지털 안전 패오버 통합)
         if not components:
             # 문서 내 텍스트 레이어 존재 여부로 유형 판별 (스캔본은 보통 텍스트 추출량이 현저히 적음)
             is_scan_doc = (len(full_text_for_grounding.strip()) < 500) 
@@ -870,8 +879,10 @@ class MSDSEngineV6:
                 # 스캔본인 경우 격리하지 않고 AI 정밀 구출 선로로 연결 (진짜 log_func인 original_log_func 전달)
                 return self._trigger_ai_extraction(pdf_path, image_list=image_list, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine)
             else:
-                if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
-                return self._get_graceful_error_dict(pdf_path, "1선 수거 자산 전무 및 AI 개입 배제 인터락 발동", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
+                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 1선 전무 시 디지털 AI 구출 분기 개방 가드레일 완착
+                # 디지털 문서라 하더라도 변칙 레이아웃 충돌로 1선 수거량이 0건인 예외 서식은 외부 AI 구출단을 통해 진짜 성분을 2차 구출 수납하도록 관로 확장
+                if original_log_func: original_log_func(f"⚠️ [{os.path.basename(pdf_path)}] 1선 정규식 수거 전무 ➔ 외부 AI 정밀 구출 선로로 긴급 이송합니다.")
+                return self._trigger_ai_extraction(pdf_path, image_list=image_list, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine)
 # ==============================================================================
 # ==============================================================================
         
@@ -2010,7 +2021,9 @@ class MSDSEngineV6:
             raw_words = page.get_text("words")
             if not raw_words: return [], inherited_x_range
 
-            if table_bboxes is not None:
+            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 표 영역 제한 필터 완전 해제 (Raw Text Unlocking)
+            # 비정형 서식에서 로컬 격자 분석기가 바운더리를 미세하게 놓치더라도 본문 전역의 진짜 디지털 글자 자산이 유실되지 않도록 전체 문자열 탐색 락을 해제
+            if table_bboxes is not None and len(raw_words) < 50: 
                 filtered_words = []
                 for w in raw_words:
                     cx = (w[0] + w[2]) / 2.0
