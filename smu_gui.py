@@ -5813,8 +5813,17 @@ class SMUGUI(QMainWindow):
             # [최종 확정] CAS 원본 열은 PDF 추출 원문과 함유량을 100% 순수 유지 (표준명 병기 폐기)
             raw = str(data.get("raw_content", ""))
             clean_cas_parts = [p.strip() for p in str(raw).split(";") if p.strip()]
+            seen_cas_parts = set()
+            uniq_cas_parts = []
+            for p in clean_cas_parts:
+                cas_match = re.search(r'([\d\-]{3,12})', p)
+                key = cas_match.group(1).strip() if cas_match else p
+                if key in seen_cas_parts:
+                    continue
+                seen_cas_parts.add(key)
+                uniq_cas_parts.append(p)
             
-            item_cas = QTableWidgetItem(";\n".join(clean_cas_parts))
+            item_cas = QTableWidgetItem(";\n".join(uniq_cas_parts))
             if bg_color: item_cas.setBackground(bg_color)
             self.table.setItem(row, 3, item_cas)
 
@@ -6369,8 +6378,7 @@ class SMUGUI(QMainWindow):
             # K308 유령 크롬 6가크롬 강제 삽입 폐기 (2번 요청 반영)
             render_components = new_comps
 
-        # 🛡️ [데이터 검증 및 예외 처리] AI 환각 중복 노이즈 격멸 및 역방향 함량(1~0%) 정류 세척 가드레일 완착
-        import msds_utils_v3
+        # 🛡️ [데이터 검증 및 예외 처리] 외부 AI의 간헐적 중복 사출(환각) 자산 격멸 가드레일 완착
         seen_cas = set()
         cleaned_render_comps = []
         for c in render_components:
@@ -6378,8 +6386,6 @@ class SMUGUI(QMainWindow):
             if cas_val in seen_cas:
                 continue
             seen_cas.add(cas_val)
-            if c.get("content"):
-                c["content"] = msds_utils_v3.clean_percentage(str(c["content"]))
             cleaned_render_comps.append(c)
         render_components = cleaned_render_comps
 
@@ -6665,6 +6671,18 @@ class SMUGUI(QMainWindow):
             self.table.setItem(row, 2, item_prod)
 
             # 2. CAS (추출된 것이나 수동 수정본)
+            if cas_with_content:
+                seen_cas_api = set()
+                cleaned_cas_with_content = []
+                for item in cas_with_content:
+                    cas_match = re.search(r'([\d\-]{3,12})', str(item))
+                    cas_key = cas_match.group(1).strip() if cas_match else str(item).strip()
+                    if cas_key in seen_cas_api:
+                        continue
+                    seen_cas_api.add(cas_key)
+                    cleaned_cas_with_content.append(item)
+                cas_with_content = cleaned_cas_with_content
+
             api_cas = ";\n".join(cas_with_content) if cas_with_content else "" # 공백 제거
             old_cas = self.table.item(row, 3).text() if self.table.item(row, 3) else ""
             item_cas = QTableWidgetItem(manual.get("raw_content", api_cas if api_cas else old_cas))
@@ -6681,20 +6699,16 @@ class SMUGUI(QMainWindow):
             
             # components가 있다면 1:N 후보 검색
             if components:
-                import msds_utils_v3
-                # 🛡️ [데이터 검증 및 예외 처리] 검증 행 렌더링 시에도 중복 CAS 및 역방향 함량 평탄화 방어벽 가동
+                # 🛡️ [데이터 검증 및 예외 처리] 2단계 규제 검증 후 화면 리프레시 시 성분 중복 복제 현상 방어
                 seen_cas = set()
                 cleaned_comps = []
                 for c in components:
                     cas_val = str(c.get("cas", "")).strip()
-                    if cas_val in seen_cas: continue
+                    if cas_val in seen_cas:
+                        continue
                     seen_cas.add(cas_val)
-                    if c.get("content"):
-                        c["content"] = msds_utils_v3.clean_percentage(str(c["content"]))
                     cleaned_comps.append(c)
                 components = cleaned_comps
-                if f_hash and f_hash in self.cache:
-                    self.cache[f_hash]["components"] = components
 
                 for c in components:
                     cas_val = c.get("cas", "")
