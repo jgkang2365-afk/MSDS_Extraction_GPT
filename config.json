@@ -32,7 +32,7 @@
     },
     "backup_path": "",
     "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
-    "sheet_name": "화학물질입력_양식",
+    "sheet_name": "위험성평가",
     "clean_sheet_name": "기준목록",
     "measure_sheet_name": "기준목록",
     "start_row": "3",
