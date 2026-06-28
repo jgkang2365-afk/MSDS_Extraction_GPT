@@ -255,4 +255,9 @@ un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거�
 - **교차 검증 풀(match_pool) 확장**: 스캔본 판별 지형에서 상표명과 성분 간의 연관성 검증(Raw Token Cross-Match)을 수행할 때, 대조 풀을 단순히 CAS 번호가 기록된 `comp_str`로만 국한하지 말고, `refined_comps`에서 수집한 한글/영문 성분명 목록 및 `grounding_pool` 등을 교차 합산하여 매칭 풀을 구성하여야 합니다.
 - **변수 오타 교정**: REPLACE 제안에 있던 변수명 오타(선언 시 `extracted_names_pool`, 참조 시 `extracted_name_pool`)를 `extracted_names_pool`로 정밀하게 일치시켜 `NameError` 오류가 나지 않도록 차단하십시오.
 
+### 40. 마스터 DB 유효 CAS 포착 시 상표명 오독 필터 우회 하이패스 인터락 규칙 (V24.6.4.2)
+- **하이패스 격리 스위치(`is_cas_highpass`) 결착**: `_process_msds_pipeline_impl` 함수 내부 하류 검문소 영역에서 추출 성분(`components`)을 순회하며 마스터 DB 및 체크디지트 검증(`verify_cas_number`)을 통과한 유효 CAS 포착 시 `is_cas_highpass = True` 스위치를 활성화하고 전용 통과 로그를 출력하십시오.
+- **스캔본 환각 오독 교차 검문 우회 연동**: 스캔본 상표명 대조 교차 검문소 조건식에 `and not is_cas_highpass` 연동 조건을 추가하여, 마스터 DB에 실재하는 정합 CAS 자산의 경우 물질명이 비어있거나 소실되어도 상표성분모순 환각 탈락으로 간주되지 않도록 자가 격리를 면제하십시오.
+
+
 
