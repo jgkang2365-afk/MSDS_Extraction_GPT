@@ -645,6 +645,57 @@ class MSDSEngineV6:
         is_scanned_strict = is_scanned or (total_chars < 10)
         if is_scanned_strict and log_func: log_func(" 🔍 스캔본(Image-only) 감지. 즉시 AI 스나이퍼 모드 가동.")
 
+        # ==============================================================================
+        # ⚡ [교정 결착] 순수 스캔본 초고속 직결 선로 (Fast-Track Bypass) 활성화 스위치
+        # ==============================================================================
+        if is_scanned_strict:
+            if original_log_func: 
+                original_log_func(f"⚡ [Fast-Track] 순수 스캔본 지형 감지 (글자수: {total_chars}자) ➔ 무거운 로컬 표 엔진을 전면 셧다운하고 외부 고속 AI 비전 채널로 다이렉트 직결 수송합니다.")
+            
+            # [1단계] 상표명 마스킹 쉴드 인터락용 파일명 힌트 선제 연산
+            filename = os.path.basename(pdf_path)
+            file_pn_hint = ""
+            brackets = re.findall(r'\(([^)]+)\)', filename)
+            candidate_pns = []
+            for b in brackets:
+                b_clean = b.strip()
+                if b_clean in ['O', 'X', '★', '국문', 'KOR', 'E', '요청 조성비 서류', '보통휘발유', ' Regular Unleaded Gasoline']: continue
+                if any(blacklist in b_clean for blacklist in ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']): continue
+                candidate_pns.append(b_clean)
+                
+            if candidate_pns:
+                file_pn_hint = candidate_pns[0]
+            if not file_pn_hint:
+                no_ext = os.path.splitext(filename)[0]
+                cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
+                cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
+                cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
+                file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
+
+            # [2단계] 1~3페이지 고화질 2.0 배율 도면 구조 즉시 패킹
+            fallback_images = []
+            try:
+                doc = fitz.open(pdf_path)
+                max_p = min(3, len(doc))
+                for p_i in range(max_p):
+                    page = doc[p_i]
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                    fallback_images.append({
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")
+                    })
+                doc.close()
+            except Exception as img_err:
+                if original_log_func: original_log_func(f"  ⚠️ [고해상도 이미지 생성 에러] {img_err}")
+
+            # [3단계] 로컬 샌드위치 2중 중복 연산을 전면 배제하고 AI 구출단으로 초고속 직행 격발
+            res_ai = self._trigger_ai_extraction(pdf_path=pdf_path, image_list=fallback_images, log_func=original_log_func, hybrid_pn=file_pn_hint, doc_type="스캔본")
+            if original_log_func:
+                comp_preview = res_ai.get("구성성분", "") if isinstance(res_ai, dict) else ""
+                original_log_func(f"🔍 [일괄 전송 회신 계측] 외부 AI 최종 수득 데이터 자산: '{comp_preview}' 확보")
+            return res_ai
+        # ==============================================================================
+
         # 3섹션 성분 탐색 페이지 식별
         image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
         

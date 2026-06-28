@@ -259,5 +259,10 @@ un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거�
 - **하이패스 격리 스위치(`is_cas_highpass`) 결착**: `_process_msds_pipeline_impl` 함수 내부 하류 검문소 영역에서 추출 성분(`components`)을 순회하며 마스터 DB 및 체크디지트 검증(`verify_cas_number`)을 통과한 유효 CAS 포착 시 `is_cas_highpass = True` 스위치를 활성화하고 전용 통과 로그를 출력하십시오.
 - **스캔본 환각 오독 교차 검문 우회 연동**: 스캔본 상표명 대조 교차 검문소 조건식에 `and not is_cas_highpass` 연동 조건을 추가하여, 마스터 DB에 실재하는 정합 CAS 자산의 경우 물질명이 비어있거나 소실되어도 상표성분모순 환각 탈락으로 간주되지 않도록 자가 격리를 면제하십시오.
 
+### 41. 순수 스캔본 지형 초고속 직결 선로 (Fast-Track Bypass) 활성화 규칙 (V24.6.4.3)
+- **선제 문서 유형 판별 및 분 단위 병목 차단**: `_process_msds_pipeline_impl` 최초 진입부에서 디지털 글자 수가 10자 미만인 순수 스캔본(Image-only) 지형이 감지되면 (`is_scanned_strict`), 무겁고 무의미한 로컬 표 분석기 및 샌드위치 재단 회로 진입을 전면 셧다운하십시오.
+- **다이렉트 직결 및 페이로드 선제 연산**: 상표명 마스킹 쉴드 인터락용 파일명 힌트(`file_pn_hint`) 및 1~3페이지 고화질 2.0 배율 도면 구조(`fallback_images`)를 상류에서 직결 패킹하여 외부 고속 AI 비전 채널(`_trigger_ai_extraction`)로 초고속 직행 수송하고 최종 회신 데이터를 즉시 반환하십시오.
+
+
 
 
