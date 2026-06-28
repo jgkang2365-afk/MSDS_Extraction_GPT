@@ -1548,10 +1548,22 @@ class ModernMappingPanel(QGroupBox):
                 layout.addWidget(edit, row, col_base + 1, Qt.AlignLeft)
                 self.inputs[name] = edit
         
-        # 마지막 빈 열에 Stretch를 주어 위젯들이 좌측으로 밀집되도록 함
+        # [패치] 저장 모드 선택 패널 추가
+        self.mode_group = QButtonGroup(self)
+        self.radio_horiz = QRadioButton("가로형 (성분 묶음 저장)")
+        self.radio_vert = QRadioButton("세로형 (성분별 독립 행 저장)")
+        self.radio_horiz.setChecked(True) # 기본값: 가로형
+        self.mode_group.addButton(self.radio_horiz, 0)
+        self.mode_group.addButton(self.radio_vert, 1)
+        
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("엑셀 저장 데이터 방식:"))
+        mode_layout.addWidget(self.radio_horiz)
+        mode_layout.addWidget(self.radio_vert)
+        layout.addLayout(mode_layout, (len(fields) + 1) // 3 + 1, 0, 1, 6)
+
         layout.setColumnStretch(6, 1)
-        # 하단 여백을 채워 위로 정렬되도록 함 (__init__의 마지막)
-        layout.setRowStretch((len(fields) + 1) // 3 + 1, 1)
+        layout.setRowStretch((len(fields) + 1) // 3 + 2, 1)
         self.setLayout(layout)
 
     def _create_edit(self, text):
@@ -7356,7 +7368,10 @@ class SMUGUI(QMainWindow):
 
     def perform_standard_save(self):
         """[Standard] GUI 테이블의 데이터를 직접 참조하여 엑셀에 저장 (단순화된 파이프라인)"""
-        if not hasattr(self, 'results') or not self.results:
+        # 환경설정에서 저장 모드 획득 (0: 가로, 1: 세로)
+        is_vertical = self.mapping_panel.mode_group.checkedId() == 1
+        
+        if self.table.rowCount() == 0:
             QMessageBox.warning(self, "경고", "저장할 결과 데이터가 없습니다.")
             return
             
@@ -7393,124 +7408,46 @@ class SMUGUI(QMainWindow):
             except:
                 st_row = 3
 
-            # 테이블 데이터 스냅샷 생성 (파일명 기준 그룹화 및 조인)
+            # [완치] 테이블 전체를 스캔하여 유효한 파일명을 가진 데이터는 무조건 딕셔너리에 적재
             table_dict = {}
+            self.log(f"[*] 저장 엔진 가동: 테이블 {self.table.rowCount()}개 행 스캔 시작...")
+            
             for r in range(self.table.rowCount()):
-                # 병합 구역의 시작 행(start_row)을 탐색하여 정확한 파일명, 제품명, 해시 정보 획득
+                # [시각적 병합 스캔] start_row를 정확히 찾아 해시와 파일명을 획득
                 start_row = r
                 while start_row > 0:
                     item_fn = self.table.item(start_row, 7)
-                    if item_fn and item_fn.text().strip():
-                        break
+                    if item_fn and item_fn.text().strip(): break
                     start_row -= 1
                 
-                fn_item = self.table.item(start_row, 7)
-                if fn_item:
-                    fn = fn_item.text().strip()
-                    if not fn:
-                        continue
-                    
-                    # [V24.6.0.1] f_hash 정의를 루프 최상단으로 이동시켜 모든 하위 분기에서 안전하게 참조되도록 보장
-                    f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else ""
-                    
-                    # 버튼(성상 미선택 버튼) 또는 일반 텍스트 상태에 따라 데이터 추출
-                    measure_widget = self.table.cellWidget(r, 4)
-                    
-                    if isinstance(measure_widget, QPushButton):
-                        # 사용자가 클릭을 안 하고 저장을 누른 경우 -> 첫 번째 후보 데이터로 자동 매칭
-                        candidates = measure_widget.property("candidates")
-                        cas_no = measure_widget.property("cas")
-                        content_val = measure_widget.property("content") or ""
-                        other_text = measure_widget.property("other_text") or ""
-                        
-                        if candidates:
-                            first_cand = candidates[0]
-                            m_name = first_cand.get("측정대상 물질명") or ""
-                            if content_val:
-                                combo_val = f"{m_name}({content_val})"
-                            else:
-                                combo_val = m_name
-                                
-                            measure_val = combo_val
-                            if other_text:
-                                measure_val = f"{combo_val}; {other_text}"
-                                
-                            # 캐시에 선택 정보 영구 저장
-                            selected_code = first_cand.get("정렬코드")
-                            if f_hash and f_hash in self.cache and cas_no:
-                                if "manual_data" not in self.cache[f_hash]:
-                                    self.cache[f_hash]["manual_data"] = {}
-                                self.cache[f_hash]["manual_data"][f"selected_code_{cas_no}"] = selected_code
-                                self.save_cache()
-                        else:
-                            measure_val = ""
-                    else:
-                        # 이미 선택 완료되어 텍스트 상태인 경우 셀 텍스트를 즉시 추출
-                        measure_val = self.table.item(r, 4).text().strip() if self.table.item(r, 4) else ""
-                        
-                    no_val = self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else ""
-                    prod_val = self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else ""
-                    cas_val = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
-                    reg2_val = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
-                    reg1_val = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
-                    
-                    # [V24.5.6.0] self.results에서 원래 추출된 무결성 정보 획득
-                    origin_data = next((res for res in self.results if res.get("f_hash") == f_hash), {})
-                    traffic_val = origin_data.get("신호등", "⚪")
-                    if "🟢" in traffic_val or str(traffic_val).lower() == "green":
-                        traffic_str = "🟢 초록"
-                    elif "🟡" in traffic_val or str(traffic_val).lower() == "yellow":
-                        traffic_str = "🟡 노랑"
-                    elif "🔴" in traffic_val or str(traffic_val).lower() == "red":
-                        traffic_str = "🔴 빨강"
-                    else:
-                        traffic_str = traffic_val
-                    
-                    engine_val = origin_data.get("used_engine", "regex")
-                    score_val = origin_data.get("integrity_score", 100)
-                    score_str = f"{score_val}점 (청정)" if score_val == 100 else f"{score_val}점 (불량)"
-
-                    if fn not in table_dict:
-                        table_dict[fn] = {
-                            "no": no_val,
-                            "product_name": prod_val,
-                            "cas_list": [],
-                            "measure_list": [],
-                            "reg2_list": [],
-                            "reg1_list": [],
-                            "traffic_light": traffic_str,
-                            "matching_engine": engine_val,
-                            "integrity_score": score_str
-                        }
-                    
-                    if no_val and not table_dict[fn]["no"]:
-                        table_dict[fn]["no"] = no_val
-                    if prod_val and not table_dict[fn]["product_name"]:
-                        table_dict[fn]["product_name"] = prod_val
-                        
-                    if cas_val:
-                        for part in cas_val.replace('\n', ';').replace('\r', '').split(';'):
-                            p = part.strip()
-                            if p and p not in table_dict[fn]["cas_list"]:
-                                table_dict[fn]["cas_list"].append(p)
-                                
-                    if measure_val:
-                        for part in measure_val.replace('\n', ';').replace('\r', '').split(';'):
-                            p = part.strip()
-                            if p and p not in table_dict[fn]["measure_list"]:
-                                table_dict[fn]["measure_list"].append(p)
-                                
-                    if reg2_val:
-                        for part in reg2_val.replace('\n', ';').replace('\r', '').split(';'):
-                            p = part.strip()
-                            if p and p not in table_dict[fn]["reg2_list"]:
-                                table_dict[fn]["reg2_list"].append(p)
-                                
-                    if reg1_val:
-                        for part in reg1_val.replace('\n', ';').replace('\r', '').split(';'):
-                            p = part.strip()
-                            if p and p not in table_dict[fn]["reg1_list"]:
-                                table_dict[fn]["reg1_list"].append(p)
+                fn = self.table.item(start_row, 7).text().strip() if self.table.item(start_row, 7) else ""
+                if not fn: continue # 파일명 없는 행은 저장 불가능
+                
+                f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else f"auto_{start_row}"
+                
+                # [메모리 복구] results에 데이터가 없어도 테이블 UI에서 강제 추출하여 저장 데이터 조립
+                if fn not in table_dict:
+                    table_dict[fn] = {
+                        "product_name": self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else "",
+                        "no": self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else "",
+                        "cas_list": [], "measure_list": [], "reg2_list": [], "reg1_list": [],
+                        "traffic_light": self.table.item(start_row, 0).text().strip() if self.table.item(start_row, 0) else ""
+                    }
+                
+                # 각 행의 성분 정보 수집
+                c_val = self.table.item(r, 3).text().strip() if self.table.item(r, 3) else ""
+                if c_val: table_dict[fn]["cas_list"].append(c_val)
+                
+                m_val = self.table.cellWidget(r, 4).text().replace("⚠️ 성상 선택 (", "").rstrip(")") if isinstance(self.table.cellWidget(r, 4), QPushButton) else (self.table.item(r, 4).text().strip() if self.table.item(r, 4) else "")
+                if m_val: table_dict[fn]["measure_list"].append(m_val)
+                
+                r2_val = self.table.item(r, 5).text().strip() if self.table.item(r, 5) else ""
+                if r2_val: table_dict[fn]["reg2_list"].append(r2_val)
+                
+                r1_val = self.table.item(r, 6).text().strip() if self.table.item(r, 6) else ""
+                if r1_val: table_dict[fn]["reg1_list"].append(r1_val)
+                
+            self.log(f"[*] 총 {len(table_dict)}개의 파일 데이터 수집 완료.")
 
             # 수집된 개별 성분 리스트들을 세미콜론과 한 칸의 공백("; ")으로 결합
             for fn, td in table_dict.items():
@@ -7523,68 +7460,142 @@ class SMUGUI(QMainWindow):
             saved_count = 0
             written_files = set()
             for row_idx in range(self.table.rowCount()):
-                # 병합 구역의 시작 행(start_row)을 탐색하여 정확한 파일명 획득
-                start_row = row_idx
-                while start_row > 0:
-                    item_fn = self.table.item(start_row, 7)
-                    if item_fn and item_fn.text().strip():
-                        break
-                    start_row -= 1
-                
-                fn_item = self.table.item(start_row, 7)
-                if not fn_item: continue
-                fn = fn_item.text().strip()
-                if not fn: continue
-                
-                if fn not in table_dict or fn in written_files:
-                    continue
-                
-                # [수정] 파일의 본래 순서 인덱스를 기반으로 엑셀 행을 1:1 매핑 (밀림 현상 방지)
-                try:
-                    file_idx = next(i for i, path in enumerate(self.pdf_paths) if os.path.basename(path) == fn)
-                    curr_row = st_row + file_idx
-                except StopIteration:
-                    curr_row = st_row + saved_count
-                
-                # [V12.7] 매핑된 모든 컬럼에 데이터 기입 (유연한 확장)
-                for key, c_idx in mapping.items():
-                    if not c_idx or c_idx < 1: continue
+                # [패치] 가로/세로 분기 저장 엔진
+                if is_vertical:
+                    # 세로형: component별로 행을 하나씩 생성하여 데이터 독립 기입
+                    # 각 성분별로 7~10번 제어 열 정보까지 세로로 똑같이 복제하여 기입
+                    start_row = row_idx
+                    while start_row > 0:
+                        item_fn = self.table.item(start_row, 7)
+                        if item_fn and item_fn.text().strip():
+                            break
+                        start_row -= 1
                     
-                    val = None
-                    if key == "제품명": val = td.get("product_name")
-                    elif key == "파일명": val = fn
-                    elif key == "CAS 원본": val = td.get("cas_sum")
-                    elif key == "측정대상1" or key == "측정대상2":
-                        measure_raw = td.get("measure")
-                        # 🚨 [주님 의도 복구] 역방향 마스터 DB 필터 기반 중복 격멸 적용
-                        if measure_raw:
-                            val = self.clean_measure_duplicates(measure_raw)
-                        else:
-                            val = ""
-                    elif key == "2차 결과(규제)": val = td.get("reg2")
-                    elif key == "1차 결과(전체)": val = td.get("reg1")
-                    elif key == "순번/No": val = td.get("no")
-                    elif key == "신호등": val = td.get("traffic_light")
-                    elif key == "매칭 엔진": val = td.get("matching_engine")
-                    elif key == "무결성 점수": val = td.get("integrity_score")
+                    fn_item = self.table.item(start_row, 7)
+                    if not fn_item: continue
+                    fn = fn_item.text().strip()
+                    if not fn: continue
                     
-                    if val is not None:
-                        # [V17.3.0.9] 주님 지침: GUI는 편집용(줄바꿈), 엑셀은 최종용(한 줄)으로 저장
-                        if key in ["CAS 원본", "1차 결과(전체)", "2차 결과(규제)"]:
-                            val = str(val).replace('\n', ' ').replace('\r', '').strip()
-                            # 연속된 공백 제거 (깔끔한 세미콜론 정렬용)
-                            val = re.sub(r'\s{2,}', ' ', val)
+                    f_hash = self.table.item(start_row, 8).text().strip() if self.table.item(start_row, 8) else ""
+                    origin_data = next((res for res in self.results if res.get("f_hash") == f_hash), {})
+                    traffic_val = origin_data.get("신호등", "⚪")
+                    if "🟢" in traffic_val or str(traffic_val).lower() == "green": traffic_str = "🟢 초록"
+                    elif "🟡" in traffic_val or str(traffic_val).lower() == "yellow": traffic_str = "🟡 노랑"
+                    elif "🔴" in traffic_val or str(traffic_val).lower() == "red": traffic_str = "🔴 빨강"
+                    else: traffic_str = traffic_val
+                    engine_val = origin_data.get("used_engine", "regex")
+                    score_val = origin_data.get("integrity_score", 100)
+                    score_str = f"{score_val}점 (청정)" if score_val == 100 else f"{score_val}점 (불량)"
+
+                    no_val = self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else ""
+                    prod_val = self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else ""
+                    cas_val = self.table.item(row_idx, 3).text().strip() if self.table.item(row_idx, 3) else ""
+                    
+                    measure_widget = self.table.cellWidget(row_idx, 4)
+                    if isinstance(measure_widget, QPushButton):
+                        candidates = measure_widget.property("candidates")
+                        content_val = measure_widget.property("content") or ""
+                        other_text = measure_widget.property("other_text") or ""
+                        if candidates:
+                            m_name = candidates[0].get("측정대상 물질명") or ""
+                            combo_val = f"{m_name}({content_val})" if content_val else m_name
+                            measure_val = f"{combo_val}; {other_text}" if other_text else combo_val
+                        else: measure_val = ""
+                    else:
+                        measure_val = self.table.item(row_idx, 4).text().strip() if self.table.item(row_idx, 4) else ""
                         
-                        # [무결성 가드레일] 엑셀의 문자열 포맷을 강제 유지하여 물결표(~) 및 하이픈(-) 유실을 원천 차단
-                        try:
-                            ws.Cells(curr_row, c_idx).NumberFormat = "@"
-                        except:
-                            pass
-                        ws.Cells(curr_row, c_idx).Value = str(val)
+                    reg2_val = self.table.item(row_idx, 5).text().strip() if self.table.item(row_idx, 5) else ""
+                    reg1_val = self.table.item(row_idx, 6).text().strip() if self.table.item(row_idx, 6) else ""
+
+                    curr_row = st_row + saved_count
+                    for key, c_idx in mapping.items():
+                        if not c_idx or c_idx < 1: continue
+                        val = None
+                        if key == "제품명": val = prod_val
+                        elif key == "파일명": val = fn
+                        elif key == "CAS 원본": val = cas_val
+                        elif key == "측정대상1" or key == "측정대상2":
+                            val = self.clean_measure_duplicates(measure_val) if measure_val else ""
+                        elif key == "2차 결과(규제)": val = reg2_val
+                        elif key == "1차 결과(전체)": val = reg1_val
+                        elif key == "순번/No": val = no_val
+                        elif key == "신호등": val = traffic_str
+                        elif key == "매칭 엔진": val = engine_val
+                        elif key == "무결성 점수": val = score_str
+                        
+                        if val is not None:
+                            if key in ["CAS 원본", "1차 결과(전체)", "2차 결과(규제)"]:
+                                val = str(val).replace('\n', ' ').replace('\r', '').strip()
+                                val = re.sub(r'\s{2,}', ' ', val)
+                            try: ws.Cells(curr_row, c_idx).NumberFormat = "@"
+                            except: pass
+                            ws.Cells(curr_row, c_idx).Value = str(val)
+                    saved_count += 1
+                else:
+                    # 가로형: 기존의 세미콜론 정류 방식대로 한 줄로 압축 저장
+                    # 병합 구역의 시작 행(start_row)을 탐색하여 정확한 파일명 획득
+                    start_row = row_idx
+                    while start_row > 0:
+                        item_fn = self.table.item(start_row, 7)
+                        if item_fn and item_fn.text().strip():
+                            break
+                        start_row -= 1
+                    
+                    fn_item = self.table.item(start_row, 7)
+                    if not fn_item: continue
+                    fn = fn_item.text().strip()
+                    if not fn: continue
+                    
+                    if fn not in table_dict or fn in written_files:
+                        continue
+                    
+                    # [수정] 파일의 본래 순서 인덱스를 기반으로 엑셀 행을 1:1 매핑 (밀림 현상 방지)
+                    try:
+                        file_idx = next(i for i, path in enumerate(self.pdf_paths) if os.path.basename(path) == fn)
+                        curr_row = st_row + file_idx
+                    except StopIteration:
+                        curr_row = st_row + saved_count
+                    
+                    td = table_dict[fn]
+                    # [V12.7] 매핑된 모든 컬럼에 데이터 기입 (유연한 확장)
+                    for key, c_idx in mapping.items():
+                        if not c_idx or c_idx < 1: continue
+                        
+                        val = None
+                        if key == "제품명": val = td.get("product_name")
+                        elif key == "파일명": val = fn
+                        elif key == "CAS 원본": val = td.get("cas_sum")
+                        elif key == "측정대상1" or key == "측정대상2":
+                            measure_raw = td.get("measure")
+                            # 🚨 [주님 의도 복구] 역방향 마스터 DB 필터 기반 중복 격멸 적용
+                            if measure_raw:
+                                val = self.clean_measure_duplicates(measure_raw)
+                            else:
+                                val = ""
+                        elif key == "2차 결과(규제)": val = td.get("reg2")
+                        elif key == "1차 결과(전체)": val = td.get("reg1")
+                        elif key == "순번/No": val = td.get("no")
+                        elif key == "신호등": val = td.get("traffic_light")
+                        elif key == "매칭 엔진": val = td.get("matching_engine")
+                        elif key == "무결성 점수": val = td.get("integrity_score")
+                        
+                        if val is not None:
+                            # [V17.3.0.9] 주님 지침: GUI는 편집용(줄바꿈), 엑셀은 최종용(한 줄)으로 저장
+                            if key in ["CAS 원본", "1차 결과(전체)", "2차 결과(규제)"]:
+                                val = str(val).replace('\n', ' ').replace('\r', '').strip()
+                                # 연속된 공백 제거 (깔끔한 세미콜론 정렬용)
+                                val = re.sub(r'\s{2,}', ' ', val)
+                            
+                            # [무결성 가드레일] 엑셀의 문자열 포맷을 강제 유지하여 물결표(~) 및 하이픈(-) 유실을 원천 차단
+                            try:
+                                ws.Cells(curr_row, c_idx).NumberFormat = "@"
+                            except:
+                                pass
+                            ws.Cells(curr_row, c_idx).Value = str(val)
 
 
-                written_files.add(fn)
-                saved_count += 1
+                    written_files.add(fn)
+                    saved_count += 1
 
             wb.Save()
             wb.Close()

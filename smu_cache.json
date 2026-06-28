@@ -24,11 +24,81 @@
         },
         "v3.0_Final": {
             "product_name": "염산 (Hydrochloric acid)",
-            "raw_content": "7647-01-0(35~37%); 7732-18-5(Rem.%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
+            "raw_content": "",
+            "measure": "염화수소(35~37%)",
+            "reg1": [
+                "염화수소[7647-01-0(35~37%)]",
+                "물[7732-18-5(Rem.%)]"
+            ],
+            "reg2": [
+                "염화수소(35~37%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "7647-01-0",
+                "name": "염화수소",
+                "content": "35~37%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "1",
+                    "twa_mg": "-",
+                    "stel_ppm": "2",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "염화수소()[7647-01-0]"
+            },
+            {
+                "cas": "7732-18-5",
+                "name": "물(WATER)",
+                "content": "Rem.%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "물(WATER)()[7732-18-5]"
+            }
+        ]
     },
     "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f": {
         "f_hash": "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f",
@@ -55,11 +125,49 @@
         },
         "v3.0_Final": {
             "product_name": "CS006A",
-            "raw_content": "68083-19-2(≥95%)",
+            "raw_content": "",
             "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
+            "reg1": [
+                "비닐/STPD폴리다이메틸실록산(VINYL/STPDPOLYDIMETHYLSILOXANE)[68083-19-2(≥95%)]"
+            ],
+            "reg2": [
+                ""
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "68083-19-2",
+                "name": "비닐/STPD폴리다이메틸실록산(VINYL/STPDPOLYDIMETHYLSILOXANE)",
+                "content": "≥95%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "비닐/STPD폴리다이메틸실록산(VINYL/STPDPOLYDIMETHYLSILOXANE)()[68083-19-2]"
+            }
+        ]
     },
     "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
         "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
@@ -86,10 +194,112 @@
         },
         "v3.0_Final": {
             "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "109-99-9(99~100%); 109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
+            "raw_content": "",
+            "measure": "테트라히드로푸란(99~100%)",
+            "reg1": [
+                "테트라히드로푸란[109-99-9(99~100%)]",
+                "물[7732-18-5(0~1%)]",
+                "2,6-디-삼차-부틸-파라-크레졸[128-37-0(0.025%)]"
+            ],
+            "reg2": [
+                "테트라히드로푸란(99~100%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "109-99-9",
+                "name": "테트라하이드로푸란",
+                "content": "99~100%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "100",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "테트라하이드로푸란()[109-99-9]"
+            },
+            {
+                "cas": "7732-18-5",
+                "name": "물(WATER)",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "물(WATER)()[7732-18-5]"
+            },
+            {
+                "cas": "128-37-0",
+                "name": "2,6-디-삼차-부틸-파라-크레졸",
+                "content": "0.025%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "2",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "2,6-디-삼차-부틸-파라-크레졸()[128-37-0]"
+            }
+        ]
     }
 }
