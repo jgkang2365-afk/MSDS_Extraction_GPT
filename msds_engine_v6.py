@@ -1082,21 +1082,30 @@ class MSDSEngineV6:
                 unique_cas_in_pool = list(set(cas_pattern.findall(grounding_pool)))
                 valid_pool_cas_count = len([v for v in unique_cas_in_pool if self.verify_cas_number(v)])
                 if len(refined_comps) != valid_pool_cas_count:
-                    # 🛡️ [데이터 검증 및 예외 처리 - Test Case] NAS 등 읽기 전용 폴더 권한 거부(PermissionError) 방어용 고정 격리 폴더 분리
-                    log_dir = os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else "."
-                    try:
-                        os.makedirs(log_dir, exist_ok=True)
-                        test_path = os.path.join(log_dir, ".write_test")
-                        with open(test_path, "w") as tf: tf.write("1")
-                        os.remove(test_path)
-                    except (PermissionError, IOError):
-                        log_dir = os.path.join(os.getcwd(), "logs")
-                        os.makedirs(log_dir, exist_ok=True)
+                    # 🛡️ [데이터 검증 및 예외 처리 - Test Case] NAS 등 읽기 전용 폴더 권한 거부(PermissionError) 방어용 철통 다중 격리 선로 분리
+                    import tempfile
+                    candidate_dirs = [
+                        os.path.dirname(pdf_path) if os.path.dirname(pdf_path) else ".",
+                        os.path.join(os.getcwd(), "logs"),
+                        os.path.join(tempfile.gettempdir(), "msds_logs")
+                    ]
+                    target_log_dir = None
+                    for c_dir in candidate_dirs:
+                        try:
+                            os.makedirs(c_dir, exist_ok=True)
+                            test_path = os.path.join(c_dir, ".write_test")
+                            with open(test_path, "w") as tf: tf.write("1")
+                            os.remove(test_path)
+                            target_log_dir = c_dir
+                            break
+                        except (PermissionError, IOError):
+                            continue
                     
-                    false_ledger_path = os.path.join(log_dir, "★FALSE_GREEN_LEDGER.log")
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    with open(false_ledger_path, "a", encoding="utf-8") as f:
-                        f.write(f"[{timestamp}] 파일명: {os.path.basename(pdf_path)} | 의심사유: CAS 개수 불일치 (원본 유효: {valid_pool_cas_count}개 vs 추출: {len(refined_comps)}개)\n")
+                    if target_log_dir:
+                        false_ledger_path = os.path.join(target_log_dir, "★FALSE_GREEN_LEDGER.log")
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        with open(false_ledger_path, "a", encoding="utf-8") as f:
+                            f.write(f"[{timestamp}] 파일명: {os.path.basename(pdf_path)} | 의심사유: CAS 개수 불일치 (원본 유효: {valid_pool_cas_count}개 vs 추출: {len(refined_comps)}개)\n")
             except:
                 pass
         
