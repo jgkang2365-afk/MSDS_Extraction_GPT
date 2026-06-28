@@ -728,6 +728,11 @@ class MSDSEngineV6:
             
             if original_log_func:
                 original_log_func(f"🔍 [통합 원샷 회신 계측] AI 추출 완료 ➔ 제품명: '{ai_pn}', 성분: {len(refined_comps)}건")
+                if refined_comps:
+                    original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+                    original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
+                else:
+                    original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
 
             return {
                 "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
@@ -1794,6 +1799,8 @@ class MSDSEngineV6:
                 pct = "Rem."
             elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
                 pct = "미기재"
+            else:
+                pct = msds_utils_v3.clean_percentage(pct)
                 
             combined_text = f"{clean_cas}({pct})"
             

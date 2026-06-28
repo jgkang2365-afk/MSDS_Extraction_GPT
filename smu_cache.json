@@ -1,10 +1,72 @@
 {
+    "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e": {
+        "f_hash": "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e",
+        "product_name": "염산 (Hydrochloric acid)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7647-01-0(35~37%); 7732-18-5(Rem.%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/044_염화수소 7647-01-0.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "염산 (Hydrochloric acid)",
+            "raw_content": "7647-01-0(35~37%); 7732-18-5(Rem.%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "염산 (Hydrochloric acid)",
+            "raw_content": "7647-01-0(35~37%); 7732-18-5(Rem.%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f": {
+        "f_hash": "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f",
+        "product_name": "CS006A",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "68083-19-2(≥95%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/045_ CS006A_MSDS.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "CS006A",
+            "raw_content": "68083-19-2(≥95%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "CS006A",
+            "raw_content": "68083-19-2(≥95%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
     "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
         "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
         "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "109-99-9(99~100 %); 109-99-9(99~100 %); 7732-18-5(1~0 %); 128-37-0(0.025 %)",
+        "raw_content": "109-99-9(99~100%); 109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_★THF_MSDS.pdf",
         "page": 1,
@@ -17,14 +79,14 @@
         "comp_engine": "제미나이",
         "v2.0_Clean": {
             "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "109-99-9(99~100 %); 109-99-9(99~100 %); 7732-18-5(1~0 %); 128-37-0(0.025 %)",
+            "raw_content": "109-99-9(99~100%); 109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "109-99-9(99~100 %); 109-99-9(99~100 %); 7732-18-5(1~0 %); 128-37-0(0.025 %)",
+            "raw_content": "109-99-9(99~100%); 109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []

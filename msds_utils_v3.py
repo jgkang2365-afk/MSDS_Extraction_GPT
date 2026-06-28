@@ -167,39 +167,61 @@ def normalize_text(text):
     except Exception: return text
 
 def clean_percentage(content_str):
-    if not content_str: return ""
-    # 한글 혼용 범위어 평탄화 적용
-    content_str = clean_content_text(content_str)
-    content_str = unicodedata.normalize('NFKC', content_str).strip()
+    """🛡️ [데이터 검증 및 예외 처리] 1~0% 와 같은 역방향 범위어 노이즈 발견 즉시 0~1% 오름차순 평탄화 정류 및 포맷 수선"""
+    if not content_str:
+        return "미기재%"
     
-    # [주님 지시 고정 가드선] 상류에서 정제된 고정 표준 단어는 숫자 연산을 우회하여 원형 보존
-    if content_str in ["Rem.", "미기재"]:
-        return content_str
+    # 1. 한글 혼용 범위어 오타 정류 및 유니코드 정규화
+    raw = clean_content_text(str(content_str))
+    raw = unicodedata.normalize('NFKC', raw).strip()
+    
+    # 2. [고정 가드선] 상류 정제 고정 단어 원형 보존
+    if raw in ["Rem.", "미기재"]:
+        return raw
         
-    content_lower = content_str.lower()
-    nums = re.findall(r'\d+(?:\.\d+)?', content_str)
-    if not nums: return content_str
+    content_lower = raw.lower()
+    nums = re.findall(r'\d+(?:\.\d+)?', raw)
+    if not nums:
+        return raw if "%" in raw else f"{raw}%"
     
-    suffix = "%" if "%" in content_str else ""
+    # 3. 정형화된 포맷 조인을 위한 백업
+    suffix = "%"
+    
+    # 4. 수치 2개 이상일 경우 (범위어 역방향 평탄화 스왑 정류)
     if len(nums) >= 2:
-        v1, v2 = float(nums[0]), float(nums[1])
-        if v1 > v2: v1, v2 = v2, v1
-        v1_str = int(v1) if v1.is_integer() else v1
-        v2_str = int(v2) if v2.is_integer() else v2
-        
-        v2_prefix = ""
-        if any(c in content_lower for c in ["<", "미만", "below", "less"]):
-            v2_prefix = "<"
-        return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
-    
+        try:
+            v1, v2 = float(nums[0]), float(nums[1])
+            # 앞 숫자가 뒷 숫자보다 크면 논리적 모순이므로 오름차순 스왑(Swap) 집도
+            if v1 > v2:
+                v1, v2 = v2, v1
+            
+            v1_str = int(v1) if v1.is_integer() else v1
+            v2_str = int(v2) if v2.is_integer() else v2
+            
+            v2_prefix = ""
+            if any(c in content_lower for c in ["<", "미만", "below", "less"]):
+                v2_prefix = "<"
+            elif any(c in content_lower for c in ["≤", "=<", "이하", "이내", "upto"]):
+                v2_prefix = "≤"
+                
+            return f"{v1_str}~{v2_prefix}{v2_str}{suffix}"
+        except Exception:
+            pass
+            
+    # 5. 수치 1개일 경우 (단일 부등호 및 포맷 정류)
+    prefix = ""
     if any(c in content_lower for c in ["<", "미만", "below"]): prefix = "<"
     elif any(c in content_lower for c in ["≤", "=<", "이하", "이내", "upto"]): prefix = "≤"
     elif any(c in content_lower for c in [">", "초과", "over"]): prefix = ">"
     elif any(c in content_lower for c in ["≥", "=>", "이상", "above"]): prefix = "≥"
-    else: prefix = ""
-    v1 = float(nums[0])
-    v1_str = int(v1) if v1.is_integer() else v1
-    return f"{prefix}{v1_str}{suffix}"
+    
+    try:
+        v1 = float(nums[0])
+        v1_str = int(v1) if v1.is_integer() else v1
+        return f"{prefix}{v1_str}{suffix}"
+    except Exception:
+        return raw
+
 
 # ==============================================================================
 # 🛠️ [Chunk 22] msds_utils.py ➔ 코어 유틸리티: 함량 데이터 보존 로직 추가

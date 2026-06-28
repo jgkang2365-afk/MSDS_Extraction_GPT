@@ -31,13 +31,15 @@
         "현황 화학물질명 열": "I"
     },
     "backup_path": "",
-    "excel_path": "Z:/data/측정팀/측정보고서/2026년/상반기/(((미확정 사업장)))/지제이종합건설 주식회사 25-F-00부대 실험실 신축 시설공사(4282)/★ 회사명(26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
     "clean_sheet_name": "기준목록",
     "measure_sheet_name": "기준목록",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/044_염화수소 7647-01-0.pdf",
+        "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/045_ CS006A_MSDS.pdf",
         "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_★THF_MSDS.pdf"
     ]
 }
