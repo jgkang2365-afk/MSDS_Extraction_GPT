@@ -282,4 +282,10 @@ un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거�
 - **리턴 출구 소요 시간 인쇄 표준화**: 메인 파이프라인(`_process_msds_pipeline_impl`)의 조기 리턴 및 최종 리턴 출구 영역에서 `original_log_func`을 통과시킬 때, `elapsed_time = time.time() - start_time` 경과 연산 후 `  └─ 처리 시간: {elapsed_time:.2f}초` 형식의 정형화된 로그를 사출하여 모니터링 편의성과 퍼포먼스 계측 가시성을 완벽 보장하십시오.
 
 
+### 46. ModernMappingPanel UI 명칭 정류 및 GUI 테이블 직결 무정차 엑셀 마감 저장 규칙 (V24.6.5.0)
+- **ModernMappingPanel UI 명칭 정류**: 환경설정 탭 내 매핑 패널 하단 저장 모드 라디오 버튼 구역의 라벨을 `"엑셀 저장 데이터 방식:"`으로 명확히 정류 고정하여 UI 직관성을 확보하십시오.
+- **GUI 테이블 직결 스캔 기반 엑셀 마감 저장**: 엑셀 마감 저장 격발(`perform_standard_save`) 시, 파이프라인 메모리(`self.results`)의 유실 여부와 무관하게 `self.table.rowCount() == 0` 탐색으로 데이터 존재 유무를 확인하고, 테이블 UI에 표시되어 있는 데이터 행들을 직접 시각적 병합 스캔하여 `table_dict` 강제 추출 스냅샷을 구성한 후 엑셀 시트에 무정차 적재 완착하도록 조치하십시오.
+
+
+
 
