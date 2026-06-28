@@ -727,12 +727,14 @@ class MSDSEngineV6:
             comp_str = "; ".join(comp_parts) if comp_parts else "미기재%"
             
             if original_log_func:
+                elapsed_time = time.time() - start_time
                 original_log_func(f"🔍 [통합 원샷 회신 계측] AI 추출 완료 ➔ 제품명: '{ai_pn}', 성분: {len(refined_comps)}건")
                 if refined_comps:
                     original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
                     original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
                 else:
                     original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+                original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
 
             return {
                 "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
@@ -1163,11 +1165,13 @@ class MSDSEngineV6:
         # 🛡️ [데이터 검증 및 예외 처리] 신호등 키 유실 시 고시인성 보라색 폴백 안전 수납 (KeyError 방어)
         traffic_light = res_obj.get("신호등", "🟣")
         if original_log_func:
+            elapsed_time = time.time() - start_time
             if refined_comps:
                 original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
                 original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
             else:
                 original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+            original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
         return res_obj
 
     def _trigger_ai_extraction(self, pdf_path, image_list=None, log_func=None, hybrid_pn="", doc_type=None, product_engine=None):
