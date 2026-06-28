@@ -6369,6 +6369,20 @@ class SMUGUI(QMainWindow):
             # K308 유령 크롬 6가크롬 강제 삽입 폐기 (2번 요청 반영)
             render_components = new_comps
 
+        # 🛡️ [데이터 검증 및 예외 처리] AI 환각 중복 노이즈 격멸 및 역방향 함량(1~0%) 정류 세척 가드레일 완착
+        import msds_utils_v3
+        seen_cas = set()
+        cleaned_render_comps = []
+        for c in render_components:
+            cas_val = str(c.get("cas", "")).strip()
+            if cas_val in seen_cas:
+                continue
+            seen_cas.add(cas_val)
+            if c.get("content"):
+                c["content"] = msds_utils_v3.clean_percentage(str(c["content"]))
+            cleaned_render_comps.append(c)
+        render_components = cleaned_render_comps
+
         N = len(render_components)
         if N == 0 or not components:
             # 표시할 성분이 없거나 미분석 상태인 경우 최소 1개 행 생성용 모크 삽입
@@ -6667,6 +6681,21 @@ class SMUGUI(QMainWindow):
             
             # components가 있다면 1:N 후보 검색
             if components:
+                import msds_utils_v3
+                # 🛡️ [데이터 검증 및 예외 처리] 검증 행 렌더링 시에도 중복 CAS 및 역방향 함량 평탄화 방어벽 가동
+                seen_cas = set()
+                cleaned_comps = []
+                for c in components:
+                    cas_val = str(c.get("cas", "")).strip()
+                    if cas_val in seen_cas: continue
+                    seen_cas.add(cas_val)
+                    if c.get("content"):
+                        c["content"] = msds_utils_v3.clean_percentage(str(c["content"]))
+                    cleaned_comps.append(c)
+                components = cleaned_comps
+                if f_hash and f_hash in self.cache:
+                    self.cache[f_hash]["components"] = components
+
                 for c in components:
                     cas_val = c.get("cas", "")
                     candidates = self.find_mes_candidates(cas_val)
