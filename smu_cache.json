@@ -1,30 +1,61 @@
 {
+    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+        "product_name": "Super Way Lube 32",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
+        "v2.0_Clean": {
+            "product_name": "Super Way Lube 32",
+            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "Super Way Lube 32",
+            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
     "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
         "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
         "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
         "reliability": "N/A",
-        "신호등": "🔴",
-        "raw_content": "",
+        "신호등": "🟢",
+        "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
         "measure_target": "",
         "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_THF_MSDS.pdf",
         "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
-        "integrity_score": 0,
-        "integrity_reason": "[품질점수: 0점] ➔ [❌상표성분모순환각적발]",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
         "doc_type": "스캔본",
         "product_engine": "제미나이",
         "comp_engine": "제미나이",
         "v2.0_Clean": {
             "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "",
+            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "",
+            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []

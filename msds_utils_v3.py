@@ -33,6 +33,19 @@ def clean_content_text(text: str) -> str:
     pattern_hyphen = r'(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)\s*%?'
     text = re.sub(pattern_hyphen, r'\1~\2%', text)
     
+    # 🛡️ [역방향 범위 표기어 정류] 1-0%, 1~0% 등 큰 숫자가 앞에 오는 역방향 수치를 사전에 평탄화
+    pattern_descending = r'(\d+(?:\.\d+)?)\s*[-~∼～\u2013\u2014]\s*(\d+(?:\.\d+)?)\s*(%?)'
+    def fix_descending(m):
+        n1_str, n2_str, pct = m.group(1), m.group(2), m.group(3) or ""
+        try:
+            n1, n2 = float(n1_str), float(n2_str)
+            if n1 > n2:
+                return f"{n2_str}~{n1_str}{pct}"
+        except ValueError:
+            pass
+        return m.group(0)
+    text = re.sub(pattern_descending, fix_descending, text)
+    
     # 한글 혼용 범위어 매칭 규칙 적용: 이상 ~ 미만 형태를 물결과 백분율로 평탄화 (미만 무조건 보존)
     pattern = r'(\d+(?:\.\d+)?)\s*이상\s*~\s*(\d+(?:\.\d+)?)\s*%?\s*미만'
     def replace_match(match):
