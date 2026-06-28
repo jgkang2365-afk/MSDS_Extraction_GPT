@@ -652,27 +652,7 @@ class MSDSEngineV6:
             if original_log_func: 
                 original_log_func(f"⚡ [Fast-Track] 순수 스캔본 지형 감지 (글자수: {total_chars}자) ➔ 무거운 로컬 표 엔진을 전면 셧다운하고 외부 고속 AI 비전 채널로 다이렉트 직결 수송합니다.")
             
-            # [1단계] 상표명 마스킹 쉴드 인터락용 파일명 힌트 선제 연산
-            filename = os.path.basename(pdf_path)
-            file_pn_hint = ""
-            brackets = re.findall(r'\(([^)]+)\)', filename)
-            candidate_pns = []
-            for b in brackets:
-                b_clean = b.strip()
-                if b_clean in ['O', 'X', '★', '국문', 'KOR', 'E', '요청 조성비 서류', '보통휘발유', ' Regular Unleaded Gasoline']: continue
-                if any(blacklist in b_clean for blacklist in ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']): continue
-                candidate_pns.append(b_clean)
-                
-            if candidate_pns:
-                file_pn_hint = candidate_pns[0]
-            if not file_pn_hint:
-                no_ext = os.path.splitext(filename)[0]
-                cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
-                cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
-                cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
-                file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
-
-            # [2단계] 1~3페이지 고화질 2.0 배율 도면 구조 즉시 패킹
+            # 1~3페이지 고화질 2.0 배율 도면 구조 즉시 패킹
             fallback_images = []
             try:
                 doc = fitz.open(pdf_path)
@@ -688,12 +668,78 @@ class MSDSEngineV6:
             except Exception as img_err:
                 if original_log_func: original_log_func(f"  ⚠️ [고해상도 이미지 생성 에러] {img_err}")
 
-            # [3단계] 로컬 샌드위치 2중 중복 연산을 전면 배제하고 AI 구출단으로 초고속 직행 격발
-            res_ai = self._trigger_ai_extraction(pdf_path=pdf_path, image_list=fallback_images, log_func=original_log_func, hybrid_pn=file_pn_hint, doc_type="스캔본")
+            # 지침 융합 및 2층 구조 격리형 아웃풋 스키마 강착
+            one_shot_prompt = (
+                f"{PRODUCT_NAME_PROMPT}\n\n{VISION_EXTRACTOR_PROMPT}\n\n"
+                "🚨 [소장님 지시 - 통합 원샷 임무 명세 및 시야 격리벽]:\n"
+                "1. product_name 추출 규격: 1페이지 표지 도면의 '1. 화학제품과 회사에 관한 정보' 또는 '제품명(Product Name)' 이정표 바로 우측 혹은 직하방에 정렬된 가장 강조된 진짜 상표 제품명(예: 테트라하이드로퓨란 250ppm BHT)을 독립 추적하여 포착하십시오. '물질안전보건자료(MSDS)' 서식 대간판이나 회사 로고 이름은 절대 제품명이 아니므로 제외해야 합니다. 이 필드는 3항의 시야 제한 락을 전면 유예합니다.\n"
+                "2. components 추출 규격: 1~3페이지 전역의 3항 표 구역을 스캔하여 CAS 번호와 함량을 누락 없이 수확하십시오. 단, 4항(응급조치요령) 이하 하류 구역은 세이프티 락을 엄격히 적용하여 철저히 배제해야 합니다.\n"
+                "반드시 아래의 정형화된 JSON 스키마로만 사출하십시오. 줄글 설명은 엄금합니다.\n\n"
+                "{\n"
+                '  "product_name": "1페이지 표지 도면에서 읽어낸 진짜 상표 제품명",\n'
+                '  "components": [\n'
+                '    {"cas": "CAS 번호 (예: 109-99-9)", "content": "함유량 수치 (예: 99~100%)", "name": "물질명"}\n'
+                '  ]\n'
+                "}\n"
+            )
+
+            parts = [{"text": one_shot_prompt}]
+            for img in fallback_images:
+                parts.append({"inlineData": {"mimeType": "image/png", "data": img["data"]}})
+
+            payload_oneshot = {
+                "contents": [{"parts": parts}],
+                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
+            }
+
+            try:
+                res_ai = self.call_llm_router(payload_oneshot, log_func=None, model="gemini-2.5-flash", is_scanned_strict=True)
+                text_response = res_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                clean_json = text_response.replace("```json", "").replace("```", "").strip()
+                parsed_obj = json.loads(clean_json)
+                
+                ai_pn = str(parsed_obj.get("product_name", "")).strip()
+                ai_comps = parsed_obj.get("components", [])
+                if not isinstance(ai_comps, list): ai_comps = []
+            except Exception as e:
+                if original_log_func: original_log_func(f"  ⚠️ [통합 원샷 API 장애 격발] {e}")
+                return self._get_graceful_error_dict(pdf_path, f"통합 원샷 통신 실패: {e}", log_func=None, doc_type="스캔본")
+
+            # 상표명 마스킹 쉴드 연동 및 파일명 보정 백업 선로
+            is_pn_invalid = (not ai_pn) or any(k in ai_pn for k in ["미추출", "확인", "실패", "오류", "unknown"])
+            if is_pn_invalid:
+                filename = os.path.basename(pdf_path)
+                file_pn_hint = ""
+                brackets = re.findall(r'\(([^)]+)\)', filename)
+                candidate_pns = [b.strip() for b in brackets if b.strip() not in ['O', 'X', '★', '국문', 'KOR', 'E'] and not any(bl in b.strip() for bl in ['물질안정', '보건자료', 'MSDS', 'SDS'])]
+                if candidate_pns: 
+                    file_pn_hint = candidate_pns[0]
+                else:
+                    no_ext = os.path.splitext(filename)[0]
+                    cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
+                    cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
+                    cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
+                    file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
+                ai_pn = file_pn_hint
+
+            refined_comps = self.refine_msds_components_strict(ai_comps)
+            comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps if isinstance(c, dict) and 'cas' in c]
+            comp_str = "; ".join(comp_parts) if comp_parts else "미기재%"
+            
             if original_log_func:
-                comp_preview = res_ai.get("구성성분", "") if isinstance(res_ai, dict) else ""
-                original_log_func(f"🔍 [일괄 전송 회신 계측] 외부 AI 최종 수득 데이터 자산: '{comp_preview}' 확보")
-            return res_ai
+                original_log_func(f"🔍 [통합 원샷 회신 계측] AI 추출 완료 ➔ 제품명: '{ai_pn}', 성분: {len(refined_comps)}건")
+
+            return {
+                "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
+                "교정_사유": "통합 원샷 비전 추출 완착",
+                "신호등": "🟢" if comp_parts and ai_pn else "🟡",
+                "used_engine": "flash",
+                "integrity_score": 100 if comp_parts and ai_pn else 80,
+                "integrity_reason": "[통합원샷안착]",
+                "doc_type": "스캔본",
+                "product_engine": "제미나이",
+                "comp_engine": "제미나이"
+            }
         # ==============================================================================
 
         # 3섹션 성분 탐색 페이지 식별
