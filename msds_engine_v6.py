@@ -671,14 +671,15 @@ class MSDSEngineV6:
             # 지침 융합 및 2층 구조 격리형 아웃풋 스키마 강착
             one_shot_prompt = (
                 f"{PRODUCT_NAME_PROMPT}\n\n{VISION_EXTRACTOR_PROMPT}\n\n"
-                "🚨 [소장님 지시 - 통합 원샷 임무 명세 및 시야 격리벽]:\n"
+                "🚨 [소장님 지시 - 통합 원샷 임무 명세 및 글로벌 가로축 격리 배선]:\n"
                 "1. product_name 추출 규격: 1페이지 표지 도면의 '1. 화학제품과 회사에 관한 정보' 또는 '제품명(Product Name)' 이정표 바로 우측 혹은 직하방에 정렬된 가장 강조된 진짜 상표 제품명(예: 테트라하이드로퓨란 250ppm BHT)을 독립 추적하여 포착하십시오. '물질안전보건자료(MSDS)' 서식 대간판이나 회사 로고 이름은 절대 제품명이 아니므로 제외해야 합니다. 이 필드는 3항의 시야 제한 락을 전면 유예합니다.\n"
                 "2. components 추출 규격: 1~3페이지 전역의 3항 표 구역을 스캔하여 CAS 번호와 함량을 누락 없이 수확하십시오. 단, 4항(응급조치요령) 이하 하류 구역은 세이프티 락을 엄격히 적용하여 철저히 배제해야 합니다.\n"
+                "3. 가로축 독립 격리(Horizontal Row Isolation) 및 낙장 방지 규격: 표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. 특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오.\n"
                 "반드시 아래의 정형화된 JSON 스키마로만 사출하십시오. 줄글 설명은 엄금합니다.\n\n"
                 "{\n"
                 '  "product_name": "1페이지 표지 도면에서 읽어낸 진짜 상표 제품명",\n'
                 '  "components": [\n'
-                '    {"cas": "CAS 번호 (예: 109-99-9)", "content": "함유량 수치 (예: 99~100%)", "name": "물질명"}\n'
+                '    {"cas": "CAS 번호 (예: 109-99-9)", "content": "함유량 수치 (예: 99~100%)", "name": "물질명"}\r\n'
                 '  ]\n'
                 "}\n"
             )
@@ -1266,11 +1267,17 @@ class MSDSEngineV6:
                 if log_func: log_func(f" ⚠️ [인코더 오류] 이미지 변환 실패: {e}")
 
         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 순수 스캔본 전용 프롬프트 자가 검열 방지 지침 동적 주입
+        row_isolation_instruction = (
+            "\n🚨 [소장님 지시 - 글로벌 가로축 격리 및 낙장 방지 배선]:\n"
+            "표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. "
+            "특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. "
+            "CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오."
+        )
         if not section3_text.strip():
             scan_hint = "\n[🚨 SYSTEM NOTE]: 이 문서는 로컬 텍스트 레이어가 전무한 100% 순수 이미지 스캔본입니다. 기존의 텍스트 대조 필터 규칙을 전면 해제하며, 오직 첨부된 이미지들의 시각 정보(픽셀 도면)에만 100% 의존하여 눈에 보이는 모든 성분의 CAS 번호와 함유량을 누락 없이 정직하게 추출하십시오."
-            raw_prompt = f"{VISION_EXTRACTOR_PROMPT}{scan_hint}\n\n[🚨 CONTEXT CAPTURE]:\n(순수 스캔본 문서로 로컬 텍스트 없음)"
+            raw_prompt = f"{VISION_EXTRACTOR_PROMPT}{row_isolation_instruction}{scan_hint}\n\n[🚨 CONTEXT CAPTURE]:\n(순수 스캔본 문서로 로컬 텍스트 없음)"
         else:
-            raw_prompt = f"{VISION_EXTRACTOR_PROMPT}\n\n[🚨 CONTEXT CAPTURE]:\n{section3_text[:2000]}"
+            raw_prompt = f"{VISION_EXTRACTOR_PROMPT}{row_isolation_instruction}\n\n[🚨 CONTEXT CAPTURE]:\n{section3_text[:2000]}"
             
         local_ocr_html = ""
         ai_res = None
@@ -2083,7 +2090,8 @@ class MSDSEngineV6:
         for i in range(len(doc)):
             text = doc[i].get_text("text")
             if not found_section3:
-                if re.search(r'(?:SECTION\s*)?[23][\s항.:\-\/]*(?:구성성분|성분|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
+                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 본문 서술형 문장 오탐지를 원천 차단하고 역전 레이아웃만 포섭하는 정밀 식별 경계벽 완착
+                if re.search(r'(?:(?:SECTION\s*)?[23][\s항.:\-\/]*구성\s*성분|구성\s*성분[\s\S]{0,50}(?<!\d)[23](?:[.\s항\-\/]|$)|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
                     found_section3 = True
             
             if found_section3:
@@ -2790,9 +2798,10 @@ class MSDSEngineV6:
         
         section3_zone = ""
         start_patterns = [
-            r'3\.\s*(?:구성성분의\s*명칭\s*및\s*함유량|구성성분\s*및\s*함량|구성성분|성분\s*및\s*함량|조성물|COMPOSITION|INGREDIENTS)',
+            # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 일반 설명문 수치 오인입을 철통 방어하는 하류 검증소 전후방 양방향 경계 앵커
+            r'(?:3\.\s*(?:구성\s*성분의\s*명칭\s*및\s*함유량|구성\s*성분\s*및\s*함량|구성\s*성분|성분\s*및\s*함량|조성물|COMPOSITION|INGREDIENTS)|(?:구성\s*성분의\s*명칭\s*및\s*함유량|구성\s*성분\s*및\s*함량|구성\s*성분|성분\s*및\s*함량)[\s\S]{0,50}(?<!\d)3(?:[.\s항]|$))',
             r'SECTION\s*3',
-            r'3\s*구성성분'
+            r'3\s*구성\s*성분'
         ]
         end_patterns = [
             r'4\.\s*(?:응급조치\s*요령|응급조치|응급처치|요령|구급|FIRST\s*AID)',
@@ -3589,7 +3598,25 @@ class MSDSOfflineTester:
                 "raw_text": "화학 물질명 : Tetrahydrofuran\nCAS NO: 109-99-9\n함유량 : 99-100%",
                 "target_cas": "109-99-9",
                 "expected_concentration": "99~100%"
-            }
+            },
+                {
+                    "desc": "008번 사라퐁 악성 행간 유착 - 정제수 누락 방어 검증 (Test Case)",
+                    "raw_text": "\"정제수\",\"Water\",\"7732-18-5\",\"60~70\"",
+                    "target_cas": "7732-18-5",
+                    "expected_concentration": "60~70%"
+                },
+                {
+                    "desc": "008번 사라퐁 악성 행간 유착 - 수산화나트륨 함량 오독 방어 검증 (Test Case)",
+                    "raw_text": "\"알킬벤zen설폰산\",,,\"< 5\"\n\"수산화나트륨\",\"Sodium hydroxide\",\"1310-73-2\",\"< 1\"",
+                    "target_cas": "1310-73-2",
+                    "expected_concentration": "<1%"
+                },
+                {
+                    "desc": "008번 사라퐁 오탐지 차단 및 순서 역전 경계 검증 (Test Case)",
+                    "raw_text": "구성성분의 명칭 및 함유량 [위생용품의 기준 및 규격] 3.\nCAS No. 1310-73-2 Content: < 1 %",
+                    "target_cas": "1310-73-2",
+                    "expected_concentration": "<1%"
+                }
         ]
 
     def run_snapshot_verification(self, target_id=None):
@@ -3631,6 +3658,12 @@ class MSDSOfflineTester:
                     for m in self.engine.comp_pattern.finditer(cleaned_text):
                         val = m.group(1).strip()
                         if not val: continue
+                        
+                        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 구획 번호 마침표(예: 3.)가 함량 수치로 오독되는 것 차단
+                        if val.isdigit() and cleaned_text[m.end():m.end()+1] == '.':
+                            after_dot = cleaned_text[m.end()+1:m.end()+2]
+                            if not after_dot.isdigit():
+                                continue
                         
                         # 후위 부등호 핀셋 구출 가드레일 동기화 완착
                         after_str = cleaned_text[m.end():m.end()+3].strip()
@@ -3706,4 +3739,10 @@ if __name__ == "__main__":
     # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 실전 조업 라인 메모리 오염 방어: 
     # 실전 GUI 가동 시 싱글톤 포인터를 하이재킹하는 오프라인 훈련 스위치를 전면 오프(Pass) 처리한다.
     test_cas_highpass_interlock_validation()
+
+    # 🟢 [로컬 오프라인 무과금 자동 검수대 기동 및 회귀 검증]
+    print("🚀 [로컬 오프라인 무과금 자동 검수대] 단독 기동을 통한 품질 검증을 시작합니다.")
+    check_success = run_v6_automated_quality_check(MSDSEngineV6())
+    print(f"📊 [로컬 오프라인 무과금 자동 검수대] 검수 최종 상태: {'🟢 합격 (True)' if check_success else '🔴 불합격 (False)'}")
+    assert check_success is True, "[무결성 결함] 로컬 오프라인 무과금 자동 검수대 품질 검증에 실패하였습니다."
 
