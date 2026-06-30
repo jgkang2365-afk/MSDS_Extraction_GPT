@@ -6,7 +6,7 @@
         "신호등": "🟢",
         "raw_content": "7732-18-5(60~70%); 1310-73-2(<1%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/008_msds_사라퐁(O).pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/008_★msds_사라퐁.pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -25,6 +25,37 @@
         "v3.0_Final": {
             "product_name": "사라퐁",
             "raw_content": "7732-18-5(60~70%); 1310-73-2(<1%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
+        "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
+        "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_★THF_MSDS.pdf",
+        "page": 1,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
+        "v2.0_Clean": {
+            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []

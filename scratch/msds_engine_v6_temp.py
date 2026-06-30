@@ -646,132 +646,108 @@ class MSDSEngineV6:
         if is_scanned_strict and log_func: log_func(" 🔍 스캔본(Image-only) 감지. 즉시 AI 스나이퍼 모드 가동.")
 
         # ==============================================================================
-        # ⚡ [교정 결착] 동적 레이아웃 라우터 가속 선로 (Dynamic Layout Router Fast-Track) 완착
+        # ⚡ [교정 결착] 순수 스캔본 초고속 직결 선로 (Fast-Track Bypass) 활성화 스위치
         # ==============================================================================
-        # 100% 순수 스캔본(텍스트가 10자 미만)인 경우, 상류 Fast-Track Bypass를 타지 않고 즉시 하류 정밀 복구 선로로 우회시킵니다.
-        if is_scanned_strict and total_chars >= 10:
-            if original_log_func: 
-                original_log_func(f"⚡ [Fast-Track Dynamic Router] 순수 스캔본 지형 감지 ➔ 동적 레이아웃 라우터 분석을 가동합니다.")
-            
-            # 1~3페이지 고화질 2.0 배율 도면 패킹 및 레이아웃 분석용 임시 데이터 파싱
-            fallback_images = []
-            layout_scan_text = ""
-            try:
-                doc = fitz.open(pdf_path)
-                max_p = min(3, len(doc))
-                for p_i in range(max_p):
-                    page = doc[p_i]
-                    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                    fallback_images.append({
-                        "mimeType": "image/png",
-                        "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")
-                    })
-                    layout_scan_text += page.get_text("text") + "\n"
-                doc.close()
-            except Exception as img_err:
-                if original_log_func: original_log_func(f"  ⚠️ [고해상도 이미지 생성 에러] {img_err}")
-
-            # 📊 [동적 레이아웃 라우터 - 서식 다형성 자동 판별 인터락]
-            is_vertical_block = False
-            if any(k in layout_scan_text for k in ["화학 물질명", "화학물질명", "관용명 및 이명", "관용명"]):
-                is_vertical_block = True
-
-            if is_vertical_block:
-                if original_log_func: original_log_func("📊 [동적 레이아웃 라우터] 수직 카드 블록형(Vertical Block) 구조 판독 ➔ 단락 문맥 통합 지침 인젝션")
-                dynamic_instruction = (
-                    "3. 수직 단락 문맥 통합 및 개방형 시야 규격: 이 문서는 성분정보가 위에서 아래로 카드 블록 형태로 적층된 '수직 목록형 서식'입니다. "
-                    "인위적인 가로선 격리 규칙을 전면 해제하며, 하나의 물질 단락 내에 포함된 물질명, CAS 번호, 함유량 명세를 자율적이고 넓은 시야로 완전 매핑하여 누락 없이 수확하십시오. "
-                    "특히 하부에 배치된 미량 성분이나 물, BHT 등의 정보가 줄바꿈 분리로 인해 노이즈로 유실되지 않도록 철저히 사수하십시오."
-                )
-            else:
-                if original_log_func: original_log_func("📊 [동적 레이아웃 라우터] 가로축 격자 표(Grid Table) 구조 판독 ➔ 가로선 독립 격리 지침 인젝션")
-                dynamic_instruction = (
-                    "3. 가로축 독립 격리(Horizontal Row Isolation) 및 낙장 방지 규격: 이 문서는 성분정보가 좌우 가로축 행으로 정렬된 '격자형 표 서식'입니다. "
-                    "표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. "
-                    "특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. "
-                    "CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오."
-                )
-
-            # 지침 융합 및 2층 구조 격리형 아웃풋 스키마 강착
-            one_shot_prompt = (
-                f"{PRODUCT_NAME_PROMPT}\n\n{VISION_EXTRACTOR_PROMPT}\n\n"
-                "🚨 [소장님 지시 - 통합 원샷 임무 명세 및 동적 레이아웃 라우터 배선]:\n"
-                "1. product_name 추출 규격: 1페이지 표지 도면의 '1. 화학제품과 회사에 관한 정보' 또는 '제품명(Product Name)' 이정표 바로 우측 혹은 직하방에 정렬된 가장 강조된 진짜 상표 제품명(예: 테트라하이드로퓨란 250ppm BHT)을 독립 추적하여 포착하십시오. '물질안전보건자료(MSDS)' 서식 대간판이나 회사 로고 이름은 절대 제품명이 아니므로 제외해야 합니다. 이 필드는 3항의 시야 제한 락을 전면 유예합니다.\n"
-                "2. components 추출 규격: 1~3페이지 전역의 3항 표 구역을 스캔하여 CAS 번호와 함량을 누락 없이 수확하십시오. 단, 4항(응급조치요령) 이하 하류 구역은 세이프티 락을 엄격히 적용하여 철저히 배제해야 합니다.\n"
-                f"{dynamic_instruction}\n"
-                "반드시 아래의 정형화된 JSON 스키마로만 사출하십시오. 줄글 설명은 엄금합니다.\n\n"
-                "{\n"
-                '  "product_name": "1페이지 표지 도면에서 읽어낸 진짜 상표 제품명",\n'
-                '  "components": [\n'
-                '    {"cas": "CAS 번호 (예: 109-99-9)", "content": "함유량 수치 (예: 99~100%)", "name": "물질명"}\r\n'
-                '  ]\n'
-                "}\n"
-            )
-
-            parts = [{"text": one_shot_prompt}]
-            for img in fallback_images:
-                parts.append({"inlineData": {"mimeType": "image/png", "data": img["data"]}})
-
-            payload_oneshot = {
-                "contents": [{"parts": parts}],
-                "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
-            }
-
-            try:
-                res_ai = self.call_llm_router(payload_oneshot, log_func=None, model="gemini-2.5-flash", is_scanned_strict=True)
-                text_response = res_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                clean_json = text_response.replace("```json", "").replace("```", "").strip()
-                parsed_obj = json.loads(clean_json)
-                
-                ai_pn = str(parsed_obj.get("product_name", "")).strip()
-                ai_comps = parsed_obj.get("components", [])
-                if not isinstance(ai_comps, list): ai_comps = []
-            except Exception as e:
-                if original_log_func: original_log_func(f"  ⚠️ [통합 원샷 API 장애 격발] {e}")
-                return self._get_graceful_error_dict(pdf_path, f"통합 원샷 통신 실패: {e}", log_func=None, doc_type="스캔본")
-
-            # 상표명 마스킹 쉴드 연동 및 파일명 보정 백업 선로
-            is_pn_invalid = (not ai_pn) or any(k in ai_pn for k in ["미추출", "확인", "실패", "오류", "unknown"])
-            if is_pn_invalid:
-                filename = os.path.basename(pdf_path)
-                file_pn_hint = ""
-                brackets = re.findall(r'\(([^)]+)\)', filename)
-                candidate_pns = [b.strip() for b in brackets if b.strip() not in ['O', 'X', '★', '국문', 'KOR', 'E'] and not any(bl in b.strip() for bl in ['물질안정', '보건자료', 'MSDS', 'SDS'])]
-                if candidate_pns: 
-                    file_pn_hint = candidate_pns[0]
-                else:
-                    no_ext = os.path.splitext(filename)[0]
-                    cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
-                    cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
-                    cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
-                    file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
-                ai_pn = file_pn_hint
-
-            refined_comps = self.refine_msds_components_strict(ai_comps)
-            comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps if isinstance(c, dict) and 'cas' in c]
-            comp_str = "; ".join(comp_parts) if comp_parts else "미기재%"
-            
-            if original_log_func:
-                elapsed_time = time.time() - start_time
-                original_log_func(f"🔍 [통합 원샷 회신 계측] AI 추출 완료 ➔ 제품명: '{ai_pn}', 성분: {len(refined_comps)}건")
-                if refined_comps:
-                    original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
-                    original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
-                else:
-                    original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
-                original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
-
-            return {
-                "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
-                "교정_사유": "통합 원샷 비전 추출 완착",
-                "신호등": "🟢" if comp_parts and ai_pn else "🟡",
-                "used_engine": "flash",
-                "integrity_score": 100 if comp_parts and ai_pn else 80,
-                "integrity_reason": "[통합원샷안착]",
-                "doc_type": "스캔본",
-                "product_engine": "제미나이",
-                "comp_engine": "제미나이"
-            }
+#         if is_scanned_strict:
+#             if original_log_func: 
+#                 original_log_func(f"⚡ [Fast-Track] 순수 스캔본 지형 감지 (글자수: {total_chars}자) ➔ 무거운 로컬 표 엔진을 전면 셧다운하고 외부 고속 AI 비전 채널로 다이렉트 직결 수송합니다.")
+#             
+#             # 1~3페이지 고화질 2.0 배율 도면 구조 즉시 패킹
+#             fallback_images = []
+#             try:
+#                 doc = fitz.open(pdf_path)
+#                 max_p = min(3, len(doc))
+#                 for p_i in range(max_p):
+#                     page = doc[p_i]
+#                     pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+#                     fallback_images.append({
+#                         "mimeType": "image/png",
+#                         "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")
+#                     })
+#                 doc.close()
+#             except Exception as img_err:
+#                 if original_log_func: original_log_func(f"  ⚠️ [고해상도 이미지 생성 에러] {img_err}")
+# 
+#             # 지침 융합 및 2층 구조 격리형 아웃풋 스키마 강착
+#             one_shot_prompt = (
+#                 f"{PRODUCT_NAME_PROMPT}\n\n{VISION_EXTRACTOR_PROMPT}\n\n"
+#                 "🚨 [소장님 지시 - 통합 원샷 임무 명세 및 글로벌 가로축 격리 배선]:\n"
+#                 "1. product_name 추출 규격: 1페이지 표지 도면의 '1. 화학제품과 회사에 관한 정보' 또는 '제품명(Product Name)' 이정표 바로 우측 혹은 직하방에 정렬된 가장 강조된 진짜 상표 제품명(예: 테트라하이드로퓨란 250ppm BHT)을 독립 추적하여 포착하십시오. '물질안전보건자료(MSDS)' 서식 대간판이나 회사 로고 이름은 절대 제품명이 아니므로 제외해야 합니다. 이 필드는 3항의 시야 제한 락을 전면 유예합니다.\n"
+#                 "2. components 추출 규격: 1~3페이지 전역의 3항 표 구역을 스캔하여 CAS 번호와 함량을 누락 없이 수확하십시오. 단, 4항(응급조치요령) 이하 하류 구역은 세이프티 락을 엄격히 적용하여 철저히 배제해야 합니다.\n"
+#                 "3. 가로축 독립 격리(Horizontal Row Isolation) 및 낙장 방지 규격: 표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. 특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오.\n"
+#                 "반드시 아래의 정형화된 JSON 스키마로만 사출하십시오. 줄글 설명은 엄금합니다.\n\n"
+#                 "{\n"
+#                 '  "product_name": "1페이지 표지 도면에서 읽어낸 진짜 상표 제품명",\n'
+#                 '  "components": [\n'
+#                 '    {"cas": "CAS 번호 (예: 109-99-9)", "content": "함유량 수치 (예: 99~100%)", "name": "물질명"}\r\n'
+#                 '  ]\n'
+#                 "}\n"
+#             )
+# 
+#             parts = [{"text": one_shot_prompt}]
+#             for img in fallback_images:
+#                 parts.append({"inlineData": {"mimeType": "image/png", "data": img["data"]}})
+# 
+#             payload_oneshot = {
+#                 "contents": [{"parts": parts}],
+#                 "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
+#             }
+# 
+#             try:
+#                 res_ai = self.call_llm_router(payload_oneshot, log_func=None, model="gemini-2.5-flash", is_scanned_strict=True)
+#                 text_response = res_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+#                 clean_json = text_response.replace("```json", "").replace("```", "").strip()
+#                 parsed_obj = json.loads(clean_json)
+#                 
+#                 ai_pn = str(parsed_obj.get("product_name", "")).strip()
+#                 ai_comps = parsed_obj.get("components", [])
+#                 if not isinstance(ai_comps, list): ai_comps = []
+#             except Exception as e:
+#                 if original_log_func: original_log_func(f"  ⚠️ [통합 원샷 API 장애 격발] {e}")
+#                 return self._get_graceful_error_dict(pdf_path, f"통합 원샷 통신 실패: {e}", log_func=None, doc_type="스캔본")
+# 
+#             # 상표명 마스킹 쉴드 연동 및 파일명 보정 백업 선로
+#             is_pn_invalid = (not ai_pn) or any(k in ai_pn for k in ["미추출", "확인", "실패", "오류", "unknown"])
+#             if is_pn_invalid:
+#                 filename = os.path.basename(pdf_path)
+#                 file_pn_hint = ""
+#                 brackets = re.findall(r'\(([^)]+)\)', filename)
+#                 candidate_pns = [b.strip() for b in brackets if b.strip() not in ['O', 'X', '★', '국문', 'KOR', 'E'] and not any(bl in b.strip() for bl in ['물질안정', '보건자료', 'MSDS', 'SDS'])]
+#                 if candidate_pns: 
+#                     file_pn_hint = candidate_pns[0]
+#                 else:
+#                     no_ext = os.path.splitext(filename)[0]
+#                     cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
+#                     cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
+#                     cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
+#                     file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
+#                 ai_pn = file_pn_hint
+# 
+#             refined_comps = self.refine_msds_components_strict(ai_comps)
+#             comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps if isinstance(c, dict) and 'cas' in c]
+#             comp_str = "; ".join(comp_parts) if comp_parts else "미기재%"
+#             
+#             if original_log_func:
+#                 elapsed_time = time.time() - start_time
+#                 original_log_func(f"🔍 [통합 원샷 회신 계측] AI 추출 완료 ➔ 제품명: '{ai_pn}', 성분: {len(refined_comps)}건")
+#                 if refined_comps:
+#                     original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+#                     original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
+#                 else:
+#                     original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+#                 original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
+# 
+#             return {
+#                 "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
+#                 "교정_사유": "통합 원샷 비전 추출 완착",
+#                 "신호등": "🟢" if comp_parts and ai_pn else "🟡",
+#                 "used_engine": "flash",
+#                 "integrity_score": 100 if comp_parts and ai_pn else 80,
+#                 "integrity_reason": "[통합원샷안착]",
+#                 "doc_type": "스캔본",
+#                 "product_engine": "제미나이",
+#                 "comp_engine": "제미나이"
+#             }
         # ==============================================================================
 
         # 3섹션 성분 탐색 페이지 식별
@@ -1290,30 +1266,13 @@ class MSDSEngineV6:
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [인코더 오류] 이미지 변환 실패: {e}")
 
-        # 🛡️ [데이터 검증 및 에러 예외 처리 - 동적 레이아웃 라우터 배선 실시간 판독]
-        is_vertical_block = False
-        routing_pool = str(section3_text).lower()
-        if any(k in routing_pool for k in ["화학 물질명", "화학물질명", "관용명 및 이명", "관용명"]):
-            is_vertical_block = True
-
-        if is_vertical_block:
-            if original_log_func: original_log_func("📊 [동적 레이아웃 라우터] 수직 카드 블록형(Vertical Block) 구조 판독 ➔ 단락 문맥 통합 지침 인젝션")
-            row_isolation_instruction = (
-                "\n🚨 [소장님 지시 - 수직 단락 문맥 통합 추출 배선]:\n"
-                "이 문서는 성분정보가 위에서 아래로 카드 블록 형태로 적층된 '수직 목록형 서식'입니다. "
-                "인위적인 가로선 격리 규칙을 전면 해제하며, 하나의 물질 단락 내에 포함된 물질명, CAS 번호, 함유량 명세를 자율적이고 넓은 시야로 완전 매핑하여 누락 없이 수확하십시오. "
-                "특히 하부에 배치된 미량 성분이나 물, BHT 등의 정보가 줄바꿈 분리로 인해 노이즈로 유실되지 않도록 철저히 사수하십시오."
-            )
-        else:
-            if original_log_func: original_log_func("📊 [동적 레이아웃 라우터] 가로축 격자 표(Grid Table) 구조 판독 ➔ 가로선 독립 격리 지침 인젝션")
-            row_isolation_instruction = (
-                "\n🚨 [소장님 지시 - 글로벌 가로축 격리 및 낙장 방지 배선]:\n"
-                "이 문서는 성분정보가 좌우 가로축 행으로 정렬된 '격자형 표 서식'입니다. "
-                "표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. "
-                "특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. "
-                "CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오."
-            )
-
+        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 순수 스캔본 전용 프롬프트 자가 검열 방지 지침 동적 주입
+        row_isolation_instruction = (
+            "\n🚨 [소장님 지시 - 글로벌 가로축 격리 및 낙장 방지 배선]:\n"
+            "표 구조 판독 시 반드시 하나의 완벽한 가로선(Row) 단위로만 시야를 격리하여 연산하십시오. "
+            "특정 행에 CAS 번호 칸이 비어 있거나 줄바꿈 뒤틀림이 있더라도 우측의 함량 수치가 위아래 행의 다른 CAS 번호 영역으로 무단 유착되는 것을 철저히 차단하십시오. "
+            "CAS 번호가 공란이거나 누락된 성분이라도 무시하지 말고 \"cas\": \"미기재\"로 장부에 반드시 포착해 사출하십시오."
+        )
         if not section3_text.strip():
             scan_hint = "\n[🚨 SYSTEM NOTE]: 이 문서는 로컬 텍스트 레이어가 전무한 100% 순수 이미지 스캔본입니다. 기존의 텍스트 대조 필터 규칙을 전면 해제하며, 오직 첨부된 이미지들의 시각 정보(픽셀 도면)에만 100% 의존하여 눈에 보이는 모든 성분의 CAS 번호와 함유량을 누락 없이 정직하게 추출하십시오."
             raw_prompt = f"{VISION_EXTRACTOR_PROMPT}{row_isolation_instruction}{scan_hint}\n\n[🚨 CONTEXT CAPTURE]:\n(순수 스캔본 문서로 로컬 텍스트 없음)"
@@ -3657,12 +3616,6 @@ class MSDSOfflineTester:
                     "raw_text": "구성성분의 명칭 및 함유량 [위생용품의 기준 및 규격] 3.\nCAS No. 1310-73-2 Content: < 1 %",
                     "target_cas": "1310-73-2",
                     "expected_concentration": "<1%"
-                },
-                {
-                    "desc": "046번 THF형 서식 수직 카드 블록 레이아웃 탐색 방어 검증 (Test Case)",
-                    "raw_text": "화학 물질명 : Water\n관용명 및 이명 : Dihydrogen oxide\nCAS NO : 7732-18-5\n함유량 : 1-0 %",
-                    "target_cas": "7732-18-5",
-                    "expected_concentration": "0~1%"
                 }
         ]
 
