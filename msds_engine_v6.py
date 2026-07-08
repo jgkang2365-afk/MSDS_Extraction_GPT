@@ -3016,11 +3016,11 @@ class MSDSEngineV6:
                     is_priority_cell = (col_idx == priority_col_idx)
                     if is_priority_cell:
                         strong_content = self._clean_content_odl(norm_c)
-                        break
+                        # 🛡️ [데이터 검증 및 에러 예외 처리 - 회귀 차단 인터락 완착]
+                        # 조기 탈출(break)을 철거하여 우측 Cas No. 격실 순회가 강제 취소되는 장해를 원천 소각합니다.
+                        continue
                     elif not strong_content:
                         strong_content = self._clean_content_odl(norm_c)
-                elif not strong_content and (is_symbol or is_range):
-                    strong_content = self._clean_content_odl(norm_c)
                 else:
                     try:
                         clean_val = float(re.sub(r'[^\d.]', '', norm_c))
