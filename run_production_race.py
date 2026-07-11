@@ -165,7 +165,7 @@ def run_race():
         start_t = time.time()
         
         try:
-            ext_res = core.extract_from_pdf(f_path)
+            ext_res = core.extract_from_pdf(f_path, log_func=print)
             raw_val_res = core.validate_with_kosha(ext_res.get("구성성분", ""), f_hash=f_hash)
             
             elapsed = time.time() - start_t
