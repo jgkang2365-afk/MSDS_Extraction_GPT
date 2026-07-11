@@ -1,5 +1,5 @@
 import os
-print("📍 [현재 실행 중인 진짜 도면 위치]:", os.path.abspath(__file__))
+print("[*] [현재 실행 중인 진짜 도면 위치]:", os.path.abspath(__file__))
 import base64
 import sys
 import re
@@ -1917,8 +1917,14 @@ class MSDSEngineV6:
         if content_str:
             content_str = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', str(content_str))
 
-        # 🛡️ [데이터 검증 및 에러 예외 처리] 후위 부등호 기호(99.5< 양식) 표준 전위 부등호(>99.5%)로 조기 평탄화 인터락 (msds_utils_v3 세척 사각지대 차단)
+        # 범위 기호 실재 여부 판단 검문 로직 선제 가동 (범위형 데이터 우회)
+        is_range_data = False
         if content_str:
+            is_range_data = any(k in str(content_str) for k in ['~', '∼', '～', '-'])
+
+        # 🛡️ [데이터 검증 및 에러 예외 처리] 후위 부등호 기호(99.5< 양식) 표준 전위 부등호(>99.5%)로 조기 평탄화 인터락 (msds_utils_v3 세척 사각지대 차단)
+        # 단, 범위형 데이터인 경우 후위 부등호 가드레일 오작동을 차단하기 위해 우회 처리
+        if content_str and not is_range_data:
             content_v = str(content_str).replace(" ", "")
             if re.search(r'\d(?:\.\d+)?(?:<|미만|below|less)$', content_v, re.I):
                 content_str = ">" + re.sub(r'[^\d.]', '', content_v) + "%"

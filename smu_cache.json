@@ -1,13 +1,13 @@
 {
-    "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b": {
-        "f_hash": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
-        "product_name": "TECA-BIOMETM",
+    "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259": {
+        "f_hash": "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259",
+        "product_name": "더블유디-40 (WD-40)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
+        "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(0%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_Extraction_Cleanroom/TEST_File/015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
-        "page": 1,
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/011_GHS MK WD-40 (REV30, 240722)(O).pdf",
+        "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
@@ -16,46 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "TECA-BIOMETM",
-            "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
+            "product_name": "더블유디-40 (WD-40)",
+            "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(0%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "TECA-BIOMETM",
-            "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "0174dc703b201ff2f94f255f726e0ad9370d8545b1632f4f310826c0a774bb10": {
-        "f_hash": "0174dc703b201ff2f94f255f726e0ad9370d8545b1632f4f310826c0a774bb10",
-        "product_name": "GL-2002 (지엘-2002)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_Extraction_Cleanroom/TEST_File/047_★GL-2002.pdf",
-        "page": 3,
-        "used_engine": "analytic",
-        "engine_version": "24.6.0.0",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "디지털",
-        "product_engine": "딥시크",
-        "comp_engine": "정규식",
-        "v2.0_Clean": {
-            "product_name": "GL-2002 (지엘-2002)",
-            "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "GL-2002 (지엘-2002)",
-            "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
+            "product_name": "더블유디-40 (WD-40)",
+            "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(0%)",
             "measure": "",
             "reg1": [],
             "reg2": []
