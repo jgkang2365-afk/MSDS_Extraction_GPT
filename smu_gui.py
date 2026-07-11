@@ -5665,11 +5665,13 @@ class SMUGUI(QMainWindow):
 
     def run_extraction(self):
         # 🚨 [과거 오염 장부 전면 소각 (Cache Purge)] 파일 정산 공정 시작부 국소 리셋 회로 결착
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         for cache_file in ["msds_cache_registry.json", "smu_cache.json"]:
-            if os.path.exists(cache_file):
+            cache_path = os.path.join(base_dir, cache_file)
+            if os.path.exists(cache_path):
                 try:
-                    os.remove(cache_file)
-                    self.log(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_file}")
+                    os.remove(cache_path)
+                    self.log(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_path}")
                 except Exception as ex:
                     self.log(f"[!] 캐시 파일 삭제 실패: {ex}")
         

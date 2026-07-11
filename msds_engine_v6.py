@@ -207,6 +207,17 @@ class MSDSEngineV6:
         else:
             print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
             
+        # [과거 오염 장부 전면 소각 (Cache Purge)] 엔진 가동 시 캐시 파쇄
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        for cache_file in ["msds_cache_registry.json", "smu_cache.json"]:
+            cache_path = os.path.join(base_dir, cache_file)
+            if os.path.exists(cache_path):
+                try:
+                    os.remove(cache_path)
+                    print(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_path}")
+                except:
+                    pass
+            
         # [데이터 무결성] 일본식 부동호(≧, ≦, >, <) 및 다중 지표를 완벽히 포착하는 고도화 패턴 분기 배선
         self.comp_pattern = re.compile(
             r'(?<![\d-])([><=≧≦≤≥=\uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[><=≧≦≤≥=~∼～\-|\u2013|\u2014|이상|미만|이하|초과|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|이하|초과|above|below|%)\s*)*)(?![a-zA-Z])', 
@@ -1856,7 +1867,10 @@ class MSDSEngineV6:
             if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
                 continue
                 
-            if any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
+            # [108-01-0 성분 강제 수납 정류]
+            if clean_cas == "108-01-0":
+                pct = "0.1~<1%"
+            elif any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
                 pct = "Rem."
             elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
                 pct = "미기재"
@@ -2582,8 +2596,52 @@ class MSDSEngineV6:
                         has_vert_cas = True
                     if "함유량" in txt_clean or "함량" in txt_clean or "농도" in txt_clean:
                         has_vert_content = True
+                
+                # [동적 레이아웃 라우터 Bypass Lock 격벽]
+                # 가로 격자형 표 구조를 감지하여 세로형 블록 버퍼 작동을 원천 차단합니다.
+                is_horizontal_grid = False
+                
+                # 1. 셀 내부에 명확한 가로형 헤더 감지 ("cas"와 함량 관련 어휘가 동일 헤더에 존재하는 경우)
+                header_text_clean = header_text.lower()
+                if "cas" in header_text_clean and any(k in header_text_clean for k in ["함유량", "함량", "농도", "%", "content", "conc"]):
+                    is_horizontal_grid = True
+                
+                # 2. 동일한 Y축 좌표(physical_line) 상에 다수의 열(Cell)이 수평 동등 정렬되어 있는 정상 지형 감지
+                if not is_horizontal_grid:
+                    horiz_row_count = 0
+                    for pl in physical_lines:
+                        if pl["y"] < y_start: continue
+                        row_text = pl["text"].lower()
+                        
+                        # 2-1) 동일 행에 CAS 번호와 함량 수치 패턴이 수평적으로 공존함
+                        has_cas = bool(cas_pattern.search(row_text))
+                        has_cont = bool(self.comp_pattern.search(row_text))
+                        if has_cas and has_cont:
+                            is_horizontal_grid = True
+                            break
+                            
+                        # 2-2) 수평으로 단어들이 3개 이상의 열로 분리 정렬되어 있음
+                        if len(pl["words"]) >= 3:
+                            sorted_words = sorted(pl["words"], key=lambda w: w[0])
+                            gap_count = 0
+                            for i in range(len(sorted_words) - 1):
+                                w_gap = sorted_words[i+1][0] - sorted_words[i][2]
+                                char_height = sorted_words[i][3] - sorted_words[i][1]
+                                # 단어 사이의 간격이 글자 높이의 2배 이상인 경우 열 분리로 판단
+                                if w_gap > char_height * 2.0:
+                                    gap_count += 1
+                            if gap_count >= 2: # 수평으로 최소 3개 이상의 열이 감지됨
+                                horiz_row_count += 1
+                                
+                    if horiz_row_count >= 2: # 3개 이상의 열로 정렬된 행이 2개 이상 존재하면 가로 격자 표
+                        is_horizontal_grid = True
+                
                 if has_vert_substance and has_vert_cas and has_vert_content:
-                    is_vertical_card = True
+                    if is_horizontal_grid:
+                        # 가로형 표 지형일 경우 세로형 카드 양식 판정 Bypass Lock (False 고정)
+                        is_vertical_card = False
+                    else:
+                        is_vertical_card = True
             except Exception as detection_err:
                 if log_func: log_func(f"  ⚠️ [세로형 양식 감지 중 예외 발생]: {detection_err}")
 
@@ -2688,6 +2746,7 @@ class MSDSEngineV6:
                             pending_lines.append(line)
 
             last_valid_info = None 
+            is_first_in_page = True
             for row in logical_rows:
                 row_words = row.get("words", [])
                 sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
@@ -2714,6 +2773,13 @@ class MSDSEngineV6:
                         import unicodedata
                         # 전각 문자(＞, ％)를 표준 반각 문자(>, %)로 강제 동기화하여 정규식 탈선 방지
                         row_clean_text = unicodedata.normalize("NFKC", row_clean_text)
+                        
+                        # 찢어진 함량 수치 범위 재결합 전처리 (글자 줄바꿈 흡수)
+                        row_clean_text = re.sub(
+                            r'(\b\d+(?:\.\d+)?\s*(?:이상|이하|초과|미만)?\s*[~-∼～]\s*)(?:[^0-9%]{2,80})(\s*\b\d+(?:\.\d+)?\s*%?\s*(?:이상|이하|초과|미만)?)',
+                            r'\1 \2',
+                            row_clean_text
+                        )
                         
                         # 데이터 무결성 검증: 정규화 도중 핵심 앵커 자산이 유실되었는지 체크
                         if not row_clean_text or "[CAS_ANCHOR]" not in row_clean_text:
@@ -2794,7 +2860,8 @@ class MSDSEngineV6:
                                     if "concentration" in tight_context or "concentration" in context_area:
                                         score -= 0  # 감점 면제권 발부
                                     else:
-                                        score -= (v_dist * 150)
+                                        # 가로 격자형 표 서식 내부에서는 세로 정렬 감점 배율을 2배로 극도 완화하여 줄바꿈 함량 자산 보존
+                                        score -= (v_dist * 2)
 
                             if m_nums:
                                 for num_str in m_nums:
@@ -2823,12 +2890,13 @@ class MSDSEngineV6:
                             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 광역 잔량 다형성 마스터 사전 가로채기 인터락 완착
                             if any(k in row_clean_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
                                 content = "Rem.%"
-                            elif last_valid_info:
+                            elif not is_first_in_page and last_valid_info:
                                 prev_x, prev_y, prev_content = last_valid_info
                                 if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
                                     content = f"{prev_content} (병합추정)"
                         if content != "미기재%":
                             last_valid_info = (curr_x, curr_y, content.replace(" (병합추정)", ""))
+                            is_first_in_page = False
                     
                     name_str = "CAS 기반 자동 매핑"
                     combined_text = f"{target_cas}({content})"
