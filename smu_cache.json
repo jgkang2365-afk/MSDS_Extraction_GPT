@@ -1,35 +1,4 @@
 {
-    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
-        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
-        "product_name": "Super Way Lube 32",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
-        "page": 1,
-        "used_engine": "analytic",
-        "engine_version": "24.6.0.0",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "스캔본",
-        "product_engine": "제미나이",
-        "comp_engine": "제미나이",
-        "v2.0_Clean": {
-            "product_name": "Super Way Lube 32",
-            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "Super Way Lube 32",
-            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
     "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b": {
         "f_hash": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
         "product_name": "TECA-BIOMETM",
@@ -37,7 +6,7 @@
         "신호등": "🟢",
         "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_Extraction_Cleanroom/TEST_File/015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
         "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -56,68 +25,6 @@
         "v3.0_Final": {
             "product_name": "TECA-BIOMETM",
             "raw_content": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def": {
-        "f_hash": "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def",
-        "product_name": "아이생각수성내부프로 (M-BASE)",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/036_★아이생각수성내부프로 (M-BASE)_GHS국문.pdf",
-        "page": 4,
-        "used_engine": "analytic",
-        "engine_version": "24.6.0.0",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "디지털",
-        "product_engine": "딥시크",
-        "comp_engine": "정규식",
-        "v2.0_Clean": {
-            "product_name": "아이생각수성내부프로 (M-BASE)",
-            "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "아이생각수성내부프로 (M-BASE)",
-            "raw_content": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        }
-    },
-    "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
-        "f_hash": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
-        "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-        "reliability": "N/A",
-        "신호등": "🟢",
-        "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
-        "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/046_★THF_MSDS.pdf",
-        "page": 1,
-        "used_engine": "analytic",
-        "engine_version": "24.6.0.0",
-        "integrity_score": 100,
-        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "스캔본",
-        "product_engine": "제미나이",
-        "comp_engine": "제미나이",
-        "v2.0_Clean": {
-            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
-            "measure": "",
-            "reg1": [],
-            "reg2": []
-        },
-        "v3.0_Final": {
-            "product_name": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
-            "raw_content": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
             "measure": "",
             "reg1": [],
             "reg2": []
@@ -128,9 +35,9 @@
         "product_name": "GL-2002 (지엘-2002)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7782-42-5(2~2%); 67-64-1(2~2%); 67-63-0(2~2%); 109-60-4(2~2%); 115-10-6(2~2%)",
+        "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래티비/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/047_GL-2002.pdf",
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_Extraction_Cleanroom/TEST_File/047_★GL-2002.pdf",
         "page": 3,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -141,14 +48,14 @@
         "comp_engine": "정규식",
         "v2.0_Clean": {
             "product_name": "GL-2002 (지엘-2002)",
-            "raw_content": "7782-42-5(2~2%); 67-64-1(2~2%); 67-63-0(2~2%); 109-60-4(2~2%); 115-10-6(2~2%)",
+            "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
             "product_name": "GL-2002 (지엘-2002)",
-            "raw_content": "7782-42-5(2~2%); 67-64-1(2~2%); 67-63-0(2~2%); 109-60-4(2~2%); 115-10-6(2~2%)",
+            "raw_content": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
             "measure": "",
             "reg1": [],
             "reg2": []

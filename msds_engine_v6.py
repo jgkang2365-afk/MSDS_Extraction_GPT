@@ -2014,6 +2014,9 @@ class MSDSEngineV6:
                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 범위형 수치 110% 초과 모순 데이터 차단 가드레일 (EC 번호 범위 오독 방지)
                 if n1 > 110 or n2 > 110:
                     return "미기재%"
+                # 🚨 [데이터 검증 및 에러 예외 처리 - Test Case] 시작과 끝이 동일한 모순 범위(2~2%) 발견 즉시 강제 기각 및 도미노 오염 차단 가드레일
+                if n1 == n2:
+                    return "미기재%"
                 
                 parts = re.split(r'\s*(?:~|∼|～|\-|to|and)\s*', v, maxsplit=1)
                 s_sym = ""
@@ -2655,8 +2658,8 @@ class MSDSEngineV6:
                                 if "concentration" in row_clean_text[max(0, match_pos-60):min(len(row_clean_text), match_pos+len(m_val)+60)].lower():
                                     score += 15000  # 다른 행에 위치하여 발생하는 v_dist 감점을 단숨에 무력화하는 부스터 점수 인젝션
 
-                            # 수평 동등 정렬 패널티 보강
-                            m_y = 9999
+                            # 수평 동등 정렬 패널티 보강 (하드코딩 제거 및 실제 행의 Y 좌표 row["last_y"]로 정류)
+                            m_y = row["last_y"]
                             m_nums = re.findall(r'\d+\.?\d*', m_val)
                             cas_word = next((w for w in row_words if target_cas in w[4]), None)
                             if cas_word and m_y != 9999:
@@ -3022,10 +3025,33 @@ class MSDSEngineV6:
                     elif not strong_content:
                         strong_content = self._clean_content_odl(norm_c)
                 else:
+                    # 한글 또는 영문 알파벳 포함 시 함량 후보군(weak_content) 등록 제외 (Bypass)
+                    if re.search(r'[a-zA-Z가-힣]', raw_cell):
+                        continue
                     try:
-                        clean_val = float(re.sub(r'[^\d.]', '', norm_c))
-                        if clean_val <= 100 and not weak_content: 
-                            weak_content = self._clean_content_odl(norm_c)
+                        # 범위 기호 선제 검사 및 분할 검증
+                        has_range = any(sym in norm_c for sym in ['~', '∼', '～', '-'])
+                        if has_range:
+                            parts = re.split(r'[~∼～\-]', norm_c)
+                            nums = [re.sub(r'[^\d.]', '', p) for p in parts if p.strip()]
+                            is_valid_range = True
+                            if not nums:
+                                is_valid_range = False
+                            for num_str in nums:
+                                try:
+                                    num_val = float(num_str)
+                                    if num_val > 100.0:
+                                        is_valid_range = False
+                                        break
+                                except:
+                                    is_valid_range = False
+                                    break
+                            if is_valid_range and not weak_content:
+                                weak_content = self._clean_content_odl(norm_c)
+                        else:
+                            clean_val = float(re.sub(r'[^\d.]', '', norm_c))
+                            if clean_val <= 100 and not weak_content: 
+                                weak_content = self._clean_content_odl(norm_c)
                     except: pass
                 continue
 
