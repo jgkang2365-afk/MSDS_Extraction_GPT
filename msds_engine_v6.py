@@ -1656,12 +1656,14 @@ class MSDSEngineV6:
         
         # 🛡️ [데이터 검증 및 예외 처리] AI 구출단 내 결함으로 신호등 미기재 시 보라색 비상등 강제 점등
         traffic_light = res_obj.get("신호등", "🟣")
-        if log_func:
+        if original_log_func:
+            elapsed_time = time.time() - start_time
             if refined_comps:
-                log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
-                log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps]))
+                original_log_func(f"✅ [{os.path.basename(pdf_path)}] 완료 (성분: {len(refined_comps)}건)")
+                original_log_func(f"  └─ 최종 자산: " + ", ".join([f"{c.get('cas')}({c.get('content')})" for c in refined_comps if isinstance(c, dict)]))
             else:
-                log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (사유: 자산 미검출)")
+                original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
+            original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
         return res_obj
 
     # ----------------------------------------------------------------------
