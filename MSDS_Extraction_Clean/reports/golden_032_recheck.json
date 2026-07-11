@@ -1,0 +1,15 @@
+{
+  "032": {
+    "구성성분": "7697-37-2(75%)",
+    "제품명": "Nitric acid",
+    "측정대상": "",
+    "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+    "신호등": "🟢",
+    "used_engine": "analytic",
+    "integrity_score": 100,
+    "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+    "doc_type": "디지털",
+    "product_engine": "딥시크",
+    "comp_engine": "정규식"
+  }
+}
