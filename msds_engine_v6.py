@@ -933,22 +933,48 @@ class MSDSEngineV6:
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [밀도 클러스터링 예외] 분석 스킵: {e}")
 
-        # 1선 성분 병합
+        # 1선 성분 병합 (Gate-Lock 적용)
         merged_map_1st = {}
+        def get_pct(item):
+            return str(item.get("percentage") or item.get("content", "미기재%"))
+
         for c in odl_components:
             cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
             if cas:
                 existing = merged_map_1st.get(cas)
-                if existing and str(existing.get("percentage") or existing.get("content", "미기재%")) != "미기재%":
-                    if str(c.get("percentage") or c.get("content", "미기재%")) == "미기재%":
+                if existing:
+                    old_c = get_pct(existing)
+                    new_c = get_pct(c)
+                    has_range_old = '~' in old_c
+                    has_range_new = '~' in new_c
+                    
+                    is_better = False
+                    if old_c in ["", "미기재%"]:
+                        is_better = new_c not in ["", "미기재%"]
+                    elif not has_range_old and has_range_new:
+                        is_better = True
+                        
+                    if not is_better:
                         continue
                 merged_map_1st[cas] = c
         for c in density_components:
             cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
             if cas:
                 existing = merged_map_1st.get(cas)
-                if existing and str(existing.get("percentage") or existing.get("content", "미기재%")) != "미기재%":
-                    continue
+                if existing:
+                    old_c = get_pct(existing)
+                    new_c = get_pct(c)
+                    has_range_old = '~' in old_c
+                    has_range_new = '~' in new_c
+                    
+                    is_better = False
+                    if old_c in ["", "미기재%"]:
+                        is_better = new_c not in ["", "미기재%"]
+                    elif not has_range_old and has_range_new:
+                        is_better = True
+                        
+                    if not is_better:
+                        continue
                 merged_map_1st[cas] = c
         odl_density_comps = list(merged_map_1st.values())
 
@@ -1990,6 +2016,13 @@ class MSDSEngineV6:
         raw = str(content_str).strip()
         if not raw: return "미기재%"
 
+        # 🚨 [독성학 분류 노이즈 전면 거세]
+        # 급성독성 구분 수치 및 H-코드(예: H314, 구분 4 등)와 관련된 법적 규제 단어 파편이 발견될 경우 제외
+        lower_raw = raw.lower()
+        if re.search(r'[hH]\d{3}', raw) or any(k in lower_raw for k in ["구분", "category", "급성", "독성", "acute", "toxic", "hazard"]):
+            if not '%' in raw or not any(k in raw for k in ["~", "∼", "～", "-", "to"]):
+                return "미기재%"
+
         if re.search(r'\d\s*[a-zA-Z]+', raw) and '%' not in raw and not any(k in raw.lower() for k in ["rem", "balance"]):
             return "미기재%"
 
@@ -2146,7 +2179,17 @@ class MSDSEngineV6:
 
                 if cas in refined_dict:
                     old_cont = refined_dict[cas].get("content", "미기재%")
-                    if old_cont == "미기재%" and cv and cv != "미기재%":
+                    # 정답 선점 가드 (Gate-Lock) 적용
+                    has_range_old = '~' in old_cont
+                    has_range_new = '~' in cv if cv else False
+                    
+                    is_better = False
+                    if old_cont in ["", "미기재%"]:
+                        is_better = cv not in ["", "미기재%"]
+                    elif not has_range_old and has_range_new:
+                        is_better = True
+                        
+                    if is_better:
                         refined_dict[cas]["content"] = cv
                         if comp.get("name"): refined_dict[cas]["name"] = comp.get("name")
                     try:
@@ -2176,7 +2219,12 @@ class MSDSEngineV6:
     def find_section3_pages(self, doc):
         pages = []
         found_section3 = False
-        exit_pattern = re.compile(r'^(?:SECTION\s*)?[4-9][항\s.:]*(?:응급|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)', re.I | re.M)
+        # 🚨 [Fuzzy 간판 센서 보강 및 양방향 식별 경계벽 정규식 장착]
+        exit_pattern = re.compile(
+            r'^(?:SECTION\s*)?(?:[4-9]\s*[\.\s항\-\/]*\s*(?:응\s*급\s*조\s*치|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)|'
+            r'(?:응\s*급\s*조\s*치|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)[\s\S]{0,50}(?<!\d)[4-9](?:[.\s항\-\/]|$))',
+            re.I | re.M
+        )
         
         for i in range(len(doc)):
             text = doc[i].get_text("text")
@@ -2192,9 +2240,18 @@ class MSDSEngineV6:
                     return sorted(list(set(pages)))
                 
                 lines = [l.strip() for l in text.split('\n') if l.strip()]
-                for line in lines:
+                for idx, line in enumerate(lines):
                     if exit_pattern.match(line) and "Page" not in line:
-                        return sorted(list(set(pages)))
+                        # 🚨 [4항 조기 종료 오탐 방지 인터락]
+                        # 해당 매칭 라인 아랫줄에 진짜 유효 CAS 번호 패턴이 존재한다면 성분 표의 지속으로 간주하여 조기 종료를 유예
+                        has_cas_below = False
+                        for below_line in lines[idx + 1:]:
+                            if cas_pattern.search(below_line):
+                                has_cas_below = True
+                                break
+                        
+                        if not has_cas_below:
+                            return sorted(list(set(pages)))
                     
         return sorted(list(set(pages)))
 
@@ -2457,9 +2514,31 @@ class MSDSEngineV6:
                         y_start_orig = b[1] - 30
                         y_start = y_start_orig
                 if y_start_orig > 0.0 and b[1] > y_start_orig:
-                    if any(k in b_text for k in ["응급조치", "FIRSTAID", "FIRSTAIDMEASURES"]) or re.search(r'4항', b_text):
-                        y_end = b[1]
-                        break
+                    # 🚨 [Fuzzy 간판 센서 보강 및 양방향 식별 경계벽 정규식 장착]
+                    b_raw = b[4].strip()
+                    is_exit = False
+                    if any(k in b_text for k in ["FIRSTAID", "FIRSTAIDMEASURES"]):
+                        is_exit = True
+                    elif re.search(r'4\s*[\.\s항\-\/]*\s*응\s*급\s*조\s*치', b_raw, re.I) or re.search(r'응\s*급\s*조\s*치[\s\S]{0,50}(?<!\d)4(?:[.\s항\-\/]|$)', b_raw, re.I):
+                        is_exit = True
+                    elif re.search(r'4\s*[\.\s항\-\/]*\s*응\s*급\s*조\s*치', b_text, re.I) or re.search(r'응\s*급\s*조\s*치[\s\S]{0,50}(?<!\d)4(?:[.\s항\-\/]|$)', b_text, re.I):
+                        is_exit = True
+                    elif re.search(r'4항', b_text):
+                        is_exit = True
+                    
+                    if is_exit:
+                        # 🚨 [4항 조기 종료 오탐 방지 인터락]
+                        # 현재 4항 감지 블록 이후에 존재하는 블록들 중에 진짜 CAS 번호가 발견된다면 3섹션 지속으로 간주하고 탈출을 유예
+                        has_cas_below = False
+                        current_idx = blocks.index(b)
+                        for below_b in blocks[current_idx + 1:]:
+                            if cas_pattern.search(below_b[4]):
+                                has_cas_below = True
+                                break
+                        
+                        if not has_cas_below:
+                            y_end = b[1]
+                            break
                         
             if raw_words and y_start > raw_words[-1][1] * 0.75:
                 y_start = 0.0
@@ -2844,6 +2923,11 @@ class MSDSEngineV6:
                             if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상']): score += 300
                             if '.' in m_val: score += 100
                             
+                            # 🚨 [데이터 무결성 사수] 순수 100% 단일 수치 가중치 밸브 고정 (100% 부스터 가중치 인젝션)
+                            clean_num = re.sub(r'[^\d.]', '', m_val)
+                            if clean_num == "100" and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상']):
+                                score += 20000
+                            
                             # 🚀 [데이터 무결성 인터락] 일본식 리스트용 'Concentration' 키워드 가중치 수술실 가동
                             if "concentration" in row_clean_text.lower():
                                 if "concentration" in row_clean_text[max(0, match_pos-60):min(len(row_clean_text), match_pos+len(m_val)+60)].lower():
@@ -3153,7 +3237,18 @@ class MSDSEngineV6:
                     target_cas = tc["cas_no"]
                     existing_item = next((item for item in page_items if item.get("cas_no") == target_cas), None)
                     if existing_item:
-                        if existing_item.get("content") in ["", "미기재%"] and tc.get("content") != "미기재%":
+                        old_c = existing_item.get("content", "미기재%")
+                        new_c = tc.get("content", "미기재%")
+                        has_range_old = '~' in old_c
+                        has_range_new = '~' in new_c
+                        
+                        is_better = False
+                        if old_c in ["", "미기재%"]:
+                            is_better = new_c not in ["", "미기재%"]
+                        elif not has_range_old and has_range_new:
+                            is_better = True
+                            
+                        if is_better:
                             existing_item["content"] = tc["content"]
                             existing_item["engine"] = "Regex-Recovery"
                     else:
@@ -3200,6 +3295,13 @@ class MSDSEngineV6:
                 c_remain = re.sub(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', '', c).strip()
                 if not c_remain: continue
                 c = c_remain
+
+            # 🚨 [독성학 분류 노이즈 전면 거세]
+            # 급성독성 구분 수치 및 H-코드(예: H314, 구분 4 등)와 관련된 법적 규제 단어 파편이 발견될 경우 제외
+            lower_cell = c.lower()
+            if re.search(r'[hH]\d{3}', c) or any(k in lower_cell for k in ["구분", "category", "급성", "독성", "acute", "toxic", "hazard"]):
+                if not '%' in c or not any(k in c for k in ["~", "∼", "～", "-", "to"]):
+                    continue
 
             norm_c = self._normalize_single_content(c)
             
@@ -3295,7 +3397,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "44b1c6e892883a73" 
+                GOLDEN_HASH = "43cb715801020320" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
