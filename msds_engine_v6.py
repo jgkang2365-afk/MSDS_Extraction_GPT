@@ -132,6 +132,10 @@ def normalize_concentration(raw_val):
             val_num = float(value)
             if val_num > 110:
                 return "미기재%"
+            if val_num.is_integer():
+                value = str(int(val_num))
+            else:
+                value = str(val_num)
         except:
             pass
             
@@ -1932,7 +1936,7 @@ class MSDSEngineV6:
                 content_str = "<" + re.sub(r'[^\d.]', '', content_v) + "%"
 
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
-        is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"])
+        is_range = any(k in str(content_str) for k in ["~", "-", "∼", "～", "to"]) or len(re.findall(r'\d+', str(content_str))) >= 2
         
         symbols = r"([><=≧≦≤≥])?"
         digits = r"(\d+(?:\.\d+)?)\s*%"
@@ -2540,34 +2544,126 @@ class MSDSEngineV6:
             pending_lines = []
             current_row = None
 
-            for line in physical_lines:
-                if line["y"] < y_start: continue
-                row_text = line["text"]
-                if re.search(r'SECTION\s*[3456]', row_text, re.I): continue
-                cas_list = cas_pattern.findall(row_text)
-                
-                if cas_list:
-                    is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
-                    current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
-                    for p_line in pending_lines:
-                        # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단 (단, 명시적 함량/약어 키워드가 결착된 수직 서식은 제외)
-                        if "%" in p_line["text"] or re.search(r'\d+\s*%', p_line["text"]) or re.search(r'\b\d{1,3}\.\d{2}\b', p_line["text"]):
-                            # 데이터 무결성 보장: 폭발한계 등 타 섹션 오염 유발 위험이 높은 vol, vol., vol%는 전면 영외 격리 거세
-                            if not any(k in p_line["text"].lower() for k in ["content", "percentage", "함량", "함유량", "composition", "ingredients", "component", "ingredient", "concentration", "조성", "조성물", "구성", "구성성분", "min", "max", "approx", "wt"]):
-                                continue
-                        current_row["words"].extend(p_line["words"])
-                    pending_lines = []
-                    current_row["words"].extend(line["words"])
-                    logical_rows.append(current_row)
-                else:
-                    # 80픽셀로 확장하여 구조식 이미지나 줄바꿈으로 멀어진 함량 행까지 자산으로 포섭
-                    is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
-                    if current_row and (line["y"] - current_row["last_y"]) < 80 and not is_new_ingredient_line:
+            # 세로형 카드 양식 감지
+            is_vertical_card = False
+            try:
+                has_vert_substance = False
+                has_vert_cas = False
+                has_vert_content = False
+                for pl in physical_lines:
+                    if pl["y"] < y_start: continue
+                    txt_clean = re.sub(r'[\s:：]+', '', pl["text"]).lower()
+                    # 성분, cas, 함유량/함량 키워드가 각각의 행에 쪼개져 등장하는 세로형 구조 여부 검문
+                    if "성분" in txt_clean:
+                        has_vert_substance = True
+                    if "cas" in txt_clean:
+                        has_vert_cas = True
+                    if "함유량" in txt_clean or "함량" in txt_clean or "농도" in txt_clean:
+                        has_vert_content = True
+                if has_vert_substance and has_vert_cas and has_vert_content:
+                    is_vertical_card = True
+            except Exception as detection_err:
+                if log_func: log_func(f"  ⚠️ [세로형 양식 감지 중 예외 발생]: {detection_err}")
+
+            if is_vertical_card:
+                if log_func: log_func("  [세로형 카드 감지] 가상 행 블록 버퍼(Virtual Row Buffer) 메커니즘을 작동합니다.")
+                try:
+                    import unicodedata
+                    blocks_data = []
+                    current_block = None
+                    
+                    for pl in physical_lines:
+                        if pl["y"] < y_start: continue
+                        row_text = pl["text"]
+                        if re.search(r'SECTION\s*[3456]', row_text, re.I): continue
+                        
+                        txt_clean = re.sub(r'[\s:：]+', '', row_text).lower()
+                        # '성분' 혹은 '성 분' 등으로 시작하거나 포함하면 새로운 가상 바구니(버퍼) 시작
+                        if "성분" in txt_clean:
+                            if current_block:
+                                blocks_data.append(current_block)
+                            current_block = {"lines": [pl], "y_start": pl["y"]}
+                        else:
+                            if current_block:
+                                current_block["lines"].append(pl)
+                            else:
+                                pass
+                                
+                    if current_block:
+                        blocks_data.append(current_block)
+                        
+                    for block in blocks_data:
+                        if not block or "lines" not in block or not block["lines"]:
+                            continue
+                        
+                        block_words = []
+                        for pl in block["lines"]:
+                            if pl and "words" in pl:
+                                block_words.extend(pl["words"])
+                                
+                        if not block_words:
+                            continue
+                        
+                        sorted_block_words = sorted(block_words, key=lambda w: (w[1], w[0]))
+                        block_full_text = " ".join([w[4] for w in sorted_block_words if w and len(w) > 4])
+                        
+                        clean_text = block_full_text
+                        clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
+                        clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
+                        clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
+                        clean_text = re.sub(r'(\d)(미만|이상|이하|초과)', r'\1 \2', clean_text)
+                        clean_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', clean_text)
+                        clean_text = unicodedata.normalize("NFKC", clean_text)
+                        
+                        cas_list = cas_pattern.findall(clean_text)
+                        if not cas_list:
+                            continue
+                        
+                        is_prod = any(k in clean_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
+                        
+                        # 가상 행 구조에서는 수직으로 찢어진 텍스트를 모았으므로 y축 거리 감점을 면제(last_y=9999)시킵니다.
+                        v_row = {
+                            "cas_list": cas_list,
+                            "words": sorted_block_words,
+                            "last_y": 9999,
+                            "is_product_id": is_prod
+                        }
+                        logical_rows.append(v_row)
+                except Exception as buffer_err:
+                    if log_func: log_func(f"  ⚠️ [가상 행 블록 버퍼 처리 실패]: {buffer_err}")
+                    # 예외 발생 시 안전한 가로형 폴백
+                    logical_rows = []
+                    is_vertical_card = False
+
+            if not is_vertical_card:
+                for line in physical_lines:
+                    if line["y"] < y_start: continue
+                    row_text = line["text"]
+                    if re.search(r'SECTION\s*[3456]', row_text, re.I): continue
+                    cas_list = cas_pattern.findall(row_text)
+                    
+                    if cas_list:
+                        is_prod = any(k in row_text.lower() for k in ["chemical identification", "product name", "제품식별자", "제품명", "substance identification", "identification of the substance"])
+                        current_row = {"cas_list": cas_list, "words": [], "last_y": line["y"], "is_product_id": is_prod}
+                        for p_line in pending_lines:
+                            # 오염 방지 인터락: 별도 행의 함량 수치가 다음 CAS 행으로 오인입되는 전이 현상 차단 (단, 명시적 함량/약어 키워드가 결착된 수직 서식은 제외)
+                            if "%" in p_line["text"] or re.search(r'\d+\s*%', p_line["text"]) or re.search(r'\b\d{1,3}\.\d{2}\b', p_line["text"]):
+                                # 데이터 무결성 보장: 폭발한계 등 타 섹션 오염 유발 위험이 높은 vol, vol., vol%는 전면 영외 격리 거세
+                                if not any(k in p_line["text"].lower() for k in ["content", "percentage", "함량", "함유량", "composition", "ingredients", "component", "ingredient", "concentration", "조성", "조성물", "구성", "구성성분", "min", "max", "approx", "wt"]):
+                                    continue
+                            current_row["words"].extend(p_line["words"])
+                        pending_lines = []
                         current_row["words"].extend(line["words"])
-                        current_row["last_y"] = line["y"]
+                        logical_rows.append(current_row)
                     else:
-                        current_row = None
-                        pending_lines.append(line)
+                        # 80픽셀로 확장하여 구조식 이미지나 줄바꿈으로 멀어진 함량 행까지 자산으로 포섭
+                        is_new_ingredient_line = any(k in row_text.lower() for k in ["ingredient name", "ingredient", "component", "물질명", "성분명", "chemical name"])
+                        if current_row and (line["y"] - current_row["last_y"]) < 80 and not is_new_ingredient_line:
+                            current_row["words"].extend(line["words"])
+                            current_row["last_y"] = line["y"]
+                        else:
+                            current_row = None
+                            pending_lines.append(line)
 
             last_valid_info = None 
             for row in logical_rows:

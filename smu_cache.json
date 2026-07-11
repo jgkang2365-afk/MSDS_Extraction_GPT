@@ -1,30 +1,30 @@
 {
-    "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259": {
-        "f_hash": "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259",
-        "product_name": "더블유디-40 (WD-40)",
+    "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6": {
+        "f_hash": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
+        "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(11~14%)",
+        "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/011_GHS MK WD-40 (REV30, 240722)(O).pdf",
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/024_Sodium Hydroxide(NaOH).pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
         "doc_type": "디지털",
-        "product_engine": "딥시크",
+        "product_engine": "제미나이",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "더블유디-40 (WD-40)",
-            "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(11~14%)",
+            "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+            "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "더블유디-40 (WD-40)",
-            "raw_content": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(11~14%)",
+            "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+            "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
             "measure": "",
             "reg1": [],
             "reg2": []
