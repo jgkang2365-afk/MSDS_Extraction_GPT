@@ -926,7 +926,12 @@ class MSDSEngineV6:
         merged_map_1st = {}
         for c in odl_components:
             cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
-            if cas: merged_map_1st[cas] = c
+            if cas:
+                existing = merged_map_1st.get(cas)
+                if existing and str(existing.get("percentage") or existing.get("content", "미기재%")) != "미기재%":
+                    if str(c.get("percentage") or c.get("content", "미기재%")) == "미기재%":
+                        continue
+                merged_map_1st[cas] = c
         for c in density_components:
             cas = str(c.get("cas_no") or c.get("cas", "")).replace(" ", "").strip()
             if cas:
@@ -1917,6 +1922,23 @@ class MSDSEngineV6:
         return "\n".join(text_list)
 
     def _normalize_single_content(self, content_str):
+        # 🚨 [데이터 무결성 사수] 복합 부등호 패턴 매칭 장치를 최상단 분기로 끌어올려 선제 격발
+        if content_str:
+            complex_bounds_match = re.search(
+                r'(?:>=|≥|≧)\s*(\d+(?:\.\d+)?)\s*(?:-|\~|∼|～|to)\s*(?:<=|≤|≦|<)\s*(\d+(?:\.\d+)?)\s*%?', 
+                str(content_str), 
+                re.IGNORECASE
+            )
+            if complex_bounds_match:
+                try:
+                    f1 = float(complex_bounds_match.group(1))
+                    f2 = float(complex_bounds_match.group(2))
+                    n1 = int(f1) if f1.is_integer() else f1
+                    n2 = int(f2) if f2.is_integer() else f2
+                    return f"{n1}~{n2}%"
+                except:
+                    pass
+
         # 🛡️ [데이터 검증 및 에러 예외 처리 - 테스트 케이스] 표 구조 및 줄글 정규식 전 선로 통합 인터락: 이씨 번호 범위형 오독 원천 거세
         if content_str:
             content_str = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', str(content_str))

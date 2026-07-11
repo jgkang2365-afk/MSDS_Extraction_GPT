@@ -1,30 +1,61 @@
 {
-    "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6": {
-        "f_hash": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
-        "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+    "fd6457e7d8d649cdf3ad5330fad7ac30cd89b5cb0e502491b7d8699f8448665c": {
+        "f_hash": "fd6457e7d8d649cdf3ad5330fad7ac30cd89b5cb0e502491b7d8699f8448665c",
+        "product_name": "Hydrochloric acid",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
+        "raw_content": "7647-01-0(35~40%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/024_Sodium Hydroxide(NaOH).pdf",
-        "page": 2,
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/030_HYDROCHLORIC ACID, 37%, A.C.S. REAGENT.PDF",
+        "page": 3,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
         "doc_type": "디지털",
-        "product_engine": "제미나이",
+        "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
-            "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
+            "product_name": "Hydrochloric acid",
+            "raw_content": "7647-01-0(35~40%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
-            "raw_content": "1310-73-2(92~100%); 7732-18-5(0~8%)",
+            "product_name": "Hydrochloric acid",
+            "raw_content": "7647-01-0(35~40%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    },
+    "293b5445bac50744c9e533ea08c1323531d2f51400de04adbf438a6e678b69a8": {
+        "f_hash": "293b5445bac50744c9e533ea08c1323531d2f51400de04adbf438a6e678b69a8",
+        "product_name": "Nitric acid",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7697-37-2(70~75%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/프로젝트/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/032_NITRIC ACID, ACS REAGENT, 70%.PDF",
+        "page": 3,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "Nitric acid",
+            "raw_content": "7697-37-2(70~75%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "Nitric acid",
+            "raw_content": "7697-37-2(70~75%)",
             "measure": "",
             "reg1": [],
             "reg2": []
