@@ -3016,7 +3016,19 @@ class MSDSEngineV6:
                 c = c_remain
 
             norm_c = self._normalize_single_content(c)
-            if norm_c != "미기재%" and re.search(r'\d', norm_c):
+            
+            # 🚨 [데이터 검증 및 에러 예외 처리 - 성분명 노이즈 스킵 가드]
+            is_noise_content = False
+            hangul_eng = re.findall(r'[a-zA-Z가-힣]', c)
+            total_chars = [char for char in c if not char.isspace()]
+            if total_chars:
+                ratio = len(hangul_eng) / len(total_chars)
+                if ratio > 0.3:
+                    is_noise_content = True
+            if col_idx in [0, 1]:
+                is_noise_content = True
+
+            if norm_c != "미기재%" and re.search(r'\d', norm_c) and not is_noise_content:
                 is_percent = '%' in c
                 is_pure_num = re.match(r'^[\d\s.]+$', c.strip()) is not None
                 is_symbol = any(k in c for k in ['~', '∼', '～', '<', '>', '≤', '≥', 'Rem', '잔량', 'balance', '미만', '이하', '초과', '이상'])
