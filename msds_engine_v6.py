@@ -1885,7 +1885,7 @@ class MSDSEngineV6:
 
         if grounding_text and cas_string in grounding_text:
             return True
-        if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "-", "해당없음", "None"]):
+        if any(k in cas_string for k in ["영업비밀", "비공개", "Secret", "Proprietary", "빈칸", "해당없음", "None"]) or cas_string == "-":
             return True
         if grounding_text:
             clean_cas = cas_string.replace(" ", "")
@@ -2083,7 +2083,8 @@ class MSDSEngineV6:
             for cas_raw, cv in zip(cas_list, loop_content):
                 cas = re.sub(r'^0+', '', cas_raw)
                 
-                if is_ai and not self.verify_cas_number(cas, grounding_text=full_text):
+                # 🚨 [데이터 검증 및 에러 예외 처리] AI 추출 여부와 무관하게 1선 정규식 자산도 체크디지트 규격 검증을 상시 강제 격발하여 유령 CAS 진입 차단
+                if not self.verify_cas_number(cas):
                     valid_text_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', full_text)
                     valid_text_cas = [v for v in valid_text_cas if self.verify_cas_number(v, grounding_text=full_text)]
                     
