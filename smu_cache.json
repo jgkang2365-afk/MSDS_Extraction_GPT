@@ -1,0 +1,33 @@
+{
+    "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef": {
+        "f_hash": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
+        "product_name": "질산60 % (Nitric acid 60 %)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+        "measure_target": "",
+        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/현황에 없음/질산 60 7697-37-2.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "질산60 % (Nitric acid 60 %)",
+            "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "질산60 % (Nitric acid 60 %)",
+            "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        }
+    }
+}
