@@ -1,9 +1,761 @@
 {
-  "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005": {
+  "f1430d78bd813955e62e48678a131857d16fc17db955b23e81758b436e1c7511": {
     "engine_version": "24.6.0.0",
     "result": {
-      "구성성분": "7779-88-6(0.3%); 7697-37-2(0.6%)",
-      "제품명": "Zinc standard solution (Zn 1000)",
+      "구성성분": "86290-81-5(<86%); 71-43-2(0.1~0.7%); 1634-04-4(11%); 108-88-3(1~10%); 1330-20-7(2~4%)",
+      "제품명": "보통 휘발유 (Regular Unleaded Gasoline)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "6e93604bd721371c06f6eb8b540c19f9f2be21ff68eb5e4feafad1b6f23a2a41": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7440-43-9(0.1%); 7697-37-2(2%); 7732-18-5(97.9%)",
+      "제품명": "ICP-08N-1",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "75f896ea835a6f945b7fe83499877831c23cb9f12138d5518200566e637c983d": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "1309-37-1(97%); 2943-75-1(3%)",
+      "제품명": "Iron Oxide Red 3AS",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "eae05d6a3f30d9bd0e38481766b51a99dfa5656c6e18b34798abb0ce4457c7d0": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "138-59-0(95~100%)",
+      "제품명": "Shikimic acid",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "64742-54-7(>97%); 68649-42-3(<2%)",
+      "제품명": "Super Way Lube 32",
+      "측정대상": "",
+      "교정_사유": "비정형 스캔본 멀티모달 우회 안착 완료",
+      "신호등": "🟢",
+      "used_engine": "flash",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  },
+  "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7732-18-5(56~66%); 57-55-6(1~10%); 112945-52-5(1~10%); 330-54-1(0.1~4%); 10605-21-7(0.1~4%)",
+      "제품명": "순&수 우드스테인 BASE",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "616-38-6(45~50%); 64742-82-1(13~20%); 68333-70-0(10~17%); 8001-26-1(7~14%); 1330-20-7(4~11%); 22464-99-9(1~6%); 100-41-4(1~6%); 41556-26-7(0.1~<1%); 96-29-7(0.1~<1%)",
+      "제품명": "프로스테인 네오-PC100(크리어)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7732-18-5(60~70%); 1310-73-2(<1%)",
+      "제품명": "사라퐁",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "68585-47-7(4~10%); 61789-40-0(2~4%); 56-81-5(0.5~2%); 5949-29-1(0.01~0.1%); 139-33-3(0.02~0.5%)",
+      "제품명": "수피아 모이스쳐 핸드워시",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "50-00-0(35~40%); 67-56-1(15~20%)",
+      "제품명": "Formaldehyde solution, 36.5-38%",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "64742-47-8(40~50%); 64742-54-7(10~25%); 74-98-6(16~21%); 106-97-8(11~14%)",
+      "제품명": "더블유디-40 (WD-40)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "64742-54-7(80~90%)",
+      "제품명": "MOLIV 2T",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "616-38-6(45~50%); 64742-47-8(20~25%); 8001-26-1(15~25%); 68152-57-8(5~10%); 108-65-6(1~5%); 13586-82-8(0.1~1%); 8008-20-6(0.1~1%); 68002-82-4(0.1~1%); 63800-37-3(0.1~1%); 115-77-5(0.1~1%); 123-86-4(≤0.1%); 71-36-3(≤0.1%); 111-87-5(≤0.1%); 108-83-8(≤0.1%); 61789-72-8(≤0.1%); 67923-21-1(≤0.01%); 63148-62-9(≤0.01%); 1309-37-1(1~3%); 51274-00-1(1~2%); 1333-86-4(0.1~1%)",
+      "제품명": "블루우드스테인(Blue wood stain) [자단]",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "8002-05-9(≥80%); 106-14-9(0~8%); 57-11-4(≤5%); 1310-66-3(≤2%); 128-37-0(≤2%)",
+      "제품명": "구리스카트리지(Universal lithium grease)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "84696-21-9(54.98%); 96507-89-0(10%); 98-92-0(5%); 25265-71-8(5%); 6920-22-5(2%); 81-13-0(1%); 92128-87-5(1%); 308068-11-3(1%); 16830-15-2(0.4%); 18449-41-7(0.3%); 464-92-6(0.3%); 53238-80-5(0.01%)",
+      "제품명": "TECA-BIOMETM",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "98-92-0(100%)",
+      "제품명": "SinoWhite NCA(CG)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7732-18-5(5%); 6920-22-5(3%)",
+      "제품명": "Snail Secretion Filtrate(HD2)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "ea2791d0cfa53f8f5796b2b3b8c59841cf788124535240340fd7f60d1cc11312": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "1874-62-0(95~100%)",
+      "제품명": "3-Ethoxy-1,2-propanediol",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "108-32-7(2.5~10%)",
+      "제품명": "BENTONE GELÒ ISD V",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "122-99-6(100%)",
+      "제품명": "Suncide EPH",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "3567-66-6(>85%)",
+      "제품명": "RED No. 227",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "70d6c9b1ee2ac5a23c09928a7ead3bf448908b98054fbd171ae024928bf9db3e": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "1222-05-5(10~20%); 54464-57-2(5~10%); 63500-71-0(0~5%); 10339-55-6(0~5%); 88-41-5(0~5%); 142-92-7(0~5%); 27606-09-3(0~5%); 18127-01-0(0~5%); 106-72-9(0~5%)",
+      "제품명": "SKIN CARE G28345",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "966fe572fcfe3a276c54f60c29e7436679d5f03777417edcab1f63b3e60c5f8e": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "105-87-3(5~10%); 1222-05-5(5~10%); 54464-57-2(5~10%); 121-33-5(0~5%); 110-27-0(0~5%); 105-95-3(0~5%); 32388-55-9(0~5%); 101-86-0(0~5%); 80-54-6(0~5%); 78-70-6(0~5%); 1205-17-0(0~5%); 151-05-3(0~5%); 140-11-4(0~5%)",
+      "제품명": "Frag-38571",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "1310-73-2(92~100%); 7732-18-5(0~8%)",
+      "제품명": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "631-61-8(미기재%)",
+      "제품명": "Ammonium acetate",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "75-05-8(95~100%)",
+      "제품명": "Acetonitrile hypergrade for LC-MS LiChrosolv®",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "90-80-2(2%)",
+      "제품명": "D-(+)-Gluconic acid δ-lactone",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "50-70-4(미기재%)",
+      "제품명": "D-Sorbitol",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "64-18-6(99~100%)",
+      "제품명": "Formic acid, OPTIMA LC/MS Grade (99.5%)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "fd6457e7d8d649cdf3ad5330fad7ac30cd89b5cb0e502491b7d8699f8448665c": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7647-01-0(35~40%)",
+      "제품명": "Hydrochloric acid",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "f484626982680bd2fd3a21d489244fa179008cd958f94261b721222273f37138": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "67-56-1(95~100%)",
+      "제품명": "Methanol hypergrade for LC-MS LiChrosolv®",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "293b5445bac50744c9e533ea08c1323531d2f51400de04adbf438a6e678b69a8": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7697-37-2(70~75%)",
+      "제품명": "Nitric acid",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7732-18-5(미기재%)",
+      "제품명": "Water for chromatography (LC-MS Grade) LiChrosolv®",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)",
+      "제품명": "용접재료(연강용 피복아크 용접봉) CR-13",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7439-89-6(55~65%); 7440-47-3(17~20%); 7440-02-0(8~10%); 7631-86-9(1~2%); 13463-67-7(5~7%); 7439-96-5(1~2%); 1314-23-4(1~2%)",
+      "제품명": "K-308",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7732-18-5(40~50%); 14807-96-6(20~30%); 1317-65-3(10~20%); 26636-08-8(1~10%); 92704-41-1(1~10%); 13463-67-7(1~10%); 471-34-1(1~10%); 57-55-6(1~10%); 108-01-0(0.1~<1%)",
+      "제품명": "아이생각수성내부프로 (M-BASE)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "2cfeb856eb74fe447eb36666ac80a653e340baebe92fc3a49473856be25b9441": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "124-65-2(2.5~10%)",
+      "제품명": "SODIUM CACODYLATE BUFFER 0.2M, pH 7.4",
+      "측정대상": "",
+      "교정_사유": "비정형 스캔본 멀티모달 우회 안착 완료",
+      "신호등": "🟢",
+      "used_engine": "flash",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  },
+  "5ee0a97a1d49ede49785bcdbc67d1e4504e9114884e3585e73a05b4bd3db8d91": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "68424-85-1(10%); 5949-29-1(20%); 7664-38-2(5%)",
+      "제품명": "녹수클린업",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "1317-65-3(29~39%); 108-88-3(21~31%); 14807-96-6(8~18%); 616-38-6(1~10%); 85535-85-9(1~10%); 1317-80-2(1~10%); 6358-31-2(1~10%); 1330-20-7(1~10%); 22094-93-5(1~10%); 471-34-1(1~10%); 5567-15-7(1~10%)",
+      "제품명": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "efa354221893da14a5d63de79697684c4141c721d72808556e48a2e86349104b": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "67-56-1(45~50%); 56-81-5(45~50%); 660-68-4(<1%); 17372-87-1(<1%)",
+      "제품명": "Giemsa's azur eosin methylene blue solution for microscopy",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "85dcdb840a9a2e3a8a88cf8fb05fd3e53c55a54b2fad57a4b630ccad1050b2eb": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "108-95-2(100%)",
+      "제품명": "페놀",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "1f34bc61c04f14ddc7330c02b6423c9209456a3062b98a8ef04e5d63bebb82cc": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7778-50-9(0.029%)",
+      "제품명": "Chromium standard solution 1 (Cr 100)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "56-40-6(98.5~101.5%)",
+      "제품명": "Glycine",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7647-01-0(35~37%); 7732-18-5(Rem.%)",
+      "제품명": "염산 (Hydrochloric acid)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "68083-19-2(≥95%)",
+      "제품명": "CS006A",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
+      "제품명": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+      "측정대상": "",
+      "교정_사유": "비정형 스캔본 멀티모달 우회 안착 완료",
+      "신호등": "🟢",
+      "used_engine": "flash",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  },
+  "0174dc703b201ff2f94f255f726e0ad9370d8545b1632f4f310826c0a774bb10": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7782-42-5(1~10%); 67-64-1(25~35%); 67-63-0(1~5%); 109-60-4(5~15%); 115-10-6(45~55%)",
+      "제품명": "GL-2002 (지엘-2002)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
+  },
+  "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+      "제품명": "질산60 % (Nitric acid 60 %)",
       "측정대상": "",
       "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
       "신호등": "🟢",
