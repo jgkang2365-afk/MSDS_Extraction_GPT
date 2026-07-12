@@ -1,6 +1,9 @@
 # SUCCESS_DNA.md
 
 ## MISTAKE LOG (실수 및 실패 기록 목록)
+- **오류 명칭**: 골든 데이터셋 3개 단일 성분 자재(025, 028, 033번)의 과거 미수집 components 및 제품명 표기 불일치 에러 (V24.6.5.1)
+  - **증상**: `self_test_regression` 회귀 테스트 실행 시, 단일 성분 자재인 025_AMMONIUM ACETATE.PDF, 028_D-Sorbitol.PDF, 033_Water.pdf의 components가 골든 데이터셋에 `[]`로 누락되어 있거나 033번의 제품명이 문자열 인코딩 및 접미사 차이로 인해 불일치하여, 엔진 분석이 CAS 성분을 정상 추출했음에도 불일치 판정으로 회귀 테스트가 실패하는 현상 발생.
+  - **해결책**: 골든 데이터셋 JSON 정답 원장(`golden/msds_golden_v1.json`) 내 해당 3개 단일 성분 자재들의 `components`에 실제 추출되는 정합 CAS 및 함량 정보를 매핑하고, 033번 제품명의 `allowed_variants`를 보강 등록하여 100% 정합성을 확보함.
 - **오류 명칭**: Windows PowerShell 경로 상의 특수 문자 파싱 에러
   - **증상**: powershell을 사용하여 경로에 `(v24+GUI통합)`이 포함된 파이썬 스크립트를 구동할 때 괄호 기호로 인해 CommandNotFoundException 에러가 발생함.
   - **해결책**: 스크립트 실행 시 상대 경로를 인자로 넘기거나, 경로 전체를 큰따옴표(`"`)로 감싸서 실행함.

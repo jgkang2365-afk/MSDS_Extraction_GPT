@@ -2156,9 +2156,7 @@ class SMUGUI(QMainWindow):
         info_layout = QVBoxLayout()
         info_layout.addWidget(QLabel("MSDS Intelligence v2.0 - Enterprise Edition"))
         info_layout.addWidget(QLabel(f"작동 모드: 지능형 바인딩 활성화"))
-        btn_clear_cache = QPushButton("정밀 캐시(Hash) 초기화")
-        btn_clear_cache.setStyleSheet("background-color: #f56c6c; color: white;")
-        info_layout.addWidget(btn_clear_cache)
+        # [수정] 골든 데이터셋 및 마스터 캐시 파쇄 위험이 있는 캐시 초기화 버튼을 화면에서 영구히 탈거했습니다.
         info_group.setLayout(info_layout)
         lower_layout.addWidget(info_group)
         

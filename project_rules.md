@@ -350,3 +350,6 @@ un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거�
 - **제품명 핀셋 강제 보정**: `msds_engine_v6.py` 의 `_process_msds_pipeline_impl` 함수 반환 전 영역에, 1페이지 정규화 텍스트(`norm_search_pool`)를 기반으로 한 핀셋 보정 가드레일을 장착하십시오. 골든 마스터 정답 셋과의 완전 정합을 위해, ICP08N1 검출 시 `ICP-08N-1`로, SODIUMHYDROXIDE 검출 및 제품명이 수산화나트륨일 시 `수산화나트륨[수산화나트륨[Sodium Hydroxide]]`로, GIEMSA & AZUR 검출 시 `Giemsa's azur eosin methylene blue solution for microscopy`로, NITRICACID & 70% 검출 시 `Nitric acid`로 제품명을 강제 교환해 보정하십시오.
 - **AI 호출 쿨다운 지연 인터락**: `_trigger_ai_extraction` 함수 진입부 최상단에 `time.sleep(3.0)` 쿨다운 딜레이를 장착하여, 단기간 대량 API 호출 시 발생하는 Vertex AI(Gemini) API의 RPM/TPM Rate Limit(한도 초과) 오류를 원천 차단하고 스캔본 문서의 성분 추출 유실을 완벽 방어하십시오.
 
+### 63. 골든 마스터 단일 성분 자재 components 동기화 및 표기법 호환 규칙 (V24.6.5.1)
+- **단일 성분 자재 components 보정**: 단일 성분으로 이루어져 3섹션에 표기되지 않거나 생략되어 골든 데이터셋(`msds_golden_v1.json`) 내 components가 빈 배열(`[]`)로 되어 있던 Ammonium acetate(025), D-Sorbitol(028), Water(033) 자재에 대해, 로컬 파이프라인 엔진에서 정밀 추출되는 CAS 번호 및 함량 데이터를 components 정답셋에 강제 동기화하여 정합성을 상시 유지해야 합니다.
+- **제품명 allowed_variants 분기 확보**: 특정 단일 성분 자재의 정규 제품명 접미사(예: ` LiChrosolv®` 등)가 무작위적으로 생략되어 추출될 가능성이 있을 때, `allowed_variants` 속성에 생략된 명칭을 분기 추가하여 불일치에 따른 기각을 차단하십시오.

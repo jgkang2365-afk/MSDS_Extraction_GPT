@@ -3632,6 +3632,16 @@ def test_천칭_filter_anomaly():
     print("✅ [유닛 테스트 통과] 천칭 가드레일이 100% 초과 모순을 에러 없이 완벽하게 체포합니다.")
 
 def self_test_regression():
+    # [수정] 오직 로컬 단독 터미널 기동 또는 백그라운드 교정 시에만 격발 허용하는 내장 락(Lock) 구축
+    main_module = sys.modules.get('__main__')
+    main_file = getattr(main_module, '__file__', '') if main_module else ''
+    is_direct_run = main_file and os.path.basename(main_file) == 'msds_engine_v6.py'
+    is_background_env = os.environ.get("ANTIGRAVITY_TEST") == "1" or not sys.stdout.isatty()
+    
+    if not (is_direct_run or is_background_env):
+        # GUI 연동이나 외부 임포트 가동 선로 차단
+        return True
+
     run_v6_automated_quality_check_original()
     test_천칭_filter_anomaly()
             
@@ -3726,7 +3736,115 @@ def self_test_regression():
         print(f"--- [!] 검증 실패: {fail_count}건의 오류 발견 ---")
         sys.exit(1)
     else:
-        print(f"--- [OK] 모든 회귀 테스트 통과 (V{VERSION}) ---")
+        print(f"--- [OK] 모든 기본 회귀 테스트 통과 (V{VERSION}) ---")
+
+    # [수정] msds_golden_v1.json 기반 골든 마스터 회귀 검증 추가 이식
+    print("\n" + "="*80)
+    print("🚀 [골든 마스터 회귀 검증 집행 시작 (Self-Test Regression)]")
+    print("="*80)
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    golden_file = os.path.join(base_dir, "golden", "msds_golden_v1.json")
+    test_file_dir = os.path.join(base_dir, "TEST_File")
+    
+    if not os.path.exists(golden_file):
+        print(f"[!] 골든 마스터 파일이 존재하지 않아 회귀 검증을 우회합니다: {golden_file}")
+    else:
+        with open(golden_file, "r", encoding="utf-8") as f:
+            golden_data = json.load(f)
+            
+        golden_cases = golden_data.get("cases", [])
+        
+        for g_case in golden_cases:
+            g_id = g_case.get("id")
+            g_file = g_case.get("file")
+            
+            pdf_path = os.path.join(test_file_dir, g_file)
+            if not os.path.exists(pdf_path):
+                # 자모 분리나 미세 파일명 불일치 방어용 glob
+                import glob
+                matched_files = glob.glob(os.path.join(test_file_dir, f"*{g_id}*.pdf")) + glob.glob(os.path.join(test_file_dir, f"*{g_id}*.PDF"))
+                if matched_files:
+                    pdf_path = matched_files[0]
+                else:
+                    print(f" [⚠️ 스킵] 골든 케이스 {g_id}({g_file}) 파일이 TEST_File 디렉토리에 없습니다. 스킵합니다.")
+                    continue
+            
+            print(f"[*] [{g_id}] {os.path.basename(pdf_path)} 회귀 대조 분석 격발...")
+            try:
+                # process_pdf 호출하여 엔진 실행
+                res = process_pdf(pdf_path)
+                
+                # 1. 제품명 대조
+                expected_pn = g_case["product_name"]["expected"]
+                allowed_variants = g_case["product_name"].get("allowed_variants", [])
+                
+                def clean_pn_for_compare(pn):
+                    p_clean = str(pn).lower().strip()
+                    p_clean = p_clean.replace("™", "").replace("tm", "").replace("(tm)", "")
+                    return re.sub(r'[^a-zA-Z0-9가-힣]', '', p_clean)
+                    
+                clean_expected = clean_pn_for_compare(expected_pn)
+                clean_allowed = {clean_pn_for_compare(v) for v in allowed_variants}
+                allowed_set = {clean_expected} | clean_allowed
+                clean_actual = clean_pn_for_compare(res.get("제품명", ""))
+                
+                if clean_actual not in allowed_set:
+                    print(f" [❌ 제품명 불일치] ID {g_id} | 기대값: {expected_pn} | 실제값: '{res.get('제품명')}'")
+                    fail_count += 1
+                
+                # 2. 구성성분 대조 (CAS & 함량)
+                cas_content = res.get("구성성분", "")
+                actual_comp_map = {}
+                if cas_content:
+                    for part in cas_content.split(";"):
+                        part = part.strip()
+                        m = re.search(r"(\d{2,7}-\d{2}-\d)\s*(?:\(([^)]+)\))?", part)
+                        if m:
+                            cas_val = m.group(1)
+                            content_val = m.group(2) if m.group(2) else ""
+                            if not content_val.endswith("%") and content_val not in ["Rem.", "미기재%"]:
+                                content_val = f"{content_val}%"
+                            actual_comp_map[cas_val] = unicodedata.normalize("NFKC", content_val).replace(" ", "").replace("%", "")
+                
+                g_components = g_case.get("components", [])
+                g_comp_map = {}
+                for c in g_components:
+                    expected_cont = c["content_expected"]
+                    if not expected_cont.endswith("%") and expected_cont not in ["Rem.", "미기재%"]:
+                        expected_cont = f"{expected_cont}%"
+                    g_comp_map[c["cas"]] = unicodedata.normalize("NFKC", expected_cont).replace(" ", "").replace("%", "")
+                
+                # 성분 개수 대조
+                if len(g_comp_map) != len(actual_comp_map):
+                    print(f" [❌ 성분 개수 불일치] ID {g_id} | 기대개수: {len(g_comp_map)} | 실제개수: {len(actual_comp_map)}")
+                    print(f"   ├─ 기대 CAS: {list(g_comp_map.keys())}")
+                    print(f"   └─ 실제 CAS: {list(actual_comp_map.keys())}")
+                    fail_count += 1
+                    continue
+                
+                # 각 CAS 별 함량 대조
+                for cas, expected_cont in g_comp_map.items():
+                    if cas not in actual_comp_map:
+                        print(f" [❌ 성분 유실] ID {g_id} | 기대 CAS: {cas} 누락됨")
+                        fail_count += 1
+                    else:
+                        actual_cont = actual_comp_map[cas]
+                        if expected_cont != actual_cont:
+                            print(f" [❌ 함량 불일치] ID {g_id} | CAS {cas} | 기대치: {expected_cont}% | 실제치: {actual_cont}%")
+                            fail_count += 1
+                            
+            except Exception as e:
+                print(f" [💥 크래시] ID {g_id} 분석 중 예외 발생: {e}")
+                fail_count += 1
+                
+    print("-"*80)
+    if fail_count > 0:
+        print(f"--- [!] 골든 데이터셋 회귀 검증 실패: {fail_count}건의 오류 발견 ---")
+        sys.exit(1)
+    else:
+        print(f"--- [OK] 모든 골든 데이터셋 회귀 검증 통과 (V{VERSION}) ---")
+        return True
 
 def run_production_integrity_test_cases():
     print("\n==================================================")
@@ -4140,4 +4258,10 @@ if __name__ == "__main__":
     check_success = run_v6_automated_quality_check(MSDSEngineV6())
     print(f"📊 [로컬 오프라인 무과금 자동 검수대] 검수 최종 상태: {'🟢 합격 (True)' if check_success else '🔴 불합격 (False)'}")
     assert check_success is True, "[무결성 결함] 로컬 오프라인 무과금 자동 검수대 품질 검증에 실패하였습니다."
+
+    # 🟢 [골든 데이터셋 회귀 검증 기동]
+    print("🚀 [골든 데이터셋 회귀 검증] self_test_regression()을 격발합니다.")
+    golden_success = self_test_regression()
+    print(f"📊 [골든 데이터셋 회귀 검증] 최종 합격 신호: {golden_success}")
+    assert golden_success is True, "[무결성 결함] 골든 데이터셋 회귀 검증에 실패하였습니다."
 

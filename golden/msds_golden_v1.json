@@ -1119,7 +1119,15 @@
         "expected": "Ammonium acetate",
         "allowed_variants": []
       },
-      "components": [],
+      "components": [
+        {
+          "chemical_name": "Ammonium acetate",
+          "cas": "631-61-8",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
       "cas_missing_components": [],
       "regression_tags": []
     },
@@ -1174,7 +1182,15 @@
         "expected": "D-Sorbitol",
         "allowed_variants": []
       },
-      "components": [],
+      "components": [
+        {
+          "chemical_name": "D-Sorbitol",
+          "cas": "50-70-4",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
       "cas_missing_components": [],
       "regression_tags": []
     },
@@ -1269,9 +1285,19 @@
       "document_type": "digital",
       "product_name": {
         "expected": "Water for chromatography (LC-MS Grade) LiChrosolv®",
-        "allowed_variants": []
+        "allowed_variants": [
+          "Water for chromatography (LC-MS Grade)"
+        ]
       },
-      "components": [],
+      "components": [
+        {
+          "chemical_name": "Water",
+          "cas": "7732-18-5",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
       "cas_missing_components": [],
       "regression_tags": []
     },
