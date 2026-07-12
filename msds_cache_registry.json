@@ -766,5 +766,21 @@
       "product_engine": "딥시크",
       "comp_engine": "정규식"
     }
+  },
+  "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005": {
+    "engine_version": "24.6.0.0",
+    "result": {
+      "구성성분": "7779-88-6(0.3%); 7697-37-2(0.6%)",
+      "제품명": "Zinc standard solution (Zn 1000)",
+      "측정대상": "",
+      "교정_사유": "1선 정규식/격자 청정 자산 고정 완착 (AI 개입 배제)",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "디지털",
+      "product_engine": "딥시크",
+      "comp_engine": "정규식"
+    }
   }
 }

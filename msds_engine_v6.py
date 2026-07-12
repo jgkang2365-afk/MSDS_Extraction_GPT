@@ -68,6 +68,9 @@ def get_table_engine():
         _TABLE_ENGINE = TableStructureRecognition()
     return _TABLE_ENGINE
 
+# 골든 마스터 전체셋 무결성 지문 해시
+GOLDEN_HASH = "5008a9804b0bcaac"
+
 # 버전을 V6 사양에 맞게 명시
 VERSION = "24.6.0.0"
 
@@ -3682,6 +3685,43 @@ def test_천칭_filter_anomaly():
     assert is_ok is False, "천칭 필터가 157% 오염 데이터를 잡지 못하고 탈선했습니다!"
     print("✅ [유닛 테스트 통과] 천칭 가드레일이 100% 초과 모순을 에러 없이 완벽하게 체포합니다.")
 
+def update_golden_hash(file_path):
+    """msds_engine_v6.py 파일의 내부 바이너리를 읽어 16자리 sha256 해시를 계산하고 GOLDEN_HASH 변수에 덮어씁니다."""
+    import hashlib
+    
+    # 1. 파일 내용 읽기
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    # 2. 해시 계산을 위해 GOLDEN_HASH = "..." 라인을 GOLDEN_HASH = "0000000000000000" 으로 치환 (정규화)
+    norm_content = re.sub(
+        r'GOLDEN_HASH\s*=\s*"[^"]*"',
+        'GOLDEN_HASH = "0000000000000000"',
+        content,
+        count=1
+    )
+    
+    # 3. 16자리 sha256 해시 계산
+    sha = hashlib.sha256()
+    sha.update(norm_content.encode("utf-8"))
+    new_hash = sha.hexdigest()[:16]
+    
+    print(f"[*] 계산된 신규 지문 해시값: {new_hash}")
+    
+    # 4. 소스코드 파일에 새로운 해시값 반영
+    new_content = re.sub(
+        r'GOLDEN_HASH\s*=\s*"[^"]*"',
+        f'GOLDEN_HASH = "{new_hash}"',
+        content,
+        count=1
+    )
+    
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(new_content)
+        
+    print(f"✅ [지문 해시 동기화 완료] GOLDEN_HASH가 '{new_hash}'(으)로 갱신되었습니다.")
+    return new_hash
+
 def self_test_regression():
     # [수정] 오직 로컬 단독 터미널 기동 또는 백그라운드 교정 시에만 격발 허용하는 내장 락(Lock) 구축
     main_module = sys.modules.get('__main__')
@@ -3692,6 +3732,141 @@ def self_test_regression():
     if not (is_direct_run or is_background_env):
         # GUI 연동이나 외부 임포트 가동 선로 차단
         return True
+
+    # Pre-Flight Hook & Gatekeeper Interlock
+    is_race_script = main_file and os.path.basename(main_file) == 'run_production_race.py'
+    if os.environ.get("ANTIGRAVITY_RACE_ACTIVE") != "1" and not is_race_script:
+        import shutil
+        import subprocess
+        
+        msds_engine_file = os.path.abspath(__file__)
+        backup_file = msds_engine_file + ".bak"
+        
+        # 1. 안전 물리 백업 생성 (이미 백업 파일이 존재하면 덮어쓰지 않음 - 테스트 하네스의 안전 복원력 보장)
+        try:
+            if not os.path.exists(backup_file):
+                shutil.copy2(msds_engine_file, backup_file)
+                print(f"[*] 안전 물리 백업 파일 생성 완료: {backup_file}")
+            else:
+                print(f"[*] 안전 물리 백업 파일이 이미 존재하여 보존합니다: {backup_file}")
+        except Exception as backup_err:
+            raise RuntimeError(f"🚨 [백업 실패] 백업 파일을 생성하지 못했습니다: {backup_err}")
+
+        # 모의 테스트 상태 확인
+        mock_mode = os.environ.get("ANTIGRAVITY_TEST_MOCK")
+        
+        if mock_mode == "fail":
+            # 시나리오 1: 회귀 오류 1건 이상 모의 주입
+            print("[*] [Mocking] 회귀 오류 감지 시나리오 1 작동")
+            # 오류가 있다고 모의하여 즉시 롤백 및 에러 격발
+            if os.path.exists(backup_file):
+                if os.path.exists(msds_engine_file):
+                    os.remove(msds_engine_file)
+                shutil.copy2(backup_file, msds_engine_file)
+                import time
+                time.sleep(0.5)
+                print(f"✅ [안전 롤백 완료] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
+            raise RuntimeError("🚨 [회귀 오류 감지] 시스템이 격리 차단되었습니다. 간섭 관로를 재수선하십시오.")
+            
+        elif mock_mode == "pass":
+            # 시나리오 2: 오류 0건 모의 주입
+            print("[*] [Mocking] 오류 0건 검증 성공 시나리오 2 작동")
+            # 백업 삭제
+            if os.path.exists(backup_file):
+                os.remove(backup_file)
+                
+            # 지문 해시 계산 및 업데이트
+            update_golden_hash(msds_engine_file)
+            return True
+            
+        else:
+            # 실전 모드: run_production_race.py 동기 호출
+            print("[*] [Pre-Flight Hook] 전수 검증 레이스 강제 트리거 시작...")
+            try:
+                env = os.environ.copy()
+                env["ANTIGRAVITY_RACE_ACTIVE"] = "1"
+                
+                base_dir = os.path.dirname(msds_engine_file)
+                race_script = os.path.join(base_dir, "run_production_race.py")
+                
+                print(f"[*] 동기식 전수 회귀 레이스 구동 중... ({race_script})")
+                # 윈도우 인코딩 노이즈(UnicodeDecodeError) 방어를 위해 바이너리(bytes)로 캡처
+                result = subprocess.run(
+                    [sys.executable, race_script],
+                    capture_output=True,
+                    env=env,
+                    cwd=base_dir
+                )
+                
+                # 멀티 인코딩 디코딩 처리
+                stdout_data = ""
+                stderr_data = ""
+                if result.stdout:
+                    try:
+                        stdout_data = result.stdout.decode('utf-8')
+                    except UnicodeDecodeError:
+                        try:
+                            stdout_data = result.stdout.decode('cp949', errors='ignore')
+                        except:
+                            stdout_data = result.stdout.decode('utf-8', errors='ignore')
+                            
+                if result.stderr:
+                    try:
+                        stderr_data = result.stderr.decode('utf-8')
+                    except UnicodeDecodeError:
+                        try:
+                            stderr_data = result.stderr.decode('cp949', errors='ignore')
+                        except:
+                            stderr_data = result.stderr.decode('utf-8', errors='ignore')
+                
+                match = re.search(r"불일치 회귀 오류 수:\s*(\d+)건", stdout_data)
+                
+                has_error = False
+                error_count = 999
+                if match:
+                    error_count = int(match.group(1))
+                    if error_count > 0:
+                        has_error = True
+                else:
+                    has_error = True
+                    
+                if result.returncode != 0:
+                    has_error = True
+                    
+                if has_error:
+                    print(f"🔴 [회귀 오류 감지] 불일치 회귀 오류 수: {error_count}건, 프로세스 종료 코드: {result.returncode}")
+                    print(f"[stdout]:\n{stdout_data}")
+                    print(f"[stderr]:\n{stderr_data}")
+                    if os.path.exists(backup_file):
+                        if os.path.exists(msds_engine_file):
+                            os.remove(msds_engine_file)
+                        shutil.copy2(backup_file, msds_engine_file)
+                        import time
+                        time.sleep(0.5)
+                        print(f"✅ [안전 롤백 완료] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
+                    raise RuntimeError("🚨 [회귀 오류 감지] 시스템이 격리 차단되었습니다. 간섭 관로를 재수선하십시오.")
+                else:
+                    print("🟢 [Pre-Flight Hook 통과] 회귀 오류 0건 검증 성공!")
+                    if os.path.exists(backup_file):
+                        os.remove(backup_file)
+                        
+                    # 지문 해시 계산 및 업데이트
+                    update_golden_hash(msds_engine_file)
+                    
+            except Exception as e:
+                if os.path.exists(backup_file):
+                    try:
+                        if os.path.exists(msds_engine_file):
+                            os.remove(msds_engine_file)
+                        shutil.copy2(backup_file, msds_engine_file)
+                        import time
+                        time.sleep(0.5)
+                        print(f"✅ [안전 롤백 완료-예외] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
+                    except Exception as rollback_err:
+                        print(f"❌ [롤백 실패] {rollback_err}")
+                if not isinstance(e, RuntimeError):
+                    raise RuntimeError(f"🚨 [인터락 시스템 결함 격발] {e}")
+                raise e
 
     run_v6_automated_quality_check_original()
     test_천칭_filter_anomaly()
@@ -4299,7 +4474,99 @@ def test_cas_highpass_interlock_validation():
     print("🟢 [단독 Test Case 합격] 하이패스 인터락 제어 스위치가 모순 없이 정상 격발됨을 확인했습니다.")
 
 
+def test_gatekeeper_interlock_harness():
+    """게이트키퍼 인터락 및 롤백 가드레일을 검증하는 단위 테스트 메서드입니다."""
+    import os
+    import shutil
+    import re
+    
+    print("🧪 [유닛 테스트 시작] test_gatekeeper_interlock_harness() 가동")
+    msds_engine_file = os.path.abspath(__file__)
+    backup_file = msds_engine_file + ".bak"
+    
+    # 1. 시나리오 1: 회귀 오류 1건 이상 모의 주입 시 차단 및 롤백 작동 검증
+    os.environ["ANTIGRAVITY_TEST_MOCK"] = "fail"
+    
+    # 롤백 검증을 위해 청정 상태의 백업 파일을 먼저 명시적으로 생성
+    try:
+        if os.path.exists(backup_file):
+            os.remove(backup_file)
+        shutil.copy2(msds_engine_file, backup_file)
+        print(f"[*] [Mocking] 선제 청정 백업 파일 생성 완료: {backup_file}")
+    except Exception as e:
+        raise RuntimeError(f"[Mocking] 선제 백업 생성 실패: {e}")
+    
+    # 백업 롤백을 검증하기 위해 현재 소스코드 끝에 고유 표식 주석 덧붙이기
+    mock_signature = "# TEST_MOCK" + "_LINE_INTEGRITY" + "_CHECK"
+    with open(msds_engine_file, "a", encoding="utf-8") as f:
+        f.write(f"\n{mock_signature}")
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except:
+            pass
+        
+    try:
+        self_test_regression()
+        assert False, "[무결성 결함] 오류 주입 상태에서 RuntimeError가 정상 격발되지 않았습니다."
+    except RuntimeError as e:
+        assert "[회귀 오류 감지]" in str(e), f"[무결성 결함] 기대되지 않은 에러 격발: {e}"
+        # 롤백이 성공해서 주석이 파일에서 사라졌는지 1:1 대조 검증
+        import time
+        time.sleep(0.5)
+        with open(msds_engine_file, "r", encoding="utf-8") as r:
+            content = r.read()
+        assert mock_signature not in content[-300:], "[무결성 결함] 오류 검출 시 소스코드 파일 롤백 복원이 이루어지지 않았습니다."
+        print(" 🟢 [시나리오 1 통과] 오류 주입 시 정상 차단 및 백업 롤백 복원 완착 성공!")
+    finally:
+        if "ANTIGRAVITY_TEST_MOCK" in os.environ:
+            del os.environ["ANTIGRAVITY_TEST_MOCK"]
+        if os.path.exists(backup_file):
+            try:
+                os.remove(backup_file)
+            except:
+                pass
+            
+    # 2. 시나리오 2: 오류 0건 모의 주입 시 GOLDEN_HASH 정상 갱신 검증
+    os.environ["ANTIGRAVITY_TEST_MOCK"] = "pass"
+    
+    try:
+        self_test_regression()
+        
+        # 파일 내용을 다시 읽어서 GOLDEN_HASH가 16자리 sha256 문자열로 업데이트 되었는지 검사
+        with open(msds_engine_file, "r", encoding="utf-8") as r:
+            lines = r.readlines()
+            
+        found_hash = None
+        for line in lines:
+            if line.strip().startswith("GOLDEN_HASH ="):
+                m = re.match(r'GOLDEN_HASH\s*=\s*"([^"]+)"', line.strip())
+                if m:
+                    found_hash = m.group(1)
+                    break
+                    
+        assert found_hash is not None, "[무결성 결함] GOLDEN_HASH 변수 선언 라인을 찾지 못했습니다."
+        assert len(found_hash) == 16, f"[무결성 결함] GOLDEN_HASH의 규격(16자리)이 일치하지 않습니다: {found_hash}"
+        assert found_hash != "0000000000000000", "[무결성 결함] GOLDEN_HASH가 새로운 해시값으로 갱신되지 못했습니다."
+        print(f" 🟢 [시나리오 2 통과] 오류 0건 주입 시 정상 갱신 완착 성공! (GOLDEN_HASH: {found_hash})")
+    except Exception as test_err:
+        assert False, f"[무결성 결함] 오류 0건 모의 주입 시나리오 검증 실패: {test_err}"
+    finally:
+        if "ANTIGRAVITY_TEST_MOCK" in os.environ:
+            del os.environ["ANTIGRAVITY_TEST_MOCK"]
+            
+    print("🟢 [유닛 테스트 합격] test_gatekeeper_interlock_harness() 최종 통과 완료!")
+
+
 if __name__ == "__main__":
+    # 🛡️ [게이트키퍼 가드레일 유닛 테스트 강제 기동]
+    # 두 가드레일 조건을 만족하지 못하면 시스템 작동을 원천 거부합니다.
+    try:
+        test_gatekeeper_interlock_harness()
+    except Exception as gatekeeper_err:
+        print(f"🚨 [게이트키퍼 인터락 실패] 시스템 작동을 원천 거부합니다: {gatekeeper_err}")
+        sys.exit(1)
+
     # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 실전 조업 라인 메모리 오염 방어: 
     # 실전 GUI 가동 시 싱글톤 포인터를 하이재킹하는 오프라인 훈련 스위치를 전면 오프(Pass) 처리한다.
     test_cas_highpass_interlock_validation()
@@ -4315,4 +4582,3 @@ if __name__ == "__main__":
     golden_success = self_test_regression()
     print(f"📊 [골든 데이터셋 회귀 검증] 최종 합격 신호: {golden_success}")
     assert golden_success is True, "[무결성 결함] 골든 데이터셋 회귀 검증에 실패하였습니다."
-
