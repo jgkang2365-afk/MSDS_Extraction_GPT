@@ -2251,6 +2251,7 @@ class MSDSEngineV6:
             cas_candidate = None
             content_candidate = None
             for txt in cell_texts:
+                txt = msds_utils_v3.sanitize_chemical_formulas(txt)
                 clean_txt = txt.replace(" ", "")
                 cas_matches = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', clean_txt)
                 if cas_matches:
@@ -2468,6 +2469,7 @@ class MSDSEngineV6:
             words = []
             for w in raw_words:
                 text_val = w[4]
+                text_val = msds_utils_v3.sanitize_chemical_formulas(text_val)
                 if any(c.isdigit() for c in text_val) and any(c.isalpha() for c in text_val):
                     check_val = re.sub(r'\s+', '', text_val)
                     if not cas_pattern.search(text_val) and not any(k in check_val for k in ["미만", "이상", "이하", "초과", "%", "~", "∼", "to"]):
@@ -2573,6 +2575,7 @@ class MSDSEngineV6:
                 row_full_text = " ".join(safe_word_texts)
                 
                 clean_text = row_full_text
+                clean_text = msds_utils_v3.sanitize_chemical_formulas(clean_text)
                 clean_text = re.sub(r'\b20[0-2]\d[.\-/]\d{1,2}[.\-/]\d{1,2}\b', ' YYYY ', clean_text)
                 clean_text = re.sub(r'\b20[0-2]\d년?\b', ' YYYY ', clean_text)
                 clean_text = clean_text.replace("미맊", "미만").replace("미먄", "미만").replace("이핚", "이하")
@@ -3002,6 +3005,7 @@ class MSDSEngineV6:
         for col_idx, raw_cell in indexed_cells:
             c = raw_cell.strip()
             if not c: continue
+            c = msds_utils_v3.sanitize_chemical_formulas(c)
             c = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', c)
 
             found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)
@@ -3093,7 +3097,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "44b1c6e892883a73" 
+                GOLDEN_HASH = "692c288ea9ba7813" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")

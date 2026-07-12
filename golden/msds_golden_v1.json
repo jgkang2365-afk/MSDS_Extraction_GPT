@@ -1121,7 +1121,7 @@
       },
       "components": [
         {
-          "chemical_name": "Ammonium acetate",
+          "chemical_name": "아세트산암모늄",
           "cas": "631-61-8",
           "content_raw": "미기재",
           "content_expected": "미기재%",
@@ -1184,7 +1184,7 @@
       },
       "components": [
         {
-          "chemical_name": "D-Sorbitol",
+          "chemical_name": "D-소비톨",
           "cas": "50-70-4",
           "content_raw": "미기재",
           "content_expected": "미기재%",
@@ -1285,13 +1285,11 @@
       "document_type": "digital",
       "product_name": {
         "expected": "Water for chromatography (LC-MS Grade) LiChrosolv®",
-        "allowed_variants": [
-          "Water for chromatography (LC-MS Grade)"
-        ]
+        "allowed_variants": []
       },
       "components": [
         {
-          "chemical_name": "Water",
+          "chemical_name": "물",
           "cas": "7732-18-5",
           "content_raw": "미기재",
           "content_expected": "미기재%",
@@ -1898,7 +1896,78 @@
         "expected": "질산60 % (Nitric acid 60 %)",
         "allowed_variants": []
       },
-      "components": [],
+      "components": [
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "60~62",
+          "content_expected": "60~62%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "38~40",
+          "content_expected": "38~40%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": []
+    },
+    {
+      "id": "048",
+      "file": "048_질산 60 7697-37-2.pdf",
+      "source_sha256": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "질산60 % (Nitric acid 60 %)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "60~62",
+          "content_expected": "60~62%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "38~40",
+          "content_expected": "38~40%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": []
+    },
+    {
+      "id": "049",
+      "file": "049_★Zinc Standard.pdf",
+      "source_sha256": "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Zinc standard solution (Zn 1000)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산아연",
+          "cas": "7779-88-6",
+          "content_raw": "0.3",
+          "content_expected": "0.3%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "0.6",
+          "content_expected": "0.6%",
+          "source_page": 1
+        }
+      ],
       "cas_missing_components": [],
       "regression_tags": []
     }

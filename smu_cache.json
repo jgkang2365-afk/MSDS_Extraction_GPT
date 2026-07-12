@@ -1,12 +1,12 @@
 {
-    "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef": {
-        "f_hash": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
-        "product_name": "질산60 % (Nitric acid 60 %)",
+    "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005": {
+        "f_hash": "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005",
+        "product_name": "Zinc standard solution (Zn 1000)",
         "reliability": "N/A",
-        "신호등": "🔴",
-        "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+        "신호등": "🟢",
+        "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/★천안시청(26년)/최종_MSDS/15. 농업기술센터-스마트농업과-토양검정실/현황에 없음/질산 60 7697-37-2.pdf",
+        "full_path": "C:/Users/USER/Desktop/안티그래비티/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/049_★Zinc Standard.pdf",
         "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
@@ -16,15 +16,15 @@
         "product_engine": "딥시크",
         "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "질산60 % (Nitric acid 60 %)",
-            "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+            "product_name": "Zinc standard solution (Zn 1000)",
+            "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "질산60 % (Nitric acid 60 %)",
-            "raw_content": "7697-37-2(60~62%); 7732-18-5(38~40%)",
+            "product_name": "Zinc standard solution (Zn 1000)",
+            "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
             "measure": "",
             "reg1": [],
             "reg2": []

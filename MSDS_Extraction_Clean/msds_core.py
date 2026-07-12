@@ -156,7 +156,7 @@ class MSDSCore:
             return {"status": "Cache-Hit", "manual_data": manual_data}
 
         """2단계: CSV 및 KOSHA API를 통한 성분 검증 및 상세 규제 정보 조회"""
-        if not cas_content or "미기재" in cas_content or "오류" in cas_content:
+        if not cas_content or cas_content.strip() in ["", "미기재%"] or "오류" in cas_content:
             return {"status": "검증 불가", "components": []}
 
         detailed_components = []

@@ -240,3 +240,26 @@ def clean_text_for_msds(text, mode="standard"):
     return re.sub(r'[^\w\s]', '', text)
 # ==============================================================================
 
+
+def sanitize_chemical_formulas(text: str) -> str:
+    """
+    수평선상 천칭 계량 전단계에서 함량 수치 오독을 유발하는 화학 분자식 노이즈를 선제 소거합니다.
+    (예: Zn(NO3)2 -> 공백, HNO3 -> 공백 처리하여 내부 숫자 2, 3, 3 등이 함량으로 오인입되는 것을 차단)
+    
+    1. Zn(NO3)2, Ca(OH)2 등 괄호와 숫자가 결합된 분자식 구조 (산화수 로마자 괄호 예: (II), (III) 등은 제외)
+    2. HNO3, H2O, CO2 등 대문자 원소기호와 숫자가 연속 결합되고 최소 1개 이상의 숫자가 포함된 구조
+    """
+    if not text:
+        return ""
+    
+    formula_pattern = r'\b[A-Z][a-z]?\d*(?:\((?![IVXivx]+\))[A-Za-z0-9]+\)\d*)+\b|\b(?=\w*\d)(?:[A-Z][a-z]?\d*){2,}\b'
+    
+    # 분자식 노이즈 구역을 청정 공백으로 치환
+    sanitized_text = re.sub(formula_pattern, " ", text)
+    
+    # 연속된 다중 공백을 단일 공백으로 정형화하고 양 끝 공백 트리밍
+    sanitized_text = re.sub(r'\s+', ' ', sanitized_text).strip()
+    
+    return sanitized_text
+
+
