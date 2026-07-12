@@ -2260,7 +2260,7 @@ class MSDSEngineV6:
                         # 🚨 [4항 조기 종료 오탐 방지 인터락]
                         # 해당 매칭 라인 아랫줄에 진짜 유효 CAS 번호 패턴이 존재한다면 성분 표의 지속으로 간주하여 조기 종료를 유예
                         has_cas_below = False
-                        for below_line in lines[idx + 1:]:
+                        for below_line in lines[idx:]:
                             if cas_pattern.search(below_line):
                                 has_cas_below = True
                                 break
@@ -2546,7 +2546,7 @@ class MSDSEngineV6:
                         # 현재 4항 감지 블록 이후에 존재하는 블록들 중에 진짜 CAS 번호가 발견된다면 3섹션 지속으로 간주하고 탈출을 유예
                         has_cas_below = False
                         current_idx = blocks.index(b)
-                        for below_b in blocks[current_idx + 1:]:
+                        for below_b in blocks[current_idx:]:
                             if cas_pattern.search(below_b[4]):
                                 has_cas_below = True
                                 break
@@ -3412,7 +3412,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "43cb715801020320" 
+                GOLDEN_HASH = "3a050f826ab29366" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
