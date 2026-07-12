@@ -1891,29 +1891,14 @@
     },
     {
       "id": "048",
-      "file": "048_질산 60 7697-37-2.pdf",
+      "file": "048_★질산 60 7697-37-2.pdf",
       "source_sha256": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
       "document_type": "digital",
       "product_name": {
         "expected": "질산60 % (Nitric acid 60 %)",
         "allowed_variants": []
       },
-      "components": [
-        {
-          "chemical_name": "질산",
-          "cas": "7697-37-2",
-          "content_raw": "60~62",
-          "content_expected": "60~62%",
-          "source_page": 3
-        },
-        {
-          "chemical_name": "물",
-          "cas": "7732-18-5",
-          "content_raw": "38~40",
-          "content_expected": "38~40%",
-          "source_page": 3
-        }
-      ],
+      "components": [],
       "cas_missing_components": [],
       "regression_tags": []
     }

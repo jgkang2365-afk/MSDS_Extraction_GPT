@@ -1720,6 +1720,7 @@ class SMUGUI(QMainWindow):
         self.results = []
         self.cache = {} 
         self.sidebar_slim = False
+        self.previous_error_states = {} # [주님 지침] 직전 에러(🔴/🟡) 상태 이력 추적용 저장소
         self.last_selected_row = -1 # [NEW] 동일 행 내 열 이동 시 미리보기 초기화 방지용
         self.init_ui()
         
@@ -5074,6 +5075,11 @@ class SMUGUI(QMainWindow):
             with open("smu_cache.json", "r", encoding="utf-8") as f:
                 self.cache = json.load(f)
             self.log(f"[*] {len(self.cache)}건의 분석 캐시를 불러왔습니다.")
+            # [주님 지침] 캐시 로딩 시 기존 에러(🔴/🟡) 상태 이력 수집
+            for f_hash, cached_data in self.cache.items():
+                emoji = cached_data.get("신호등", "⚪")
+                if emoji in ["🔴", "🟡"]:
+                    self.previous_error_states[f_hash] = True
         except: pass
 
     def save_cache(self):
@@ -5775,6 +5781,10 @@ class SMUGUI(QMainWindow):
             elif str(traffic_val).lower() == "red": traffic_val = "🔴"
             emoji = traffic_val[0] if traffic_val else "🔴"
             
+            # [주님 지침] 1단계 결과가 에러(🔴/🟡)인 경우 직전 에러 이력 수집
+            if emoji in ["🔴", "🟡"]:
+                self.previous_error_states[f_hash] = True
+            
             bg_color = None
             if emoji == "🔴": bg_color = QColor("#ffebeb")
             elif emoji == "🟡": bg_color = QColor("#fff9db")
@@ -5978,6 +5988,12 @@ class SMUGUI(QMainWindow):
         fn = res_data.get("filename", "unknown")
         status = res_data.get("status", "High-Pass")
         
+        # [주님 지침] 2단계 진입 전 기존 캐시의 신호등이 🔴 또는 🟡인 경우에도 직전 에러 이력 수집
+        if target_hash and target_hash in self.cache:
+            existing_emoji = self.cache[target_hash].get("신호등", "⚪")
+            if existing_emoji in ["🔴", "🟡"]:
+                self.previous_error_states[target_hash] = True
+        
         # [DEBUG] 데이터 도달 여부 확인
         self.log(f"[*] API 응답 수집됨: {fn} (상태: {status})")
         
@@ -6009,7 +6025,11 @@ class SMUGUI(QMainWindow):
                 
                 emoji = existing_emoji
                 if "검증 완료" in status:
-                    if existing_emoji in ["🔴", "🟡"]:
+                    # [주님 지침] 100점 무결이면 🟢 완착 허용
+                    integrity_score = self.cache.get(target_hash, {}).get("integrity_score", 0)
+                    if integrity_score == 100:
+                        emoji = "🟢"
+                    elif existing_emoji in ["🔴", "🟡"]:
                         emoji = existing_emoji
                     else:
                         emoji = "🟢"
@@ -6030,6 +6050,10 @@ class SMUGUI(QMainWindow):
 
             # 테이블 전체 리프레시 실행 (구조적 충돌 원천 차단)
             self.refresh_table()
+            
+            # [주님 지침] 2단계 검증 마감 시 3대 완치 인터락 조건 및 골든 원장 등록 검사
+            if "검증 완료" in status:
+                self.check_and_register_golden_master(target_hash, fn)
 
 
     def on_validation_finished(self):
@@ -6656,7 +6680,12 @@ class SMUGUI(QMainWindow):
 
             # 3. 2단계 검증이 끝났을 때의 색상 결정 로직 (덮어쓰기 방어)
             if "검증 완료" in status:
-                if existing_emoji in ["🔴", "🟡"]:
+                # [주님 지침] 로직 수선 및 최종 무결성 점수가 100점인 경우 🟢 완착 성공으로 판정
+                integrity_score = self.cache.get(f_hash, {}).get("integrity_score", 0)
+                if integrity_score == 100:
+                    emoji = "🟢"
+                    bg_color = QColor("#e1f7d5")
+                elif existing_emoji in ["🔴", "🟡"]:
                     # 1단계에서 이미 에러/경고가 떴다면, 그 색상을 100% 유지!
                     emoji = existing_emoji 
                     if existing_emoji == "🔴": bg_color = QColor("#ffebeb")
@@ -7365,6 +7394,109 @@ class SMUGUI(QMainWindow):
                     self.table.scrollToItem(item, QAbstractItemView.PositionAtCenter)
                     return
 
+
+    def check_and_register_golden_master(self, f_hash, fn):
+        """[주님 지침] 3대 완치 인터락 검문 및 골든 원장 자동 적층"""
+        try:
+            # 1. 골든 원장 파일 경로 확보
+            golden_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "golden", "msds_golden_v1.json")
+            if not os.path.exists(golden_path):
+                self.log(f"[!] 골든 원장 파일을 찾을 수 없습니다: {golden_path}")
+                return
+                
+            with open(golden_path, "r", encoding="utf-8") as f:
+                golden_data = json.load(f)
+                
+            cases = golden_data.get("cases", [])
+            
+            # ① 해당 자재가 현재 골든 원장의 cases 내부에 등록되어 있지 않아야 함
+            for case in cases:
+                if case.get("file") == fn or case.get("source_sha256") == f_hash:
+                    # 이미 등록된 자재이므로 검문 해제
+                    return
+                    
+            # ② 해당 파일의 직전 분석 상태가 🔴 또는 🟡 였던 이력이 실존해야 함
+            if not self.previous_error_states.get(f_hash):
+                # 직전 에러 이력이 없으므로 검문 해제
+                return
+                
+            # ③ 이번 로직 수선 및 테이블 검증을 거치면서 최종 신호등이 '🟢(100점)'로 완착 성공해야 함
+            cached_info = self.cache.get(f_hash, {})
+            final_emoji = cached_info.get("신호등", "⚪")
+            integrity_score = cached_info.get("integrity_score", 0)
+            
+            if final_emoji != "🟢" or integrity_score != 100:
+                # 완착 성공(🟢 및 100점) 상태가 아니므로 검문 해제
+                return
+                
+            # 3대 인터락 조건 통과 -> QMessageBox 팝업 격발
+            self.log(f"[*] 3대 완치 인터락 조건 충족 감지: [{fn}]")
+            
+            reply = QMessageBox.question(
+                self,
+                "골든 원장 공식 등록 승인",
+                f"주님, 직전 에러(🔴/🟡) 자재였던 [{fn}]가 로직 수선을 통해 최초로 🟢초록불(정정 완착) 안착에 성공했습니다. 향후 회귀 방지(Regression Test) 마스터 기준으로 삼기 위해, 이 완치 자산을 골든 원장(msds_golden_v1.json)에 공식 등록하시겠습니까?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # id 결정: 기존 cases 내의 가장 높은 id를 파싱하여 +1
+                max_id = 0
+                for case in cases:
+                    try:
+                        case_id = int(case.get("id", "0"))
+                        if case_id > max_id:
+                            max_id = case_id
+                    except ValueError:
+                        pass
+                new_id = max_id + 1
+                
+                # 새 케이스 구성
+                new_case = {
+                    "id": f"{new_id:03d}",
+                    "file": fn,
+                    "source_sha256": f_hash,
+                    "document_type": "scanned" if cached_info.get("doc_type") == "이미지" else "digital",
+                    "product_name": {
+                        "expected": cached_info.get("product_name", ""),
+                        "allowed_variants": []
+                    },
+                    "components": [],
+                    "cas_missing_components": [],
+                    "regression_tags": []
+                }
+                
+                # components 정보 적층
+                for comp in cached_info.get("components", []):
+                    raw_content = comp.get("content") or comp.get("content_raw") or ""
+                    expected_content = raw_content
+                    if expected_content and "%" not in expected_content and re.search(r'\d', expected_content):
+                        expected_content = f"{expected_content}%"
+                        
+                    new_comp = {
+                        "chemical_name": comp.get("name", ""),
+                        "cas": comp.get("cas", ""),
+                        "content_raw": raw_content,
+                        "content_expected": expected_content,
+                        "source_page": cached_info.get("page", 1)
+                    }
+                    new_case["components"].append(new_comp)
+                    
+                cases.append(new_case)
+                golden_data["cases"] = cases
+                
+                # 파일에 쓰기
+                with open(golden_path, "w", encoding="utf-8") as f:
+                    json.dump(golden_data, f, ensure_ascii=False, indent=2)
+                    
+                self.log(f"🟢 [골든 원장 등록] 완치 자재 [{fn}]가 골든 원장(id: {new_case['id']})에 공식 등록되었습니다.")
+                QMessageBox.information(self, "등록 완료", f"완치 자재 [{fn}]가 골든 원장(msds_golden_v1.json)에 공식 등록되었습니다.")
+            else:
+                self.log(f"❌ [등록 거부] 주님의 요청에 의해 골든 원장 등록 프로세스가 즉시 차단(셧다운)되었습니다.")
+                
+        except Exception as err:
+            self.log(f"[에러] 골든 원장 등록 중 예외 발생: {err}")
 
     def perform_standard_save(self):
         """[Standard] GUI 테이블의 데이터를 직접 참조하여 엑셀에 저장 (단순화된 파이프라인)"""
