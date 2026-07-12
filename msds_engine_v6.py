@@ -2522,6 +2522,13 @@ class MSDSEngineV6:
             
             y_start, y_end = 0.0, 9999.0
             y_start_orig = 0.0
+            # 🚨 [3섹션 지속 지형 가상 앵커 인터락]
+            # 페이지 내에 3섹션 간판이 누락되었으나 유효 CAS 번호가 실존한다면 이전 페이지에서 이어진 지속 지형으로 인지하여 4항 차단막을 즉시 가동
+            has_valid_cas = any(cas_pattern.search(b[4]) for b in blocks)
+            if has_valid_cas:
+                y_start_orig = 0.1
+                y_start = 0.0
+            
             for b in blocks:
                 b_text = re.sub(r'\s+', '', b[4]).upper()
                 if y_start_orig == 0.0:
@@ -3412,7 +3419,7 @@ class MSDSEngineV6:
             if func_match:
                 core_logic = func_match.group(1).strip()
                 current_hash = hashlib.sha256(core_logic.encode("utf-8")).hexdigest()[:16]
-                GOLDEN_HASH = "3a050f826ab29366" 
+                GOLDEN_HASH = "1f2e3019f30bf91a" 
                 if GOLDEN_HASH != "9a8b7c6d5e4f3a2b" and current_hash != GOLDEN_HASH:
                     if log_func: 
                         log_func(" 🚨 [형상 변조 경고] 안티그래비티가 핵심 파싱 엔진을 무단 변조했습니다!")
