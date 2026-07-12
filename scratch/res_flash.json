@@ -1,0 +1,53 @@
+{
+  "005": {
+    "file_path": "C:\\Users\\USER\\Desktop\\안티그래비티\\MSDS_EXtaction_V3(v24+GUI통합)\\TEST_File\\005_★SUPER WAY LUBE 32.pdf",
+    "file_name": "005_★SUPER WAY LUBE 32.pdf",
+    "result": {
+      "구성성분": "64742-54-7(>97%); 68649-42-3(<2%)",
+      "제품명": "Super Way Lube 32",
+      "측정대상": "",
+      "교정_사유": "AI 완착",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  },
+  "037": {
+    "file_path": "C:\\Users\\USER\\Desktop\\안티그래비티\\MSDS_EXtaction_V3(v24+GUI통합)\\TEST_File\\037_Sodium Cacodylate Buffer, 0.2M, pH 7.4.pdf",
+    "file_name": "037_Sodium Cacodylate Buffer, 0.2M, pH 7.4.pdf",
+    "result": {
+      "구성성분": "124-65-2(2.5~10%)",
+      "제품명": "SODIUM CACODYLATE BUFFER 0.2M, pH 7.4",
+      "측정대상": "",
+      "교정_사유": "AI 완착",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  },
+  "046": {
+    "file_path": "C:\\Users\\USER\\Desktop\\안티그래비티\\MSDS_EXtaction_V3(v24+GUI통합)\\TEST_File\\046_★THF_MSDS.pdf",
+    "file_name": "046_★THF_MSDS.pdf",
+    "result": {
+      "구성성분": "109-99-9(99~100%); 7732-18-5(0~1%); 128-37-0(0.025%)",
+      "제품명": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+      "측정대상": "",
+      "교정_사유": "AI 완착",
+      "신호등": "🟢",
+      "used_engine": "analytic",
+      "integrity_score": 100,
+      "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+      "doc_type": "스캔본",
+      "product_engine": "제미나이",
+      "comp_engine": "제미나이"
+    }
+  }
+}
