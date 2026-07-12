@@ -207,16 +207,8 @@ class MSDSEngineV6:
         else:
             print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
             
-        # [과거 오염 장부 전면 소각 (Cache Purge)] 엔진 가동 시 캐시 파쇄
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        for cache_file in ["msds_cache_registry.json"]:
-            cache_path = os.path.join(base_dir, cache_file)
-            if os.path.exists(cache_path):
-                try:
-                    os.remove(cache_path)
-                    print(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_path}")
-                except:
-                    pass
+        # [과거 오염 장부 전면 소각 (Cache Purge)] 엔지 가동 시 캐시 보존을 위해 소각 가드레일 철거
+        pass
             
         # [데이터 무결성] 일본식 부동호(≧, ≦, >, <) 및 다중 지표를 완벽히 포착하는 고도화 패턴 분기 배선
         self.comp_pattern = re.compile(
@@ -623,11 +615,58 @@ class MSDSEngineV6:
 
     def process_msds_pipeline(self, pdf_path, log_func=None):
         try:
+            # 1. SHA-256 해시 계산
+            f_hash = ""
+            try:
+                import hashlib
+                sha = hashlib.sha256()
+                with open(pdf_path, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        sha.update(chunk)
+                f_hash = sha.hexdigest()
+            except:
+                pass
+
+            # 2. 캐시 조회 (Cache-Hit Bypass)
+            cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "msds_cache_registry.json")
+            if f_hash:
+                try:
+                    if os.path.exists(cache_path):
+                        with open(cache_path, "r", encoding="utf-8") as f:
+                            cache_data = json.load(f)
+                        if f_hash in cache_data:
+                            cached_item = cache_data[f_hash]
+                            if cached_item.get("engine_version") == VERSION:
+                                if log_func:
+                                    log_func(f"⚡ [Cache-Hit Bypass] 캐시 자산 발견으로 분석 우회: {os.path.basename(pdf_path)}")
+                                return cached_item.get("result")
+                except:
+                    pass
+
             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 전역 싱글톤 캐시 오염 원천 분쇄 가드레일 완착
             import gc
             gc.collect() # 파이썬 가비지 컬렉터를 즉시 격발하여 메모리 잔상 강제 소멸
             
-            return self._process_msds_pipeline_impl(pdf_path, log_func=log_func)
+            res = self._process_msds_pipeline_impl(pdf_path, log_func=log_func)
+
+            # 3. 캐시 저장
+            if f_hash and res and "오류" not in res.get("교정_사유", ""):
+                try:
+                    if os.path.exists(cache_path):
+                        with open(cache_path, "r", encoding="utf-8") as f:
+                            cache_data = json.load(f)
+                    else:
+                        cache_data = {}
+                    cache_data[f_hash] = {
+                        "engine_version": VERSION,
+                        "result": res
+                    }
+                    with open(cache_path, "w", encoding="utf-8") as f:
+                        json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                except:
+                    pass
+
+            return res
         except Exception as e:
             if log_func: log_func(f" ⚠️ [치명적 런타임 예외 격리] {e}")
             return self._get_graceful_error_dict(pdf_path, str(e), log_func=log_func)
