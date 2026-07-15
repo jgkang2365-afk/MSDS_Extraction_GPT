@@ -1,30 +1,30 @@
 {
-    "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005": {
-        "f_hash": "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005",
-        "product_name": "Zinc standard solution (Zn 1000)",
+    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
+        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+        "product_name": "Super Way Lube 32",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
+        "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래비티/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/049_★Zinc Standard.pdf",
-        "page": 2,
+        "full_path": "C:/Users/USER/Desktop/안티그래비티/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
+        "page": 1,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "디지털",
-        "product_engine": "딥시크",
-        "comp_engine": "정규식",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
         "v2.0_Clean": {
-            "product_name": "Zinc standard solution (Zn 1000)",
-            "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
+            "product_name": "Super Way Lube 32",
+            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Zinc standard solution (Zn 1000)",
-            "raw_content": "7779-88-6(0.3%); 7697-37-2(0.6%)",
+            "product_name": "Super Way Lube 32",
+            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
             "measure": "",
             "reg1": [],
             "reg2": []
