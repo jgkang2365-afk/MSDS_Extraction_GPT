@@ -31,13 +31,22 @@
         "현황 화학물질명 열": "I"
     },
     "backup_path": "",
-    "excel_path": "C:/Users/USER/Documents/★ 강종구-측정계획 및 견적서/★ GUI (26상)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
+    "excel_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/남영물류산업 (주) YAN5 Manless Mezzanine 공사(26하)_화학물질입력 및 측정계획 자동화(V2.0).xlsm",
     "sheet_name": "화학물질입력_양식",
-    "clean_sheet_name": "화학물질입력_양식",
+    "clean_sheet_name": "기준목록",
     "measure_sheet_name": "기준목록",
     "start_row": "3",
     "start_num": "1",
     "pdf_paths": [
-        "C:/Users/USER/Desktop/안티그래비티/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf"
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\001_일신락카-은색_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\002_일신락카-사비_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\003_AD 속건에나멜 RAL-2000NT_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\004_MSDS_PT(속건성)_2025_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\005_MSDS_유비타워XQ-60# RAL 2000_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\006_MSDS_유비타워XQ-60# RAL 5015_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\007_New+SS-COAT+909.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\008_co2 msds.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\009_무수축 몰탈 MSDS_관리대상물질.pdf",
+        "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\010_조선 용접봉 msds (개정판)_관리대상물질.pdf"
     ]
 }

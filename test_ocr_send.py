@@ -3,7 +3,7 @@ import requests
 import fitz
 
 # 1. 환경 설정 (전송 경로 및 파일 위치 확정)
-SERVER_URL = "https://inclusive-work-reserves-mls.trycloudflare.com/ocr_process"
+SERVER_URL = "https://gates-parade-floppy-eva.trycloudflare.com/ocr_process"
 FILE_PATH = r"C:\Users\USER\Desktop\안티그래비티\MSDS_EXtaction_V3(v24+GUI통합)\TEST_File\005_★SUPER WAY LUBE 32.pdf"
 
 print(f"[파일 검증] {FILE_PATH} 존재 여부 확인 중...")

@@ -1865,7 +1865,7 @@ class MSDSEngineV6:
             import base64
             
             # 💡 [필수 수선 정보] 깡통 컴퓨터의 실제 사설 아이피(IP) 주소를 아래에 정확히 기입하십시오.
-            REMOTE_CRANE_URL = "https://inclusive-work-reserves-mls.trycloudflare.com/ocr_process" 
+            REMOTE_CRANE_URL = "https://gates-parade-floppy-eva.trycloudflare.com/ocr_process" 
             
             if log_func: log_func(f"📡 [원격 가속] 동적 조준 재단 이미지 조각({len(cropped_bytes)} 바이트) 깡통 기지로 고속 전송...")
             
@@ -4598,7 +4598,7 @@ def test_gatekeeper_interlock_harness():
     import requests
     
     # 시나리오 가: 원격 정상 생존망 실시간 노크 (핑 테스트)
-    test_remote_url = "https://inclusive-work-reserves-mls.trycloudflare.com/ocr_process"
+    test_remote_url = "https://gates-parade-floppy-eva.trycloudflare.com/ocr_process"
     test_dummy_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
     
     try:

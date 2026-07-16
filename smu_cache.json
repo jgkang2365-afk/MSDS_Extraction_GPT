@@ -1,33 +1,2683 @@
 {
-    "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac": {
-        "f_hash": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
-        "product_name": "Super Way Lube 32",
+    "5cf6ef4d06e5ff15cbd48853e1873ed903dbde57da5f62b1c08ca969dd02aeb7": {
+        "f_hash": "5cf6ef4d06e5ff15cbd48853e1873ed903dbde57da5f62b1c08ca969dd02aeb7",
+        "product_name": "일신 Lacquer Spray (은색)",
         "reliability": "N/A",
         "신호등": "🟢",
-        "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+        "raw_content": "115-10-6(30~40%); 7429-90-5(10~15%); 64742-16-1(10~15%); 74-98-6(5~10%); 108-88-3(20~30%)",
         "measure_target": "",
-        "full_path": "C:/Users/USER/Desktop/안티그래비티/MSDS_EXtaction_V3(v24+GUI통합)/TEST_File/005_★SUPER WAY LUBE 32.pdf",
-        "page": 1,
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\001_일신락카-은색_관리대상물질.pdf",
+        "page": 2,
         "used_engine": "analytic",
         "engine_version": "24.6.0.0",
         "integrity_score": 100,
         "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
-        "doc_type": "스캔본",
-        "product_engine": "제미나이",
-        "comp_engine": "제미나이",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
         "v2.0_Clean": {
-            "product_name": "Super Way Lube 32",
-            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+            "product_name": "일신 Lacquer Spray (은색)",
+            "raw_content": "115-10-6(30~40%); 7429-90-5(10~15%); 64742-16-1(10~15%); 74-98-6(5~10%); 108-88-3(20~30%)",
             "measure": "",
             "reg1": [],
             "reg2": []
         },
         "v3.0_Final": {
-            "product_name": "Super Way Lube 32",
-            "raw_content": "64742-54-7(>97%); 68649-42-3(<2%)",
+            "product_name": "일신 Lacquer Spray (은색)",
+            "raw_content": "",
+            "measure": "알루미늄(금속분진); 톨루엔",
+            "reg1": [
+                "다이메틸에테르[115-10-6(30~40%)]",
+                "알루미늄[7429-90-5(10~15%)]",
+                "석유탄화수소수지[64742-16-1(10~15%)]",
+                "프로페인[74-98-6(5~10%)]",
+                "톨루엔[108-88-3(20~30%)]"
+            ],
+            "reg2": [
+                "알루미늄(10~15%)",
+                "톨루엔(20~30%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "115-10-6",
+                "name": "다이메틸에테르",
+                "content": "30~40%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "다이메틸에테르()[115-10-6]"
+            },
+            {
+                "cas": "7429-90-5",
+                "name": "Aluminum",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "5",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Aluminum()[7429-90-5]",
+                "selected_name": "알루미늄(금속분진)",
+                "is_manual": true
+            },
+            {
+                "cas": "64742-16-1",
+                "name": "석유탄화수소수지(PETROLEUMHYDROCARBONRESIN)",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "석유탄화수소수지(PETROLEUMHYDROCARBONRESIN)()[64742-16-1]"
+            },
+            {
+                "cas": "74-98-6",
+                "name": "프로페인",
+                "content": "5~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "프로페인()[74-98-6]"
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "20~30%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            }
+        ],
+        "manual_data": {
+            "selected_code_7429-90-5": "3M-20-142",
+            "is_manual": true,
+            "is_manual_7429-90-5": true,
+            "measure": "알루미늄(금속분진); 톨루엔",
+            "reg1": "다이메틸에테르[115-10-6(30~40%)];\n알루미늄[7429-90-5(10~15%)];\n석유탄화수소수지[64742-16-1(10~15%)];\n프로페인[74-98-6(5~10%)];\n톨루엔[108-88-3(20~30%)]",
+            "reg2": "알루미늄(10~15%);\n톨루엔(20~30%)"
+        }
+    },
+    "fce0b3b27a0322a43e5a1dfc5f3fbd63ef655f4ef5188b1633767db3dde2e70a": {
+        "f_hash": "fce0b3b27a0322a43e5a1dfc5f3fbd63ef655f4ef5188b1633767db3dde2e70a",
+        "product_name": "IS - 2033 일신 Lacquer Spray ( 방청프라이머 )",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "115-10-6(30~40%); 1309-37-1(10~15%); 68526-21-6(10~15%); 67-64-1(10~15%); 74-98-6(1~5%); 79-20-9(1~5%); 108-88-3(1~5%); 9004-70-0(1~5%); 123-86-4(1~3%); 111-76-2(1~2%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\002_일신락카-사비_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "IS - 2033 일신 Lacquer Spray ( 방청프라이머 )",
+            "raw_content": "115-10-6(30~40%); 1309-37-1(10~15%); 68526-21-6(10~15%); 67-64-1(10~15%); 74-98-6(1~5%); 79-20-9(1~5%); 108-88-3(1~5%); 9004-70-0(1~5%); 123-86-4(1~3%); 111-76-2(1~2%)",
             "measure": "",
             "reg1": [],
             "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "IS - 2033 일신 Lacquer Spray ( 방청프라이머 )",
+            "raw_content": "",
+            "measure": "산화철(분진, 흄); 아세톤; 메틸아세테이트; 톨루엔; n-부틸아세테이트; 2-부톡시에탄올",
+            "reg1": [
+                "다이메틸에테르[115-10-6(30~40%)]",
+                "산화철(분진, 흄)[1309-37-1(10~15%)]",
+                "지방산,2분자중합체[68526-21-6(10~15%)]",
+                "아세톤[67-64-1(10~15%)]",
+                "프로페인[74-98-6(1~5%)]",
+                "메틸아세테이트[79-20-9(1~5%)]",
+                "톨루엔[108-88-3(1~5%)]",
+                "나이트로셀룰로스[9004-70-0(1~5%)]",
+                "n-부틸아세테이트[123-86-4(1~3%)]",
+                "2-부톡시에탄올[111-76-2(1~2%)]"
+            ],
+            "reg2": [
+                "산화철(분진, 흄)(10~15%)",
+                "아세톤(10~15%)",
+                "메틸아세테이트(1~5%)",
+                "톨루엔(1~5%)",
+                "n-부틸아세테이트(1~3%)",
+                "2-부톡시에탄올(1~2%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "115-10-6",
+                "name": "다이메틸에테르",
+                "content": "30~40%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "다이메틸에테르()[115-10-6]"
+            },
+            {
+                "cas": "1309-37-1",
+                "name": "산화철",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "5",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "산화철()[1309-37-1]",
+                "selected_name": "산화철(분진, 흄)",
+                "is_manual": true
+            },
+            {
+                "cas": "68526-21-6",
+                "name": "지방산,2분자중합체",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "지방산,2분자중합체()[68526-21-6]"
+            },
+            {
+                "cas": "67-64-1",
+                "name": "아세톤",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "500",
+                    "twa_mg": "-",
+                    "stel_ppm": "750",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "아세톤()[67-64-1]"
+            },
+            {
+                "cas": "74-98-6",
+                "name": "프로페인",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "프로페인()[74-98-6]"
+            },
+            {
+                "cas": "79-20-9",
+                "name": "초산메틸",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "200",
+                    "twa_mg": "-",
+                    "stel_ppm": "250",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "초산메틸()[79-20-9]",
+                "selected_name": "메틸아세테이트",
+                "is_manual": true
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "9004-70-0",
+                "name": "나이트로셀룰로스",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "나이트로셀룰로스()[9004-70-0]"
+            },
+            {
+                "cas": "123-86-4",
+                "name": "초산부틸",
+                "content": "1~3%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "150",
+                    "twa_mg": "-",
+                    "stel_ppm": "200",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "초산부틸()[123-86-4]",
+                "selected_name": "n-부틸아세테이트",
+                "is_manual": true
+            },
+            {
+                "cas": "111-76-2",
+                "name": "2-부톡시에탄올",
+                "content": "1~2%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "20",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "2-부톡시에탄올()[111-76-2]"
+            }
+        ],
+        "manual_data": {
+            "selected_code_1309-37-1": "3M-20-011",
+            "is_manual": true,
+            "is_manual_1309-37-1": true,
+            "measure": "산화철(분진, 흄); 아세톤; 메틸아세테이트; 톨루엔; n-부틸아세테이트; 2-부톡시에탄올",
+            "reg1": "다이메틸에테르[115-10-6(30~40%)];\n산화철(분진, 흄)[1309-37-1(10~15%)];\n지방산,2분자중합체[68526-21-6(10~15%)];\n아세톤[67-64-1(10~15%)];\n프로페인[74-98-6(1~5%)];\n메틸아세테이트[79-20-9(1~5%)];\n톨루엔[108-88-3(1~5%)];\n나이트로셀룰로스[9004-70-0(1~5%)];\nn-부틸아세테이트[123-86-4(1~3%)];\n2-부톡시에탄올[111-76-2(1~2%)]",
+            "reg2": "산화철(분진, 흄)(10~15%);\n아세톤(10~15%);\n메틸아세테이트(1~5%);\n톨루엔(1~5%);\nn-부틸아세테이트(1~3%);\n2-부톡시에탄올(1~2%)",
+            "selected_code_79-20-9": "4O-30-072",
+            "is_manual_79-20-9": true,
+            "selected_code_123-86-4": "4O-30-111",
+            "is_manual_123-86-4": true
         }
+    },
+    "2ba84df04c2293a03bde4e4706252ede06be670fa959b741b8ef248d0f0b5c0e": {
+        "f_hash": "2ba84df04c2293a03bde4e4706252ede06be670fa959b741b8ef248d0f0b5c0e",
+        "product_name": "AD 속건에나멜 RAL-2000NT",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "1330-20-7(27~37%); 108-88-3(0~7%); 471-34-1(0~5%); 13463-67-7(0~5%); 5468-75-7(0~5%); 1332-58-7(0~5%); 5567-15-7(0~3%); 67-56-1(0~1%); 64742-81-0(0~1%); 1302-78-9(0~1%); 15793-73-4(0~1%); 20344-49-4(0~1%); 91845-02-2(0~1%); 96-29-7(0~1%); 100-41-4(0~1%); 112-03-8(0~1%); 55349-01-4(0~0.5%); 1333-86-4(0~0.1%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\003_AD 속건에나멜 RAL-2000NT_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "AD 속건에나멜 RAL-2000NT",
+            "raw_content": "1330-20-7(27~37%); 108-88-3(0~7%); 471-34-1(0~5%); 13463-67-7(0~5%); 5468-75-7(0~5%); 1332-58-7(0~5%); 5567-15-7(0~3%); 67-56-1(0~1%); 64742-81-0(0~1%); 1302-78-9(0~1%); 15793-73-4(0~1%); 20344-49-4(0~1%); 91845-02-2(0~1%); 96-29-7(0~1%); 100-41-4(0~1%); 112-03-8(0~1%); 55349-01-4(0~0.5%); 1333-86-4(0~0.1%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "AD 속건에나멜 RAL-2000NT",
+            "raw_content": "",
+            "measure": "크실렌(27~37%); 톨루엔(0~7%); 탄산칼슘(0~5%); 이산화티타늄(0~5%); 카올린(0~5%); 메탄올(0~1%); 에틸벤젠(0~1%)",
+            "reg1": [
+                "크실렌[1330-20-7(27~37%)]",
+                "톨루엔[108-88-3(0~7%)]",
+                "탄산칼슘[471-34-1(0~5%)]",
+                "이산화티타늄[13463-67-7(0~5%)]",
+                "C.I.색소황색14(C.I.PIGMENTYELLOW14)[5468-75-7(0~5%)]",
+                "카올린[1332-58-7(0~5%)]",
+                "C.I.색소황색83(C.I.PIGMENTYELLOW83)[5567-15-7(0~3%)]",
+                "메탄올[67-56-1(0~1%)]",
+                "히드로탈황화케로신[64742-81-0(0~1%)]",
+                "벤토나이트[1302-78-9(0~1%)]",
+                "C.I.색소오렌지34(C.I.PIGMENTORANGE34)[15793-73-4(0~1%)]",
+                "철하이드록사이드옥사이드[20344-49-4(0~1%)]",
+                "Unknown[91845-02-2(0~1%)]",
+                "2-부타논옥심[96-29-7(0~1%)]",
+                "에틸벤젠[100-41-4(0~1%)]",
+                "N,N,N-Trimethyl-1-octadecanaminium chloride; Trimethyloctadecylammonium chloride[112-03-8(0~1%)]",
+                "N,N'-1,6-헥산디일비스[12-하이드록시옥타데칸아마이드][55349-01-4(0~0.5%)]",
+                "카본블랙[1333-86-4(0~0.1%)]"
+            ],
+            "reg2": [
+                "크실렌(27~37%)",
+                "톨루엔(0~7%)",
+                "탄산칼슘(0~5%)",
+                "이산화티타늄(0~5%)",
+                "카올린(0~5%)",
+                "메탄올(0~1%)",
+                "에틸벤젠(0~1%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "1330-20-7",
+                "name": "크실렌",
+                "content": "27~37%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "크실렌()[1330-20-7]"
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "0~7%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "471-34-1",
+                "name": "탄산칼슘",
+                "content": "0~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 그 밖의 광물성 분진)|특수건강진단대상물질 (진단주기 : 광물성 분진)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "탄산칼슘()[471-34-1]"
+            },
+            {
+                "cas": "13463-67-7",
+                "name": "이산화티타늄",
+                "content": "0~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "이산화티타늄()[13463-67-7]"
+            },
+            {
+                "cas": "5468-75-7",
+                "name": "C.I.색소황색14(C.I.PIGMENTYELLOW14)",
+                "content": "0~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "C.I.색소황색14(C.I.PIGMENTYELLOW14)()[5468-75-7]"
+            },
+            {
+                "cas": "1332-58-7",
+                "name": "카올린",
+                "content": "0~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "2",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "관리대상유해물질 (알루미늄 및 그 화합물)|작업환경측정대상물질 (측정주기 : 6개월)(알루미늄 및 그 화합물)|특수건강진단대상물질 (진단주기 : 12개월)(알루미늄 및 그 화합물)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "카올린()[1332-58-7]"
+            },
+            {
+                "cas": "5567-15-7",
+                "name": "C.I.색소황색83(C.I.PIGMENTYELLOW83)",
+                "content": "0~3%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "C.I.색소황색83(C.I.PIGMENTYELLOW83)()[5567-15-7]"
+            },
+            {
+                "cas": "67-56-1",
+                "name": "메틸알코올",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "200",
+                    "twa_mg": "-",
+                    "stel_ppm": "250",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "메틸알코올()[67-56-1]"
+            },
+            {
+                "cas": "64742-81-0",
+                "name": "히드로탈황화케로신(HYDRODESULFURIZEDKEROSINE)",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "히드로탈황화케로신(HYDRODESULFURIZEDKEROSINE)()[64742-81-0]"
+            },
+            {
+                "cas": "1302-78-9",
+                "name": "벤토나이트(BENTONITE)",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "벤토나이트(BENTONITE)()[1302-78-9]"
+            },
+            {
+                "cas": "15793-73-4",
+                "name": "C.I.색소오렌지34(C.I.PIGMENTORANGE34)",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "C.I.색소오렌지34(C.I.PIGMENTORANGE34)()[15793-73-4]"
+            },
+            {
+                "cas": "20344-49-4",
+                "name": "철하이드록사이드옥사이드",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "철하이드록사이드옥사이드()[20344-49-4]"
+            },
+            {
+                "cas": "91845-02-2",
+                "name": "Unknown",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Unknown()[91845-02-2]"
+            },
+            {
+                "cas": "96-29-7",
+                "name": "2-부타논옥심",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "2-부타논옥심()[96-29-7]"
+            },
+            {
+                "cas": "100-41-4",
+                "name": "에틸벤젠",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "125",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "에틸벤젠()[100-41-4]"
+            },
+            {
+                "cas": "112-03-8",
+                "name": "N,N,N-Trimethyl-1-octadecanaminium chloride; Trimethyloctadecylammonium chloride",
+                "content": "0~1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "N,N,N-Trimethyl-1-octadecanaminium chloride; Trimethyloctadecylammonium chloride()[112-03-8]"
+            },
+            {
+                "cas": "55349-01-4",
+                "name": "N,N'-1,6-헥산디일비스[12-하이드록시옥타데칸아마이드]",
+                "content": "0~0.5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "N,N'-1,6-헥산디일비스[12-하이드록시옥타데칸아마이드]()[55349-01-4]"
+            },
+            {
+                "cas": "1333-86-4",
+                "name": "카본블랙",
+                "content": "0~0.1%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "3.5",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "카본블랙()[1333-86-4]"
+            }
+        ]
+    },
+    "83a470a326fce0f5a9090616d63cbe473722f88f72659e6e2c6526c5d3d53ce5": {
+        "f_hash": "83a470a326fce0f5a9090616d63cbe473722f88f72659e6e2c6526c5d3d53ce5",
+        "product_name": "PT(속건성)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "108-88-3(40~50%); 64742-82-1(40~50%); 1330-20-7(1~10%); 100-41-4(1~10%); 108-65-6(1~10%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\004_MSDS_PT(속건성)_2025_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "PT(속건성)",
+            "raw_content": "108-88-3(40~50%); 64742-82-1(40~50%); 1330-20-7(1~10%); 100-41-4(1~10%); 108-65-6(1~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "PT(속건성)",
+            "raw_content": "",
+            "measure": "톨루엔(40~50%); 크실렌(1~10%); 에틸벤젠(1~10%)",
+            "reg1": [
+                "톨루엔[108-88-3(40~50%)]",
+                "수소탈황화된중질나프타(석유)(Naphtha(petroleum),hydrodesulfurizedheavy)[64742-82-1(40~50%)]",
+                "크실렌[1330-20-7(1~10%)]",
+                "에틸벤젠[100-41-4(1~10%)]",
+                "프로필렌글리콜모노메틸에테르아세트산[108-65-6(1~10%)]"
+            ],
+            "reg2": [
+                "톨루엔(40~50%)",
+                "크실렌(1~10%)",
+                "에틸벤젠(1~10%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "40~50%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "64742-82-1",
+                "name": "수소탈황화된중질나프타(석유)(Naphtha(petroleum),hydrodesulfurizedheavy)",
+                "content": "40~50%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "수소탈황화된중질나프타(석유)(Naphtha(petroleum),hydrodesulfurizedheavy)()[64742-82-1]"
+            },
+            {
+                "cas": "1330-20-7",
+                "name": "크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "크실렌()[1330-20-7]"
+            },
+            {
+                "cas": "100-41-4",
+                "name": "에틸벤젠",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "125",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "에틸벤젠()[100-41-4]"
+            },
+            {
+                "cas": "108-65-6",
+                "name": "프로필렌글리콜모노메틸에테르아세트산",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "프로필렌글리콜모노메틸에테르아세트산()[108-65-6]"
+            }
+        ]
+    },
+    "14375e8629af58a2e6d5ed04f2120d04b69418d85d77a790f8c1c290283ad3bc": {
+        "f_hash": "14375e8629af58a2e6d5ed04f2120d04b69418d85d77a790f8c1c290283ad3bc",
+        "product_name": "유비타워 XQ-60  # RAL 2000",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "68476-20-0(40~50%); 100-41-4(10~20%); 5567-15-7(10~20%); 13397-26-7(1~10%); 108-38-3(1~10%); 108-88-3(1~10%); 106-42-3(1~10%); 95-47-6(1~10%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\005_MSDS_유비타워XQ-60# RAL 2000_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "유비타워 XQ-60  # RAL 2000",
+            "raw_content": "68476-20-0(40~50%); 100-41-4(10~20%); 5567-15-7(10~20%); 13397-26-7(1~10%); 108-38-3(1~10%); 108-88-3(1~10%); 106-42-3(1~10%); 95-47-6(1~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "유비타워 XQ-60  # RAL 2000",
+            "raw_content": "",
+            "measure": "에틸벤젠(10~20%); m-크실렌(1~10%); 톨루엔(1~10%); p-크실렌(1~10%); o-크실렌(1~10%)",
+            "reg1": [
+                "Unknown[68476-20-0(40~50%)]",
+                "에틸벤젠[100-41-4(10~20%)]",
+                "C.I.색소황색83(C.I.PIGMENTYELLOW83)[5567-15-7(10~20%)]",
+                "CALCITE[13397-26-7(1~10%)]",
+                "m-크실렌[108-38-3(1~10%)]",
+                "톨루엔[108-88-3(1~10%)]",
+                "p-크실렌[106-42-3(1~10%)]",
+                "o-크실렌[95-47-6(1~10%)]"
+            ],
+            "reg2": [
+                "에틸벤젠(10~20%)",
+                "m-크실렌(1~10%)",
+                "톨루엔(1~10%)",
+                "p-크실렌(1~10%)",
+                "o-크실렌(1~10%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "68476-20-0",
+                "name": "Unknown",
+                "content": "40~50%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Unknown()[68476-20-0]"
+            },
+            {
+                "cas": "100-41-4",
+                "name": "에틸벤젠",
+                "content": "10~20%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "125",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "에틸벤젠()[100-41-4]"
+            },
+            {
+                "cas": "5567-15-7",
+                "name": "C.I.색소황색83(C.I.PIGMENTYELLOW83)",
+                "content": "10~20%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "C.I.색소황색83(C.I.PIGMENTYELLOW83)()[5567-15-7]"
+            },
+            {
+                "cas": "13397-26-7",
+                "name": "CALCITE",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "CALCITE()[13397-26-7]"
+            },
+            {
+                "cas": "108-38-3",
+                "name": "m-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "m-크실렌()[108-38-3]"
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "106-42-3",
+                "name": "p-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "p-크실렌()[106-42-3]"
+            },
+            {
+                "cas": "95-47-6",
+                "name": "o-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "o-크실렌()[95-47-6]"
+            }
+        ]
+    },
+    "f8c9da452c8ba7d3281ca3e4d36bb8ff5de53e671fd5f86c79bbe861904ceb42": {
+        "f_hash": "f8c9da452c8ba7d3281ca3e4d36bb8ff5de53e671fd5f86c79bbe861904ceb42",
+        "product_name": "유비타워XQ-60  # RAL 5015",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "68476-20-0(40~50%); 100-41-4(10~20%); 13463-67-7(10~20%); 108-38-3(1~10%); 13397-26-7(1~10%); 95-47-6(1~10%); 108-88-3(1~10%); 106-42-3(1~10%); 147-14-8(1~10%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\006_MSDS_유비타워XQ-60# RAL 5015_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "유비타워XQ-60  # RAL 5015",
+            "raw_content": "68476-20-0(40~50%); 100-41-4(10~20%); 13463-67-7(10~20%); 108-38-3(1~10%); 13397-26-7(1~10%); 95-47-6(1~10%); 108-88-3(1~10%); 106-42-3(1~10%); 147-14-8(1~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "유비타워XQ-60  # RAL 5015",
+            "raw_content": "",
+            "measure": "에틸벤젠(10~20%); 이산화티타늄(10~20%); m-크실렌(1~10%); o-크실렌(1~10%); 톨루엔(1~10%); p-크실렌(1~10%)",
+            "reg1": [
+                "Unknown[68476-20-0(40~50%)]",
+                "에틸벤젠[100-41-4(10~20%)]",
+                "이산화티타늄[13463-67-7(10~20%)]",
+                "m-크실렌[108-38-3(1~10%)]",
+                "CALCITE[13397-26-7(1~10%)]",
+                "o-크실렌[95-47-6(1~10%)]",
+                "톨루엔[108-88-3(1~10%)]",
+                "p-크실렌[106-42-3(1~10%)]",
+                "구리프탈로시아닌[147-14-8(1~10%)]"
+            ],
+            "reg2": [
+                "에틸벤젠(10~20%)",
+                "이산화티타늄(10~20%)",
+                "m-크실렌(1~10%)",
+                "o-크실렌(1~10%)",
+                "톨루엔(1~10%)",
+                "p-크실렌(1~10%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "68476-20-0",
+                "name": "Unknown",
+                "content": "40~50%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Unknown()[68476-20-0]"
+            },
+            {
+                "cas": "100-41-4",
+                "name": "에틸벤젠",
+                "content": "10~20%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "125",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "에틸벤젠()[100-41-4]"
+            },
+            {
+                "cas": "13463-67-7",
+                "name": "이산화티타늄",
+                "content": "10~20%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "이산화티타늄()[13463-67-7]"
+            },
+            {
+                "cas": "108-38-3",
+                "name": "m-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "m-크실렌()[108-38-3]"
+            },
+            {
+                "cas": "13397-26-7",
+                "name": "CALCITE",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "CALCITE()[13397-26-7]"
+            },
+            {
+                "cas": "95-47-6",
+                "name": "o-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "o-크실렌()[95-47-6]"
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "106-42-3",
+                "name": "p-크실렌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "p-크실렌()[106-42-3]"
+            },
+            {
+                "cas": "147-14-8",
+                "name": "구리프탈로시아닌",
+                "content": "1~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "관리대상유해물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "구리프탈로시아닌()[147-14-8]"
+            }
+        ]
+    },
+    "d919739adf57306b4afc62a0c302e6defec9d4ede301c62bc57cd9d51b4cc1e8": {
+        "f_hash": "d919739adf57306b4afc62a0c302e6defec9d4ede301c62bc57cd9d51b4cc1e8",
+        "product_name": "New SS-COAT 909 (뉴 에스에스-코트 909)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "7429-90-5(5~15%); 64742-16-1(5~15%); 108-88-3(5~15%); 67-64-1(5~15%); 1330-20-7(1~5%); 616-38-6(1~3%); 142-82-5(1~5%); 115-10-6(45~55%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\007_New+SS-COAT+909.pdf",
+        "page": 3,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "New SS-COAT 909 (뉴 에스에스-코트 909)",
+            "raw_content": "7429-90-5(5~15%); 64742-16-1(5~15%); 108-88-3(5~15%); 67-64-1(5~15%); 1330-20-7(1~5%); 616-38-6(1~3%); 142-82-5(1~5%); 115-10-6(45~55%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "New SS-COAT 909 (뉴 에스에스-코트 909)",
+            "raw_content": "",
+            "measure": "알루미늄(금속분진); 톨루엔; 아세톤; 크실렌; n-헵탄",
+            "reg1": [
+                "알루미늄[7429-90-5(5~15%)]",
+                "석유탄화수소수지[64742-16-1(5~15%)]",
+                "톨루엔[108-88-3(5~15%)]",
+                "아세톤[67-64-1(5~15%)]",
+                "크실렌[1330-20-7(1~5%)]",
+                "다이메틸카르보네이트[616-38-6(1~3%)]",
+                "n-헵탄[142-82-5(1~5%)]",
+                "다이메틸에테르[115-10-6(45~55%)]"
+            ],
+            "reg2": [
+                "알루미늄(5~15%)",
+                "톨루엔(5~15%)",
+                "아세톤(5~15%)",
+                "크실렌(1~5%)",
+                "n-헵탄(1~5%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "7429-90-5",
+                "name": "Aluminum",
+                "content": "5~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "5",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "Aluminum()[7429-90-5]",
+                "selected_name": "알루미늄(금속분진)",
+                "is_manual": true
+            },
+            {
+                "cas": "64742-16-1",
+                "name": "석유탄화수소수지(PETROLEUMHYDROCARBONRESIN)",
+                "content": "5~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "석유탄화수소수지(PETROLEUMHYDROCARBONRESIN)()[64742-16-1]"
+            },
+            {
+                "cas": "108-88-3",
+                "name": "톨루엔",
+                "content": "5~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "50",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질|허용기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "톨루엔()[108-88-3]"
+            },
+            {
+                "cas": "67-64-1",
+                "name": "아세톤",
+                "content": "5~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "500",
+                    "twa_mg": "-",
+                    "stel_ppm": "750",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "아세톤()[67-64-1]"
+            },
+            {
+                "cas": "1330-20-7",
+                "name": "크실렌",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "100",
+                    "twa_mg": "-",
+                    "stel_ppm": "150",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "크실렌()[1330-20-7]"
+            },
+            {
+                "cas": "616-38-6",
+                "name": "다이메틸카르보네이트",
+                "content": "1~3%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "다이메틸카르보네이트()[616-38-6]"
+            },
+            {
+                "cas": "142-82-5",
+                "name": "헵탄",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "400",
+                    "twa_mg": "-",
+                    "stel_ppm": "500",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |특수건강진단대상물질 (진단주기 : 12개월)|공정안전보고서(PSM) 제출 대상물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "헵탄()[142-82-5]"
+            },
+            {
+                "cas": "115-10-6",
+                "name": "다이메틸에테르",
+                "content": "45~55%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "공정안전보고서(PSM) 제출 대상물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "다이메틸에테르()[115-10-6]"
+            }
+        ],
+        "manual_data": {
+            "selected_code_7429-90-5": "3M-20-142",
+            "is_manual": true,
+            "is_manual_7429-90-5": true,
+            "measure": "알루미늄(금속분진); 톨루엔; 아세톤; 크실렌; n-헵탄",
+            "reg1": "알루미늄[7429-90-5(5~15%)];\n석유탄화수소수지[64742-16-1(5~15%)];\n톨루엔[108-88-3(5~15%)];\n아세톤[67-64-1(5~15%)];\n크실렌[1330-20-7(1~5%)];\n다이메틸카르보네이트[616-38-6(1~3%)];\nn-헵탄[142-82-5(1~5%)];\n다이메틸에테르[115-10-6(45~55%)]",
+            "reg2": "알루미늄(5~15%);\n톨루엔(5~15%);\n아세톤(5~15%);\n크실렌(1~5%);\nn-헵탄(1~5%)"
+        }
+    },
+    "10277fb921eac00db3ebd1da2cee5f699cc628e530a77f335127361d4c47fa77": {
+        "f_hash": "10277fb921eac00db3ebd1da2cee5f699cc628e530a77f335127361d4c47fa77",
+        "product_name": "CO2[이산화탄소]",
+        "reliability": "N/A",
+        "신호등": "🔴",
+        "raw_content": "",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\008_co2 msds.pdf",
+        "page": 1,
+        "used_engine": "error_isolation",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 0,
+        "integrity_reason": "[품질점수: 0점] ➔ [❌추출실패]",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
+        "v2.0_Clean": {
+            "product_name": "CO2[이산화탄소]",
+            "raw_content": "",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "CO2[이산화탄소]",
+            "raw_content": "",
+            "measure": "",
+            "reg1": [
+                "이산화탄소(액화)[124-38-9(100%)]"
+            ],
+            "reg2": [
+                ""
+            ]
+        },
+        "manual_data": {
+            "is_manual": true,
+            "product_name": "CO2[이산화탄소]",
+            "raw_content": "124-38-9(100%)",
+            "measure": "",
+            "reg2": "",
+            "reg1": ""
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "124-38-9",
+                "name": "이산화탄소",
+                "content": "100%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "5000",
+                    "twa_mg": "-",
+                    "stel_ppm": "30000",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "이산화탄소()[124-38-9]"
+            }
+        ]
+    },
+    "ff63519c5fb4ec6d954084b35be1d3d0666d79ea987aece0be763ec36dc3a8bb": {
+        "f_hash": "ff63519c5fb4ec6d954084b35be1d3d0666d79ea987aece0be763ec36dc3a8bb",
+        "product_name": "레미탈 (GP600)",
+        "reliability": "N/A",
+        "신호등": "🟢",
+        "raw_content": "65996-69-2(0~10%); 65997-15-1(30~40%); 68131-74-8(0~10%)",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\009_무수축 몰탈 MSDS_관리대상물질.pdf",
+        "page": 2,
+        "used_engine": "analytic",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 100,
+        "integrity_reason": "[품질점수: 100점] ➔ [✅제품명완착] [✅CAS정합]",
+        "doc_type": "디지털",
+        "product_engine": "딥시크",
+        "comp_engine": "정규식",
+        "v2.0_Clean": {
+            "product_name": "레미탈 (GP600)",
+            "raw_content": "65996-69-2(0~10%); 65997-15-1(30~40%); 68131-74-8(0~10%)",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "레미탈 (GP600)",
+            "raw_content": "",
+            "measure": "포틀랜드시멘트(30~40%)",
+            "reg1": [
+                "고로슬래그(제1철금속)(BLASTFURNACESLAGS(FERROUSMETAL))[65996-69-2(0~10%)]",
+                "포틀랜드시멘트[65997-15-1(30~40%)]",
+                "플라이애시[68131-74-8(0~10%)]"
+            ],
+            "reg2": [
+                "포틀랜드시멘트(30~40%)"
+            ]
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "65996-69-2",
+                "name": "고로슬래그(제1철금속)(BLASTFURNACESLAGS(FERROUSMETAL))",
+                "content": "0~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "관리대상유해물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "고로슬래그(제1철금속)(BLASTFURNACESLAGS(FERROUSMETAL))()[65996-69-2]"
+            },
+            {
+                "cas": "65997-15-1",
+                "name": "포틀랜드시멘트",
+                "content": "30~40%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "특수건강진단대상물질 (진단주기 : 24개월)(광물성 분진)|작업환경측정대상물질 (측정주기 : 6개월)(광물성 분진)|노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "포틀랜드시멘트()[65997-15-1]"
+            },
+            {
+                "cas": "68131-74-8",
+                "name": "플라이애시",
+                "content": "0~10%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "-",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": false,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "해당없음"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "플라이애시()[68131-74-8]"
+            }
+        ]
+    },
+    "cae694a57c609824e85a233339e1ebeebe4c71f86c0f7628a0f15120f3f59a97": {
+        "f_hash": "cae694a57c609824e85a233339e1ebeebe4c71f86c0f7628a0f15120f3f59a97",
+        "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
+        "reliability": "N/A",
+        "신호등": "🔴",
+        "raw_content": "",
+        "measure_target": "",
+        "full_path": "Z:/data/측정팀/측정보고서/2026년/하반기/(((미확정 사업장)))/남영물류산업 (주) YAN5 Manless Mezzanine 공사/MSDS\\010_조선 용접봉 msds (개정판)_관리대상물질.pdf",
+        "page": 1,
+        "used_engine": "error_isolation",
+        "engine_version": "24.6.0.0",
+        "integrity_score": 0,
+        "integrity_reason": "[품질점수: 0점] ➔ [❌추출실패]",
+        "doc_type": "스캔본",
+        "product_engine": "제미나이",
+        "comp_engine": "제미나이",
+        "v2.0_Clean": {
+            "product_name": "용접재료(연강용 피복아크 용접봉)",
+            "raw_content": "",
+            "measure": "",
+            "reg1": [],
+            "reg2": []
+        },
+        "v3.0_Final": {
+            "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
+            "raw_content": "",
+            "measure": "이산화티타늄; 망간 및 그 무기화합물",
+            "reg1": [
+                "이산화티타늄[13463-67-7(10~15%)]",
+                "망간 및 그 무기화합물[7439-96-5(1~5%)]",
+                "철[7439-89-6(Rem.%)]"
+            ],
+            "reg2": [
+                "이산화티타늄(10~15%)",
+                "망간 및 그 무기화합물(1~5%)"
+            ]
+        },
+        "manual_data": {
+            "is_manual": true,
+            "product_name": "용접재료(연강용 피복아크 용접봉) CR-13",
+            "raw_content": "13463-67-7(10~15%);\n7439-96-5(1~5%);\n7439-89-6(Rem.%)",
+            "measure": "이산화티타늄; 망간 및 그 무기화합물",
+            "reg2": "이산화티타늄(10~15%);\n망간 및 그 무기화합물(1~5%)",
+            "reg1": "이산화티타늄[13463-67-7(10~15%)];\n망간 및 그 무기화합물[7439-96-5(1~5%)];\n철[7439-89-6(Rem.%)]",
+            "selected_code_7439-96-5": "3M-20-061",
+            "is_manual_7439-96-5": true
+        },
+        "status": "검증 완료",
+        "components": [
+            {
+                "cas": "13463-67-7",
+                "name": "이산화티타늄",
+                "content": "10~15%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "10",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "작업환경측정대상물질 (측정주기 : 6개월)|관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "이산화티타늄()[13463-67-7]"
+            },
+            {
+                "cas": "7439-96-5",
+                "name": "망간",
+                "content": "1~5%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "1",
+                    "stel_ppm": "-",
+                    "stel_mg": "3"
+                },
+                "osh": {
+                    "is_measured": true,
+                    "is_special": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "망간()[7439-96-5]",
+                "selected_name": "망간 및 그 무기화합물",
+                "is_manual": true
+            },
+            {
+                "cas": "7439-89-6",
+                "name": "철",
+                "content": "Rem.%",
+                "content_min": "100",
+                "content_max": "100",
+                "exposure": {
+                    "twa_ppm": "-",
+                    "twa_mg": "1",
+                    "stel_ppm": "-",
+                    "stel_mg": "-"
+                },
+                "osh": {
+                    "is_measured": false,
+                    "is_special": false,
+                    "is_managed": true,
+                    "is_special_mgmt": false,
+                    "is_permit": false,
+                    "is_prohibited": false,
+                    "raw_text": "관리대상유해물질 |노출기준설정물질"
+                },
+                "cca": {
+                    "acute": false,
+                    "chronic": false,
+                    "ecology": false,
+                    "accident": false,
+                    "prohibited": false,
+                    "restricted": false
+                },
+                "combined_format": "철()[7439-89-6]"
+            }
+        ]
     }
 }
