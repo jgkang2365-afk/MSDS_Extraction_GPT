@@ -134,8 +134,9 @@ def _ocr_line(text, x0, y0, x1, y1):
 
 
 class _ReconOCR:
-    def __init__(self):
+    def __init__(self, with_content=True):
         self.calls = 0
+        self.with_content = with_content
 
     def ocr(self, image, cls=False):
         self.calls += 1
@@ -149,7 +150,10 @@ class _ReconOCR:
         return [[
             # x=600px는 페이지 왼쪽 33% 밖이다. 전체 폭 정찰 좌표를 써야 찾을 수 있다.
             _ocr_line("3. 구성성분의 명칭 및 함유량", 600, 150, 870, 180),
-            _ocr_line("에탄올 64-17-5 50%", 60, 260, 700, 300),
+            _ocr_line(
+                "에탄올 64-17-5 50%" if self.with_content else "에탄올 64-17-5",
+                60, 260, 700, 300,
+            ),
             _ocr_line("4. 응급조치 요령", 600, 600, 850, 630),
         ]]
 
@@ -228,6 +232,29 @@ class ImageOCRReuseTests(unittest.TestCase):
                 json.loads(registry_path.read_text(encoding="utf-8")), cached_registry
             )
 
+    def test_image_pipeline_logs_elapsed_paddle_and_ppstructure_comparison(self):
+        engine = engine_module.MSDSEngineV6()
+        logs = []
+
+        def fake_pipeline(_pdf_path, log_func=None):
+            engine._image_pipeline_active = True
+            return {"제품명": "Test", "구성성분": "64-17-5(50%)", "교정_사유": "정상"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "scan.pdf"
+            pdf_path.write_bytes(b"image-pipeline")
+            with patch.object(engine, "_process_msds_pipeline_impl", side_effect=fake_pipeline), patch.object(
+                engine_module.time, "perf_counter", side_effect=[10.0, 12.5]
+            ):
+                engine.process_msds_pipeline(
+                    str(pdf_path), log_func=logs.append, bypass_cache=True
+                )
+
+        comparison_log = next(log for log in logs if "[이미지 PDF 처리 비교]" in log)
+        self.assertIn("전체시간=2.50초", comparison_log)
+        self.assertIn("Paddle=0회", comparison_log)
+        self.assertIn("PPStructure=미사용(0회)", comparison_log)
+
     def test_paddleocr3_result_is_normalized_with_pdf_coordinates(self):
         engine = engine_module.MSDSEngineV6()
         raw_result = [
@@ -248,23 +275,23 @@ class ImageOCRReuseTests(unittest.TestCase):
         self.assertEqual(lines[0]["bbox_pdf"][1], 100.0)
         self.assertEqual(lines[0]["bbox_pdf"][3], 130.0)
 
-    def _fixture(self):
+    def _fixture(self, with_content=True):
         render_log = []
         pages = [_Page(0, render_log), _Page(1, render_log)]
         document = _Document(pages)
-        recon_ocr = _ReconOCR()
+        recon_ocr = _ReconOCR(with_content=with_content)
         engine = engine_module.MSDSEngineV6()
         return engine, document, recon_ocr, render_log
 
-    def _extract_two_page_scan(self):
-        engine, document, recon_ocr, render_log = self._fixture()
+    def _extract_two_page_scan(self, with_content=True):
+        engine, document, recon_ocr, render_log = self._fixture(with_content=with_content)
         with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
             engine_module, "get_ocr_engine", return_value=recon_ocr
         ):
             images, section_text, pages, recon_data = engine.extract_section3_images("scan.pdf")
         return engine, document, recon_ocr, render_log, images, section_text, pages, recon_data
 
-    def test_normal_path_uses_two_recon_calls_and_one_remote_crop_call(self):
+    def test_valid_recon_components_skip_crop_and_all_followup_ocr(self):
         (
             engine,
             document,
@@ -279,7 +306,9 @@ class ImageOCRReuseTests(unittest.TestCase):
         self.assertEqual(recon_ocr.calls, 2)
         self.assertEqual(pages, [1])
         self.assertIn("64-17-5", section_text)
-        self.assertTrue(recon_data["section_crop"]["bounds"]["found_heading"])
+        self.assertTrue(recon_data["direct_integrity_passed"])
+        self.assertIsNone(recon_data["section_crop"])
+        self.assertEqual(images, [])
 
         with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
             engine_module, "get_paddle_structure_engine", side_effect=AssertionError("제품명 PPStructure 재호출")
@@ -289,26 +318,9 @@ class ImageOCRReuseTests(unittest.TestCase):
             )
         self.assertIn("Test Product", product_text)
 
-        with patch.object(engine_module.requests, "post", return_value=_RemoteSuccess()) as remote_post, patch.object(
-            engine, "verify_integrity_of_local_data", return_value=(True, "")
-        ):
-            result = engine.run_flexible_sandwich_pipeline(
-                "scan.pdf",
-                None,
-                target_page_idx=1,
-                recon_data=recon_data,
-                pre_rendered_crop=recon_data["section_crop"],
-            )
-
-        self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(remote_post.call_count, 1)
-        self.assertEqual(
-            remote_post.call_args.kwargs["files"]["image_file"][1],
-            recon_data["section_crop"]["bytes"],
-        )
         self.assertEqual(len(engine._paddle_call_metrics), 2)
-        self.assertEqual([entry["scale"] for entry in render_log], [1.5, 1.5, 2.0])
-        print("호출 비교(2페이지 3항/정상): 변경 전 로컬 Paddle 5회 + 원격 1회 -> 변경 후 로컬 Paddle 2회 + 원격 1회")
+        self.assertEqual([entry["scale"] for entry in render_log], [1.5, 1.5])
+        print("호출 비교(정찰 직접 채택): 변경 전 정찰+재단 OCR -> 변경 후 정찰 2회, 재단 OCR 0회")
 
     def test_every_paddle_call_logs_page_size_purpose_and_elapsed_time(self):
         engine = engine_module.MSDSEngineV6()
@@ -332,7 +344,7 @@ class ImageOCRReuseTests(unittest.TestCase):
         self.assertIn("목적: 계측 검증", logs[0])
         self.assertIn("소요시간:", logs[1])
 
-    def test_remote_failure_runs_ppstructure_once_on_same_crop(self):
+    def test_remote_failure_skips_even_loaded_ppstructure_and_hands_off_to_ai(self):
         (
             engine,
             _document,
@@ -342,12 +354,41 @@ class ImageOCRReuseTests(unittest.TestCase):
             _section_text,
             _pages,
             recon_data,
-        ) = self._extract_two_page_scan()
+        ) = self._extract_two_page_scan(with_content=False)
         ppstructure = _PPStructure()
 
         with patch.object(engine_module.requests, "post", side_effect=ConnectionError("offline")), patch.object(
-            engine_module, "get_paddle_structure_engine", return_value=ppstructure
-        ), patch.object(engine, "verify_integrity_of_local_data", return_value=(True, "")):
+            engine_module, "_PADDLE_STRUCTURE_ENGINE", ppstructure
+        ), patch.object(
+            engine_module, "get_paddle_structure_engine", side_effect=AssertionError("PPStructure 신규/재사용 호출 금지")
+        ):
+            result = engine.run_flexible_sandwich_pipeline(
+                "scan.pdf",
+                None,
+                target_page_idx=1,
+                recon_data=recon_data,
+                pre_rendered_crop=recon_data["section_crop"],
+            )
+
+        self.assertEqual(result["status"], "FALLBACK")
+        self.assertEqual(result["fallback_reason"], "remote_failure")
+        self.assertEqual(ppstructure.calls, 0)
+        self.assertEqual(engine._ppstructure_usage_count, 0)
+        self.assertEqual(len(engine._paddle_call_metrics), 2)
+        print("호출 비교(원격 장애): 변경 전 PPStructure 1회 -> 변경 후 PPStructure 0회, AI 직접 전환")
+
+    def test_loaded_ppstructure_runs_only_for_clear_table_row_matching_failure(self):
+        engine, _document, _ocr, _render, _images, _text, _pages, recon_data = (
+            self._extract_two_page_scan(with_content=False)
+        )
+        recon_data["section_crop"]["table_structure_likely"] = True
+        ppstructure = _PPStructure()
+
+        with patch.object(engine_module, "_PADDLE_STRUCTURE_ENGINE", ppstructure), patch.object(
+            engine_module.requests, "post", return_value=_RemoteSuccess()
+        ), patch.object(
+            engine, "verify_integrity_of_local_data", side_effect=[(False, "행 매칭 실패"), (True, "")]
+        ):
             result = engine.run_flexible_sandwich_pipeline(
                 "scan.pdf",
                 None,
@@ -358,16 +399,12 @@ class ImageOCRReuseTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(ppstructure.calls, 1)
+        self.assertEqual(engine._ppstructure_usage_count, 1)
         self.assertEqual(len(engine._paddle_call_metrics), 3)
-        self.assertEqual(
-            ppstructure.last_shape[:2],
-            (recon_data["section_crop"]["image_height"], recon_data["section_crop"]["image_width"]),
-        )
-        print("호출 비교(원격 장애): 정찰 2회 + 동일 재단 PPStructure 1회, 재단 재렌더링/재OCR 없음")
 
     def test_trigger_ai_reuses_precomputed_sandwich_result(self):
         engine, _document, _recon_ocr, _render_log, images, section_text, pages, recon_data = (
-            self._extract_two_page_scan()
+            self._extract_two_page_scan(with_content=False)
         )
         precomputed = {
             "status": "SUCCESS",

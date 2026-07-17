@@ -2,6 +2,7 @@ import argparse
 import json
 import re
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ def main():
     parser.add_argument("pdf", type=Path)
     parser.add_argument("--force-local", action="store_true")
     parser.add_argument("--full-pipeline", action="store_true")
+    parser.add_argument("--bypass-cache", action="store_true")
     args = parser.parse_args()
 
     golden = json.loads(Path("golden/msds_golden_v1.json").read_text(encoding="utf-8"))
@@ -28,6 +30,7 @@ def main():
     if args.full_pipeline:
         logs = []
         engine = MSDSEngineV6()
+        pipeline_started = time.perf_counter()
         if args.force_local:
             with patch(
                 "msds_engine_v6.requests.post",
@@ -37,9 +40,14 @@ def main():
                 "call_llm_router",
                 side_effect=ConnectionError("benchmark blocked external AI"),
             ):
-                result = engine.process_msds_pipeline(str(args.pdf), log_func=logs.append)
+                result = engine.process_msds_pipeline(
+                    str(args.pdf), log_func=logs.append, bypass_cache=args.bypass_cache
+                )
         else:
-            result = engine.process_msds_pipeline(str(args.pdf), log_func=logs.append)
+            result = engine.process_msds_pipeline(
+                str(args.pdf), log_func=logs.append, bypass_cache=args.bypass_cache
+            )
+        elapsed_seconds = time.perf_counter() - pipeline_started
         component_text = str(result.get("구성성분", ""))
         actual_by_cas = {
             cas: content.strip()
@@ -72,7 +80,23 @@ def main():
             "engine_result": result,
             "paddle_calls": engine._paddle_call_metrics,
             "local_paddle_call_count": len(engine._paddle_call_metrics),
+            "ppstructure_used": engine._ppstructure_usage_count > 0,
+            "elapsed_seconds": round(elapsed_seconds, 3),
         }
+        if case["id"] == "005":
+            summary["before_after"] = {
+                "before": {
+                    "elapsed_seconds": 109.64,
+                    "paddle_calls": 2,
+                    "ppstructure_used": True,
+                    "source": "2026-07-17 냉간 전체 파이프라인 실측",
+                },
+                "after": {
+                    "elapsed_seconds": round(elapsed_seconds, 3),
+                    "paddle_calls": len(engine._paddle_call_metrics),
+                    "ppstructure_used": engine._ppstructure_usage_count > 0,
+                },
+            }
         print("\n".join(logs))
         print("FULL_PIPELINE_GOLDEN_JSON=" + json.dumps(summary, ensure_ascii=False, indent=2))
         return
