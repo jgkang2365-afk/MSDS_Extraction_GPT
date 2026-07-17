@@ -4968,6 +4968,8 @@ class SMUGUI(QMainWindow):
     def save_config(self):
         """[V6.995] 현재 설정을 config.json에 저장"""
         config = {
+            # UI가 설정 파일을 다시 저장해도 선택형 원격 OCR 플래그를 보존한다.
+            "USE_REMOTE_OCR": getattr(self, "use_remote_ocr", False),
             "mapping": self.mapping_panel.get_mapping(),
             "measure_mapping": self.measure_mapping_panel.get_mapping(),
             "backup_path": self.edit_backup_path.text().strip(),
@@ -4992,6 +4994,8 @@ class SMUGUI(QMainWindow):
         try:
             with open("config.json", "r", encoding="utf-8") as f:
                 config = json.load(f)
+
+            self.use_remote_ocr = bool(config.get("USE_REMOTE_OCR", False))
             
             # 1. 매핑 설정 복구
             if "mapping" in config:

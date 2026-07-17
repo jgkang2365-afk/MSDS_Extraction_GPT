@@ -16,6 +16,7 @@ from PIL import Image
 if "requests" not in sys.modules:
     requests_stub = types.ModuleType("requests")
     requests_stub.post = lambda *_args, **_kwargs: None
+    requests_stub.RequestException = Exception
     sys.modules["requests"] = requests_stub
 
 if "fitz" not in sys.modules:
@@ -67,6 +68,7 @@ if "dotenv" not in sys.modules:
     sys.modules["dotenv"] = dotenv_stub
 
 import msds_engine_v6 as engine_module
+import remote_ocr_client as remote_module
 
 
 class _Rect:
@@ -174,14 +176,32 @@ class _PPStructure:
         return [_PPResult()]
 
 
-class _RemoteSuccess:
-    status_code = 200
+class _RemoteClient:
+    def __init__(self, enabled, result="64-17-5 50%", error=None):
+        self.enabled = enabled
+        self.result = result
+        self.error = error
+        self.calls = 0
 
-    def json(self):
-        return {"status": "SUCCESS", "raw_data": "64-17-5 50%"}
+    def extract_png(self, _image_bytes):
+        self.calls += 1
+        if self.error:
+            raise self.error
+        return self.result
 
 
 class ImageOCRReuseTests(unittest.TestCase):
+    def test_remote_ocr_setting_defaults_false_and_can_be_enabled_from_config(self):
+        self.assertFalse(remote_module.USE_REMOTE_OCR)
+        with tempfile.TemporaryDirectory() as temp_dir, patch.dict(
+            remote_module.os.environ, {}, clear=True
+        ):
+            config_path = Path(temp_dir) / "config.json"
+            config_path.write_text("{}", encoding="utf-8")
+            self.assertFalse(remote_module.load_remote_ocr_enabled(config_path))
+            config_path.write_text('{"USE_REMOTE_OCR": true}', encoding="utf-8")
+            self.assertTrue(remote_module.load_remote_ocr_enabled(config_path))
+
     def test_golden_master_has_no_automatic_race_writer(self):
         repo_root = Path(__file__).resolve().parents[1]
         race_source = (repo_root / "run_production_race.py").read_text(encoding="utf-8")
@@ -344,7 +364,7 @@ class ImageOCRReuseTests(unittest.TestCase):
         self.assertIn("목적: 계측 검증", logs[0])
         self.assertIn("소요시간:", logs[1])
 
-    def test_remote_failure_skips_even_loaded_ppstructure_and_hands_off_to_ai(self):
+    def test_remote_disabled_never_calls_client_and_logs_only_once(self):
         (
             engine,
             _document,
@@ -355,27 +375,56 @@ class ImageOCRReuseTests(unittest.TestCase):
             _pages,
             recon_data,
         ) = self._extract_two_page_scan(with_content=False)
-        ppstructure = _PPStructure()
+        disabled_client = _RemoteClient(enabled=False)
+        engine.remote_ocr_client = disabled_client
+        logs = []
+        remote_module._reset_disabled_log_for_tests()
 
-        with patch.object(engine_module.requests, "post", side_effect=ConnectionError("offline")), patch.object(
-            engine_module, "_PADDLE_STRUCTURE_ENGINE", ppstructure
-        ), patch.object(
+        with patch.object(
+            engine_module, "get_paddle_structure_engine", side_effect=AssertionError("PPStructure 신규/재사용 호출 금지")
+        ):
+            results = [
+                engine.run_flexible_sandwich_pipeline(
+                    "scan.pdf",
+                    None,
+                    log_func=logs.append,
+                    target_page_idx=1,
+                    recon_data=recon_data,
+                    pre_rendered_crop=recon_data["section_crop"],
+                )
+                for _ in range(2)
+            ]
+
+        self.assertTrue(all(result["status"] == "FALLBACK" for result in results))
+        self.assertTrue(all(result["fallback_reason"] == "remote_disabled" for result in results))
+        self.assertEqual(disabled_client.calls, 0)
+        self.assertEqual(engine._ppstructure_usage_count, 0)
+        self.assertEqual(len(engine._paddle_call_metrics), 2)
+        self.assertEqual(sum("[원격 OCR 비활성]" in log for log in logs), 1)
+
+    def test_remote_failure_skips_even_loaded_ppstructure_and_hands_off_to_ai(self):
+        engine, _document, _ocr, _render, _images, _text, _pages, recon_data = (
+            self._extract_two_page_scan(with_content=False)
+        )
+        ppstructure = _PPStructure()
+        remote_client = _RemoteClient(
+            enabled=True,
+            error=remote_module.RemoteOCRError("offline"),
+        )
+        engine.remote_ocr_client = remote_client
+
+        with patch.object(engine_module, "_PADDLE_STRUCTURE_ENGINE", ppstructure), patch.object(
             engine_module, "get_paddle_structure_engine", side_effect=AssertionError("PPStructure 신규/재사용 호출 금지")
         ):
             result = engine.run_flexible_sandwich_pipeline(
-                "scan.pdf",
-                None,
-                target_page_idx=1,
-                recon_data=recon_data,
-                pre_rendered_crop=recon_data["section_crop"],
+                "scan.pdf", None, target_page_idx=1,
+                recon_data=recon_data, pre_rendered_crop=recon_data["section_crop"],
             )
 
-        self.assertEqual(result["status"], "FALLBACK")
         self.assertEqual(result["fallback_reason"], "remote_failure")
+        self.assertEqual(remote_client.calls, 1)
         self.assertEqual(ppstructure.calls, 0)
         self.assertEqual(engine._ppstructure_usage_count, 0)
-        self.assertEqual(len(engine._paddle_call_metrics), 2)
-        print("호출 비교(원격 장애): 변경 전 PPStructure 1회 -> 변경 후 PPStructure 0회, AI 직접 전환")
 
     def test_loaded_ppstructure_runs_only_for_clear_table_row_matching_failure(self):
         engine, _document, _ocr, _render, _images, _text, _pages, recon_data = (
@@ -383,10 +432,10 @@ class ImageOCRReuseTests(unittest.TestCase):
         )
         recon_data["section_crop"]["table_structure_likely"] = True
         ppstructure = _PPStructure()
+        remote_client = _RemoteClient(enabled=True)
+        engine.remote_ocr_client = remote_client
 
         with patch.object(engine_module, "_PADDLE_STRUCTURE_ENGINE", ppstructure), patch.object(
-            engine_module.requests, "post", return_value=_RemoteSuccess()
-        ), patch.object(
             engine, "verify_integrity_of_local_data", side_effect=[(False, "행 매칭 실패"), (True, "")]
         ):
             result = engine.run_flexible_sandwich_pipeline(
@@ -398,6 +447,7 @@ class ImageOCRReuseTests(unittest.TestCase):
             )
 
         self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(remote_client.calls, 1)
         self.assertEqual(ppstructure.calls, 1)
         self.assertEqual(engine._ppstructure_usage_count, 1)
         self.assertEqual(len(engine._paddle_call_metrics), 3)
