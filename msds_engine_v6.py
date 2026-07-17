@@ -223,7 +223,161 @@ class MSDSEngineV6:
         # 오프라인 검수 장치가 메인 가동 레일을 오염시키지 않도록 방어하는 테스트 모드 전용 플래그 개설
         self.is_test_mode = False
 
-    def extract_section_1(self, pdf_type, raw_pdf_content, log_func=None):
+        # 이미지 PDF 경로의 Paddle 호출 계측 장부. 파일 단위 엔진 객체가 새로
+        # 만들어지므로 한 파일 처리 중 발생한 호출만 자연스럽게 집계된다.
+        self._paddle_call_metrics = []
+
+    def _run_paddle_call(self, engine, method_name, image, purpose, page_index, log_func=None, **kwargs):
+        """Paddle 호출을 단일 계측 관문으로 통과시킨다."""
+        height, width = image.shape[:2]
+        page_number = page_index + 1 if isinstance(page_index, int) else page_index
+        if log_func:
+            log_func(
+                f"[Paddle 시작] 페이지 {page_number} | 이미지 {width}x{height}px | "
+                f"목적: {purpose}"
+            )
+
+        started = time.perf_counter()
+        try:
+            return getattr(engine, method_name)(image, **kwargs)
+        finally:
+            elapsed = time.perf_counter() - started
+            metric = {
+                "page_index": page_index,
+                "page_number": page_number,
+                "image_width": width,
+                "image_height": height,
+                "purpose": purpose,
+                "method": method_name,
+                "elapsed_seconds": elapsed,
+            }
+            self._paddle_call_metrics.append(metric)
+            if log_func:
+                log_func(
+                    f"[Paddle 완료] 페이지 {page_number} | 이미지 {width}x{height}px | "
+                    f"목적: {purpose} | 소요시간: {elapsed:.3f}초"
+                )
+
+    def _normalize_recon_ocr_lines(self, raw_result, scale):
+        """PaddleOCR.ocr() 결과를 픽셀/PDF 좌표가 함께 있는 행 목록으로 정규화한다."""
+        if not raw_result:
+            return []
+
+        # PaddleOCR 3.x는 페이지별 OCRResult에 rec_texts / rec_polys를 담아
+        # 반환한다. 아래에서 2.x의 [box, (text, score)] 형식과 동일한 내부
+        # 표현으로 먼저 변환해 이후 좌표 처리 로직을 공유한다.
+        modern_candidates = []
+        modern_result_found = False
+        for page_result in raw_result if isinstance(raw_result, (list, tuple)) else [raw_result]:
+            getter = getattr(page_result, "get", None)
+            if not callable(getter):
+                continue
+            texts = getter("rec_texts")
+            polygons = getter("rec_polys")
+            if polygons is None:
+                polygons = getter("dt_polys")
+            scores = getter("rec_scores")
+            if scores is None:
+                scores = []
+            if texts is None or polygons is None:
+                continue
+            modern_result_found = True
+            for index, (text, points) in enumerate(zip(texts, polygons)):
+                score = scores[index] if index < len(scores) else None
+                modern_candidates.append([points, (text, score)])
+
+        if modern_result_found:
+            raw_result = modern_candidates
+
+        candidates = raw_result
+        if (
+            isinstance(raw_result, list)
+            and len(raw_result) == 1
+            and isinstance(raw_result[0], list)
+            and raw_result[0]
+            and isinstance(raw_result[0][0], (list, tuple))
+        ):
+            candidates = raw_result[0]
+
+        lines = []
+        for item in candidates or []:
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            points = item[0]
+            text_info = item[1]
+            if points is None or not hasattr(points, "__iter__"):
+                continue
+            if isinstance(text_info, (list, tuple)):
+                text = str(text_info[0]) if text_info else ""
+                confidence = text_info[1] if len(text_info) > 1 else None
+            else:
+                text = str(text_info)
+                confidence = None
+
+            try:
+                xs = [float(point[0]) for point in points]
+                ys = [float(point[1]) for point in points]
+            except (TypeError, ValueError, IndexError):
+                continue
+
+            bbox_px = [min(xs), min(ys), max(xs), max(ys)]
+            bbox_pdf = [coord / scale for coord in bbox_px]
+            lines.append({
+                "text": text,
+                "confidence": confidence,
+                "bbox_px": bbox_px,
+                "bbox_pdf": bbox_pdf,
+            })
+
+        lines.sort(key=lambda line: (line["bbox_pdf"][1], line["bbox_pdf"][0]))
+        return lines
+
+    def _find_section3_bounds_from_recon(self, lines, page_height):
+        """기존 샌드위치 정규식을 전체 폭 정찰 좌표에 적용한다."""
+        pattern_sec3 = re.compile(r'(3|삼)\s*항?.*?([구성|성분|명칭|함량|기재]{2,})')
+        pattern_sec4 = re.compile(r'(4|사)\s*항?.*?([응급|조치|처치|요령|구급]{2,})')
+        pattern_sec5 = re.compile(r'(5|오)\s*항?.*?([폭발|화재|소화|대처]{2,})')
+        pattern_sec6 = re.compile(r'(6|육)\s*항?.*?([누출|사고|방지|대책]{2,})')
+
+        y_start = None
+        y_end = None
+        for line in lines:
+            text = line.get("text", "").replace(" ", "")
+            bbox = line.get("bbox_pdf", [0, 0, 0, 0])
+            mid_y = (bbox[1] + bbox[3]) / 2.0
+            if y_start is None and pattern_sec3.search(text):
+                y_start = mid_y
+                continue
+            if y_start is not None and y_end is None:
+                if pattern_sec4.search(text) or pattern_sec5.search(text) or pattern_sec6.search(text):
+                    y_end = mid_y
+                    break
+
+        found_heading = y_start is not None
+        if y_start is None:
+            y_start = page_height * 0.25
+            y_end = page_height * 0.60
+        elif y_end is None or y_end <= y_start:
+            y_end = min(page_height, y_start + 400.0)
+
+        return {
+            "y_start": y_start,
+            "y_end": y_end,
+            "found_heading": found_heading,
+        }
+
+    def _text_in_pdf_y_range(self, lines, y_start, y_end):
+        selected = []
+        for line in lines:
+            bbox = line.get("bbox_pdf", [0, 0, 0, 0])
+            mid_y = (bbox[1] + bbox[3]) / 2.0
+            if y_start <= mid_y < y_end:
+                text = line.get("text", "").strip()
+                if text:
+                    selected.append(text)
+        return "\n".join(selected)
+
+    def extract_section_1(self, pdf_type, raw_pdf_content, log_func=None, recon_data=None):
         """
         v5에서 완착된 자재 형태별 1섹션 격리 수거 회로 (비전 배제)
         """
@@ -286,16 +440,55 @@ class MSDSEngineV6:
             if not os.path.exists(pdf_path):
                 raise FileNotFoundError(f"스캔본 PDF 파일이 존재하지 않습니다: {pdf_path}")
             
-            paddle_ocr_instance = get_paddle_structure_engine(log_func)
             doc = fitz.open(pdf_path)
             page = doc[0]
             w, h = page.rect.width, page.rect.height
+
+            # 1페이지 전체 폭 정찰 OCR이 이미 있으면 제품명 구역도 같은 좌표를
+            # 재사용한다. 이 경로에서는 PPStructure를 추가 호출하지 않는다.
+            recon_page = (recon_data or {}).get("pages", {}).get(0)
+            if recon_page and recon_page.get("lines"):
+                pattern_sec1 = re.compile(r'(1|일)\b.*?(화학|제품|회사|제조|공급|공명|IDENTIFICATION|DESCRIPTION|IDENT|DESC)', re.IGNORECASE)
+                pattern_sec2 = re.compile(r'(2|이)\b.*?(유해성|위험성|유해|위험|HAZARDS)', re.IGNORECASE)
+                y_start = None
+                y_end = None
+                for line in recon_page["lines"]:
+                    text = line.get("text", "").replace(" ", "")
+                    bbox = line.get("bbox_pdf", [0, 0, 0, 0])
+                    mid_y = (bbox[1] + bbox[3]) / 2.0
+                    if y_start is None and pattern_sec1.search(text):
+                        y_start = mid_y
+                        continue
+                    if y_start is not None and y_end is None and pattern_sec2.search(text):
+                        y_end = mid_y
+                        break
+
+                if y_start is None:
+                    y_start = 0.0
+                if y_end is None or y_end <= y_start:
+                    y_end = min(h, y_start + 450.0)
+                doc.close()
+                if log_func:
+                    log_func(
+                        f"[정찰 OCR 재사용] 페이지 1 | 제품명 구역 {int(y_start)}~{int(y_end)}pt | "
+                        "추가 Paddle 호출 0회"
+                    )
+                return self._text_in_pdf_y_range(recon_page["lines"], y_start, y_end)
+
+            paddle_ocr_instance = get_paddle_structure_engine(log_func)
             
             left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
             pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=left_strip_rect)
             
             img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-            raw_results = paddle_ocr_instance.predict(img_np)
+            raw_results = self._run_paddle_call(
+                paddle_ocr_instance,
+                "predict",
+                img_np,
+                "제품명 1항/2항 위치 탐색",
+                0,
+                log_func=log_func,
+            )
             
             strip_ocr_results = []
             if raw_results and isinstance(raw_results, list):
@@ -348,7 +541,14 @@ class MSDSEngineV6:
             pix_crop = page_crop.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
             img_np_crop = np.frombuffer(pix_crop.samples, dtype=np.uint8).reshape(pix_crop.h, pix_crop.w, pix_crop.n)
             
-            ocr_result = paddle_ocr_instance.predict(img_np_crop)
+            ocr_result = self._run_paddle_call(
+                paddle_ocr_instance,
+                "predict",
+                img_np_crop,
+                "제품명 1항 재단 정밀 OCR",
+                0,
+                log_func=log_func,
+            )
             doc_crop.close()
             
             lines = []
@@ -616,7 +816,7 @@ class MSDSEngineV6:
             "comp_engine": comp_engine if comp_engine else "제미나이"
         }
 
-    def process_msds_pipeline(self, pdf_path, log_func=None):
+    def process_msds_pipeline(self, pdf_path, log_func=None, bypass_cache=False):
         try:
             # 1. SHA-256 해시 계산
             f_hash = ""
@@ -630,9 +830,16 @@ class MSDSEngineV6:
             except:
                 pass
 
+            # Golden 회귀 검증은 수정된 로직 자체를 검사해야 하므로 과거 추출
+            # 결과를 읽거나 새 결과를 캐시에 쓰지 않는다.
+            cache_enabled = (
+                not bypass_cache
+                and os.environ.get("ANTIGRAVITY_GOLDEN_VALIDATION") != "1"
+            )
+
             # 2. 캐시 조회 (Cache-Hit Bypass)
             cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "msds_cache_registry.json")
-            if f_hash:
+            if f_hash and cache_enabled:
                 try:
                     if os.path.exists(cache_path):
                         with open(cache_path, "r", encoding="utf-8") as f:
@@ -653,7 +860,7 @@ class MSDSEngineV6:
             res = self._process_msds_pipeline_impl(pdf_path, log_func=log_func)
 
             # 3. 캐시 저장
-            if f_hash and res and "오류" not in res.get("교정_사유", ""):
+            if f_hash and cache_enabled and res and "오류" not in res.get("교정_사유", ""):
                 try:
                     if os.path.exists(cache_path):
                         with open(cache_path, "r", encoding="utf-8") as f:
@@ -832,7 +1039,9 @@ class MSDSEngineV6:
         # ==============================================================================
 
         # 3섹션 성분 탐색 페이지 식별
-        image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
+        image_list, section3_text, pages, recon_data = self.extract_section3_images(
+            pdf_path, log_func=original_log_func
+        )
         
         full_text_for_grounding = ""
         doc_type = "스캔본"
@@ -897,7 +1106,12 @@ class MSDSEngineV6:
         pdf_type = "scanned" if is_scanned_strict else "digital"
         raw_content = pdf_path if is_scanned_strict else first_page_text
         
-        compact_context = self.extract_section_1(pdf_type, raw_content, log_func=log_func)
+        compact_context = self.extract_section_1(
+            pdf_type,
+            raw_content,
+            log_func=original_log_func if is_scanned_strict else log_func,
+            recon_data=recon_data,
+        )
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
         # 스캔본 이미지일 경우 cover_img의 데이터를 inlineData 형식으로 payload에 추가
@@ -1116,7 +1330,14 @@ class MSDSEngineV6:
                     if original_log_func: original_log_func(f"  ⚠️ [고해상도 이미지 생성 에러] {img_err}")
                 
                 # 1~3페이지 전체 페이로드를 들고 외부 AI 단발성 집중 타격 격발 (완성 딕셔너리 즉시 회군)
-                res_ai = self._trigger_ai_extraction(pdf_path=pdf_path, image_list=fallback_images, log_func=original_log_func, hybrid_pn=hybrid_pn, doc_type=doc_type)
+                res_ai = self._trigger_ai_extraction(
+                    pdf_path=pdf_path,
+                    image_list=fallback_images,
+                    log_func=original_log_func,
+                    hybrid_pn=hybrid_pn,
+                    doc_type=doc_type,
+                    recon_data=recon_data,
+                )
                 if original_log_func:
                     comp_preview = res_ai.get("구성성분", "") if isinstance(res_ai, dict) else ""
                     original_log_func(f"🔍 [일괄 전송 회신 계측] 외부 AI 최종 수득 데이터 자산: '{comp_preview}' 확보")
@@ -1125,7 +1346,16 @@ class MSDSEngineV6:
                 # 일반 비정형 자재는 기존 설계대로 고속 단일 페이지 핀셋 가속 관로 고착 사수
                 actual_target_idx = pages[0]
                 if original_log_func: original_log_func(f"⚠️ [{os.path.basename(pdf_path)}] 비정형 스캔본 성분 0건 포착 ➔ 기존 가속 우회 멀티모달 선로(Target: {actual_target_idx + 1}p) 가동")
-                components = self._process_scan_pdf_v6(pdf_path=pdf_path, image_list=image_list, target_page_index=actual_target_idx, doc_type=doc_type, product_name=hybrid_pn, page_text=section3_text, original_log_func=original_log_func)
+                components = self._process_scan_pdf_v6(
+                    pdf_path=pdf_path,
+                    image_list=image_list,
+                    target_page_index=actual_target_idx,
+                    doc_type=doc_type,
+                    product_name=hybrid_pn,
+                    page_text=section3_text,
+                    original_log_func=original_log_func,
+                    recon_data=recon_data,
+                )
             
             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 외부 사출 변수의 무조건적 리스트 객체 보장 인터락 강착
             if not isinstance(components, list):
@@ -1298,7 +1528,17 @@ class MSDSEngineV6:
             original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
         return res_obj
 
-    def _trigger_ai_extraction(self, pdf_path, image_list=None, log_func=None, hybrid_pn="", doc_type=None, product_engine=None):
+    def _trigger_ai_extraction(
+        self,
+        pdf_path,
+        image_list=None,
+        log_func=None,
+        hybrid_pn="",
+        doc_type=None,
+        product_engine=None,
+        recon_data=None,
+        precomputed_sandwich=None,
+    ):
         # 🚀 [API Rate Limit 방어벽] AI 호출 전 3.0초 쿨다운 지연 배선
         time.sleep(3.0)
         # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
@@ -1314,7 +1554,16 @@ class MSDSEngineV6:
         pages = []
         if not image_list:
             # 상류에서 유실 시에만 방어벽 차원에서 최하위 로컬 로드 작동 (Bypass)
-            image_list, section3_text, pages = self.extract_section3_images(pdf_path, log_func=log_func)
+            image_list, section3_text, pages, recon_data = self.extract_section3_images(
+                pdf_path, log_func=original_log_func
+            )
+        elif recon_data and recon_data.get("target_page_index") is not None:
+            target_recon_index = recon_data["target_page_index"]
+            pages = [target_recon_index]
+            section3_text = (
+                (recon_data.get("section_crop") or {}).get("section3_text", "")
+                or (recon_data.get("pages", {}).get(target_recon_index) or {}).get("text", "")
+            )
         else:
             # 상류에서 넘어온 경우, section3_text와 pages는 PDF에서 다시 복원
             try:
@@ -1337,7 +1586,11 @@ class MSDSEngineV6:
             except Exception as e:
                 if original_log_func: original_log_func(f"  ⚠️ [로컬 텍스트 복원 실패] {e}")
 
-        target_page_index = None
+        target_page_index = (
+            recon_data.get("target_page_index")
+            if recon_data and recon_data.get("target_page_index") is not None
+            else None
+        )
         
         # 🚀 [비용 절감 2단계] 유료 API 송신 전, 로컬 텍스트 가루 기반 문패 선제 타격
         try:
@@ -1430,10 +1683,26 @@ class MSDSEngineV6:
         acc_success = False
         res_acc = None
         try:
-            paddle_ocr_instance = get_ocr_engine()
-            # 저격된 정밀 페이지 인덱스를 동적으로 인젝션하여 0번 페이지 맹목 스캔 현상 영구 해소
-            actual_page_idx = target_page_index if target_page_index is not None else 0
-            res_acc = self.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=log_func, target_page_idx=actual_page_idx)
+            if precomputed_sandwich is not None:
+                res_acc = precomputed_sandwich
+                if original_log_func:
+                    original_log_func(
+                        "[샌드위치 결과 재사용] 1차 재단 OCR 결과와 동일 재단 이미지를 후속 AI 경로로 전달합니다."
+                    )
+            else:
+                paddle_ocr_instance = None
+                if not (recon_data and recon_data.get("section_crop")):
+                    paddle_ocr_instance = get_ocr_engine()
+                # 저격된 정밀 페이지 인덱스를 동적으로 인젝션하여 0번 페이지 맹목 스캔 현상 영구 해소
+                actual_page_idx = target_page_index if target_page_index is not None else 0
+                res_acc = self.run_flexible_sandwich_pipeline(
+                    pdf_path,
+                    paddle_ocr_instance,
+                    log_func=original_log_func,
+                    target_page_idx=actual_page_idx,
+                    recon_data=recon_data,
+                    pre_rendered_crop=(recon_data or {}).get("section_crop"),
+                )
             
             if res_acc.get("status") == "SUCCESS":
                 local_ocr_html = res_acc["data"]
@@ -1734,12 +2003,30 @@ class MSDSEngineV6:
     def finalize_extraction_result(self, refined_comps, doc_type="", product_name=""):
         return refined_comps
 
-    def _process_scan_pdf_v6(self, pdf_path, image_list, target_page_index=0, doc_type="", product_name="", page_text="", original_log_func=None):
+    def _process_scan_pdf_v6(
+        self,
+        pdf_path,
+        image_list,
+        target_page_index=0,
+        doc_type="",
+        product_name="",
+        page_text="",
+        original_log_func=None,
+        recon_data=None,
+    ):
         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 메모리 캐시 오염 및 인자 교착 원천 차단 마스터 세척
         refined_comps = []
         
-        paddle_ocr_instance = get_ocr_engine()
-        local_table_res = self.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=original_log_func, target_page_idx=target_page_index)
+        pre_rendered_crop = (recon_data or {}).get("section_crop")
+        paddle_ocr_instance = None if pre_rendered_crop else get_ocr_engine()
+        local_table_res = self.run_flexible_sandwich_pipeline(
+            pdf_path,
+            paddle_ocr_instance,
+            log_func=original_log_func,
+            target_page_idx=target_page_index,
+            recon_data=recon_data,
+            pre_rendered_crop=pre_rendered_crop,
+        )
         
         raw_html_data = local_table_res.get("data", "") if isinstance(local_table_res, dict) else ""
         refined_comps = self.parse_html_table_to_components(raw_html_data) if raw_html_data else []
@@ -1747,15 +2034,48 @@ class MSDSEngineV6:
         if not refined_comps or len(refined_comps) == 0:
             if original_log_func: original_log_func("⚠️ [비정형 사각지대 감지] 로컬 표 엔진이 격자 구조를 찾지 못해 공란을 반환했습니다. 비상 멀티모달 선로로 강제 회군합니다.")
             
-            # 🛡️ [Multi-page Bridge Filter] 페이지 경계면 성분 단절 치유를 위해 최대 3장 이미지 페이로드 확보
-            optimized_payload = image_list[target_page_index : target_page_index + 3]
+            # 정찰 단계에서 만든 동일 재단 이미지를 후속 AI에도 그대로 전달한다.
+            crop_image_item = (pre_rendered_crop or {}).get("image_item")
+            optimized_payload = [crop_image_item] if crop_image_item else image_list
             
             raw_flat_text = local_table_res.get("raw_data", "") if isinstance(local_table_res, dict) else ""
             if not raw_flat_text.strip():
                 raw_flat_text = page_text
             
             # 명시적 인자(pdf_path=pdf_path) 매핑을 강제 강착하여 리스트 오인입 현상을 물리적으로 종결
-            refined_comps = self._trigger_ai_extraction(pdf_path=pdf_path, image_list=optimized_payload, log_func=original_log_func, hybrid_pn=product_name, doc_type=doc_type)
+            refined_comps = self._trigger_ai_extraction(
+                pdf_path=pdf_path,
+                image_list=optimized_payload,
+                log_func=original_log_func,
+                hybrid_pn=product_name,
+                doc_type=doc_type,
+                recon_data=recon_data,
+                precomputed_sandwich=local_table_res,
+            )
+
+            # _trigger_ai_extraction()은 최종 GUI 패키지(dict)를 반환한다.
+            # 스캔 하위 파이프라인은 성분 배열을 소비하므로, 정상 패키지의
+            # 구성성분 문자열을 다시 버리지 말고 동일한 내부 배열로 복원한다.
+            if isinstance(refined_comps, dict):
+                packaged_components = refined_comps.get("구성성분", "")
+                if isinstance(packaged_components, list):
+                    refined_comps = packaged_components
+                elif isinstance(packaged_components, str):
+                    refined_comps = [
+                        {
+                            "cas": match.group(1),
+                            "cas_no": match.group(1),
+                            "content": match.group(2).strip(),
+                            "percentage": match.group(2).strip(),
+                            "name": "AI 추출 성분",
+                            "chemical_name": "AI 추출 성분",
+                            "engine": "Gemini Flash",
+                        }
+                        for match in re.finditer(
+                            r"(\d{2,7}-\d{2}-\d)\s*\(([^)]*)\)",
+                            packaged_components,
+                        )
+                    ]
             
             # 🛡️ [소장님 지시 완착 - 무결성 로그 가드레일] 수득 자산 타입 세이프 검사 및 실시간 투명 점등
             if original_log_func and refined_comps:
@@ -1781,88 +2101,102 @@ class MSDSEngineV6:
         if original_log_func: original_log_func("⚠️ [최종 방어선] 수득 데이터 규격 불일치 또는 공란으로 인하여 추출 취소.")
         return []
 
-    def run_flexible_sandwich_pipeline(self, pdf_path, paddle_ocr_instance, log_func=print, target_page_idx=0):
+    def run_flexible_sandwich_pipeline(
+        self,
+        pdf_path,
+        paddle_ocr_instance,
+        log_func=print,
+        target_page_idx=0,
+        recon_data=None,
+        pre_rendered_crop=None,
+    ):
         try:
             if log_func: log_func(f"🚀 [유연 가속 격발] 비정형 간판 추적 엔진 가동: {os.path.basename(pdf_path)} (대상 페이지: {target_page_idx + 1}p)")
-            
-            doc = fitz.open(pdf_path)
-            # 🛡️ [데이터 검증 및 예외 처리 - Test Case] 인덱스 초과 시 0번 표지 회군 병목을 차단하고 맨 마지막 유효 페이지로 구출 안착
-            if target_page_idx >= len(doc):
-                target_page_idx = max(0, len(doc) - 1)
-            page = doc[target_page_idx]
-            w, h = page.rect.width, page.rect.height
-            
-            left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
-            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=left_strip_rect)
-            
-            img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-            raw_results = paddle_ocr_instance.predict(img_np)
-            
-            strip_ocr_results = []
-            if raw_results and isinstance(raw_results, list):
-                for region in raw_results:
-                    region_res = region.get("res") if isinstance(region, dict) else getattr(region, 'res', [])
-                    if isinstance(region_res, list):
-                        for line_item in region_res:
-                            if isinstance(line_item, dict):
-                                strip_ocr_results.append(line_item)
-                            elif len(line_item) >= 2 and isinstance(line_item[1], tuple):
-                                pts = line_item[0]
-                                txt = line_item[1][0]
-                                xs = [p[0] for p in pts]
-                                ys = [p[1] for p in pts]
-                                bbox = [min(xs), min(ys), max(xs), max(ys)]
-                                strip_ocr_results.append({"text": txt, "bbox": bbox})
-                    elif isinstance(region_res, dict):
-                        strip_ocr_results.append(region_res)
-            
-            y_start = None
-            y_end = None
-            
-            pattern_sec3 = re.compile(r'(3|삼)\s*항?.*?([구성|성분|명칭|함량|기재]{2,})')
-            pattern_sec4 = re.compile(r'(4|사)\s*항?.*?([응급|조치|처치|요령|구급]{2,})')
-            pattern_sec5 = re.compile(r'(5|오)\s*항?.*?([폭발|화재|소화|대처]{2,})')
-            pattern_sec6 = re.compile(r'(6|육)\s*항?.*?([누출|사고|방지|대책]{2,})')
-            
-            for line in strip_ocr_results:
-                text = line.get("text", "").replace(" ", "")
-                box = line.get("bbox", [0, 0, 0, 0])
-                mid_y = (box[1] + box[3]) / 2.0 / 2.0
-                
-                if y_start is None and pattern_sec3.search(text):
-                    y_start = mid_y
-                    if log_func: log_func(f"  ├─ [3번방 포착] 간판명: '{text}' -> 시작 높이: {int(y_start)}px 확정")
-                    continue
-                    
-                if y_start is not None:
-                    if y_end is None and pattern_sec4.search(text):
-                        y_end = mid_y
-                        if log_func: log_func(f"  ├─ [4번방 차단] 간판명: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
-                    elif y_end is None and pattern_sec5.search(text):
-                        y_end = mid_y
-                        if log_func: log_func(f"  ├─ [비상 차단] 5번 간판 앵커링: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
-                    elif y_end is None and pattern_sec6.search(text):
-                        y_end = mid_y
-                        if log_func: log_func(f"  ├─ [비상 차단] 6번 간판 앵커링: '{text}' -> 종료 한계선: {int(y_end)}px 확정")
-            
-            if y_start is None:
-                if log_func: log_func("⚠️ [예외 케이스 1] 3번 고속 추적 실패. 통계적 면적 안전망 가동.")
-                y_start = h * 0.25
-                y_end = h * 0.60
-                
-            if y_end is None or y_end <= y_start:
-                y_end = min(h, y_start + 400)
-                
-            crop_rect = fitz.Rect(0, max(0, y_start - 20), w, min(h, y_end + 20))
-            if log_func: log_func(f"✂️ [샌드위치 재단] 높이 {int(crop_rect.y0)}px ~ {int(crop_rect.y1)}px 범위를 완벽하게 오려냅니다.")
-            
-            final_pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
-            cropped_bytes = final_pix.tobytes("png")
-            doc.close()
+
+            if pre_rendered_crop and pre_rendered_crop.get("bytes"):
+                cropped_bytes = pre_rendered_crop["bytes"]
+                target_page_idx = pre_rendered_crop.get("page_index", target_page_idx)
+                crop_image_width = pre_rendered_crop.get("image_width")
+                crop_image_height = pre_rendered_crop.get("image_height")
+                if log_func:
+                    log_func(
+                        f"[정찰 재단 재사용] 페이지 {target_page_idx + 1} | "
+                        f"이미지 {crop_image_width}x{crop_image_height}px | 띠 OCR·재렌더링 0회"
+                    )
+            else:
+                doc = fitz.open(pdf_path)
+                # 🛡️ [데이터 검증 및 예외 처리 - Test Case] 인덱스 초과 시 0번 표지 회군 병목을 차단하고 맨 마지막 유효 페이지로 구출 안착
+                if target_page_idx >= len(doc):
+                    target_page_idx = max(0, len(doc) - 1)
+                page = doc[target_page_idx]
+                w, h = page.rect.width, page.rect.height
+                recon_page = (recon_data or {}).get("pages", {}).get(target_page_idx)
+
+                if recon_page and recon_page.get("lines"):
+                    bounds = self._find_section3_bounds_from_recon(recon_page["lines"], h)
+                    y_start, y_end = bounds["y_start"], bounds["y_end"]
+                    if log_func:
+                        log_func(
+                            f"[정찰 좌표 재사용] 페이지 {target_page_idx + 1} | 전체 폭에서 3항 경계 탐색 | "
+                            "추가 Paddle 호출 0회"
+                        )
+                else:
+                    left_strip_rect = fitz.Rect(0, 0, w * 0.33, h)
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=left_strip_rect)
+                    img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                    raw_results = self._run_paddle_call(
+                        paddle_ocr_instance,
+                        "predict",
+                        img_np,
+                        "3항/4항 위치 탐색(정찰 캐시 없음)",
+                        target_page_idx,
+                        log_func=log_func,
+                    )
+
+                    strip_ocr_results = []
+                    if raw_results and isinstance(raw_results, list):
+                        for region in raw_results:
+                            region_res = region.get("res") if isinstance(region, dict) else getattr(region, 'res', [])
+                            if isinstance(region_res, list):
+                                for line_item in region_res:
+                                    if isinstance(line_item, dict):
+                                        strip_ocr_results.append(line_item)
+                                    elif len(line_item) >= 2 and isinstance(line_item[1], tuple):
+                                        pts = line_item[0]
+                                        txt = line_item[1][0]
+                                        xs = [p[0] for p in pts]
+                                        ys = [p[1] for p in pts]
+                                        bbox = [min(xs), min(ys), max(xs), max(ys)]
+                                        strip_ocr_results.append({"text": txt, "bbox": bbox})
+                            elif isinstance(region_res, dict):
+                                strip_ocr_results.append(region_res)
+
+                    fallback_lines = []
+                    for line in strip_ocr_results:
+                        box = line.get("bbox", [0, 0, 0, 0])
+                        fallback_lines.append({
+                            "text": line.get("text", ""),
+                            "bbox_pdf": [coord / 2.0 for coord in box],
+                        })
+                    bounds = self._find_section3_bounds_from_recon(fallback_lines, h)
+                    y_start, y_end = bounds["y_start"], bounds["y_end"]
+
+                crop_rect = fitz.Rect(0, max(0, y_start - 20), w, min(h, y_end + 20))
+                if log_func:
+                    log_func(
+                        f"✂️ [샌드위치 재단] 페이지 {target_page_idx + 1} | "
+                        f"높이 {crop_rect.y0:.1f}~{crop_rect.y1:.1f}pt"
+                    )
+                final_pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
+                cropped_bytes = final_pix.tobytes("png")
+                crop_image_width, crop_image_height = final_pix.w, final_pix.h
+                doc.close()
             
             # 🛡️ [데이터 검증 및 에러 예외 처리 - 원격 12기가바이트 크롭 이미지 가속 연동선 완착]
             import requests
             import base64
+            cropped_b64 = base64.b64encode(cropped_bytes).decode("utf-8")
+            cropped_image_item = {"mimeType": "image/png", "data": cropped_b64}
             
             # 💡 [필수 수선 정보] 깡통 컴퓨터의 실제 사설 아이피(IP) 주소를 아래에 정확히 기입하십시오.
             REMOTE_CRANE_URL = "https://gates-parade-floppy-eva.trycloudflare.com/ocr_process" 
@@ -1891,28 +2225,53 @@ class MSDSEngineV6:
                 if log_func: log_func(f"🚨 [원격 가속망 장애] 로컬 비상 대피소 소방차 가동 스위칭: {network_fault}")
                 # 🛡️ [데이터 검증 및 에러 예외 처리 - 유료 에이피아이(API) 오염 누출 방어선 완착]
                 # 깡통 컴퓨터 전원이 꺼지거나 랜선이 빠지더라도, 공백 문자열 대신 로컬 가속선을 가동해 유료 거대언어모델(LLM) 호출 폭주를 방어합니다.
-                cropped_b64 = base64.b64encode(cropped_bytes).decode("utf-8")
                 cropped_image_list = [{"data": cropped_b64, "mime_type": "image/png"}]
-                local_raw_text = self.extract_table_via_local_ocr(cropped_image_list, log_func=log_func)
+                local_raw_text = self.extract_table_via_local_ocr(
+                    cropped_image_list,
+                    log_func=log_func,
+                    page_index=target_page_idx,
+                    purpose="원격 장애 재단 PPStructure OCR",
+                )
             
             # 외부 간섭 없이 순정 local_raw_text 장부만 들고 2단계 자가 QC 필터 진입
             is_clean, anomaly_reason = self.verify_integrity_of_local_data(local_raw_text)
             
             if is_clean:
                 if log_func: log_func("🟢 [1선 자가 진단 통과] 오독 없는 청정 수치 확정. 외부 AI 호출 비용 0원 처리 (Bypass).")
-                return {"status": "SUCCESS", "engine": "local_bypass", "data": local_raw_text}
+                return {
+                    "status": "SUCCESS",
+                    "engine": "local_bypass",
+                    "data": local_raw_text,
+                    "raw_data": local_raw_text,
+                    "image": cropped_bytes,
+                    "image_item": cropped_image_item,
+                    "page_index": target_page_idx,
+                }
             else:
                 if log_func:
                     log_func(f"⚠️ [[함량 검문소] 검문 탈락] {anomaly_reason}")
                     log_func("🚀 [선로 연결] 독단적 AI 호출을 금지하고, 상류 마스터 멀티모달 가속선으로 권한을 양도합니다.")
                 # 🛡️ [데이터 검증 및 에러 예외 처리] 중복 호출 2중 충돌 원천 거세: 외부 API를 부르지 않고 오려낸 자재 상태 그대로 토스
-                return {"status": "FALLBACK", "engine": "external_cleaner", "raw_data": local_raw_text, "image": cropped_bytes}
+                return {
+                    "status": "FALLBACK",
+                    "engine": "external_cleaner",
+                    "raw_data": local_raw_text,
+                    "image": cropped_bytes,
+                    "image_item": cropped_image_item,
+                    "page_index": target_page_idx,
+                }
                 
         except Exception as e:
             if log_func: log_func(f"❌ [치명적 공정 마찰 예외 처리] 시스템 다운 방어벽 가동: {e}")
             return {"status": "ERROR", "reason": str(e)}
 
-    def extract_table_via_local_ocr(self, image_list, log_func=None):
+    def extract_table_via_local_ocr(
+        self,
+        image_list,
+        log_func=None,
+        page_index=0,
+        purpose="3항 재단 PPStructure OCR",
+    ):
         try:
             engine = get_paddle_structure_engine(log_func)
             html_results = []
@@ -1934,8 +2293,13 @@ class MSDSEngineV6:
                 image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
                 img_np = np.array(image)
                 
-                results = engine.predict(
+                results = self._run_paddle_call(
+                    engine,
+                    "predict",
                     img_np,
+                    purpose,
+                    page_index,
+                    log_func=log_func,
                     use_table_recognition=True,
                     use_wired_table_cells_trans_to_html=True,
                     use_wireless_table_cells_trans_to_html=True,
@@ -3140,11 +3504,13 @@ class MSDSEngineV6:
         try:
             doc = fitz.open(pdf_path)
             pages = self.find_section3_pages(doc)
+            recon_data = None
             
             if not pages:
                 if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 순차 탐색 가동...")
                 
                 target_index = None
+                recon_data = {"pages": {}, "target_page_index": None, "section_crop": None}
                 # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 046번 자재와 같은 텍스트 레이어 파손 시 7페이지 전수 스캔 폭주 방지용 3장 커트오프 가드레일 완착
                 max_recon_pages = min(3, len(doc))
                 
@@ -3157,10 +3523,30 @@ class MSDSEngineV6:
                         pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
                         img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
                         ocr_instance = get_ocr_engine()
-                        result = ocr_instance.ocr(img_np, cls=False)
-                        page_text = ""
-                        if result and result[0]:
-                            page_text = " ".join([line[1][0] for line in result[0]]).lower()
+                        result = self._run_paddle_call(
+                            ocr_instance,
+                            "ocr",
+                            img_np,
+                            "1~3페이지 3항 정찰 OCR",
+                            i,
+                            log_func=log_func,
+                        )
+                        recon_lines = self._normalize_recon_ocr_lines(result, scale=1.5)
+                        page_text_original = "\n".join(
+                            line.get("text", "") for line in recon_lines if line.get("text", "")
+                        )
+                        page_text = page_text_original.lower()
+                        recon_data["pages"][i] = {
+                            "page_index": i,
+                            "page_number": i + 1,
+                            "page_width": doc[i].rect.width,
+                            "page_height": doc[i].rect.height,
+                            "render_width": pix.w,
+                            "render_height": pix.h,
+                            "render_scale": 1.5,
+                            "text": page_text_original,
+                            "lines": recon_lines,
+                        }
                         
                         # 3번 섹션을 명시하는 핵심 문패 검문 (외부 AI 통신 없이 비용 0원 격리)
                         if any(k in page_text for k in ["구성성분", "composition", "ingredients", "혼합물", "함유량"]) and any(k in page_text for k in ["3", "삼"]):
@@ -3177,14 +3563,58 @@ class MSDSEngineV6:
                         break
                 
                 if target_index is not None:
-                    # 🛡️ [Multi-page Bridge Filter 완착] 경계면 단절 치유를 위해 target_index 지점부터 최대 3개 페이지(1~3p 연속 장부)를 강착
-                    pages = [p for p in [target_index, target_index + 1, target_index + 2] if p < len(doc)]
-                    if log_func: log_func(f"  🎯 정찰병이 최종 확정 페이지를 찾았습니다: {pages}번 바인딩 (Multi-page 3장 결착)")
+                    # 정찰 OCR의 전체 폭 좌표에서 3항~4항 경계를 찾고 원본 PDF의
+                    # 해당 영역만 2배율로 정확히 한 번 렌더링한다.
+                    target_page = doc[target_index]
+                    target_recon = recon_data["pages"][target_index]
+                    bounds = self._find_section3_bounds_from_recon(
+                        target_recon["lines"], target_page.rect.height
+                    )
+                    crop_rect = fitz.Rect(
+                        0,
+                        max(0, bounds["y_start"] - 20),
+                        target_page.rect.width,
+                        min(target_page.rect.height, bounds["y_end"] + 20),
+                    )
+                    crop_pix = target_page.get_pixmap(
+                        matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect
+                    )
+                    cropped_bytes = crop_pix.tobytes("png")
+                    image_item = {
+                        "mimeType": "image/png",
+                        "data": base64.b64encode(cropped_bytes).decode("utf-8"),
+                    }
+                    section3_text = self._text_in_pdf_y_range(
+                        target_recon["lines"], bounds["y_start"], bounds["y_end"]
+                    )
+                    recon_data["target_page_index"] = target_index
+                    recon_data["section_crop"] = {
+                        "page_index": target_index,
+                        "page_number": target_index + 1,
+                        "crop_rect_pdf": [crop_rect.x0, crop_rect.y0, crop_rect.x1, crop_rect.y1],
+                        "image_width": crop_pix.w,
+                        "image_height": crop_pix.h,
+                        "bytes": cropped_bytes,
+                        "image_item": image_item,
+                        "section3_text": section3_text,
+                        "bounds": bounds,
+                    }
+                    pages = [target_index]
+                    doc.close()
+                    if log_func:
+                        log_func(
+                            f"[3항 단일 렌더링] 페이지 {target_index + 1} | "
+                            f"전체 폭 좌표 {crop_rect.y0:.1f}~{crop_rect.y1:.1f}pt | "
+                            f"이미지 {crop_pix.w}x{crop_pix.h}px"
+                        )
+                    return [image_item], section3_text, pages, recon_data
                 else:
                     if log_func: log_func("  ❌ [정찰 실패] 7페이지 이내에서 유효한 3번 구성성분 표를 인지하지 못함")
                     doc.close()
-                    return [], "", []
+                    return [], "", [], recon_data
 
+            # 디지털 텍스트 PDF 경로는 기존의 페이지 선택·2배율 렌더링·텍스트
+            # 절단 동작을 그대로 유지한다.
             images, raw_text = [], ""
             for p_idx in pages:
                 if p_idx >= len(doc): continue
@@ -3205,10 +3635,10 @@ class MSDSEngineV6:
                 else:
                     section3_text_only = raw_text[start_m.start():]
 
-            return images, section3_text_only, pages 
+            return images, section3_text_only, pages, recon_data
         except Exception as e:
             if log_func: log_func(f"  🚨 [extract_section3_images 데이터 예외 발생] {e}")
-            return [], "", []
+            return [], "", [], None
 
     def check_omission(self, original_text, extracted_data):
         if not original_text: return 
@@ -3684,9 +4114,13 @@ class MSDSEngineV6:
 # ----------------------------------------------------------------------
 # 호환성을 위한 모듈 단위 래퍼 함수들
 # ----------------------------------------------------------------------
-def process_pdf(pdf_path, log_func=None):
+def process_pdf(pdf_path, log_func=None, bypass_cache=False):
     engine = MSDSEngineV6()
-    return engine.process_msds_pipeline(pdf_path, log_func=log_func)
+    return engine.process_msds_pipeline(
+        pdf_path,
+        log_func=log_func,
+        bypass_cache=bypass_cache,
+    )
 
 analyze_msds = process_pdf
 
@@ -4029,7 +4463,7 @@ def self_test_regression():
             print(f"[*] [{g_id}] {os.path.basename(pdf_path)} 회귀 대조 분석 격발...")
             try:
                 # process_pdf 호출하여 엔진 실행
-                res = process_pdf(pdf_path)
+                res = process_pdf(pdf_path, bypass_cache=True)
                 
                 # 1. 제품명 대조
                 expected_pn = g_case["product_name"]["expected"]

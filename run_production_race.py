@@ -117,6 +117,9 @@ def print_markdown_table(headers, rows, alignments=None):
 
 def run_race():
     global current_processing_file
+    # 회귀 검증은 과거 추출 캐시를 사용하면 수정된 엔진 로직을 검증하지
+    # 못한다. 이 프로세스 전체에서 엔진 결과 캐시 읽기/쓰기를 차단한다.
+    os.environ["ANTIGRAVITY_GOLDEN_VALIDATION"] = "1"
     print("\n" + "="*80)
     print("🚀 [전수 레이스 가동] 47개 MSDS 파일 순차 가동 시작")
     print("="*80)
@@ -400,47 +403,8 @@ def run_race():
         print(f"\n[!] 골든 마스터 파일이 존재하지 않아 회귀 검증을 우회합니다: {golden_file}")
         
     if regression_failures == 0:
-        print("🟢 [골든 마스터 갱신 인터락 가동] 회귀 오류 0건 인증 완료!")
-        print("[*] 47개 파일 전수 실행 결과를 기반으로 'msds_golden_v1.json' 원장을 안전하게 업데이트합니다.")
-        
-        new_cases = []
-        for r in results:
-            new_cases.append({
-                "id": r["id"],
-                "file": r["file"],
-                "source_sha256": r["source_sha256"],
-                "document_type": r["document_type"],
-                "product_name": {
-                    "expected": r["product_name"],
-                    "allowed_variants": []
-                },
-                "components": r["components"],
-                "cas_missing_components": [],
-                "regression_tags": []
-            })
-            
-        updated_golden = {
-            "schema_version": "1.0",
-            "dataset_id": "msds-core-regression-v1",
-            "review_status": "approved",
-            "scope": {
-                "product_name_section": 1,
-                "components_section": 3,
-                "component_key": "cas",
-                "include_only_valid_cas": True,
-                "exclude_cas_outside_section_3": True,
-                "required_filename_marker": "★"
-            },
-            "cases": new_cases
-        }
-        
-        try:
-            with open(golden_file, "w", encoding="utf-8") as wf:
-                json.dump(updated_golden, wf, ensure_ascii=False, indent=2)
-            print("✅ [골든 마스터 최신화 성공] msds_golden_v1.json 원장이 최신 스냅샷으로 동결 및 잠금되었습니다.")
-        except Exception as e:
-            print(f"❌ [원장 작성 예외 실패] 파일 저장 중 오류 발생: {e}")
-            sys.exit(1)
+        print("🟢 [읽기 전용 Golden 검증 통과] 회귀 오류 0건 인증 완료!")
+        print("🔒 msds_golden_v1.json은 사용자 승인 없이 수정하지 않고 원본 그대로 보존합니다.")
     else:
         print("🔴 [골든 마스터 갱신 인터락 차단] 회귀 오류가 실재하므로 골든 마스터 원장을 갱신하지 않고 폐쇄합니다.")
         sys.exit(1)

@@ -1,0 +1,433 @@
+import io
+import hashlib
+import json
+import sys
+import tempfile
+import types
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+from PIL import Image
+
+# 번들 테스트 Python에는 운영 환경의 네트워크/PDF 인증 패키지가 없다.
+# 이 테스트는 호출 구조만 검증하므로 import 시 필요한 표면만 최소 제공한다.
+if "requests" not in sys.modules:
+    requests_stub = types.ModuleType("requests")
+    requests_stub.post = lambda *_args, **_kwargs: None
+    sys.modules["requests"] = requests_stub
+
+if "fitz" not in sys.modules:
+    fitz_stub = types.ModuleType("fitz")
+
+    class _FitzMatrix:
+        def __init__(self, x, y):
+            self.a = x
+            self.d = y
+
+    class _FitzRect:
+        def __init__(self, x0, y0, x1, y1):
+            self.x0, self.y0, self.x1, self.y1 = x0, y0, x1, y1
+
+        @property
+        def width(self):
+            return self.x1 - self.x0
+
+        @property
+        def height(self):
+            return self.y1 - self.y0
+
+    fitz_stub.Matrix = _FitzMatrix
+    fitz_stub.Rect = _FitzRect
+    fitz_stub.open = lambda *_args, **_kwargs: None
+    sys.modules["fitz"] = fitz_stub
+
+google_stub = sys.modules.setdefault("google", types.ModuleType("google"))
+oauth2_stub = sys.modules.setdefault("google.oauth2", types.ModuleType("google.oauth2"))
+service_account_stub = sys.modules.setdefault(
+    "google.oauth2.service_account", types.ModuleType("google.oauth2.service_account")
+)
+auth_stub = sys.modules.setdefault("google.auth", types.ModuleType("google.auth"))
+transport_stub = sys.modules.setdefault(
+    "google.auth.transport", types.ModuleType("google.auth.transport")
+)
+transport_requests_stub = sys.modules.setdefault(
+    "google.auth.transport.requests", types.ModuleType("google.auth.transport.requests")
+)
+google_stub.oauth2 = oauth2_stub
+google_stub.auth = auth_stub
+oauth2_stub.service_account = service_account_stub
+auth_stub.transport = transport_stub
+transport_stub.requests = transport_requests_stub
+
+if "dotenv" not in sys.modules:
+    dotenv_stub = types.ModuleType("dotenv")
+    dotenv_stub.load_dotenv = lambda **_kwargs: None
+    sys.modules["dotenv"] = dotenv_stub
+
+import msds_engine_v6 as engine_module
+
+
+class _Rect:
+    def __init__(self, width=600.0, height=800.0):
+        self.width = width
+        self.height = height
+
+
+class _Pixmap:
+    def __init__(self, width, height, page_marker):
+        self.w = max(1, int(round(width)))
+        self.h = max(1, int(round(height)))
+        self.n = 3
+        self._array = np.full((self.h, self.w, self.n), page_marker, dtype=np.uint8)
+        self.samples = self._array.tobytes()
+
+    def tobytes(self, _format):
+        buffer = io.BytesIO()
+        Image.fromarray(self._array, mode="RGB").save(buffer, format="PNG")
+        return buffer.getvalue()
+
+
+class _Page:
+    def __init__(self, index, render_log):
+        self.index = index
+        self.rect = _Rect()
+        self.render_log = render_log
+
+    def get_text(self, *_args, **_kwargs):
+        return ""
+
+    def get_pixmap(self, matrix, clip=None):
+        scale = float(matrix.a)
+        width = clip.width if clip is not None else self.rect.width
+        height = clip.height if clip is not None else self.rect.height
+        self.render_log.append(
+            {
+                "page_index": self.index,
+                "scale": scale,
+                "clip": None if clip is None else [clip.x0, clip.y0, clip.x1, clip.y1],
+            }
+        )
+        return _Pixmap(width * scale, height * scale, self.index + 1)
+
+
+class _Document:
+    def __init__(self, pages):
+        self.pages = pages
+
+    def __len__(self):
+        return len(self.pages)
+
+    def __iter__(self):
+        return iter(self.pages)
+
+    def __getitem__(self, index):
+        return self.pages[index]
+
+    def close(self):
+        return None
+
+
+def _ocr_line(text, x0, y0, x1, y1):
+    return [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], (text, 0.99)]
+
+
+class _ReconOCR:
+    def __init__(self):
+        self.calls = 0
+
+    def ocr(self, image, cls=False):
+        self.calls += 1
+        marker = int(image[0, 0, 0])
+        if marker == 1:
+            return [[
+                _ocr_line("1. 화학제품과 회사에 관한 정보", 30, 30, 500, 60),
+                _ocr_line("제품명 Test Product", 30, 75, 420, 105),
+                _ocr_line("2. 유해성 위험성", 30, 210, 360, 240),
+            ]]
+        return [[
+            # x=600px는 페이지 왼쪽 33% 밖이다. 전체 폭 정찰 좌표를 써야 찾을 수 있다.
+            _ocr_line("3. 구성성분의 명칭 및 함유량", 600, 150, 870, 180),
+            _ocr_line("에탄올 64-17-5 50%", 60, 260, 700, 300),
+            _ocr_line("4. 응급조치 요령", 600, 600, 850, 630),
+        ]]
+
+
+class _PPResult:
+    html = {"table": "<table><tr><td>64-17-5</td><td>50%</td></tr></table>" + ("x" * 120)}
+    markdown = {}
+
+
+class _PPStructure:
+    def __init__(self):
+        self.calls = 0
+        self.last_shape = None
+
+    def predict(self, image, **_kwargs):
+        self.calls += 1
+        self.last_shape = image.shape
+        return [_PPResult()]
+
+
+class _RemoteSuccess:
+    status_code = 200
+
+    def json(self):
+        return {"status": "SUCCESS", "raw_data": "64-17-5 50%"}
+
+
+class ImageOCRReuseTests(unittest.TestCase):
+    def test_golden_master_has_no_automatic_race_writer(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        race_source = (repo_root / "run_production_race.py").read_text(encoding="utf-8")
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+
+        self.assertNotIn('open(golden_file, "w"', race_source)
+        self.assertIn('os.environ["ANTIGRAVITY_GOLDEN_VALIDATION"] = "1"', race_source)
+
+        registration = gui_source.split("def check_and_register_golden_master", 1)[1].split(
+            "def perform_standard_save", 1
+        )[0]
+        approval_index = registration.index("if reply == QMessageBox.Yes:")
+        write_index = registration.index('open(golden_path, "w"')
+        self.assertLess(approval_index, write_index)
+
+    def test_golden_validation_bypasses_result_cache_without_rewriting_it(self):
+        engine = engine_module.MSDSEngineV6()
+        fresh_result = {"제품명": "Fresh", "구성성분": "64-17-5(50%)"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            pdf_path = temp_path / "sample.pdf"
+            pdf_path.write_bytes(b"golden-regression-input")
+            file_hash = hashlib.sha256(pdf_path.read_bytes()).hexdigest()
+            registry_path = temp_path / "msds_cache_registry.json"
+            cached_registry = {
+                file_hash: {
+                    "engine_version": engine_module.VERSION,
+                    "result": {"제품명": "Stale", "구성성분": ""},
+                }
+            }
+            registry_path.write_text(
+                json.dumps(cached_registry, ensure_ascii=False), encoding="utf-8"
+            )
+
+            with patch.object(
+                engine_module, "__file__", str(temp_path / "msds_engine_v6.py")
+            ), patch.object(
+                engine, "_process_msds_pipeline_impl", return_value=fresh_result
+            ) as actual_pipeline:
+                result = engine.process_msds_pipeline(
+                    str(pdf_path), bypass_cache=True
+                )
+
+            self.assertEqual(result, fresh_result)
+            actual_pipeline.assert_called_once()
+            self.assertEqual(
+                json.loads(registry_path.read_text(encoding="utf-8")), cached_registry
+            )
+
+    def test_paddleocr3_result_is_normalized_with_pdf_coordinates(self):
+        engine = engine_module.MSDSEngineV6()
+        raw_result = [
+            {
+                "rec_texts": ["3. 구성성분의 명칭 및 함유량"],
+                "rec_scores": np.array([0.98], dtype=np.float32),
+                "rec_polys": np.array(
+                    [[[30, 150], [450, 150], [450, 195], [30, 195]]],
+                    dtype=np.int32,
+                ),
+            }
+        ]
+
+        lines = engine._normalize_recon_ocr_lines(raw_result, scale=1.5)
+
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0]["text"], "3. 구성성분의 명칭 및 함유량")
+        self.assertEqual(lines[0]["bbox_pdf"][1], 100.0)
+        self.assertEqual(lines[0]["bbox_pdf"][3], 130.0)
+
+    def _fixture(self):
+        render_log = []
+        pages = [_Page(0, render_log), _Page(1, render_log)]
+        document = _Document(pages)
+        recon_ocr = _ReconOCR()
+        engine = engine_module.MSDSEngineV6()
+        return engine, document, recon_ocr, render_log
+
+    def _extract_two_page_scan(self):
+        engine, document, recon_ocr, render_log = self._fixture()
+        with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
+            engine_module, "get_ocr_engine", return_value=recon_ocr
+        ):
+            images, section_text, pages, recon_data = engine.extract_section3_images("scan.pdf")
+        return engine, document, recon_ocr, render_log, images, section_text, pages, recon_data
+
+    def test_normal_path_uses_two_recon_calls_and_one_remote_crop_call(self):
+        (
+            engine,
+            document,
+            recon_ocr,
+            render_log,
+            images,
+            section_text,
+            pages,
+            recon_data,
+        ) = self._extract_two_page_scan()
+
+        self.assertEqual(recon_ocr.calls, 2)
+        self.assertEqual(pages, [1])
+        self.assertIn("64-17-5", section_text)
+        self.assertTrue(recon_data["section_crop"]["bounds"]["found_heading"])
+
+        with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
+            engine_module, "get_paddle_structure_engine", side_effect=AssertionError("제품명 PPStructure 재호출")
+        ), patch.object(engine_module.os.path, "exists", return_value=True):
+            product_text = engine.extract_section_1(
+                "scanned", "scan.pdf", recon_data=recon_data
+            )
+        self.assertIn("Test Product", product_text)
+
+        with patch.object(engine_module.requests, "post", return_value=_RemoteSuccess()) as remote_post, patch.object(
+            engine, "verify_integrity_of_local_data", return_value=(True, "")
+        ):
+            result = engine.run_flexible_sandwich_pipeline(
+                "scan.pdf",
+                None,
+                target_page_idx=1,
+                recon_data=recon_data,
+                pre_rendered_crop=recon_data["section_crop"],
+            )
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(remote_post.call_count, 1)
+        self.assertEqual(
+            remote_post.call_args.kwargs["files"]["image_file"][1],
+            recon_data["section_crop"]["bytes"],
+        )
+        self.assertEqual(len(engine._paddle_call_metrics), 2)
+        self.assertEqual([entry["scale"] for entry in render_log], [1.5, 1.5, 2.0])
+        print("호출 비교(2페이지 3항/정상): 변경 전 로컬 Paddle 5회 + 원격 1회 -> 변경 후 로컬 Paddle 2회 + 원격 1회")
+
+    def test_every_paddle_call_logs_page_size_purpose_and_elapsed_time(self):
+        engine = engine_module.MSDSEngineV6()
+        recon_ocr = _ReconOCR()
+        image = np.ones((120, 200, 3), dtype=np.uint8)
+        logs = []
+
+        engine._run_paddle_call(
+            recon_ocr,
+            "ocr",
+            image,
+            "계측 검증",
+            0,
+            log_func=logs.append,
+            cls=False,
+        )
+
+        self.assertEqual(len(logs), 2)
+        self.assertIn("페이지 1", logs[0])
+        self.assertIn("200x120px", logs[0])
+        self.assertIn("목적: 계측 검증", logs[0])
+        self.assertIn("소요시간:", logs[1])
+
+    def test_remote_failure_runs_ppstructure_once_on_same_crop(self):
+        (
+            engine,
+            _document,
+            _recon_ocr,
+            _render_log,
+            _images,
+            _section_text,
+            _pages,
+            recon_data,
+        ) = self._extract_two_page_scan()
+        ppstructure = _PPStructure()
+
+        with patch.object(engine_module.requests, "post", side_effect=ConnectionError("offline")), patch.object(
+            engine_module, "get_paddle_structure_engine", return_value=ppstructure
+        ), patch.object(engine, "verify_integrity_of_local_data", return_value=(True, "")):
+            result = engine.run_flexible_sandwich_pipeline(
+                "scan.pdf",
+                None,
+                target_page_idx=1,
+                recon_data=recon_data,
+                pre_rendered_crop=recon_data["section_crop"],
+            )
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(ppstructure.calls, 1)
+        self.assertEqual(len(engine._paddle_call_metrics), 3)
+        self.assertEqual(
+            ppstructure.last_shape[:2],
+            (recon_data["section_crop"]["image_height"], recon_data["section_crop"]["image_width"]),
+        )
+        print("호출 비교(원격 장애): 정찰 2회 + 동일 재단 PPStructure 1회, 재단 재렌더링/재OCR 없음")
+
+    def test_trigger_ai_reuses_precomputed_sandwich_result(self):
+        engine, _document, _recon_ocr, _render_log, images, section_text, pages, recon_data = (
+            self._extract_two_page_scan()
+        )
+        precomputed = {
+            "status": "SUCCESS",
+            "data": "64-17-5 50%",
+            "raw_data": "64-17-5 50%",
+            "image": recon_data["section_crop"]["bytes"],
+            "image_item": recon_data["section_crop"]["image_item"],
+            "page_index": 1,
+        }
+        components = [{"cas": "64-17-5", "content": "50%", "name": "에탄올"}]
+
+        with patch.object(engine_module.time, "sleep", return_value=None), patch.object(
+            engine, "run_flexible_sandwich_pipeline", side_effect=AssertionError("샌드위치 재실행")
+        ), patch.object(engine, "scan_self_diagnosis", return_value=(True, components, {})), patch.object(
+            engine, "final_quality_control", return_value=(components, False)
+        ), patch.object(engine, "verify_cas_number", return_value=True):
+            result = engine._trigger_ai_extraction(
+                "scan.pdf",
+                image_list=images,
+                hybrid_pn="Test Product",
+                doc_type="스캔본",
+                recon_data=recon_data,
+                precomputed_sandwich=precomputed,
+            )
+
+        self.assertIn("64-17-5", result["구성성분"])
+        self.assertEqual(pages, [1])
+        self.assertIn("64-17-5", section_text)
+
+    def test_scan_pipeline_keeps_components_from_ai_result_package(self):
+        engine = engine_module.MSDSEngineV6()
+        recon_data = {
+            "section_crop": {
+                "image_item": {"mimeType": "image/png", "data": "cached-crop"},
+                "bytes": b"cached-crop",
+            }
+        }
+        ai_package = {
+            "구성성분": "64742-54-7(>97%); 68649-42-3(<2%)",
+            "제품명": "Super Way Lube 32",
+            "신호등": "🟢",
+        }
+
+        with patch.object(
+            engine,
+            "run_flexible_sandwich_pipeline",
+            return_value={"status": "FALLBACK", "data": "", "raw_data": ""},
+        ), patch.object(engine, "_trigger_ai_extraction", return_value=ai_package):
+            components = engine._process_scan_pdf_v6(
+                "scan.pdf",
+                image_list=[],
+                product_name="Super Way Lube 32",
+                recon_data=recon_data,
+            )
+
+        self.assertEqual(
+            [(item["cas"], item["content"]) for item in components],
+            [("64742-54-7", ">97%"), ("68649-42-3", "<2%")],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
