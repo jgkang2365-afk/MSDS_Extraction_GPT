@@ -1,0 +1,108 @@
+{
+  "dataset_version": "2026-07-18.1",
+  "generated_at": "2026-07-18T04:11:06.328935+00:00",
+  "source_master_path": "data/master/msds_index_V24.xlsx",
+  "source_master_sha256": "d25378e39a4d6f3702c5f5e13df380769517bc48982bb331e830927ea7065018",
+  "review_set_path": "data/review/2026-07-18_msds_index_review",
+  "review_workbook_path": "data/review/2026-07-18_msds_index_review/MSDS_측정인자_1차검토표_최종수정.xlsx",
+  "review_workbook_sha256": "75d05e60e1043640874905d834a14d4d88b875dfe68f90b1aa707ff1603a662e",
+  "source_master_row_count": 297,
+  "staging_row_count": 297,
+  "profile_count": 305,
+  "master_profile_count": 297,
+  "supplemental_detection_profile_count": 8,
+  "relation_count": 38,
+  "active_recommendation_rule_count": 12,
+  "held_rule_count": 1,
+  "excluded_rule_count": 1,
+  "incomplete_policy_rule_count": 2,
+  "same_cas_review_decision_count": 27,
+  "cross_cas_review_decision_count": 16,
+  "review_loader_warnings": [
+    {
+      "code": "BLANK_RUNTIME_POLICY",
+      "message": "복수선택이 공란이므로 운영 규칙을 활성화하지 않음",
+      "sheet": "교차CAS_16건",
+      "row": 8,
+      "field": "복수선택"
+    },
+    {
+      "code": "BLANK_RUNTIME_POLICY",
+      "message": "복수선택이 공란이므로 운영 규칙을 활성화하지 않음",
+      "sheet": "교차CAS_16건",
+      "row": 9,
+      "field": "복수선택"
+    }
+  ],
+  "validator": {
+    "status": "PASS",
+    "error_count": 0,
+    "warning_count": 9,
+    "issues": [
+      {
+        "severity": "WARNING",
+        "code": "DEFAULT_RECOMMENDED_NOT_SELECTABLE",
+        "message": "기본추천 profile이 선택 불가 상태임",
+        "entity_type": "profile",
+        "entity_id": "SP_2C05D1EE1436519082D29DA0B65077F4"
+      },
+      {
+        "severity": "WARNING",
+        "code": "DEFAULT_SELECTED_SINGLE_POLICY",
+        "message": "기본 선택이지만 복수선택이 N임. 원인자와 추천인자 동시 표시 정책 확인 필요",
+        "entity_type": "rule",
+        "entity_id": "RULE_53321B69DD3954E2A3B789C6A1F0ADD7"
+      },
+      {
+        "severity": "WARNING",
+        "code": "DEFAULT_SELECTED_SINGLE_POLICY",
+        "message": "기본 선택이지만 복수선택이 N임. 원인자와 추천인자 동시 표시 정책 확인 필요",
+        "entity_type": "rule",
+        "entity_id": "RULE_A71381414D2451679506B42F427101B2"
+      },
+      {
+        "severity": "WARNING",
+        "code": "DEFAULT_SELECTED_SINGLE_POLICY",
+        "message": "기본 선택이지만 복수선택이 N임. 원인자와 추천인자 동시 표시 정책 확인 필요",
+        "entity_type": "rule",
+        "entity_id": "RULE_CBDC8D6DF8A450BE911C01EF26E1BB3E"
+      },
+      {
+        "severity": "WARNING",
+        "code": "MULTIPLE_PARENT_PROFILES",
+        "message": "CAS 14807-96-6에 부모·대표가 2개라 parent_profile_id를 자동 확정하지 않음",
+        "entity_type": "cas_group",
+        "entity_id": "14807-96-6"
+      },
+      {
+        "severity": "WARNING",
+        "code": "MULTIPLE_PARENT_PROFILES",
+        "message": "CAS 7440-50-8에 부모·대표가 2개라 parent_profile_id를 자동 확정하지 않음",
+        "entity_type": "cas_group",
+        "entity_id": "7440-50-8"
+      },
+      {
+        "severity": "WARNING",
+        "code": "MULTIPLE_PARENT_PROFILES",
+        "message": "CAS 7440-02-0에 부모·대표가 2개라 parent_profile_id를 자동 확정하지 않음",
+        "entity_type": "cas_group",
+        "entity_id": "7440-02-0"
+      },
+      {
+        "severity": "WARNING",
+        "code": "MULTIPLE_PARENT_PROFILES",
+        "message": "CAS 7429-90-5에 부모·대표가 2개라 parent_profile_id를 자동 확정하지 않음",
+        "entity_type": "cas_group",
+        "entity_id": "7429-90-5"
+      },
+      {
+        "severity": "WARNING",
+        "code": "MULTIPLE_PARENT_PROFILES",
+        "message": "CAS 7440-47-3에 부모·대표가 2개라 parent_profile_id를 자동 확정하지 않음",
+        "entity_type": "cas_group",
+        "entity_id": "7440-47-3"
+      }
+    ]
+  },
+  "builder_version": "1.0.0"
+}

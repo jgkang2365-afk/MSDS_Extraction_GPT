@@ -13,6 +13,13 @@ ENV/
 *.sqlite3
 *.xlsx
 *.csv
+!data/master/msds_index_V24.xlsx
+!data/review/2026-07-18_msds_index_review/MSDS_측정인자_1차검토표_최종수정.xlsx
+!data/review/2026-07-18_msds_index_review/same_cas_candidates.csv
+!data/review/2026-07-18_msds_index_review/cross_cas_relation_candidates.csv
+!data/review/2026-07-18_msds_index_review/gui_hardcoding_inventory.csv
+!data/review/2026-07-18_msds_index_review/source_column_mapping.csv
+!reports/benchmarks/adaptive_recon_benchmark.csv
 input/
 output/
 input_stress/
