@@ -205,7 +205,13 @@ except Exception as e:
     raise
 
 class MSDSEngineV6:
-    def __init__(self, use_remote_ocr=None, remote_ocr_client=None):
+    def __init__(
+        self,
+        use_remote_ocr=None,
+        remote_ocr_client=None,
+        recon_attempt_scales=None,
+        recon_confidence_evaluator=None,
+    ):
         """
         [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인 및 신규 패턴 컴파일
         """
@@ -234,6 +240,12 @@ class MSDSEngineV6:
         self._ppstructure_usage_count = 0
         self._image_pipeline_active = False
         self.remote_ocr_client = remote_ocr_client or RemoteOCRClient(enabled=use_remote_ocr)
+        # 운영 기본값은 기존 1.5배 단일 정찰과 완전히 동일하다. 아래 두 값은
+        # 적응형 정찰 벤치마크가 명시적으로 주입할 때만 사용한다.
+        self._recon_attempt_scales = tuple(recon_attempt_scales or (1.5,))
+        self._recon_confidence_evaluator = recon_confidence_evaluator
+        self._recon_attempt_metrics = []
+        self._last_recon_data = None
 
     def _run_paddle_call(self, engine, method_name, image, purpose, page_index, log_func=None, **kwargs):
         """Paddle 호출을 단일 계측 관문으로 통과시킨다."""
@@ -3718,52 +3730,106 @@ class MSDSEngineV6:
                 if log_func: log_func(" 🔍 텍스트 탐지 실패 (또는 스캔본). 비전 정찰병(Recon) 순차 탐색 가동...")
                 
                 target_index = None
-                recon_data = {"pages": {}, "target_page_index": None, "section_crop": None}
+                recon_data = {
+                    "pages": {},
+                    "target_page_index": None,
+                    "section_crop": None,
+                    "recon_attempts": self._recon_attempt_metrics,
+                }
+                self._last_recon_data = recon_data
                 # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 046번 자재와 같은 텍스트 레이어 파손 시 7페이지 전수 스캔 폭주 방지용 3장 커트오프 가드레일 완착
                 max_recon_pages = min(3, len(doc))
                 
                 for i in range(max_recon_pages):
                     if log_func: log_func(f"   ├─ [로컬 정찰 진행] 인덱스 {i}번 무료 PaddleOCR 텍스트 검증 중... ({i+1}/{max_recon_pages})")
                     
-                    recon_res = None
-                    try:
-                        # 🛡️ [데이터 검증 및 에러 예외 처리] 이미지 격실 변환 및 수치 안정선 확보를 위한 배선
-                        pix = doc[i].get_pixmap(matrix=fitz.Matrix(1.5, 1.5))
-                        img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-                        ocr_instance = get_ocr_engine()
-                        result = self._run_paddle_call(
-                            ocr_instance,
-                            "ocr",
-                            img_np,
-                            "1~3페이지 3항 정찰 OCR",
-                            i,
-                            log_func=log_func,
-                        )
-                        recon_lines = self._normalize_recon_ocr_lines(result, scale=1.5)
-                        page_text_original = "\n".join(
-                            line.get("text", "") for line in recon_lines if line.get("text", "")
-                        )
-                        page_text = page_text_original.lower()
+                    recon_res = {"is_section3": False}
+                    page_attempts = []
+                    for scale in self._recon_attempt_scales:
+                        try:
+                            # 이미지 격실 변환 및 수치 안정선 확보를 위한 배선
+                            pix = doc[i].get_pixmap(matrix=fitz.Matrix(scale, scale))
+                            img_np = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+                            ocr_instance = get_ocr_engine()
+                            result = self._run_paddle_call(
+                                ocr_instance,
+                                "ocr",
+                                img_np,
+                                "1~3페이지 3항 정찰 OCR",
+                                i,
+                                log_func=log_func,
+                            )
+                            self._paddle_call_metrics[-1]["render_scale"] = scale
+                            recon_lines = self._normalize_recon_ocr_lines(result, scale=scale)
+                            page_text_original = "\n".join(
+                                line.get("text", "") for line in recon_lines if line.get("text", "")
+                            )
+                            page_text = page_text_original.lower()
+
+                            legacy_detected = (
+                                any(k in page_text for k in ["구성성분", "composition", "ingredients", "혼합물", "함유량"])
+                                and any(k in page_text for k in ["3", "삼"])
+                            )
+                            if self._recon_confidence_evaluator is None:
+                                evaluation = {
+                                    "score": 100.0 if legacy_detected else 0.0,
+                                    "accepted": legacy_detected,
+                                    "features": {"legacy_heading": legacy_detected},
+                                }
+                            else:
+                                evaluation = self._recon_confidence_evaluator(recon_lines, self)
+                                evaluation = dict(evaluation or {})
+                                evaluation.setdefault("score", 0.0)
+                                evaluation.setdefault("accepted", False)
+                                evaluation.setdefault("features", {})
+
+                            attempt = {
+                                "page_index": i,
+                                "page_number": i + 1,
+                                "render_scale": float(scale),
+                                "render_width": pix.w,
+                                "render_height": pix.h,
+                                "text": page_text_original,
+                                "lines": recon_lines,
+                                "score": float(evaluation["score"]),
+                                "accepted": bool(evaluation["accepted"]),
+                                "features": evaluation["features"],
+                                "elapsed_seconds": self._paddle_call_metrics[-1]["elapsed_seconds"],
+                            }
+                            page_attempts.append(attempt)
+                            self._recon_attempt_metrics.append({
+                                key: value for key, value in attempt.items() if key not in {"lines", "text"}
+                            })
+                            if log_func:
+                                log_func(
+                                    f"     [정찰 판정] 페이지 {i + 1} | {scale:.1f}배 | "
+                                    f"신뢰도 {attempt['score']:.1f} | "
+                                    f"{'통과' if attempt['accepted'] else '재시도/다음 페이지'}"
+                                )
+                            # 저배율이 기준을 통과하면 고배율 시도는 실행하지 않는다.
+                            if attempt["accepted"]:
+                                break
+                        except Exception as recon_err:
+                            if log_func:
+                                log_func(f"     [로컬 정찰 예외 발생] {scale:.1f}배 시도 우회: {recon_err}")
+
+                    if page_attempts:
+                        # OCR 텍스트를 합치지 않고 신뢰도가 가장 높은 한 결과만 사용한다.
+                        chosen = max(page_attempts, key=lambda item: item["score"])
                         recon_data["pages"][i] = {
                             "page_index": i,
                             "page_number": i + 1,
                             "page_width": doc[i].rect.width,
                             "page_height": doc[i].rect.height,
-                            "render_width": pix.w,
-                            "render_height": pix.h,
-                            "render_scale": 1.5,
-                            "text": page_text_original,
-                            "lines": recon_lines,
+                            "render_width": chosen["render_width"],
+                            "render_height": chosen["render_height"],
+                            "render_scale": chosen["render_scale"],
+                            "text": chosen["text"],
+                            "lines": chosen["lines"],
+                            "confidence_score": chosen["score"],
+                            "confidence_features": chosen["features"],
                         }
-                        
-                        # 3번 섹션을 명시하는 핵심 문패 검문 (외부 AI 통신 없이 비용 0원 격리)
-                        if any(k in page_text for k in ["구성성분", "composition", "ingredients", "혼합물", "함유량"]) and any(k in page_text for k in ["3", "삼"]):
-                            recon_res = {"is_section3": True}
-                        else:
-                            recon_res = {"is_section3": False}
-                    except Exception as recon_err:
-                        if log_func: log_func(f"     [로컬 정찰 예외 발생] 다음 페이지로 우회: {recon_err}")
-                        recon_res = {"is_section3": False}
+                        recon_res = {"is_section3": chosen["accepted"]}
                     
                     if recon_res and recon_res.get("is_section3") is True:
                         if log_func: log_func(f"   🎯 [로컬 정찰 성공] 인덱스 {i}번에서 진짜 구성성분 구역 확보. 루프 조기 종료.")

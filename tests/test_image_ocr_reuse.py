@@ -162,6 +162,33 @@ class _ReconOCR:
         ]]
 
 
+class _AdaptiveReconOCR:
+    def __init__(self, low_scale_succeeds):
+        self.low_scale_succeeds = low_scale_succeeds
+        self.calls = 0
+
+    def ocr(self, image, cls=False):
+        self.calls += 1
+        is_low_scale = image.shape[1] <= 600
+        if is_low_scale and not self.low_scale_succeeds:
+            return [[_ocr_line("LOW_ONLY 판독 불충분", 30, 30, 300, 60)]]
+        return [[
+            _ocr_line("3. 구성성분의 명칭 및 함유량", 30, 120, 500, 150),
+            _ocr_line("에탄올 64-17-5 50%", 30, 220, 500, 250),
+            _ocr_line("4. 응급조치 요령", 30, 500, 420, 530),
+        ]]
+
+
+def _adaptive_evaluator(lines, _engine):
+    text = "\n".join(line.get("text", "") for line in lines)
+    accepted = "구성성분" in text and "64-17-5" in text
+    return {
+        "score": 80.0 if accepted else 10.0,
+        "accepted": accepted,
+        "features": {"test_heading": accepted},
+    }
+
+
 class _PPResult:
     html = {"table": "<table><tr><td>64-17-5</td><td>50%</td></tr></table>" + ("x" * 120)}
     markdown = {}
@@ -193,6 +220,46 @@ class _RemoteClient:
 
 
 class ImageOCRReuseTests(unittest.TestCase):
+    def _run_adaptive_recon(self, low_scale_succeeds):
+        render_log = []
+        document = _Document([_Page(0, render_log)])
+        recon_ocr = _AdaptiveReconOCR(low_scale_succeeds)
+        engine = engine_module.MSDSEngineV6(
+            recon_attempt_scales=(1.0, 1.5),
+            recon_confidence_evaluator=_adaptive_evaluator,
+        )
+        with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
+            engine_module, "get_ocr_engine", return_value=recon_ocr
+        ):
+            result = engine.extract_section3_images("scan.pdf")
+        return engine, recon_ocr, render_log, result
+
+    def test_production_recon_default_remains_fixed_1_5(self):
+        engine = engine_module.MSDSEngineV6()
+        self.assertEqual(engine._recon_attempt_scales, (1.5,))
+        self.assertIsNone(engine._recon_confidence_evaluator)
+
+    def test_adaptive_recon_low_scale_success_skips_1_5_retry(self):
+        engine, recon_ocr, render_log, (_images, _text, pages, recon_data) = (
+            self._run_adaptive_recon(low_scale_succeeds=True)
+        )
+        self.assertEqual(recon_ocr.calls, 1)
+        self.assertEqual([item["scale"] for item in render_log], [1.0])
+        self.assertEqual(pages, [0])
+        self.assertEqual(recon_data["pages"][0]["render_scale"], 1.0)
+        self.assertEqual(len(engine._recon_attempt_metrics), 1)
+
+    def test_adaptive_recon_retry_uses_only_higher_confidence_result(self):
+        engine, recon_ocr, render_log, (_images, _text, pages, recon_data) = (
+            self._run_adaptive_recon(low_scale_succeeds=False)
+        )
+        self.assertEqual(recon_ocr.calls, 2)
+        self.assertEqual([item["scale"] for item in render_log], [1.0, 1.5])
+        self.assertEqual(pages, [0])
+        self.assertEqual(recon_data["pages"][0]["render_scale"], 1.5)
+        self.assertNotIn("LOW_ONLY", recon_data["pages"][0]["text"])
+        self.assertEqual(len(engine._recon_attempt_metrics), 2)
+
     def test_remote_ocr_setting_defaults_false_and_can_be_enabled_from_config(self):
         self.assertFalse(remote_module.USE_REMOTE_OCR)
         with tempfile.TemporaryDirectory() as temp_dir, patch.dict(

@@ -416,3 +416,8 @@ un_offline_tester 내부에서 EC 번호(이씨 번호/EINECS 번호)를 소거�
 ### 73. 원격 가속 기지 Cloudflare 터널 갱신 및 3중 변수 동기화 규칙 (V24.6.7.1)
 - **가속망 신규 터널 갱신**: 원격 OCR 서버와의 터널 주소가 만료 또는 변경되는 경우 발생하는 Cloudflare 524 타임아웃 및 전송 에러를 예방하기 위해, 새로 발급된 터널 가속 주소(`https://gates-parade-floppy-eva.trycloudflare.com/ocr_process`)로 즉각 변수를 교체하십시오.
 - **3중 변수 동기화**: 실무용 메인 분석 코어와 테스트 하네스 내에 흩어진 원격 서버 참조 변수 3개(`SERVER_URL`, `REMOTE_CRANE_URL`, `test_remote_url`)를 일관되고 정밀하게 신규 주소로 일제히 수정 및 매핑하여 전송 판독 데이터 수납의 정합성을 보장하십시오.
+
+### 74. 원격 OCR 통신 524 Gateway Timeout 방지 및 PyMuPDF 스위칭 규칙 (V24.6.8.0)
+- **외부 프로그램 종속성 제거 (PyMuPDF 스위칭)**: `pdf2image`를 사용할 때 윈도우 환경 내 `poppler` 외부 실행 파일 설치가 강제되어 발생하는 기동 불능 예외를 방어하기 위해, 외부 종속성이 없는 `PyMuPDF (fitz)` 라이브러리를 사용하여 메모리 상에서 타겟 페이지를 고속 렌더링하도록 제어하십시오.
+- **FastAPI 필드명 매칭**: 원격 가속 서버의 수납 규격에 맞게 파일 전송 딕셔너리의 키를 `image_file`로 완착 설정하여 422 Unprocessable Entity 에러를 원천 차단하십시오.
+- **57 DPI 해상도 최적화 (zoom = 0.8)**: CPU 환경인 원격 서버의 PaddleOCR 표 구조 해독 부하로 인해 발생하는 Cloudflare 100초 대기 시간 초과(524 Gateway Timeout) 에러를 방어하기 위해, 가독 가능한 마지노선 해상도인 `57 DPI` (`zoom = 0.8`)로 배율을 최적화하여 100초 이내에 연산이 안정적으로 완수되도록 제어하십시오.

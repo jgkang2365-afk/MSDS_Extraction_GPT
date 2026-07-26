@@ -94,6 +94,9 @@
 - **오류 명칭**: 상표명 토큰 대조 교차 검증 시 스캔본 CAS 번호 단독 대조로 인한 품질 오탐 에러 (V24.6.3.2)
   - **증상**: 스캔본 판별 지형에서 상표명과 성분 간의 연관성 검증(Raw Token Cross-Match)을 수행할 때, 대조 풀을 단순 comp_str(CAS 번호와 수치)로만 구성한 탓에 상표명에 포함된 핵심 어휘 파편들이 문자열로 된 한글/영문 성분명과 대조되지 못하고 기각되어, 완벽한 성분임에도 불구하고 "상표성분모순환각적발"로 오탐 기각(🔴 빨간불 격리)되는 결함 발생. 또한 REPLACE 제안 내 변수명 오타(extracted_names_pool vs extracted_name_pool)로 인한 잠재적 NameError 존재.
   - **해결책**: AI가 원본에서 수집해 온 실제 성분 영문명/한글명 목록(refined_comps 내부의 name 등) 및 원본 텍스트 전역(grounding_pool 등)을 대조 풀(match_pool)에 대폭 결착하여 교차 매칭 범위를 확장하였으며, 변수명 불일치 오타를 완벽하게 예방 교정하여 안정성을 확보함.
+- **오류 명칭**: test_ocr_send.py 개정 코드의 pdf2image 및 poppler 종속성 오작동 및 524 타임아웃 에러 (V24.6.6.0)
+  - **증상**: `pdf2image` 라이브러리가 Windows 환경의 `poppler` 외부 프로그램을 찾지 못해 이미지 변환이 다운되고, 140 DPI 해상도의 과도한 연산량 및 API 필드명 불일치(`file` vs `image_file`)로 인해 Cloudflare 터널 연결 한계 시간(100초)을 초과하여 524 Gateway Timeout 에러가 발생함.
+  - **해결책**: 외부 의존성이 필요 없는 `PyMuPDF (fitz)`로 엔진을 스위칭하고, 필드명을 `image_file`로 교체하였으며, 해상도를 `57 DPI` (`zoom=0.8`)로 최적화 튜닝하여 100초 제한선 이내에 정상적으로 OCR 전송 및 SUCCESS 판독 결과를 수납함.
 
 
 
