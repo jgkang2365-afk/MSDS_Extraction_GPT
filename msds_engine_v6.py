@@ -2629,12 +2629,17 @@ class MSDSEngineV6:
             is_range_data = any(k in str(content_str) for k in ['~', '∼', '～', '-'])
 
         # 🛡️ [데이터 검증 및 에러 예외 처리] 후위 부등호 기호(99.5< 양식) 표준 전위 부등호(>99.5%)로 조기 평탄화 인터락 (msds_utils_v3 세척 사각지대 차단)
+        # 자연어 비교 표현은 기호의 일본식 후위 표기와 의미가 반대이므로 별도로 처리한다.
         # 단, 범위형 데이터인 경우 후위 부등호 가드레일 오작동을 차단하기 위해 우회 처리
         if content_str and not is_range_data:
             content_v = str(content_str).replace(" ", "")
-            if re.search(r'\d(?:\.\d+)?(?:<|미만|below|less)$', content_v, re.I):
+            if re.search(r'\d(?:\.\d+)?(?:미만|below|less)$', content_v, re.I):
+                content_str = "<" + re.sub(r'[^\d.]', '', content_v) + "%"
+            elif re.search(r'\d(?:\.\d+)?(?:초과|more|over)$', content_v, re.I):
                 content_str = ">" + re.sub(r'[^\d.]', '', content_v) + "%"
-            elif re.search(r'\d(?:\.\d+)?(?:>|초과|more|over)$', content_v, re.I):
+            elif re.search(r'\d(?:\.\d+)?<$', content_v, re.I):
+                content_str = ">" + re.sub(r'[^\d.]', '', content_v) + "%"
+            elif re.search(r'\d(?:\.\d+)?>$', content_v, re.I):
                 content_str = "<" + re.sub(r'[^\d.]', '', content_v) + "%"
 
         # 일본식 부동호 및 함량 보존 정제 로직 선제 적용
@@ -2669,8 +2674,10 @@ class MSDSEngineV6:
         v = raw.replace(" ", "").replace('＜', '<').replace('＞', '>').replace('<=', '≤').replace('>=', '≥').replace('=<', '≤').replace('=>', '≥')
         v = re.sub(r'(min|max)\.', r'\1', v, flags=re.I)
         
-        has_trailing_less = re.search(r'\d\s*(<|미\s*[만맊먄]|below|less)$', v, re.I)
-        has_trailing_more = re.search(r'\d\s*(>|초\s*과|more|over)$', v, re.I)
+        has_trailing_less_symbol = re.search(r'\d\s*<$', v, re.I)
+        has_trailing_more_symbol = re.search(r'\d\s*>$', v, re.I)
+        has_trailing_less_word = re.search(r'\d\s*(미\s*[만맊먄]|below|less)$', v, re.I)
+        has_trailing_more_word = re.search(r'\d\s*(초\s*과|more|over)$', v, re.I)
         has_trailing_le = re.search(r'\d\s*(≤|이\s*[하핚내]|up\s*to|max)$', v, re.I)
         has_trailing_ge = re.search(r'\d\s*(≥|이\s*상|above|from|min|\+)$', v, re.I)
 
@@ -2695,8 +2702,10 @@ class MSDSEngineV6:
         has_range_sep = any(k in v.lower() for k in ["~", "∼", "～", "-", "to"])
 
         if len(nums) == 1:
-            if has_trailing_less: is_more, is_less, is_le, is_ge = True, False, False, False
-            if has_trailing_more: is_less, is_more, is_le, is_ge = True, False, False, False
+            if has_trailing_less_symbol: is_more, is_less, is_le, is_ge = True, False, False, False
+            if has_trailing_more_symbol: is_less, is_more, is_le, is_ge = True, False, False, False
+            if has_trailing_less_word: is_less, is_more, is_le, is_ge = True, False, False, False
+            if has_trailing_more_word: is_more, is_less, is_le, is_ge = True, False, False, False
             if has_trailing_le:   is_le, is_ge, is_less, is_more = True, False, False, False
             if has_trailing_ge:   is_ge, is_le, is_less, is_more = True, False, False, False
 
@@ -3148,6 +3157,10 @@ class MSDSEngineV6:
             
             y_start, y_end = 0.0, 9999.0
             y_start_orig = 0.0
+            section4_heading_pattern = re.compile(
+                r'(?:^|[\r\n])\s*(?:항\s*)?4\s*[\.\s:：항\-\/]*(?:응\s*급\s*조\s*치|FIRST\s*AID)',
+                re.I,
+            )
             # 🚨 [3섹션 지속 지형 가상 앵커 인터락]
             # 페이지 내에 3섹션 간판이 누락되었으나 유효 CAS 번호가 실존한다면 이전 페이지에서 이어진 지속 지형으로 인지하여 4항 차단막을 즉시 가동
             has_valid_cas = any(cas_pattern.search(b[4]) for b in blocks)
@@ -3165,7 +3178,9 @@ class MSDSEngineV6:
                     # 🚨 [Fuzzy 간판 센서 보강 및 양방향 식별 경계벽 정규식 장착]
                     b_raw = b[4].strip()
                     is_exit = False
-                    if any(k in b_text for k in ["FIRSTAID", "FIRSTAIDMEASURES"]):
+                    if section4_heading_pattern.search(b_raw):
+                        is_exit = True
+                    elif any(k in b_text for k in ["FIRSTAID", "FIRSTAIDMEASURES"]):
                         is_exit = True
                     elif re.search(r'4\s*[\.\s항\-\/]*\s*응\s*급\s*조\s*치', b_raw, re.I) or re.search(r'응\s*급\s*조\s*치[\s\S]{0,50}(?<!\d)4(?:[.\s항\-\/]|$)', b_raw, re.I):
                         is_exit = True
@@ -3448,6 +3463,8 @@ class MSDSEngineV6:
                 for line in physical_lines:
                     if line["y"] < y_start: continue
                     row_text = line["text"]
+                    if section4_heading_pattern.search(row_text):
+                        break
                     if re.search(r'SECTION\s*[3456]', row_text, re.I): continue
                     cas_list = cas_pattern.findall(row_text)
                     
@@ -3474,8 +3491,6 @@ class MSDSEngineV6:
                             current_row = None
                             pending_lines.append(line)
 
-            last_valid_info = None 
-            is_first_in_page = True
             for row in logical_rows:
                 row_words = row.get("words", [])
                 sorted_words = sorted(row_words, key=lambda w: (w[1], w[0]))
@@ -3545,6 +3560,7 @@ class MSDSEngineV6:
                         def score_match(match_tuple):
                             m_val, match_pos = match_tuple
                             has_percent = "%" in m_val
+                            score = 0
                             
                             if re.search(r'%\s*:', row_clean_text[match_pos:match_pos+len(m_val)+5]): return -5000
                                 
@@ -3554,10 +3570,17 @@ class MSDSEngineV6:
                             if any(noise in tight_context for noise in ["g/mol", "mg/m3", "ppm", "밀도", "density", "twa", "lel", "oel"]): return -5000
                                 
                             if not has_percent:
-                                if not has_global_percent and not any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥']): return -5000
+                                section_header_match = re.match(
+                                    r'^\s*(?:SECTION\s*|항\s*)?\d+\s*[\.\s:：항\-\/]*'
+                                    r'(?:구성\s*성분|성분|COMPOSITION|INGREDIENTS?)',
+                                    row_clean_text,
+                                    re.I,
+                                )
+                                if section_header_match and match_pos < section_header_match.end(): return -5000
+                                if not has_global_percent and not any(k in m_val.lower() for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이하', '이상', '초과', 'above', 'below', 'less', 'more']): return -5000
                                 if any(noise in context_area for noise in ["ec 번호", "ec번호", "ec-no", "ec number", "einecs", "elincs", "tox", "irrit", "corr", "dam", "stot", "분류", "category", "cat.", "분자량", "molecular weight", "mw", "항", "section"]): return -5000
                                     
-                            if any(noise in row_clean_text[max(0, match_pos-20):match_pos].lower() for noise in ["쪽", "page", "페이지"]) and not has_percent: return -5000 
+                            if any(noise in context_area for noise in ["쪽", "page", "페이지"]) and not has_percent: return -5000
                             if m_val.strip(' -∼~<>\u2013\u2014≤≥=').count('-') >= 2: return -5000
                             # 개정 버전 번호(Rev.03 등) 노이즈 가중치 거세 필터링
                             if any(k in context_area for k in ["rev", "개정", "version", "제개정"]): score -= 8000
@@ -3568,7 +3591,6 @@ class MSDSEngineV6:
                             dist_char = abs(anchor_pos - match_pos)
                             if dist_char > 220: return -8000
 
-                            score = 0
                             if has_percent: score += 500
                             elif has_global_percent: score += 400 
                             if any(k in m_val for k in ['~', '∼', '～', '-', '<', '>', '≤', '≥', '미만', '이상']): score += 300
@@ -3625,13 +3647,7 @@ class MSDSEngineV6:
                             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 광역 잔량 다형성 마스터 사전 가로채기 인터락 완착
                             if any(k in row_clean_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
                                 content = "Rem.%"
-                            elif not is_first_in_page and last_valid_info:
-                                prev_x, prev_y, prev_content = last_valid_info
-                                if abs(curr_x - prev_x) < 50 and 0 < (curr_y - prev_y) < 150:
-                                    content = f"{prev_content} (병합추정)"
-                        if content != "미기재%":
-                            last_valid_info = (curr_x, curr_y, content.replace(" (병합추정)", ""))
-                            is_first_in_page = False
+
                     
                     name_str = "CAS 기반 자동 매핑"
                     combined_text = f"{target_cas}({content})"

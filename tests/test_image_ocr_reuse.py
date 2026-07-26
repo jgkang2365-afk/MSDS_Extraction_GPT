@@ -19,7 +19,9 @@ if "requests" not in sys.modules:
     requests_stub.RequestException = Exception
     sys.modules["requests"] = requests_stub
 
-if "fitz" not in sys.modules:
+try:
+    import fitz
+except ModuleNotFoundError:
     fitz_stub = types.ModuleType("fitz")
 
     class _FitzMatrix:
