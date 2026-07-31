@@ -1,6 +1,8 @@
+import ast
 import io
 import hashlib
 import json
+import re
 import sys
 import tempfile
 import types
@@ -762,6 +764,18 @@ class ProductNameGuardTests(unittest.TestCase):
             "TEA TREE-857W",
         )
 
+    def test_lettered_english_product_label_is_supported(self):
+        section_text = (
+            "1. CHEMICAL PRODUCT AND COMPANY IDENTIFICATION\n"
+            "a. Product name : MICONOL C2M(H)\n"
+            "b. Recommended use : Cosmetic\n"
+        )
+
+        self.assertEqual(
+            engine_module.extract_labeled_product_name(section_text),
+            "MICONOL C2M(H)",
+        )
+
     def test_parenthesized_filename_alias_cannot_replace_document_product(self):
         section_text = (
             "1. Supplier and product\n"
@@ -781,6 +795,90 @@ class ProductNameGuardTests(unittest.TestCase):
         self.assertNotIn("file_pn_hint", engine_source)
         self.assertNotIn("clean_filename_product_hint", engine_source)
         self.assertNotIn("파일명 기반 청정 상표", engine_source)
+
+    def test_error_isolation_does_not_promote_filename_to_product_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            fake_pdf = Path(tmp_dir) / "296_R002640 MICONOL C2M(H).pdf"
+            result = engine_module.MSDSEngineV6()._get_graceful_error_dict(
+                str(fake_pdf),
+                "test isolation",
+            )
+
+        self.assertEqual(result["제품명"], "")
+
+
+class BulkExtractionResponsivenessTests(unittest.TestCase):
+    def test_legacy_raw_content_is_restored_for_table_rendering(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        gui_tree = ast.parse(gui_source)
+        function_node = next(
+            node
+            for node in gui_tree.body
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "parse_cached_raw_components"
+        )
+        namespace = {"re": re}
+        exec(
+            compile(
+                ast.Module(body=[function_node], type_ignores=[]),
+                filename="smu_gui.py",
+                mode="exec",
+            ),
+            namespace,
+        )
+
+        components = namespace["parse_cached_raw_components"](
+            "90170-45-9(25~35%); 7732-18-5(65~75%)"
+        )
+
+        self.assertEqual(
+            [(item["cas"], item["content"]) for item in components],
+            [
+                ("90170-45-9", "25~35%"),
+                ("7732-18-5", "65~75%"),
+            ],
+        )
+
+    def test_cache_without_manual_edits_is_not_forced_to_reextract(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+
+        self.assertIn("elif manual and (", gui_source)
+        self.assertNotIn(
+            'elif manual.get("product_name") == "" or manual.get("raw_content") == "":',
+            gui_source,
+        )
+
+    def test_each_result_only_resizes_its_own_row(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        add_result_source = gui_source.split(
+            "    def add_result_to_table", 1
+        )[1].split("    def run_validation", 1)[0]
+
+        self.assertIn("self.table.resizeRowToContents(row)", add_result_source)
+        self.assertNotIn("self._safe_resize_rows()", add_result_source)
+        self.assertNotIn("self.table.sortItems", add_result_source)
+
+    def test_selective_extraction_uses_cache_hashes_not_visible_rows(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        run_source = gui_source.split(
+            "    def run_extraction", 1
+        )[1].split("    def add_result_to_table", 1)[0]
+
+        self.assertIn("cached_data = self.cache.get(f_hash)", run_source)
+        self.assertIn("cached_data.get(\"engine_version\") == engine.VERSION", run_source)
+        self.assertNotIn("if self.table.rowCount() > 0:", run_source)
+
+    def test_pdf_engine_is_process_isolated_and_time_limited(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        core_source = (repo_root / "msds_core.py").read_text(encoding="utf-8")
+
+        self.assertIn('multiprocessing.get_context("spawn")', core_source)
+        self.assertIn('"MSDS_FILE_TIMEOUT_SECONDS", "180"', core_source)
+        self.assertIn("process.terminate()", core_source)
 
 
 if __name__ == "__main__":

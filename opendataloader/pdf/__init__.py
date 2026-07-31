@@ -15,7 +15,7 @@ class PDFParser:
         # Java 환경 확인 및 CLI 기본 설정
         pass
 
-    def parse(self, pdf_path):
+    def parse(self, pdf_path, cancel_check=None):
         # 1. 임시 디렉토리 생성
         tmp_dir = tempfile.mkdtemp()
         try:
@@ -28,12 +28,31 @@ class PDFParser:
             
             # 2. OpenDataLoader CLI 호출 (json 포맷) - 가상환경의 파이썬 인터프리터를 직접 매핑
             cmd = [sys.executable, "-m", "opendataloader_pdf", "input.pdf", "--format", "json", "--output-dir", ".", "--quiet"]
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=tmp_dir)
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                cwd=tmp_dir,
+            )
+            while True:
+                try:
+                    stdout, stderr = process.communicate(timeout=0.2)
+                    break
+                except subprocess.TimeoutExpired:
+                    if cancel_check and cancel_check():
+                        process.terminate()
+                        try:
+                            process.communicate(timeout=3)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.communicate()
+                        raise InterruptedError("사용자 중지 요청")
             
-            if result.returncode != 0:
-                print(f"⚠️ [ODL Bridge] CLI 실행 실패 (Return Code: {result.returncode})")
-                if result.stderr:
-                    print(f"   └─ 상세 정보: {result.stderr.strip()}")
+            if process.returncode != 0:
+                print(f"⚠️ [ODL Bridge] CLI 실행 실패 (Return Code: {process.returncode})")
+                if stderr:
+                    print(f"   └─ 상세 정보: {stderr.strip()}")
                 return None
 
             # 3. 생성된 JSON 파일 찾기

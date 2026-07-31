@@ -7,8 +7,27 @@ import msds_engine_v6
 from kosha_client import KoshaAPIClient
 from exposure_lookup import ExposureLookup
 import re
+import multiprocessing
+import queue
+import time
 
 import hashlib
+
+
+def _isolated_engine_entry(pdf_path, result_queue, cancel_event):
+    """PDF 한 건의 엔진 처리를 별도 프로세스에 격리한다."""
+    try:
+        result = msds_engine_v6.process_pdf(
+            pdf_path,
+            log_func=lambda message: result_queue.put(("log", str(message))),
+            cancel_check=cancel_event.is_set,
+        )
+        result_queue.put(("result", result))
+    except InterruptedError:
+        result_queue.put(("cancelled", None))
+    except BaseException as exc:
+        result_queue.put(("error", f"{type(exc).__name__}: {exc}"))
+
 
 class MSDSCore:
     """
@@ -71,14 +90,104 @@ class MSDSCore:
             
         return "-", "-"
 
-    def extract_from_pdf(self, pdf_path, log_func=None, cancel_check=None):
+    def _run_engine_isolated(
+        self,
+        pdf_path,
+        log_func=None,
+        cancel_check=None,
+        timeout_seconds=None,
+    ):
+        """멈춘 PDF 한 건이 GUI와 후속 파일을 붙잡지 못하게 격리 실행한다."""
+        if timeout_seconds is None:
+            timeout_seconds = float(
+                os.environ.get("MSDS_FILE_TIMEOUT_SECONDS", "180")
+            )
+
+        context = multiprocessing.get_context("spawn")
+        result_queue = context.Queue()
+        cancel_event = context.Event()
+        process = context.Process(
+            target=_isolated_engine_entry,
+            args=(pdf_path, result_queue, cancel_event),
+            daemon=False,
+        )
+        process.start()
+        deadline = time.monotonic() + timeout_seconds
+        final_result = None
+        final_error = None
+        was_cancelled = False
+
+        try:
+            while True:
+                if cancel_check and cancel_check():
+                    was_cancelled = True
+                    cancel_event.set()
+                elif time.monotonic() >= deadline:
+                    final_error = (
+                        f"파일별 제한시간 {timeout_seconds:g}초 초과"
+                    )
+                    cancel_event.set()
+
+                try:
+                    message_type, payload = result_queue.get(timeout=0.1)
+                    if message_type == "log":
+                        if log_func:
+                            log_func(payload)
+                    elif message_type == "result":
+                        final_result = payload
+                        break
+                    elif message_type == "cancelled":
+                        if final_error is None:
+                            was_cancelled = True
+                        break
+                    elif message_type == "error":
+                        final_error = payload
+                        break
+                except queue.Empty:
+                    pass
+
+                if was_cancelled or final_error:
+                    process.join(timeout=3)
+                    if process.is_alive():
+                        process.terminate()
+                    break
+
+                if not process.is_alive():
+                    process.join()
+                    if final_result is None:
+                        final_error = (
+                            final_error
+                            or f"격리 엔진 비정상 종료(code={process.exitcode})"
+                        )
+                    break
+        finally:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=3)
+            result_queue.close()
+            result_queue.join_thread()
+
+        if was_cancelled:
+            raise InterruptedError("사용자 중지 요청")
+        if final_error:
+            raise TimeoutError(final_error)
+        return final_result
+
+    def extract_from_pdf(
+        self,
+        pdf_path,
+        log_func=None,
+        cancel_check=None,
+        timeout_seconds=None,
+    ):
         """1단계: PDF에서 제품명 및 성분 추출"""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {pdf_path}")
-        ext_res = msds_engine_v6.process_pdf(
+        ext_res = self._run_engine_isolated(
             pdf_path,
             log_func=log_func,
             cancel_check=cancel_check,
+            timeout_seconds=timeout_seconds,
         )
         
         # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동

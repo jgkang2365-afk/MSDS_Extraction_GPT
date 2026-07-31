@@ -1,4 +1,5 @@
 import hashlib
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -137,6 +138,46 @@ class ContentRowMatchingUnitTests(unittest.TestCase):
         ])
         components, _ = self.engine.extract_from_text_regex(page)
         self.assertEqual(components[0]["content"], "50%")
+
+    def test_long_numbered_iupac_name_does_not_backtrack(self):
+        page = _FakePage(
+            [
+                (
+                    100.0,
+                    [
+                        "3.",
+                        "COMPOSITION",
+                        "CAS",
+                        "NO.",
+                        "CONTENTS(%)",
+                    ],
+                ),
+                (
+                    140.0,
+                    [
+                        "Imidazolium",
+                        "compounds,",
+                        "1-[2-(carboxymethoxy)ethyl]-1-(carboxymethyl)-"
+                        "4,5-dihydro-2-norcoco",
+                        "68650-39-5",
+                        "30",
+                        "-",
+                        "40",
+                    ],
+                ),
+                (200.0, ["4.", "FIRST", "AID", "MEASURES"]),
+            ]
+        )
+
+        started = time.perf_counter()
+        components, _ = self.engine.extract_from_text_regex(page)
+        elapsed = time.perf_counter() - started
+
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(
+            [(item["cas"], item["content"]) for item in components],
+            [("68650-39-5", "30~40%")],
+        )
 
     def test_visual_grid_layout_variants_keep_same_row_evidence(self):
         cases = {

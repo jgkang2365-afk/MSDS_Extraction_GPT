@@ -988,6 +988,42 @@ def validate_composition_limits(text):
                 
     return True, "정상 데이터"
 
+
+def parse_cached_raw_components(raw_content):
+    """구형 1단계 캐시의 CAS(함유량) 문자열을 화면 렌더링 구조로 복원한다."""
+    components = []
+    seen_cas = set()
+    for part in str(raw_content or "").replace("\r", "").split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        cas_match = re.search(r"(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])", part)
+        if not cas_match:
+            continue
+        cas = cas_match.group(1)
+        if cas in seen_cas:
+            continue
+        seen_cas.add(cas)
+        trailing = part[cas_match.end():].strip()
+        content_match = re.search(r"\(([^()]*)\)", trailing)
+        content = content_match.group(1).strip() if content_match else ""
+        components.append(
+            {
+                "cas": cas,
+                "name": "",
+                "content": content,
+                "selected_name": "",
+                "osh": {
+                    "is_measured": False,
+                    "is_special": False,
+                    "is_special_mgmt": False,
+                    "is_permit": False,
+                },
+            }
+        )
+    return components
+
+
 class ExtractionWorker(QThread):
     """1단계: PDF에서 텍스트 기반 추출만 수행 (API 연동 없이)"""
     update_log_signal = pyqtSignal(str)
@@ -1043,7 +1079,10 @@ class ExtractionWorker(QThread):
                         self.update_log_signal.emit(f"[*] [{fn}] 불완전한 추출 결과 감지: API 재호출을 시도합니다.")
                         use_cache = False
                     # 🚨 [V17.3.3.3] 사용자 요청(공란) 감지: 제품명이나 CAS 원본이 비어있으면 강제 재추출
-                    elif manual.get("product_name") == "" or manual.get("raw_content") == "":
+                    elif manual and (
+                        manual.get("product_name") == ""
+                        or manual.get("raw_content") == ""
+                    ):
                         self.update_log_signal.emit(f"[*] [{fn}] 사용자 요청(공란) 감지: 강제 재추출을 수행합니다.")
                         use_cache = False
                     
@@ -1240,6 +1279,8 @@ class ExtractionWorker(QThread):
                 self.update_log_signal.emit(f"[!] 오류 발생 ({os.path.basename(path)}): {e}")
                 err_data = {
                     "filename": os.path.basename(path),
+                    "f_hash": f_hash,
+                    "full_path": path,
                     "product_name": "추출 오류",
                     "reliability": "[ERROR]",
                     "신호등": "🔴",
@@ -5756,30 +5797,43 @@ class SMUGUI(QMainWindow):
 
         self.table.blockSignals(True) # [NEW] 대량 작업 전 시그널 차단
         
-        # 🚨 [V17.3.3.3] 스마트 선택 추출 (Selective Extraction) 로직 도입
+        # 테이블에는 아직 미분석 파일의 행이 없을 수 있으므로 화면 공란을
+        # 기준으로 삼지 않는다. 파일 해시와 엔진 버전이 일치하는 캐시는 완료로
+        # 보고, 캐시가 없거나 사용자가 명시적으로 비운 항목만 대상으로 선정한다.
         target_paths = []
-        is_partial = False
-        
-        if self.table.rowCount() > 0:
-            for r in range(self.table.rowCount()):
-                prod_item = self.table.item(r, 2) # 제품명
-                cas_item = self.table.item(r, 3)  # CAS 원본
-                fn_item = self.table.item(r, 7)   # 파일명
-                
-                prod_text = prod_item.text().strip() if prod_item else ""
-                cas_text = cas_item.text().strip() if cas_item else ""
-                
-                # 제품명이나 CAS 원본이 비어있거나 '미확인', '오류' 등이 포함된 경우 추출 대상으로 선정
-                if not prod_text or not cas_text or "미확인" in prod_text or "오류" in cas_text or "미추출" in prod_text:
-                    if fn_item:
-                        fn = fn_item.text().strip()
-                        full_path = next((p for p in self.pdf_paths if os.path.basename(p) == fn), None)
-                        if full_path:
-                            target_paths.append(full_path)
-            
-            if target_paths:
-                is_partial = True
-                self.log(f"[*] 선택 추출 모드 가동: 전체 {len(target_paths)}건에 대해 재추출을 수행합니다.")
+        for path in self.pdf_paths:
+            f_hash = self.core.calculate_file_hash(path)
+            cached_data = self.cache.get(f_hash) if f_hash else None
+            manual = cached_data.get("manual_data", {}) if cached_data else {}
+            manual_refresh_requested = bool(manual) and (
+                manual.get("product_name") == ""
+                or manual.get("raw_content") == ""
+            )
+            cache_is_current = (
+                cached_data is not None
+                and cached_data.get("engine_version") == engine.VERSION
+                and not manual_refresh_requested
+            )
+            if not cache_is_current:
+                target_paths.append(path)
+
+        is_partial = 0 < len(target_paths) < len(self.pdf_paths)
+        if is_partial:
+            first_target = os.path.basename(target_paths[0])
+            last_target = os.path.basename(target_paths[-1])
+            self.log(
+                f"[*] 선택 추출 모드: 캐시 완료 건을 제외한 {len(target_paths)}건만 처리합니다. "
+                f"({first_target} ~ {last_target})"
+            )
+        elif not target_paths:
+            self.table.blockSignals(False)
+            self.log("[*] 모든 PDF에 현재 엔진 버전의 캐시가 있어 추출할 파일이 없습니다.")
+            QMessageBox.information(
+                self,
+                "추출 대상 없음",
+                "모든 PDF의 추출 캐시가 이미 존재합니다.",
+            )
+            return
         
         if not is_partial:
             # 전체 추출 모드
@@ -5796,7 +5850,14 @@ class SMUGUI(QMainWindow):
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
         # [NEW] 진행 상황 텍스트 업데이트 연결
-        self.worker.progress_signal.connect(lambda v: self.lbl_extraction_progress.setText(f"진행 중: {int(v/100*len(self.pdf_paths))}/{len(self.pdf_paths)}건 ({v}%)"))
+        cached_count = len(self.pdf_paths) - len(target_paths)
+        target_count = len(target_paths)
+        self.worker.progress_signal.connect(
+            lambda v: self.lbl_extraction_progress.setText(
+                f"진행 중: {cached_count + int(v / 100 * target_count)}/"
+                f"{len(self.pdf_paths)}건 ({v}%)"
+            )
+        )
         self.worker.result_signal.connect(self.add_result_to_table)
         self.worker.cache_update_signal.connect(self.update_cache) # [NEW] 캐시 업데이트 연동
         self.worker.finished_signal.connect(self.on_extraction_finished)
@@ -5939,12 +6000,10 @@ class SMUGUI(QMainWindow):
             item_page = QTableWidgetItem(str(data.get("page", 1)))
             self.table.setItem(row, COL_IDX_PAGE, item_page)
 
-            # [핵심] No(1번 열) 기준으로 오름차순 정렬 활성
-            self.table.setSortingEnabled(True)
-            self.table.sortItems(1, Qt.AscendingOrder)
-            
-            # 행 높이 재조정
-            self._safe_resize_rows()
+            # 입력 파일은 이미 자연 정렬되어 있다. 대량 처리 중 매 결과마다 전체
+            # 테이블을 재정렬/재측정하면 행 수에 비례해 GUI가 멈추므로 현재 행만
+            # 높이를 맞추고, 전체 정렬은 작업 종료 시 한 번만 수행한다.
+            self.table.resizeRowToContents(row)
             self.table.blockSignals(False) # [NEW] 시그널 재개
         except Exception as e:
             self.table.blockSignals(False)
@@ -6007,14 +6066,33 @@ class SMUGUI(QMainWindow):
 
     def on_extraction_finished(self, stats):
         """1단계 PDF 추출 완료 요약 보고 (V12.8 통계 대시보드)"""
+        self.table.setSortingEnabled(True)
+        self.table.sortItems(1, Qt.AscendingOrder)
+        self._safe_resize_rows()
         self.table.blockSignals(False)
         self.btn_stop.setEnabled(False)
         self.btn_step1.setEnabled(True)
         self.btn_step2.setEnabled(True)
-        self.lbl_extraction_progress.setText(f"추출 완료: {len(self.pdf_paths)}건") # [NEW] 완료 표시
-        self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
-        
         total_files = stats.get("total_files", 0)
+        was_cancelled = (
+            hasattr(self, "worker")
+            and self.worker is not None
+            and not self.worker.is_running
+        )
+        if was_cancelled:
+            self.lbl_extraction_progress.setText(
+                f"중지됨: {total_files}/{len(self.pdf_paths)}건"
+            )
+            self.log(
+                f"[*] 사용자 요청으로 1단계 추출을 중지했습니다. "
+                f"완료된 {total_files}건의 캐시는 보존되었습니다."
+            )
+        else:
+            self.lbl_extraction_progress.setText(
+                f"추출 완료: {total_files}건"
+            )
+            self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
+
         digital_count = stats.get("digital_count", 0)
         image_count = stats.get("image_count", 0)
         deepseek_product_count = stats.get("deepseek_product_count", 0)
@@ -6031,7 +6109,8 @@ class SMUGUI(QMainWindow):
 - 구성성분 : 정규식 {regex_comp_count}건, 제미나이 {gemini_comp_count}건
 
 추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요."""
-        QMessageBox.information(self, "추출 완료 리포트", summary)
+        if not was_cancelled:
+            QMessageBox.information(self, "추출 완료 리포트", summary)
         
         # [V17.3.0.8] 마스터 DB 로드 에러 사후 안내 (주님 지침: 1단계 종료 후 일괄 보고)
         if hasattr(engine, 'MES_MASTER_LOAD_ERROR') and engine.MES_MASTER_LOAD_ERROR:
@@ -6371,6 +6450,17 @@ class SMUGUI(QMainWindow):
         data = self.cache.get(f_hash, {})
         prod_name = data.get("product_name", "미분석")
         components = data.get("components", [])
+        if not components:
+            manual = data.get("manual_data", {})
+            raw_content = manual.get(
+                "raw_content",
+                data.get("raw_content", ""),
+            )
+            components = parse_cached_raw_components(raw_content)
+            if components:
+                # 구형 캐시는 raw_content만 가진다. 화면과 후속 수동 편집이 같은
+                # 성분 구조를 보도록 메모리에서만 호환 구조를 복원한다.
+                data["components"] = components
         status = data.get("status", "대기 중")
         fn = data.get("filename", "")
         if not fn:
@@ -7827,6 +7917,9 @@ def global_exception_handler(exctype, value, tb):
     sys.exit(1)
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
+
     # 시스템 예외 가로채기 설정
     sys.excepthook = global_exception_handler
     

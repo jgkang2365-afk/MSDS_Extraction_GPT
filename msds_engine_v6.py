@@ -181,7 +181,7 @@ def extract_labeled_product_name(text):
         return ""
 
     label_pattern = re.compile(
-        r"^\s*(?:\d+(?:\.\d+)*\.?\s*)?"
+        r"^\s*(?:(?:\d+(?:\.\d+)*\.?|[a-z]\.)\s*)?"
         r"(?:Name\s+of\s+product|Product\s+(?:name|identity)|제품명|상품명|품명)"
         r"\s*(?:[:：\-]\s*)?(.+?)\s*$",
         re.IGNORECASE,
@@ -252,9 +252,19 @@ class MSDSEngineV6:
         pass
             
         # [데이터 무결성] 일본식 부동호(≧, ≦, >, <) 및 다중 지표를 완벽히 포착하는 고도화 패턴 분기 배선
+        # 중첩 반복이 들어간 과거 패턴은 긴 IUPAC 명칭의 숫자/하이픈
+        # (예: 1-[2-(...)]-1-(...)-4,5-dihydro-2-...)에서 치명적인
+        # 백트래킹을 일으켰다. 함량의 실제 문법만 선형으로 탐색한다.
         self.comp_pattern = re.compile(
-            r'(?<![\d-])([><=≧≦≤≥=\uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[><=≧≦≤≥=~∼～\-|\u2013|\u2014|이상|미만|이하|초과|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|이하|초과|above|below|%)\s*)*)(?![a-zA-Z])', 
-            re.IGNORECASE
+            r'(?<![\d-])('
+            r'[><=≧≦≤≥\uff1c\uff1e\uff1d]?\s*'
+            r'\d+(?:\.\d+)?'
+            r'(?:\s*(?:~|∼|～|\-|–|—|to)\s*'
+            r'[><=≧≦≤≥\uff1c\uff1e\uff1d]?\s*\d+(?:\.\d+)?)?'
+            r'\s*%?'
+            r'(?:\s*(?:이상|미만|이하|초과|above|below))?'
+            r')(?![\d-])',
+            re.IGNORECASE,
         )
         print("🟢 [1선 파이프라인] 부동호 보존 정규식 엔진이 코어에 동기화되었습니다.")
         
@@ -957,15 +967,9 @@ class MSDSEngineV6:
             # 파일 쓰기 자체 실패 시 시스템 전체 런타임 크래시를 방지하는 2중 격리벽
             if log_func: log_func(f" 🚨 [통제소 기록 실패] 로그 장부 기입 중 예외 격발: {file_err}")
         
-        pn_fallback = hybrid_pn
-        if not pn_fallback:
-            filename = os.path.basename(pdf_path)
-            no_ext = os.path.splitext(filename)[0]
-            cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
-            cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
-            cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
-            cleaned_name = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
-            pn_fallback = cleaned_name if cleaned_name else no_ext
+        # 실패 격리 결과에서도 제품명은 문서 내부 판독값만 허용한다.
+        # 파일명은 진단 표시용일 뿐 제품명 보정 근거로 사용하지 않는다.
+        pn_fallback = hybrid_pn or ""
             
         return {
             "구성성분": "",
@@ -1071,8 +1075,18 @@ class MSDSEngineV6:
                         "engine_version": VERSION,
                         "result": res
                     }
-                    with open(cache_path, "w", encoding="utf-8") as f:
-                        json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                    cache_temp_path = (
+                        f"{cache_path}.{os.getpid()}.tmp"
+                    )
+                    try:
+                        with open(cache_temp_path, "w", encoding="utf-8") as f:
+                            json.dump(cache_data, f, ensure_ascii=False, indent=2)
+                            f.flush()
+                            os.fsync(f.fileno())
+                        os.replace(cache_temp_path, cache_path)
+                    finally:
+                        if os.path.exists(cache_temp_path):
+                            os.remove(cache_temp_path)
                 except:
                     pass
 
@@ -1300,24 +1314,25 @@ class MSDSEngineV6:
             "contents": [{"parts": parts}]
         }
 
-        hybrid_pn = ""
-        product_engine = "제미나이"
-        try:
-            # 명칭 오인 결선 수정: call_llm_router를 사용하며 is_scanned_strict 신호 전달
-            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
-            if result:
-                pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
-                    hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
-                    hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
-                engine_label = result.get("actual_engine_label", "gemini")
-                if engine_label == "deepseek":
-                    product_engine = "딥시크"
-                else:
-                    product_engine = "제미나이"
-        except Exception as e:
-            if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
-            hybrid_pn = ""
+        hybrid_pn = labeled_pn or ""
+        product_engine = "정규식" if labeled_pn else "제미나이"
+        if not labeled_pn:
+            try:
+                # 문서 내부의 명시적 제품명 레이블이 없을 때만 보조 AI를 사용한다.
+                result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+                if result:
+                    pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                    if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
+                        hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
+                        hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
+                    engine_label = result.get("actual_engine_label", "gemini")
+                    if engine_label == "deepseek":
+                        product_engine = "딥시크"
+                    else:
+                        product_engine = "제미나이"
+            except Exception as e:
+                if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
+                hybrid_pn = ""
 
         # 문서의 1항 레이블 값은 파일명이나 생성형 응답보다 우선하는 확정 근거다.
         if labeled_pn:
@@ -1355,9 +1370,11 @@ class MSDSEngineV6:
         if not is_scanned_strict and pages:
             try:
                 parser = PDFParser()
-                odl_doc = parser.parse(pdf_path)
+                odl_doc = parser.parse(pdf_path, cancel_check=cancel_check)
                 odl_components = self.extract_components_odl_robust(odl_doc, pages, pdf_path, log_func=log_func)
                 if log_func: log_func(f" 🔍 [[정규식] 1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
+            except InterruptedError:
+                raise
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [1선 ODL 예외] 분석 스킵: {e}")
 
