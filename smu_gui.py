@@ -58,6 +58,7 @@ from html import escape
 import msds_core
 import importlib # [HOT-RELOAD] 모듈 새로고침용
 from msds_core import MSDSCore
+from kosha_client import KoshaRequestBudgetExceeded
 import msds_engine_v6 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
@@ -1277,6 +1278,8 @@ class ValidationWorker(QThread):
 
     def run(self):
         total = len(self.table_data)
+        api_client = self.core.api_client
+        start_metrics = api_client.get_metrics()
         for i, data in enumerate(self.table_data):
             if not self.is_running: break
             try:
@@ -1499,9 +1502,25 @@ class ValidationWorker(QThread):
                 }
                 self.result_signal.emit(res_data)
                 self.progress_signal.emit(int((i + 1) / total * 100))
+            except KoshaRequestBudgetExceeded as e:
+                self.log_signal.emit(f"🛑 [공단 API 안전 예산 중단] {e}")
+                break
             except Exception as e:
                 self.log_signal.emit(f"[!] 오류 발생 ({fn}): {e}")
-        
+
+        end_metrics = api_client.get_metrics()
+        network_delta = end_metrics["network_requests"] - start_metrics["network_requests"]
+        persistent_hits = (
+            end_metrics["persistent_cache_hits"] - start_metrics["persistent_cache_hits"]
+        )
+        memory_hits = end_metrics["memory_cache_hits"] - start_metrics["memory_cache_hits"]
+        retry_delta = end_metrics["retries"] - start_metrics["retries"]
+        self.log_signal.emit(
+            "[*] 공단 API 호출 요약: "
+            f"실제 통신 {network_delta}회, 영구 캐시 {persistent_hits}회, "
+            f"메모리 캐시 {memory_hits}회, 재시도 {retry_delta}회, "
+            f"오늘 누적 {end_metrics['daily_requests']}/{end_metrics['daily_budget'] or '무제한'}회"
+        )
         self.finished_signal.emit()
 
 class ModernMappingPanel(QGroupBox):
@@ -1516,7 +1535,7 @@ class ModernMappingPanel(QGroupBox):
 
         # 사용자가 요청한 가로형 5대 핵심 열 + 바인딩 5개 필드
         fields = [
-            ("순번/No", "A"), ("제품명", "D"), ("파일명", "P"),
+            ("순번/No", "A"), ("GUI 순번(신호등+번호)", ""), ("제품명", "D"), ("파일명", "P"),
             ("2차 결과(규제)", "L"), ("1차 결과(전체)", "N"),
             ("측정대상1", "M"), ("측정대상2", ""), # 측정대상을 복수로 저장하기 위해 두 칸으로 분리
             ("CAS 원본", "O"),
@@ -1607,7 +1626,7 @@ class ModernMappingPanel(QGroupBox):
     def set_mapping(self, data):
         """저장된 데이터를 바탕으로 매핑 입력창을 채움 (안전 폴백 포함)"""
         default_map = {
-            "순번/No": "A", "제품명": "D", "파일명": "P",
+            "순번/No": "A", "GUI 순번(신호등+번호)": "", "제품명": "D", "파일명": "P",
             "2차 결과(규제)": "L", "1차 결과(전체)": "N",
             "측정대상1": "M", "측정대상2": "",
             "CAS 원본": "O",
@@ -7603,6 +7622,7 @@ class SMUGUI(QMainWindow):
                     table_dict[fn] = {
                         "product_name": self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else "",
                         "no": self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else "",
+                        "sequence_display": self.table.item(start_row, 0).text().strip() if self.table.item(start_row, 0) else "",
                         "cas_list": [], "measure_list": [], "reg2_list": [], "reg1_list": [],
                         "traffic_light": self.table.item(start_row, 0).text().strip() if self.table.item(start_row, 0) else ""
                     }
@@ -7661,6 +7681,7 @@ class SMUGUI(QMainWindow):
                     score_str = f"{score_val}점 (청정)" if score_val == 100 else f"{score_val}점 (불량)"
 
                     no_val = self.table.item(start_row, 1).text().strip() if self.table.item(start_row, 1) else ""
+                    sequence_display_val = self.table.item(start_row, 0).text().strip() if self.table.item(start_row, 0) else ""
                     prod_val = self.table.item(start_row, 2).text().strip() if self.table.item(start_row, 2) else ""
                     cas_val = self.table.item(row_idx, 3).text().strip() if self.table.item(row_idx, 3) else ""
                     
@@ -7692,6 +7713,7 @@ class SMUGUI(QMainWindow):
                         elif key == "2차 결과(규제)": val = reg2_val
                         elif key == "1차 결과(전체)": val = reg1_val
                         elif key == "순번/No": val = no_val
+                        elif key == "GUI 순번(신호등+번호)": val = sequence_display_val
                         elif key == "신호등": val = traffic_str
                         elif key == "매칭 엔진": val = engine_val
                         elif key == "무결성 점수": val = score_str
@@ -7748,6 +7770,7 @@ class SMUGUI(QMainWindow):
                         elif key == "2차 결과(규제)": val = td.get("reg2")
                         elif key == "1차 결과(전체)": val = td.get("reg1")
                         elif key == "순번/No": val = td.get("no")
+                        elif key == "GUI 순번(신호등+번호)": val = td.get("sequence_display")
                         elif key == "신호등": val = td.get("traffic_light")
                         elif key == "매칭 엔진": val = td.get("matching_engine")
                         elif key == "무결성 점수": val = td.get("integrity_score")

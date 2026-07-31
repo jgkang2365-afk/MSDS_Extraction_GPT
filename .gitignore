@@ -27,3 +27,5 @@ output_v5/
 test_pdfs/
 temp_odl/
 vertex_key.json
+kosha_api_cache.json
+kosha_api_cache.json.usage

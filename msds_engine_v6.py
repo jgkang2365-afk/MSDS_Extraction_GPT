@@ -202,17 +202,6 @@ def extract_labeled_product_name(text):
     return ""
 
 
-def clean_filename_product_hint(filename):
-    """순번·자재코드·분류 표식을 제거한 파일명 예비 제품명을 만든다."""
-    cleaned_name = os.path.splitext(os.path.basename(filename))[0]
-    cleaned_name = re.sub(r"^\d+[\s_★.\-]*", "", cleaned_name)
-    cleaned_name = re.sub(r"^[A-Z]{1,4}\d{5,}[\s_\-]*", "", cleaned_name, flags=re.IGNORECASE)
-    cleaned_name = re.sub(r"^(?:[^()\s]{1,8}\)\s*)+", "", cleaned_name)
-    cleaned_name = re.sub(r"\([oOxX🟢🟡🔴★]\)", "", cleaned_name)
-    cleaned_name = re.sub(r"\b(MSDS|SDS|GHS|국문|개정|KOR)\b", "", cleaned_name, flags=re.I)
-    return re.sub(r"\s+", " ", cleaned_name).strip(" _-")
-
-
 def load_prompt(prompt_type, version):
     mapping = {
         "vision_extractor": "prompt_vision_extractor",
@@ -1207,18 +1196,12 @@ class MSDSEngineV6:
                 if original_log_func: original_log_func(f"  ⚠️ [통합 원샷 API 장애 격발] {e}")
                 return self._get_graceful_error_dict(pdf_path, f"통합 원샷 통신 실패: {e}", log_func=None, doc_type="스캔본")
 
-            # 상표명 마스킹 쉴드 연동 및 파일명 보정 백업 선로
+            # 제품명은 문서 내용만 근거로 사용한다. 파일명 대체는 금지한다.
             is_pn_invalid = (not ai_pn) or any(k in ai_pn for k in ["미추출", "확인", "실패", "오류", "unknown"])
             if is_pn_invalid:
-                filename = os.path.basename(pdf_path)
-                file_pn_hint = ""
-                brackets = re.findall(r'\(([^)]+)\)', filename)
-                candidate_pns = [b.strip() for b in brackets if b.strip() not in ['O', 'X', '★', '국문', 'KOR', 'E'] and not any(bl in b.strip() for bl in ['물질안정', '보건자료', 'MSDS', 'SDS'])]
-                if candidate_pns: 
-                    file_pn_hint = candidate_pns[0]
-                else:
-                    file_pn_hint = clean_filename_product_hint(filename)
-                ai_pn = file_pn_hint
+                ai_pn = ""
+                if original_log_func:
+                    original_log_func("  ⚠️ [제품명 근거 미검출] 문서 내부에서 확인되지 않아 공란으로 유지합니다.")
 
             refined_comps = self.refine_msds_components_strict(ai_comps)
             comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps if isinstance(c, dict) and 'cas' in c]
@@ -1285,25 +1268,6 @@ class MSDSEngineV6:
         if original_log_func:
             original_log_func(f"🚀 [{doc_type} 문서] MSDSEngineV6 엔진 가동: {os.path.basename(pdf_path)}")
 
-        # [1단계 - 파일명 파싱 (괄호 안 진짜 상업용 명칭 수거)]
-        filename = os.path.basename(pdf_path)
-        file_pn_hint = ""
-        brackets = re.findall(r'\(([^)]+)\)', filename)
-        candidate_pns = []
-        for b in brackets:
-            b_clean = b.strip()
-            if b_clean in ['O', 'X', '★', '국문', 'KOR', 'E', '요청 조성비 서류', '보통휘발유', ' Regular Unleaded Gasoline']:
-                continue
-            if any(blacklist in b_clean for blacklist in ['물질안정', '보건자료', 'MSDS', 'SDS', '안전보건']):
-                continue
-            candidate_pns.append(b_clean)
-            
-        if candidate_pns:
-            file_pn_hint = candidate_pns[0]
-            
-        if not file_pn_hint:
-            file_pn_hint = clean_filename_product_hint(filename)
-
         def is_blacklisted_pn(name_str):
             if not name_str: return True
             name_clean = name_str.replace(" ", "")
@@ -1364,7 +1328,7 @@ class MSDSEngineV6:
                 )
             hybrid_pn = labeled_pn
 
-        # [상표명 마스킹 쉴드 인터락] AI 제품명이 비어있거나 불량인 경우 file_pn_hint로 보정
+        # 제품명은 문서 내부 근거만 허용한다. 불량/공란이어도 파일명으로 보정하지 않는다.
         is_empty_or_blacklisted = (
             (not hybrid_pn) or 
             (len(hybrid_pn.strip()) < 2) or 
@@ -1372,8 +1336,11 @@ class MSDSEngineV6:
         )
         if is_empty_or_blacklisted:
             if log_func:
-                log_func(f" 🚨 [[상표명 마스킹 쉴드] 인터락 격발] AI 추출 상표명 불량/공란 감지 ('{hybrid_pn}') ➔ 파일명 기반 청정 상표 단어('{file_pn_hint}')로 강제 대체합니다.")
-            hybrid_pn = file_pn_hint
+                log_func(
+                    f" ⚠️ [제품명 근거 미검출] 문서 내부 제품명 판독값 "
+                    f"'{hybrid_pn}'을 사용할 수 없어 공란으로 유지합니다."
+                )
+            hybrid_pn = ""
 
         # [최종 출구 파일명 검문소 철거] 1선 직결 파이프라인 마감: AI의 순수 결과를 바이패스 통과시킵니다.
         pass

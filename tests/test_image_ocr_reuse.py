@@ -325,6 +325,38 @@ class ImageOCRReuseTests(unittest.TestCase):
         self.assertIn("shutil.copy2(cache_path, backup_path)", save_cache)
         self.assertIn('"smu_cache.json.bak"', load_cache)
 
+    def test_excel_mapping_can_save_gui_sequence_display(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        standard_save = gui_source.split("def perform_standard_save(self):", 1)[1].split(
+            "def global_exception_handler", 1
+        )[0]
+
+        self.assertIn('"GUI 순번(신호등+번호)"', gui_source)
+        self.assertIn(
+            '"sequence_display": self.table.item(start_row, 0).text().strip()',
+            standard_save,
+        )
+        self.assertIn(
+            'elif key == "GUI 순번(신호등+번호)": val = sequence_display_val',
+            standard_save,
+        )
+        self.assertIn(
+            'elif key == "GUI 순번(신호등+번호)": val = td.get("sequence_display")',
+            standard_save,
+        )
+
+    def test_validation_worker_reports_kosha_cache_and_budget_metrics(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        worker_source = gui_source.split("class ValidationWorker", 1)[1].split(
+            "class ModernMappingPanel", 1
+        )[0]
+
+        self.assertIn("except KoshaRequestBudgetExceeded as e:", worker_source)
+        self.assertIn("공단 API 호출 요약", worker_source)
+        self.assertIn('end_metrics["persistent_cache_hits"]', worker_source)
+
     def test_golden_validation_bypasses_result_cache_without_rewriting_it(self):
         engine = engine_module.MSDSEngineV6()
         fresh_result = {"제품명": "Fresh", "구성성분": "64-17-5(50%)"}
@@ -730,21 +762,25 @@ class ProductNameGuardTests(unittest.TestCase):
             "TEA TREE-857W",
         )
 
-    def test_filename_hint_removes_sequence_code_and_category_markers(self):
-        cases = {
-            "202_R001680 향)TEA TREE-857W.pdf": "TEA TREE-857W",
-            "203_R001690 X)향)CARROT BLOSSOM FL00363.pdf": "CARROT BLOSSOM FL00363",
-            "257_R002250 표)기능)특)ALPHA-MELIGHT (ECO) KFDA GRADE.pdf": (
-                "ALPHA-MELIGHT (ECO) KFDA GRADE"
-            ),
-        }
+    def test_parenthesized_filename_alias_cannot_replace_document_product(self):
+        section_text = (
+            "1. Supplier and product\n"
+            "1.1. Name of product Frag-39069\n"
+            "1.2 Relevant identified uses of the substance\n"
+        )
 
-        for filename, expected in cases.items():
-            with self.subTest(filename=filename):
-                self.assertEqual(
-                    engine_module.clean_filename_product_hint(filename),
-                    expected,
-                )
+        self.assertEqual(
+            engine_module.extract_labeled_product_name(section_text),
+            "Frag-39069",
+        )
+
+    def test_product_name_pipeline_never_uses_filename_fallback(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        engine_source = (repo_root / "msds_engine_v6.py").read_text(encoding="utf-8")
+
+        self.assertNotIn("file_pn_hint", engine_source)
+        self.assertNotIn("clean_filename_product_hint", engine_source)
+        self.assertNotIn("파일명 기반 청정 상표", engine_source)
 
 
 if __name__ == "__main__":
