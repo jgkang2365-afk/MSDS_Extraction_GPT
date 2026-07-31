@@ -39,6 +39,7 @@ if sys.executable.lower() != TARGET_PYTHON.lower():
 import time
 import json
 import re
+import shutil
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -5087,24 +5088,60 @@ class SMUGUI(QMainWindow):
 
     def load_cache(self):
         """[NEW] smu_cache.json에서 영구 캐시 로드"""
-        if not os.path.exists("smu_cache.json"): return
-        try:
-            with open("smu_cache.json", "r", encoding="utf-8") as f:
-                self.cache = json.load(f)
-            self.log(f"[*] {len(self.cache)}건의 분석 캐시를 불러왔습니다.")
-            # [주님 지침] 캐시 로딩 시 기존 에러(🔴/🟡) 상태 이력 수집
-            for f_hash, cached_data in self.cache.items():
-                emoji = cached_data.get("신호등", "⚪")
-                if emoji in ["🔴", "🟡"]:
-                    self.previous_error_states[f_hash] = True
-        except: pass
+        cache_candidates = [
+            ("smu_cache.json", False),
+            ("smu_cache.json.bak", True),
+        ]
+        for cache_path, is_backup in cache_candidates:
+            if not os.path.exists(cache_path):
+                continue
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    loaded_cache = json.load(f)
+                if not isinstance(loaded_cache, dict):
+                    continue
+                self.cache = loaded_cache
+                if is_backup:
+                    self.log("[!] 주 캐시 손상/유실 감지: 직전 백업 캐시로 복구했습니다.")
+                self.log(f"[*] {len(self.cache)}건의 분석 캐시를 불러왔습니다.")
+                # [주님 지침] 캐시 로딩 시 기존 에러(🔴/🟡) 상태 이력 수집
+                for f_hash, cached_data in self.cache.items():
+                    emoji = cached_data.get("신호등", "⚪")
+                    if emoji in ["🔴", "🟡"]:
+                        self.previous_error_states[f_hash] = True
+                return
+            except Exception:
+                continue
 
     def save_cache(self):
         """[NEW] 현재 캐시를 smu_cache.json에 저장"""
+        cache_path = "smu_cache.json"
+        temp_path = f"{cache_path}.tmp"
+        backup_path = f"{cache_path}.bak"
         try:
-            with open("smu_cache.json", "w", encoding="utf-8") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=4)
-        except: pass
+                f.flush()
+                os.fsync(f.fileno())
+
+            if os.path.exists(cache_path):
+                try:
+                    with open(cache_path, "r", encoding="utf-8") as existing:
+                        existing_cache = json.load(existing)
+                    if isinstance(existing_cache, dict):
+                        shutil.copy2(cache_path, backup_path)
+                except Exception:
+                    pass
+
+            os.replace(temp_path, cache_path)
+        except Exception as cache_err:
+            self.log(f"[!] 캐시 저장 실패: {cache_err}")
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
 
     def update_cache(self, f_hash, data):
         """[NEW] 워커로부터 받은 새 분석 결과를 캐시에 저장"""
@@ -5392,6 +5429,7 @@ class SMUGUI(QMainWindow):
                 # [V17.3.1.2] 추가 즉시 정렬 (뒤죽박죽 방지)
                 self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
                 self.update_file_count_display()
+                self.save_config()
                 self.log(f"[*] {len(new_files)}개의 PDF 파일이 추가되었습니다.")
 
     def load_pdf_folder(self):
@@ -5419,6 +5457,7 @@ class SMUGUI(QMainWindow):
                 # [V17.3.1.2] 폴더 로드 시에도 즉시 정렬 강제
                 self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
                 self.update_file_count_display()
+                self.save_config()
                 self.log(f"[*] 폴더에서 {len(new_files)}개의 PDF 파일이 일괄 추가되었습니다. (중복 제외)")
             else:
                 self.log("[경고] 해당 폴더 내의 모든 PDF가 이미 목록에 포함되어 있습니다.")
@@ -5450,6 +5489,7 @@ class SMUGUI(QMainWindow):
             
             self.pdf_paths.sort(key=lambda x: natural_sort_key(os.path.basename(x)))
             self.update_file_count_display()
+            self.save_config()
             self.log(f"[*] 드래그 앤 드롭으로 {new_count}개의 PDF 파일이 추가되었습니다. (총 {len(self.pdf_paths)}개)")
 
     def update_file_count_display(self):
@@ -5514,6 +5554,7 @@ class SMUGUI(QMainWindow):
                 new_paths.append(old_path)
 
         self.pdf_paths = new_paths
+        self.save_config()
         
         if errors:
             err_msg = "\n".join(errors[:10])
@@ -5685,23 +5726,6 @@ class SMUGUI(QMainWindow):
             except: pass
 
     def run_extraction(self):
-        # 🚨 [과거 오염 장부 전면 소각 (Cache Purge)] 파일 정산 공정 시작부 국소 리셋 회로 결착
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        for cache_file in ["msds_cache_registry.json", "smu_cache.json"]:
-            cache_path = os.path.join(base_dir, cache_file)
-            if os.path.exists(cache_path):
-                try:
-                    os.remove(cache_path)
-                    self.log(f"[*] 과거 오염 캐시 파일 물리적 삭제 완료: {cache_path}")
-                except Exception as ex:
-                    self.log(f"[!] 캐시 파일 삭제 실패: {ex}")
-        
-        # 내부 메모리 캐시 사전 및 결과 강제 리셋
-        if hasattr(self, 'cache') and isinstance(self.cache, dict):
-            self.cache.clear()
-            self.save_cache() # 파일이 비어있는 상태로 강제 물리 갱신
-            self.log("[*] 내부 캐시 메모리가 완전히 리셋되었습니다.")
-
         if not hasattr(self, 'pdf_paths') or not self.pdf_paths:
             QMessageBox.warning(self, "경고", "먼저 분석할 PDF 파일을 선택하세요.")
             return

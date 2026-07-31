@@ -286,6 +286,45 @@ class ImageOCRReuseTests(unittest.TestCase):
         write_index = registration.index('open(golden_path, "w"')
         self.assertLess(approval_index, write_index)
 
+    def test_extraction_start_preserves_existing_cache(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        run_extraction = gui_source.split("def run_extraction(self):", 1)[1].split(
+            "def add_result_to_table", 1
+        )[0]
+
+        self.assertNotIn('os.remove(cache_path)', run_extraction)
+        self.assertNotIn('self.cache.clear()', run_extraction)
+        self.assertNotIn('self.save_cache()', run_extraction)
+
+    def test_pdf_list_changes_are_saved_immediately(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+
+        for start_name, end_name in [
+            ("def load_pdfs(self):", "def load_pdf_folder"),
+            ("def load_pdf_folder(self):", "def on_files_dropped"),
+            ("def on_files_dropped(self, paths):", "def update_file_count_display"),
+            ("def batch_rename_files(self):", "def is_file_locked"),
+        ]:
+            method_source = gui_source.split(start_name, 1)[1].split(end_name, 1)[0]
+            self.assertIn("self.save_config()", method_source)
+
+    def test_cache_save_is_atomic_and_keeps_previous_backup(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        save_cache = gui_source.split("def save_cache(self):", 1)[1].split(
+            "def update_cache", 1
+        )[0]
+        load_cache = gui_source.split("def load_cache(self):", 1)[1].split(
+            "def save_cache", 1
+        )[0]
+
+        self.assertIn('temp_path = f"{cache_path}.tmp"', save_cache)
+        self.assertIn("os.replace(temp_path, cache_path)", save_cache)
+        self.assertIn("shutil.copy2(cache_path, backup_path)", save_cache)
+        self.assertIn('"smu_cache.json.bak"', load_cache)
+
     def test_golden_validation_bypasses_result_cache_without_rewriting_it(self):
         engine = engine_module.MSDSEngineV6()
         fresh_result = {"제품명": "Fresh", "구성성분": "64-17-5(50%)"}
@@ -676,6 +715,36 @@ class ImageOCRReuseTests(unittest.TestCase):
             [(item["cas"], item["content"]) for item in components],
             [("64742-54-7", ">97%"), ("68649-42-3", "<2%")],
         )
+
+
+class ProductNameGuardTests(unittest.TestCase):
+    def test_explicit_english_product_label_wins(self):
+        section_text = (
+            "1. Supplier and product\n"
+            "1.1. Name of product TEA TREE-857W\n"
+            "1.2 Relevant identified uses\n"
+        )
+
+        self.assertEqual(
+            engine_module.extract_labeled_product_name(section_text),
+            "TEA TREE-857W",
+        )
+
+    def test_filename_hint_removes_sequence_code_and_category_markers(self):
+        cases = {
+            "202_R001680 향)TEA TREE-857W.pdf": "TEA TREE-857W",
+            "203_R001690 X)향)CARROT BLOSSOM FL00363.pdf": "CARROT BLOSSOM FL00363",
+            "257_R002250 표)기능)특)ALPHA-MELIGHT (ECO) KFDA GRADE.pdf": (
+                "ALPHA-MELIGHT (ECO) KFDA GRADE"
+            ),
+        }
+
+        for filename, expected in cases.items():
+            with self.subTest(filename=filename):
+                self.assertEqual(
+                    engine_module.clean_filename_product_hint(filename),
+                    expected,
+                )
 
 
 if __name__ == "__main__":

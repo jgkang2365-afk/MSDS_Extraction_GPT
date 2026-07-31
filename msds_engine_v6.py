@@ -175,6 +175,44 @@ def update_regex_pattern():
     return pattern
 # ==============================================================================
 
+def extract_labeled_product_name(text):
+    """1항의 명시적 제품명 레이블에서 값만 확정한다."""
+    if not text:
+        return ""
+
+    label_pattern = re.compile(
+        r"^\s*(?:\d+(?:\.\d+)*\.?\s*)?"
+        r"(?:Name\s+of\s+product|Product\s+(?:name|identity)|제품명|상품명|품명)"
+        r"\s*(?:[:：\-]\s*)?(.+?)\s*$",
+        re.IGNORECASE,
+    )
+    forbidden = re.compile(
+        r"\b(?:Company|Manufacturer|Supplier|Intended\s+Use|용도|제조자|공급자)\b",
+        re.IGNORECASE,
+    )
+
+    for raw_line in unicodedata.normalize("NFKC", str(text)).splitlines():
+        match = label_pattern.match(raw_line.strip())
+        if not match:
+            continue
+        candidate = match.group(1).strip(" \t:：-")
+        candidate = re.split(r"\s+(?=\d+(?:\.\d+)+\.?\s)", candidate, maxsplit=1)[0].strip()
+        if 1 < len(candidate) < 100 and not forbidden.search(candidate):
+            return candidate
+    return ""
+
+
+def clean_filename_product_hint(filename):
+    """순번·자재코드·분류 표식을 제거한 파일명 예비 제품명을 만든다."""
+    cleaned_name = os.path.splitext(os.path.basename(filename))[0]
+    cleaned_name = re.sub(r"^\d+[\s_★.\-]*", "", cleaned_name)
+    cleaned_name = re.sub(r"^[A-Z]{1,4}\d{5,}[\s_\-]*", "", cleaned_name, flags=re.IGNORECASE)
+    cleaned_name = re.sub(r"^(?:[^()\s]{1,8}\)\s*)+", "", cleaned_name)
+    cleaned_name = re.sub(r"\([oOxX🟢🟡🔴★]\)", "", cleaned_name)
+    cleaned_name = re.sub(r"\b(MSDS|SDS|GHS|국문|개정|KOR)\b", "", cleaned_name, flags=re.I)
+    return re.sub(r"\s+", " ", cleaned_name).strip(" _-")
+
+
 def load_prompt(prompt_type, version):
     mapping = {
         "vision_extractor": "prompt_vision_extractor",
@@ -1179,11 +1217,7 @@ class MSDSEngineV6:
                 if candidate_pns: 
                     file_pn_hint = candidate_pns[0]
                 else:
-                    no_ext = os.path.splitext(filename)[0]
-                    cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
-                    cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
-                    cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
-                    file_pn_hint = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
+                    file_pn_hint = clean_filename_product_hint(filename)
                 ai_pn = file_pn_hint
 
             refined_comps = self.refine_msds_components_strict(ai_comps)
@@ -1268,12 +1302,7 @@ class MSDSEngineV6:
             file_pn_hint = candidate_pns[0]
             
         if not file_pn_hint:
-            no_ext = os.path.splitext(filename)[0]
-            cleaned_name = re.sub(r'^\d+[\s_★\-]*', '', no_ext)
-            cleaned_name = re.sub(r'\([oOxX🟢🟡🔴★]\)', '', cleaned_name)
-            cleaned_name = re.sub(r'\b(MSDS|SDS|GHS|국문|개정|KOR)\b', '', cleaned_name, flags=re.I)
-            cleaned_name = cleaned_name.replace("MSDS", "").replace("SDS", "").replace("★", "").replace("개정", "").replace("국문", "").strip()
-            file_pn_hint = cleaned_name
+            file_pn_hint = clean_filename_product_hint(filename)
 
         def is_blacklisted_pn(name_str):
             if not name_str: return True
@@ -1291,6 +1320,7 @@ class MSDSEngineV6:
             log_func=original_log_func if is_scanned_strict else log_func,
             recon_data=recon_data,
         )
+        labeled_pn = extract_labeled_product_name(compact_context)
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
         # 스캔본 이미지일 경우 cover_img의 데이터를 inlineData 형식으로 payload에 추가
@@ -1324,6 +1354,15 @@ class MSDSEngineV6:
         except Exception as e:
             if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
             hybrid_pn = ""
+
+        # 문서의 1항 레이블 값은 파일명이나 생성형 응답보다 우선하는 확정 근거다.
+        if labeled_pn:
+            if log_func and hybrid_pn != labeled_pn:
+                log_func(
+                    f" ✅ [제품명 로컬 교차검증] 명시적 제품명 레이블 "
+                    f"'{labeled_pn}'을 최종값으로 확정합니다."
+                )
+            hybrid_pn = labeled_pn
 
         # [상표명 마스킹 쉴드 인터락] AI 제품명이 비어있거나 불량인 경우 file_pn_hint로 보정
         is_empty_or_blacklisted = (
