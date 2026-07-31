@@ -954,7 +954,13 @@ class MSDSEngineV6:
             "comp_engine": comp_engine if comp_engine else "제미나이"
         }
 
-    def process_msds_pipeline(self, pdf_path, log_func=None, bypass_cache=False):
+    def process_msds_pipeline(
+        self,
+        pdf_path,
+        log_func=None,
+        bypass_cache=False,
+        cancel_check=None,
+    ):
         pipeline_started = time.perf_counter()
         paddle_calls_before = len(self._paddle_call_metrics)
         pp_calls_before = self._ppstructure_usage_count
@@ -998,7 +1004,15 @@ class MSDSEngineV6:
             import gc
             gc.collect() # 파이썬 가비지 컬렉터를 즉시 격발하여 메모리 잔상 강제 소멸
             
-            res = self._process_msds_pipeline_impl(pdf_path, log_func=log_func)
+            if cancel_check and cancel_check():
+                raise InterruptedError("사용자 중지 요청")
+
+            pipeline_kwargs = {"log_func": log_func}
+            if cancel_check is not None:
+                pipeline_kwargs["cancel_check"] = cancel_check
+            res = self._process_msds_pipeline_impl(pdf_path, **pipeline_kwargs)
+            if cancel_check and cancel_check():
+                raise InterruptedError("사용자 중지 요청")
 
             if self._image_pipeline_active and log_func:
                 elapsed = time.perf_counter() - pipeline_started
@@ -1013,7 +1027,13 @@ class MSDSEngineV6:
                 )
 
             # 3. 캐시 저장
-            if f_hash and cache_enabled and res and "오류" not in res.get("교정_사유", ""):
+            if (
+                f_hash
+                and cache_enabled
+                and res
+                and res.get("used_engine") != "error_isolation"
+                and "오류" not in res.get("교정_사유", "")
+            ):
                 try:
                     if os.path.exists(cache_path):
                         with open(cache_path, "r", encoding="utf-8") as f:
@@ -1030,11 +1050,13 @@ class MSDSEngineV6:
                     pass
 
             return res
+        except InterruptedError:
+            raise
         except Exception as e:
             if log_func: log_func(f" ⚠️ [치명적 런타임 예외 격리] {e}")
             return self._get_graceful_error_dict(pdf_path, str(e), log_func=log_func)
 
-    def _process_msds_pipeline_impl(self, pdf_path, log_func=None):
+    def _process_msds_pipeline_impl(self, pdf_path, log_func=None, cancel_check=None):
         """
         대장 키 단독 직렬 분쇄 메인 파이프라인 실체 (오류는 외부 쉴드에서 격리 수거)
         """
@@ -1193,8 +1215,12 @@ class MSDSEngineV6:
 
         # 3섹션 성분 탐색 페이지 식별
         image_list, section3_text, pages, recon_data = self.extract_section3_images(
-            pdf_path, log_func=original_log_func
+            pdf_path,
+            log_func=original_log_func,
+            cancel_check=cancel_check,
         )
+        if cancel_check and cancel_check():
+            raise InterruptedError("사용자 중지 요청")
         
         full_text_for_grounding = ""
         doc_type = "스캔본"
@@ -1523,6 +1549,8 @@ class MSDSEngineV6:
                     original_log_func=original_log_func,
                     recon_data=recon_data,
                 )
+                if isinstance(components, dict) and components.get("used_engine") == "error_isolation":
+                    return components
             
             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 외부 사출 변수의 무조건적 리스트 객체 보장 인터락 강착
             if not isinstance(components, list):
@@ -2220,6 +2248,9 @@ class MSDSEngineV6:
                 precomputed_sandwich=local_table_res,
             )
 
+            if isinstance(refined_comps, dict) and refined_comps.get("used_engine") == "error_isolation":
+                return refined_comps
+
             # _trigger_ai_extraction()은 최종 GUI 패키지(dict)를 반환한다.
             # 스캔 하위 파이프라인은 성분 배열을 소비하므로, 정상 패키지의
             # 구성성분 문자열을 다시 버리지 말고 동일한 내부 배열로 복원한다.
@@ -2880,6 +2911,12 @@ class MSDSEngineV6:
     def find_section3_pages(self, doc):
         pages = []
         found_section3 = False
+        section3_pattern = re.compile(
+            r'(?:(?:SECTION\s*)?[23][\s항.:\-\/]*구성\s*성분|'
+            r'구성\s*성분[\s\S]{0,50}(?<!\d)[23](?:[.\s항\-\/]|$)|'
+            r'성분\s?및\s?함량|COMPOS|INGRED|조성물)',
+            re.I,
+        )
         # 🚨 [Fuzzy 간판 센서 보강 및 양방향 식별 경계벽 정규식 장착]
         exit_pattern = re.compile(
             r'^(?:SECTION\s*)?(?:[4-9]\s*[\.\s항\-\/]*\s*(?:응\s*급\s*조\s*치|폭발|화재|누출|취급|저장|노출|방지|FIRST|FIRE|ACCIDENTAL|HANDLING|EXPOSURE)|'
@@ -2890,9 +2927,18 @@ class MSDSEngineV6:
         for i in range(len(doc)):
             text = doc[i].get_text("text")
             if not found_section3:
+                search_text = text
+                if not section3_pattern.search(search_text):
+                    try:
+                        normalized_text = self._get_sorted_and_normalized_text(doc[i])
+                    except Exception:
+                        normalized_text = ""
+                    if normalized_text.strip():
+                        search_text = normalized_text
                 # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 본문 서술형 문장 오탐지를 원천 차단하고 역전 레이아웃만 포섭하는 정밀 식별 경계벽 완착
-                if re.search(r'(?:(?:SECTION\s*)?[23][\s항.:\-\/]*구성\s*성분|구성\s*성분[\s\S]{0,50}(?<!\d)[23](?:[.\s항\-\/]|$)|성분\s?및\s?함량|COMPOS|INGRED|조성물)', text, re.I):
+                if section3_pattern.search(search_text):
                     found_section3 = True
+                    text = search_text
             
             if found_section3:
                 pages.append(i)
@@ -3719,8 +3765,10 @@ class MSDSEngineV6:
         if not found and product_id_found: found.extend(product_id_found)
         return found, inherited_x_range
 
-    def extract_section3_images(self, pdf_path, log_func=None):
+    def extract_section3_images(self, pdf_path, log_func=None, cancel_check=None):
         try:
+            if cancel_check and cancel_check():
+                raise InterruptedError("사용자 중지 요청")
             doc = fitz.open(pdf_path)
             pages = self.find_section3_pages(doc)
             recon_data = None
@@ -3759,6 +3807,8 @@ class MSDSEngineV6:
                                 i,
                                 log_func=log_func,
                             )
+                            if cancel_check and cancel_check():
+                                raise InterruptedError("사용자 중지 요청")
                             self._paddle_call_metrics[-1]["render_scale"] = scale
                             recon_lines = self._normalize_recon_ocr_lines(result, scale=scale)
                             page_text_original = "\n".join(
@@ -3809,6 +3859,8 @@ class MSDSEngineV6:
                             # 저배율이 기준을 통과하면 고배율 시도는 실행하지 않는다.
                             if attempt["accepted"]:
                                 break
+                        except InterruptedError:
+                            raise
                         except Exception as recon_err:
                             if log_func:
                                 log_func(f"     [로컬 정찰 예외 발생] {scale:.1f}배 시도 우회: {recon_err}")
@@ -3946,6 +3998,8 @@ class MSDSEngineV6:
                     section3_text_only = raw_text[start_m.start():]
 
             return images, section3_text_only, pages, recon_data
+        except InterruptedError:
+            raise
         except Exception as e:
             if log_func: log_func(f"  🚨 [extract_section3_images 데이터 예외 발생] {e}")
             return [], "", [], None
@@ -4424,13 +4478,15 @@ class MSDSEngineV6:
 # ----------------------------------------------------------------------
 # 호환성을 위한 모듈 단위 래퍼 함수들
 # ----------------------------------------------------------------------
-def process_pdf(pdf_path, log_func=None, bypass_cache=False):
+def process_pdf(pdf_path, log_func=None, bypass_cache=False, cancel_check=None):
     engine = MSDSEngineV6()
-    return engine.process_msds_pipeline(
-        pdf_path,
-        log_func=log_func,
-        bypass_cache=bypass_cache,
-    )
+    pipeline_kwargs = {
+        "log_func": log_func,
+        "bypass_cache": bypass_cache,
+    }
+    if cancel_check is not None:
+        pipeline_kwargs["cancel_check"] = cancel_check
+    return engine.process_msds_pipeline(pdf_path, **pipeline_kwargs)
 
 analyze_msds = process_pdf
 

@@ -1163,12 +1163,20 @@ class ExtractionWorker(QThread):
                     except Exception as crop_err:
                         self.update_log_signal.emit(f"⚠️ [가속 마찰] 조각 재단 중 오작동 발생: {crop_err}")
 
+                if not self.is_running:
+                    doc.close()
+                    raise InterruptedError("사용자 중지 요청")
+
                 # --------------------------------------------------------------
                 # [무결성 가드레일] 3단계: 가속 실패 혹은 경고 시 원본 전체 페이지 롤백 (Fallback)
                 # --------------------------------------------------------------
                 if not crop_success:
                     self.update_log_signal.emit("🚀 [안전선 복구] 원본 전체 도면 스캔 방식으로 안전하게 회군합니다.")
-                    ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit)
+                    ext_res = self.core.extract_from_pdf(
+                        path,
+                        log_func=self.update_log_signal.emit,
+                        cancel_check=lambda: not self.is_running,
+                    )
                 
                 doc.close()
 
@@ -1221,6 +1229,11 @@ class ExtractionWorker(QThread):
 
                 self.result_signal.emit(res_data)
                 self.progress_signal.emit(int((i + 1) / total * 100))
+            except InterruptedError:
+                self.update_log_signal.emit(
+                    f"🛑 [{os.path.basename(path)}] 현재 파일 처리를 중단했습니다."
+                )
+                break
             except Exception as e:
                 self.update_log_signal.emit(f"[!] 오류 발생 ({os.path.basename(path)}): {e}")
                 err_data = {

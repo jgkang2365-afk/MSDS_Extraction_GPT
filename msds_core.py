@@ -71,11 +71,15 @@ class MSDSCore:
             
         return "-", "-"
 
-    def extract_from_pdf(self, pdf_path, log_func=None):
+    def extract_from_pdf(self, pdf_path, log_func=None, cancel_check=None):
         """1단계: PDF에서 제품명 및 성분 추출"""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {pdf_path}")
-        ext_res = msds_engine_v6.process_pdf(pdf_path, log_func=log_func)
+        ext_res = msds_engine_v6.process_pdf(
+            pdf_path,
+            log_func=log_func,
+            cancel_check=cancel_check,
+        )
         
         # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동
         if ext_res and isinstance(ext_res, dict):

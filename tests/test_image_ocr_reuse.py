@@ -321,6 +321,99 @@ class ImageOCRReuseTests(unittest.TestCase):
                 json.loads(registry_path.read_text(encoding="utf-8")), cached_registry
             )
 
+    def test_error_isolation_result_is_not_cached(self):
+        engine = engine_module.MSDSEngineV6()
+        isolated_result = {
+            "제품명": "Failed",
+            "구성성분": "",
+            "교정_사유": "추출 실패 격리수거: 유효한 성분 데이터가 존재하지 않음",
+            "used_engine": "error_isolation",
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+            pdf_path = temp_path / "failed.pdf"
+            pdf_path.write_bytes(b"failed-extraction")
+            registry_path = temp_path / "msds_cache_registry.json"
+
+            with patch.object(
+                engine_module, "__file__", str(temp_path / "msds_engine_v6.py")
+            ), patch.object(
+                engine, "_process_msds_pipeline_impl", return_value=isolated_result
+            ):
+                result = engine.process_msds_pipeline(str(pdf_path))
+
+            self.assertEqual(result, isolated_result)
+            self.assertFalse(registry_path.exists())
+
+    def test_scan_pipeline_propagates_error_isolation_package(self):
+        engine = engine_module.MSDSEngineV6()
+        isolated_result = {
+            "제품명": "금속광택제튜브타입",
+            "구성성분": "",
+            "교정_사유": "추출 실패 격리수거: 외부 AI 호출 실패 또는 정제 에러",
+            "used_engine": "error_isolation",
+        }
+
+        with patch.object(engine_module, "get_ocr_engine", return_value=object()), patch.object(
+            engine, "run_flexible_sandwich_pipeline", return_value={"data": "", "raw_data": ""}
+        ), patch.object(engine, "_trigger_ai_extraction", return_value=isolated_result):
+            result = engine._process_scan_pdf_v6(
+                pdf_path="failed.pdf",
+                image_list=[{"data": "image", "mimeType": "image/png"}],
+                product_name="금속광택제튜브타입",
+            )
+
+        self.assertIs(result, isolated_result)
+
+    def test_section3_detection_retries_with_sorted_normalized_blocks(self):
+        class _BrokenReadingOrderPage:
+            def get_text(self, mode):
+                if mode == "text":
+                    return "명칭\n및\n함유량\n3.\n구성\n성분"
+                if mode == "blocks":
+                    return [
+                        (0, 0, 100, 20, "3. 구성성분의 명칭 및 함유량"),
+                        (0, 30, 100, 50, "64-17-5 50%"),
+                    ]
+                raise AssertionError(mode)
+
+        engine = engine_module.MSDSEngineV6()
+        pages = engine.find_section3_pages(_Document([_BrokenReadingOrderPage()]))
+
+        self.assertEqual(pages, [0])
+
+    def test_recon_honors_cancel_request_before_followup_processing(self):
+        engine, document, recon_ocr, _render_log = self._fixture()
+
+        with patch.object(engine_module.fitz, "open", return_value=document), patch.object(
+            engine_module, "get_ocr_engine", return_value=recon_ocr
+        ):
+            with self.assertRaisesRegex(InterruptedError, "사용자 중지 요청"):
+                engine.extract_section3_images(
+                    "scan.pdf",
+                    cancel_check=lambda: recon_ocr.calls >= 1,
+                )
+
+        self.assertEqual(recon_ocr.calls, 1)
+
+    def test_pipeline_does_not_convert_cancel_request_to_error_isolation(self):
+        engine = engine_module.MSDSEngineV6()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "cancelled.pdf"
+            pdf_path.write_bytes(b"cancelled-extraction")
+            with patch.object(
+                engine,
+                "_process_msds_pipeline_impl",
+                side_effect=InterruptedError("사용자 중지 요청"),
+            ):
+                with self.assertRaisesRegex(InterruptedError, "사용자 중지 요청"):
+                    engine.process_msds_pipeline(
+                        str(pdf_path),
+                        cancel_check=lambda: False,
+                    )
+
     def test_image_pipeline_logs_elapsed_paddle_and_ppstructure_comparison(self):
         engine = engine_module.MSDSEngineV6()
         logs = []
