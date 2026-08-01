@@ -1,423 +1,359 @@
-# -*- coding: utf-8 -*-
-# MSDS 전수 회귀 검증 레이스 가동 및 골든 마스터 안전 갱신 인터락 스크립트
+#!/usr/bin/env python
+"""선택형 MSDS 골든 PDF 회귀 실행기.
 
-import os
-import sys
-import json
-import re
-import time
-import glob
+골든 원본을 자동 수정하지 않으며, 외부 유료 AI 호출은 항상 차단한다.
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
 import hashlib
-import unicodedata
-import shutil
+import json
+import os
+import re
+import sys
+from collections import Counter, defaultdict
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Iterable
 
-# 컴파일 캐시 꼬임 방지를 위해 pycache 폴더 선제 세척
-def clean_pycache():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    pycache_paths = [
-        os.path.join(base_dir, "__pycache__"),
-        os.path.join(base_dir, "opendataloader", "__pycache__")
-    ]
-    for p in pycache_paths:
-        if os.path.exists(p):
-            try:
-                shutil.rmtree(p)
-                print(f"[*] 파이썬 컴파일 캐시 제거 완료: {p}")
-            except Exception as e:
-                print(f"[!] 캐시 제거 중 예외 발생: {e}")
 
-clean_pycache()
+ROOT = Path(__file__).resolve().parent
+DEFAULT_GOLDEN = ROOT / "golden" / "msds_golden_v1.json"
+DEFAULT_PDF_DIR = ROOT / "TEST_File"
+OVERRIDES_FILE = ROOT / "golden" / "regression_case_overrides.json"
 
-# 프로젝트 코어 및 엔진 임포트
-import msds_engine_v6
-from msds_engine_v6 import MSDSEngineV6
-from msds_core import MSDSCore
 
-# 전역 몽키 패칭 변수 배선
-current_processing_file = None
-filter_status_map = {}
-balances_status_map = {}
+class GoldenValidationError(RuntimeError):
+    def __init__(self, code: str, detail: str = "") -> None:
+        super().__init__(f"{code}: {detail}" if detail else code)
+        self.code = code
+        self.detail = detail
 
-# 천칭 필터(verify_mathematical_천칭_filter) 몽키 패칭
-original_verify_filter = MSDSEngineV6.verify_mathematical_천칭_filter
-def patched_verify_filter(self, text):
-    is_ok, reason = original_verify_filter(self, text)
-    if current_processing_file:
-        filter_status_map[current_processing_file] = "🟢정상" if is_ok else f"🔴차단({reason})"
-    return is_ok, reason
 
-MSDSEngineV6.verify_mathematical_천칭_filter = patched_verify_filter
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-# 화학 밸런스 검증(validate_chemical_balances) 몽키 패칭
-original_validate_balances = MSDSEngineV6.validate_chemical_balances
-def patched_validate_balances(self, comps, log_func=None):
-    is_ok = original_validate_balances(self, comps, log_func)
-    if current_processing_file:
-        balances_status_map[current_processing_file] = "🟢정상" if is_ok else "🔴차단"
-    return is_ok
 
-MSDSEngineV6.validate_chemical_balances = patched_validate_balances
+def normalize_content(value: Any) -> str:
+    """공백·범위 기호만 정규화하고 부등호 의미는 보존한다."""
+    text = str(value or "").strip().replace("％", "%")
+    text = text.replace("～", "~").replace("–", "~").replace("—", "~")
+    text = re.sub(r"(?<=\d)\s*-\s*(?=\d)", "~", text)
+    text = re.sub(r"\s+", "", text)
+    return text
 
-# 동아시아 문자 폭(East Asian Width) 정렬 패딩 정렬 알고리즘 구현
-def get_visual_width(s):
-    width = 0
-    for char in s:
-        status = unicodedata.east_asian_width(char)
-        if status in ('W', 'F', 'A'):
-            width += 2
-        else:
-            width += 1
-    return width
 
-def pad_string(s, target_width, align='left'):
-    s = str(s)
-    current_width = get_visual_width(s)
-    pad_len = target_width - current_width
-    if pad_len <= 0:
-        return s
-    
-    if align == 'left':
-        return s + ' ' * pad_len
-    elif align == 'right':
-        return ' ' * pad_len + s
-    else:
-        left_pad = pad_len // 2
-        right_pad = pad_len - left_pad
-        return ' ' * left_pad + s + ' ' * right_pad
+def _flatten_tags(case: dict[str, Any]) -> set[str]:
+    tags: set[str] = set(case.get("regression_tags") or [])
+    for values in (case.get("tags") or {}).values():
+        tags.update(values or [])
+    return tags
 
-# 마크다운 표 출력 헬퍼 함수
-def print_markdown_table(headers, rows, alignments=None):
-    if not alignments:
-        alignments = ['left'] * len(headers)
-        
-    col_widths = [get_visual_width(h) for h in headers]
-    for row in rows:
-        for idx, val in enumerate(row):
-            col_widths[idx] = max(col_widths[idx], get_visual_width(str(val)))
-            
-    header_line = "| " + " | ".join(pad_string(h, col_widths[idx], alignments[idx]) for idx, h in enumerate(headers)) + " |"
-    print(header_line)
-    
-    sep_parts = []
-    for idx, align in enumerate(alignments):
-        width = col_widths[idx]
-        if align == 'left':
-            sep_parts.append(":" + "-" * (width - 1))
-        elif align == 'right':
-            sep_parts.append("-" * (width - 1) + ":")
-        else:
-            sep_parts.append(":" + "-" * (width - 2) + ":")
-    sep_line = "| " + " | ".join(sep_parts) + " |"
-    print(sep_line)
-    
-    for row in rows:
-        row_line = "| " + " | ".join(pad_string(val, col_widths[idx], alignments[idx]) for idx, val in enumerate(row)) + " |"
-        print(row_line)
 
-def run_race():
-    global current_processing_file
-    # 회귀 검증은 과거 추출 캐시를 사용하면 수정된 엔진 로직을 검증하지
-    # 못한다. 이 프로세스 전체에서 엔진 결과 캐시 읽기/쓰기를 차단한다.
-    os.environ["ANTIGRAVITY_GOLDEN_VALIDATION"] = "1"
-    print("\n" + "="*80)
-    print("🚀 [전수 레이스 가동] 47개 MSDS 파일 순차 가동 시작")
-    print("="*80)
-    
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    test_file_dir = os.path.join(base_dir, "TEST_File")
-    pdf_files = glob.glob(os.path.join(test_file_dir, "*.pdf")) + glob.glob(os.path.join(test_file_dir, "*.PDF"))
-    pdf_files = list(set(pdf_files))
-    
-    def get_file_num(path):
-        fn = os.path.basename(path)
-        m = re.match(r'^(\d+)', fn)
-        return int(m.group(1)) if m else 999
-        
-    pdf_files = sorted(pdf_files, key=get_file_num)
-    
-    mes_cas_map = {}
-    mes_file = os.path.join(base_dir, "msds_index.json")
-    if os.path.exists(mes_file):
-        try:
-            with open(mes_file, "r", encoding="utf-8") as f:
-                mes_data = json.load(f)
-            for entry in mes_data:
-                cas_key = str(entry.get("CAS No.", "")).strip()
-                if cas_key and cas_key.lower() != 'nan' and re.match(r'^\d{2,7}-\d{2}-\d$', cas_key):
-                    if cas_key not in mes_cas_map:
-                        mes_cas_map[cas_key] = entry
-            print(f"[*] msds_index.json 마스터 데이터 로드 완료 (매핑 {len(mes_cas_map)}건)")
-        except Exception as e:
-            print(f"[!] 마스터 데이터 로드 중 오류: {e}")
-            
-    core = MSDSCore()
-    results = []
-    
-    for idx, f_path in enumerate(pdf_files, 1):
-        filename = os.path.basename(f_path)
-        file_id = f"{get_file_num(f_path):03d}"
-        print(f"[*] [{idx}/{len(pdf_files)}] 가동 대상 진입: {filename}")
-        
-        f_hash = core.calculate_file_hash(f_path)
-        
-        current_processing_file = f_path
-        filter_status_map[f_path] = "🟢정상"
-        balances_status_map[f_path] = "🟢정상"
-        
-        start_t = time.time()
-        
-        try:
-            ext_res = core.extract_from_pdf(f_path, log_func=print)
-            raw_val_res = core.validate_with_kosha(ext_res.get("구성성분", ""), f_hash=f_hash)
-            
-            elapsed = time.time() - start_t
-            
-            cas_content = ext_res.get("구성성분", "")
-            cas_to_content = {}
-            if cas_content:
-                for part in cas_content.split(";"):
-                    part = part.strip()
-                    m = re.search(r"(\d{2,7}-\d{2}-\d)\s*(?:\(([^)]+)\))?", part)
-                    if m:
-                        cas_to_content[m.group(1)] = m.group(2) if m.group(2) else ""
-            
-            res_work_subjects = []
-            res_work_non_subjects = []
-            components_for_golden = []
-            
-            for c in raw_val_res.get("components", []):
-                name = c.get("name", "Unknown")
-                cas = c.get("cas", "")
-                range_val = cas_to_content.get(cas, c.get("content", ""))
-                
-                if re.search(r'[가-힣]', name):
-                    name_no_eng = re.sub(r'\s*\([A-Za-z\s\d,]+\)$', '', name)
-                    clean_name = name_no_eng.strip()
-                else:
-                    clean_name = name.strip()
-                    
-                mes_std_name = msds_engine_v6.MES_MASTER_MAP.get(cas, "")
-                if mes_std_name:
-                    clean_name = str(mes_std_name)
-                    clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
-                else:
-                    mes_entry = mes_cas_map.get(cas, {})
-                    fallback_name = mes_entry.get("측정대상 물질명")
-                    if fallback_name and str(fallback_name).lower() != 'nan':
-                        clean_name = str(fallback_name)
-                        clean_name = re.sub(r'\s*\((?:STEL|TWA|PEL|TLV)\)', '', clean_name, flags=re.IGNORECASE).strip()
-                
-                osh = c.get("osh", {})
-                is_work = osh.get("is_measured", False)
-                
-                if not range_val or str(range_val).strip() == "":
-                    range_val = "미기재%"
-                    
-                if is_work:
-                    percentage = 0.0
-                    nums = re.findall(r'[\d\.]+', range_val)
-                    if nums:
-                        try: percentage = max(float(n) for n in nums)
-                        except: percentage = 0.0
-                        if "<" in range_val and percentage <= 1.0:
-                            percentage = 0.5
-                    else:
-                        percentage = 100.0
-                        
-                    is_ge_1 = (percentage >= 1.0)
-                    if is_ge_1:
-                        res_work_subjects.append(f"{clean_name}({range_val})")
-                    else:
-                        res_work_non_subjects.append(f"{clean_name}({range_val})")
-                
-                components_for_golden.append({
-                    "chemical_name": clean_name,
-                    "cas": cas,
-                    "content_raw": range_val.replace("%", ""),
-                    "content_expected": range_val if range_val.endswith("%") or range_val == "Rem." or range_val == "미기재%" else f"{range_val}%",
-                    "source_page": 1
-                })
-                
-            subj_str = "; ".join(res_work_subjects)
-            non_subj_str = f"측정 비대상[{'; '.join(res_work_non_subjects)}]" if res_work_non_subjects else ""
-            final_work_str = "; ".join(filter(None, [subj_str, non_subj_str]))
-            
-            prod_name = ext_res.get("제품명", "")
-            is_welding = ("용접" in prod_name) or ("welding" in prod_name.lower())
-            has_iron = "7439-89-6" in cas_to_content
-            if is_welding and has_iron:
-                welding_hazard = "용접흄; 산화철(분진, 흄)"
-                if final_work_str:
-                    final_work_str = f"{welding_hazard}; {final_work_str}"
-                else:
-                    final_work_str = welding_hazard
-            
-            doc_type = ext_res.get("doc_type", "디지털")
-            
-            f_status = filter_status_map.get(f_path, "🟢정상")
-            b_status = balances_status_map.get(f_path, "🟢정상")
-            final_balance_result = "🟢정상"
-            if "🔴" in f_status:
-                final_balance_result = f_status
-            elif "🔴" in b_status:
-                final_balance_result = "🔴차단(가드레일 위반)"
-                
-            results.append({
-                "id": file_id,
-                "file": filename,
-                "source_sha256": f_hash,
-                "document_type": "digital" if doc_type == "디지털" else "scanned",
-                "product_name": prod_name,
-                "components": components_for_golden,
-                "used_engine": ext_res.get("used_engine", "local_bypass"),
-                "신호등": ext_res.get("신호등", "🟢"),
-                "integrity_score": ext_res.get("integrity_score", 100),
-                "balance_result": final_balance_result,
-                "work_subjects": final_work_str,
-                "extracted_cas_content": cas_content
-            })
-            
-        except Exception as e:
-            print(f"[💥 크래시 격발] 파일 {filename} 처리 중 에러 발생: {e}")
-            results.append({
-                "id": file_id,
-                "file": filename,
-                "source_sha256": f_hash,
-                "document_type": "unknown",
-                "product_name": "",
+def _apply_override(case: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
+    merged = copy.deepcopy(case)
+    override = overrides.get(str(case.get("source_sha256", "")).lower())
+    if override:
+        for key in ("regression_tier", "tags", "reasons"):
+            if key in override:
+                merged[key] = copy.deepcopy(override[key])
+    return merged
+
+
+def load_cases(golden_path: Path, pdf_dir: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    if not golden_path.exists():
+        raise GoldenValidationError("GOLDEN_FILE_MISSING", str(golden_path))
+    data = json.loads(golden_path.read_text(encoding="utf-8"))
+    raw_cases = data.get("cases")
+    if not isinstance(raw_cases, list):
+        raise GoldenValidationError("GOLDEN_FILE_INVALID", "cases 배열이 없습니다")
+    overrides: dict[str, Any] = {}
+    if OVERRIDES_FILE.exists():
+        overrides = json.loads(OVERRIDES_FILE.read_text(encoding="utf-8")).get("cases", {})
+
+    draft_path = golden_path.with_name(golden_path.stem + ".classification_draft.json")
+    classified_by_key: dict[tuple[str, str], dict[str, Any]] = {}
+    draft_unregistered: dict[str, dict[str, Any]] = {}
+    if draft_path.exists():
+        draft = json.loads(draft_path.read_text(encoding="utf-8"))
+        for item in draft.get("cases", []):
+            classified_by_key[(str(item.get("file", "")), str(item.get("source_sha256", "")).lower())] = item
+        draft_unregistered = {str(item.get("source_sha256", "")).lower(): item for item in draft.get("unregistered_pdfs", [])}
+
+    warnings: list[str] = []
+    cases = []
+    for raw_case in raw_cases:
+        case = copy.deepcopy(raw_case)
+        classified = classified_by_key.get((str(case.get("file", "")), str(case.get("source_sha256", "")).lower()))
+        if classified:
+            for key in ("regression_tier", "tags", "classification"):
+                if key in classified:
+                    case[key] = copy.deepcopy(classified[key])
+        cases.append(_apply_override(case, overrides))
+    pdfs = sorted(p for p in pdf_dir.glob("*") if p.is_file() and p.suffix.lower() == ".pdf")
+    by_name = {p.name: p for p in pdfs}
+    by_hash: dict[str, list[Path]] = defaultdict(list)
+    for path in pdfs:
+        by_hash[sha256_file(path)].append(path)
+
+    for case in cases:
+        names = [str(case.get("file", "")), *[str(v) for v in case.get("aliases", [])]]
+        named = next((by_name[name] for name in names if name in by_name), None)
+        if named is None:
+            warnings.append(f"GOLDEN_PDF_MISSING:{case.get('id')}:{case.get('file')}")
+            continue
+        case["_pdf_path"] = str(named)
+        actual_hash = sha256_file(named)
+        if actual_hash.lower() != str(case.get("source_sha256", "")).lower():
+            case["_hash_mismatch"] = actual_hash
+
+    # 승인 전 골든에 기록할 수 없는 사용자 검토 사례도 해시 기반 override로 부분 회귀한다.
+    registered_hashes = {str(c.get("source_sha256", "")).lower() for c in cases}
+    for digest, override in overrides.items():
+        if digest.lower() in registered_hashes:
+            continue
+        matches = by_hash.get(digest.lower(), [])
+        if len(matches) == 1:
+            path = matches[0]
+            cases.append({
+                "id": re.match(r"^(\d+)", path.name).group(1) if re.match(r"^(\d+)", path.name) else path.stem,
+                "file": path.name,
+                "source_sha256": digest.lower(),
                 "components": [],
-                "used_engine": "error_isolation",
-                "신호등": "🔴",
-                "integrity_score": 0,
-                "balance_result": f"🔴에러({str(e)})",
-                "work_subjects": "",
-                "extracted_cas_content": ""
+                "product_name": {},
+                "_pdf_path": str(path),
+                "_review_only": True,
+                **copy.deepcopy(override),
             })
-            
-    print("\n" + "="*80)
-    print("🚨 [2중 대조 상세 표 사출]")
-    print("="*80)
-    
-    print("\n[표 1] 기계실 기본 정보 요약 표\n")
-    headers1 = ["번호", "파일명", "엔진종류", "신호등", "무결성 점수", "천칭 필터 결과", "제품명(최종)"]
-    rows1 = []
-    for r in results:
-        fn_short = r["file"]
-        if len(fn_short) > 25:
-            fn_short = fn_short[:22] + "..."
-        rows1.append([
-            r["id"],
-            fn_short,
-            r["used_engine"],
-            r["신호등"],
-            f"{r['integrity_score']}점",
-            r["balance_result"],
-            r["product_name"]
-        ])
-    print_markdown_table(headers1, rows1, alignments=['center', 'left', 'center', 'center', 'center', 'left', 'left'])
-    
-    print("\n[표 2] CAS/측정대상 상세 대조 표\n")
-    headers2 = ["번호", "파일명", "최종 CAS(함량) 체인", "KOSHA 측정대상 물질명"]
-    rows2 = []
-    for r in results:
-        fn_short = r["file"]
-        if len(fn_short) > 25:
-            fn_short = fn_short[:22] + "..."
-        rows2.append([
-            r["id"],
-            fn_short,
-            r["extracted_cas_content"],
-            r["work_subjects"]
-        ])
-    print_markdown_table(headers2, rows2, alignments=['center', 'left', 'left', 'left'])
-    
-    regression_failures = 0
-    golden_file = os.path.join(base_dir, "golden", "msds_golden_v1.json")
-    
-    if os.path.exists(golden_file):
-        print("\n" + "="*80)
-        print("🕵️ [골든 마스터 회귀 검증 집행 시작]")
-        print("="*80)
-        
-        with open(golden_file, "r", encoding="utf-8") as f:
-            golden_data = json.load(f)
-            
-        golden_cases = golden_data.get("cases", [])
-        results_map = {r["id"]: r for r in results}
-        
-        for g_case in golden_cases:
-            g_id = g_case.get("id")
-            g_file = g_case.get("file")
-            
-            matched_r = results_map.get(g_id)
-            if not matched_r:
-                print(f"[❌ 회귀 오류] 골든 케이스 {g_id}({g_file})에 매칭되는 실행 결과를 찾지 못했습니다.")
-                regression_failures += 1
-                continue
-                
-            def clean_pn_for_compare(pn):
-                p_clean = str(pn).lower().strip()
-                p_clean = p_clean.replace("™", "").replace("tm", "").replace("(tm)", "")
-                return re.sub(r'[^a-zA-Z0-9가-힣]', '', p_clean)
 
-            expected_pn = g_case["product_name"]["expected"]
-            allowed_variants = g_case["product_name"].get("allowed_variants", [])
-            clean_expected = clean_pn_for_compare(expected_pn)
-            clean_allowed = {clean_pn_for_compare(v) for v in allowed_variants}
-            allowed_set = {clean_expected} | clean_allowed
-            
-            clean_actual = clean_pn_for_compare(matched_r["product_name"])
-            
-            if clean_actual not in allowed_set:
-                print(f"[❌ 제품명 불일치] ID {g_id} | 기대값: {expected_pn} | 실제값: '{matched_r['product_name']}'")
-                regression_failures += 1
-                
-            g_components = g_case.get("components", [])
-            actual_comps = matched_r["components"]
-            
-            g_comp_map = {c["cas"]: unicodedata.normalize("NFKC", c["content_expected"]).replace(" ", "").replace("%", "") for c in g_components}
-            actual_comp_map = {c["cas"]: unicodedata.normalize("NFKC", c["content_expected"]).replace(" ", "").replace("%", "") for c in actual_comps}
-            
-            if len(g_comp_map) != len(actual_comp_map):
-                print(f"[❌ 성분 개수 불일치] ID {g_id} | 기대개수: {len(g_comp_map)} | 실제개수: {len(actual_comp_map)}")
-                print(f"  ├─ 기대 CAS 목록: {list(g_comp_map.keys())}")
-                print(f"  └─ 실제 CAS 목록: {list(actual_comp_map.keys())}")
-                regression_failures += 1
-                continue
-                
-            for cas, expected_cont in g_comp_map.items():
-                if cas not in actual_comp_map:
-                    print(f"[❌ 성분 유실] ID {g_id} | 기대 CAS: {cas} 누락됨")
-                    regression_failures += 1
-                else:
-                    actual_cont = actual_comp_map[cas]
-                    if expected_cont != actual_cont:
-                        print(f"[❌ 함량 불일치] ID {g_id} | CAS {cas} | 기대치: {expected_cont}% | 실제치: {actual_cont}%")
-                        regression_failures += 1
-                        
-        print("-"*80)
-        print(f"📊 [골든 마스터 회귀 검증 마감] 불일치 회귀 오류 수: {regression_failures}건")
-        print("="*80 + "\n")
-    else:
-        print(f"\n[!] 골든 마스터 파일이 존재하지 않아 회귀 검증을 우회합니다: {golden_file}")
-        
-    if regression_failures == 0:
-        print("🟢 [읽기 전용 Golden 검증 통과] 회귀 오류 0건 인증 완료!")
-        print("🔒 msds_golden_v1.json은 사용자 승인 없이 수정하지 않고 원본 그대로 보존합니다.")
-    else:
-        print("🔴 [골든 마스터 갱신 인터락 차단] 회귀 오류가 실재하므로 골든 마스터 원장을 갱신하지 않고 폐쇄합니다.")
-        sys.exit(1)
+    registered_names = {str(c.get("file", "")) for c in raw_cases}
+    for path in pdfs:
+        digest = sha256_file(path)
+        if path.name not in registered_names and digest not in overrides:
+            warnings.append(f"PDF_NOT_REGISTERED:{path.name}")
+            classified = draft_unregistered.get(digest, {})
+            cases.append({
+                "id": re.match(r"^(\d+)", path.name).group(1) if re.match(r"^(\d+)", path.name) else path.stem,
+                "file": path.name,
+                "source_sha256": digest,
+                "components": [],
+                "product_name": {},
+                "_pdf_path": str(path),
+                "_review_only": True,
+                "regression_tier": classified.get("regression_tier", "full"),
+                "tags": copy.deepcopy(classified.get("tags", {})),
+                "classification": copy.deepcopy(classified.get("classification", {})),
+            })
 
-    print("\n" + "="*80)
-    print("🧪 [최종 유닛 테스트 기동] msds_engine_v6.self_test_regression()")
-    print("="*80)
+    id_counts = Counter(str(c.get("id", "")) for c in raw_cases)
+    hash_counts = Counter(str(c.get("source_sha256", "")).lower() for c in raw_cases)
+    number_counts = Counter((re.match(r"^(\d+)", p.name).group(1) if re.match(r"^(\d+)", p.name) else "") for p in pdfs)
+    warnings.extend(f"DUPLICATE_ID:{value}" for value, count in id_counts.items() if value and count > 1)
+    warnings.extend(f"DUPLICATE_SHA256:{value}" for value, count in hash_counts.items() if value and count > 1)
+    warnings.extend(f"DUPLICATE_FILE_NUMBER:{value}" for value, count in number_counts.items() if value and count > 1)
+    return cases, sorted(set(warnings))
+
+
+def select_cases(
+    cases: Iterable[dict[str, Any]], *, ids: set[str] | None = None,
+    tags: list[str] | None = None, failure_modes: list[str] | None = None,
+    tier: str | None = None, select_all: bool = False, match_all: bool = False,
+) -> list[dict[str, Any]]:
+    ids = ids or set()
+    tags = tags or []
+    failure_modes = failure_modes or []
+    selected: list[dict[str, Any]] = []
+    for case in cases:
+        checks: list[bool] = []
+        if ids:
+            checks.append(str(case.get("id", "")) in ids)
+        flat_tags = _flatten_tags(case)
+        if tags:
+            checks.append(all(tag in flat_tags for tag in tags) if match_all else any(tag in flat_tags for tag in tags))
+        if failure_modes:
+            case_modes = set((case.get("tags") or {}).get("failure_modes") or [])
+            checks.append(all(mode in case_modes for mode in failure_modes) if match_all else any(mode in case_modes for mode in failure_modes))
+        if tier:
+            checks.append(case.get("regression_tier") == tier)
+        if select_all or (checks and all(checks)):
+            selected.append(case)
+    return selected
+
+
+def _parse_components(result: dict[str, Any]) -> dict[str, str]:
+    values: dict[str, str] = {}
+    raw = result.get("함유량")
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                cas = str(item.get("cas") or item.get("cas_no") or "").strip()
+                content = item.get("content") or item.get("percentage") or ""
+                if cas:
+                    values[cas] = normalize_content(content)
+    components = result.get("구성성분")
+    if isinstance(components, list):
+        for item in components:
+            if isinstance(item, dict):
+                cas = str(item.get("cas") or item.get("cas_no") or "").strip()
+                if cas:
+                    values[cas] = normalize_content(item.get("content") or item.get("percentage"))
+    elif isinstance(components, str):
+        for cas, content in re.findall(r"(\d{2,7}-\d{2}-\d)[^;]*?\(([^()]*)\)", components):
+            values[cas] = normalize_content(content)
+    return values
+
+
+def compare_case(case: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
+    differences: list[dict[str, Any]] = []
+    if case.get("_review_only"):
+        return differences
+    expected_name = str((case.get("product_name") or {}).get("expected") or "").strip()
+    allowed = {expected_name, *[str(v).strip() for v in (case.get("product_name") or {}).get("allowed_variants", [])]}
+    actual_name = str(result.get("제품명") or result.get("product_name") or "").strip()
+    if expected_name and actual_name not in allowed:
+        differences.append({"field": "product_name", "expected": expected_name, "actual": actual_name})
+    actual_components = _parse_components(result)
+    for component in case.get("components") or []:
+        cas = str(component.get("cas") or "")
+        expected = normalize_content(component.get("content_expected") or component.get("content_raw"))
+        actual = actual_components.get(cas)
+        if actual != expected:
+            differences.append({"field": "component", "cas": cas, "expected": expected, "actual": actual})
+    return differences
+
+
+def _metric_value(value: Any, key: str) -> int:
+    if isinstance(value, dict):
+        direct = value.get(key)
+        if isinstance(direct, (int, float)) and not isinstance(direct, bool):
+            return int(direct)
+        return max((_metric_value(child, key) for child in value.values()), default=0)
+    if isinstance(value, list):
+        return max((_metric_value(child, key) for child in value), default=0)
+    return 0
+
+
+def run_case(case: dict[str, Any]) -> dict[str, Any]:
+    if case.get("_hash_mismatch"):
+        raise GoldenValidationError(
+            "GOLDEN_SOURCE_HASH_MISMATCH",
+            f"{case.get('id')} expected={case.get('source_sha256')} actual={case['_hash_mismatch']}",
+        )
+    path_value = case.get("_pdf_path")
+    if not path_value:
+        return {"status": "pdf_missing", "result": {}, "differences": []}
+    os.environ["ANTIGRAVITY_DISABLE_PAID_AI"] = "1"
+    os.environ["ANTIGRAVITY_GOLDEN_VALIDATION"] = "1"
     try:
-        msds_engine_v6.self_test_regression()
-        print("🟢 [유닛 테스트 최종 통과] self_test_regression() 완착 성공!")
-    except Exception as e:
-        print(f"🔴 [유닛 테스트 크래시] self_test_regression() 수행 중 에러 격발: {e}")
-        sys.exit(1)
+        from msds_engine_v6 import process_pdf
+        result = process_pdf(path_value, bypass_cache=True)
+        if not isinstance(result, dict):
+            raise TypeError(f"엔진 결과 타입: {type(result).__name__}")
+        differences = compare_case(case, result)
+        status = "partial" if case.get("_review_only") else ("golden_mismatch" if differences else "complete")
+        if result.get("status") in {"ERROR", "error", "partial_timeout"}:
+            status = "extraction_failed" if result.get("status") != "partial_timeout" else "partial"
+        return {
+            "status": status, "result": result, "differences": differences, "ai_not_run": True,
+            "duplicate_ocr_calls": _metric_value(result, "duplicate_ocr_calls"),
+            "duplicate_ai_calls": _metric_value(result, "duplicate_ai_calls"),
+        }
+    except GoldenValidationError:
+        raise
+    except Exception as exc:
+        return {"status": "extraction_failed", "result": {}, "differences": [], "error": f"{type(exc).__name__}: {exc}", "ai_not_run": True}
+
+
+def write_candidate(selected: list[dict[str, Any]], results: list[dict[str, Any]]) -> Path:
+    output_dir = ROOT / "golden" / "candidates"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output = output_dir / f"golden_candidate_{stamp}.json"
+    entries = []
+    for case, run in zip(selected, results):
+        entries.append({
+            "id": case.get("id"),
+            "file": case.get("file"),
+            "pdf_sha256": case.get("source_sha256"),
+            "existing_expected": {"product_name": case.get("product_name"), "components": case.get("components", [])},
+            "current_extraction": run.get("result", {}),
+            "differences": run.get("differences", []),
+            "change_reason": "",
+            "user_expected": None,
+            "tags": case.get("tags", {}),
+            "approved": False,
+            "user_approval_required": True,
+        })
+    output.write_text(json.dumps({"schema_version": "1.0", "created_at": datetime.now().isoformat(), "cases": entries}, ensure_ascii=False, indent=2), encoding="utf-8")
+    return output
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="선택형 MSDS 골든 PDF 회귀")
+    parser.add_argument("--ids", help="쉼표로 구분한 골든 ID")
+    parser.add_argument("--tag", action="append", default=[], help="태그(여러 번 지정 가능)")
+    parser.add_argument("--failure-mode", action="append", default=[], help="failure_modes 태그")
+    parser.add_argument("--tier", choices=("focused", "core", "full"))
+    parser.add_argument("--all", action="store_true", dest="select_all")
+    parser.add_argument("--match-all", action="store_true", help="여러 태그를 AND로 선택")
+    parser.add_argument("--strict", action="store_true", help="미등록·중복 경고도 실패 처리")
+    parser.add_argument("--write-golden-candidate", action="store_true")
+    parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
+    parser.add_argument("--pdf-dir", type=Path, default=DEFAULT_PDF_DIR)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    if not any((args.ids, args.tag, args.failure_mode, args.tier, args.select_all)):
+        args.tier = "core"
+    ids = {value.strip() for value in (args.ids or "").split(",") if value.strip()}
+    try:
+        cases, warnings = load_cases(args.golden, args.pdf_dir)
+        for warning in warnings:
+            print(f"WARNING {warning}")
+        if warnings and args.strict:
+            raise GoldenValidationError("GOLDEN_INVENTORY_STRICT_FAILURE", f"warnings={len(warnings)}")
+        selected = select_cases(
+            cases, ids=ids, tags=args.tag, failure_modes=args.failure_mode,
+            tier=args.tier, select_all=args.select_all, match_all=args.match_all,
+        )
+        if not selected:
+            raise GoldenValidationError("GOLDEN_SELECTION_EMPTY")
+        print(f"SELECTED_COUNT={len(selected)}")
+        for case in selected:
+            print(f"SELECTED {case.get('id')} {case.get('file')}")
+        results = []
+        for index, case in enumerate(selected, 1):
+            print(f"RUN {index}/{len(selected)} {case.get('id')}")
+            run = run_case(case)
+            results.append(run)
+            print(f"RESULT {case.get('id')} {run['status']}")
+            if run.get("differences"):
+                print("DIFFERENCES " + json.dumps(run["differences"], ensure_ascii=False))
+            if run.get("error"):
+                print(f"ERROR_DETAIL {run['error']}")
+        counts = Counter(run["status"] for run in results)
+        counts["ai_not_run"] = sum(bool(run.get("ai_not_run")) for run in results)
+        counts["duplicate_ocr_calls"] = sum(int(run.get("duplicate_ocr_calls", 0)) for run in results)
+        counts["duplicate_ai_calls"] = sum(int(run.get("duplicate_ai_calls", 0)) for run in results)
+        print("SUMMARY " + json.dumps(dict(counts), ensure_ascii=False, sort_keys=True))
+        if args.write_golden_candidate:
+            print(f"GOLDEN_CANDIDATE={write_candidate(selected, results)}")
+        return 1 if any((
+            counts["golden_mismatch"], counts["extraction_failed"], counts["pdf_missing"],
+            counts["duplicate_ocr_calls"], counts["duplicate_ai_calls"],
+        )) else 0
+    except GoldenValidationError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
 
 if __name__ == "__main__":
-    run_race()
+    raise SystemExit(main())

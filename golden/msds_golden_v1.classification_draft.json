@@ -1,0 +1,4290 @@
+{
+  "schema_version": "1.0",
+  "dataset_id": "msds-core-regression-v1",
+  "review_status": "approved",
+  "scope": {
+    "product_name_section": 1,
+    "components_section": 3,
+    "component_key": "cas",
+    "include_only_valid_cas": true,
+    "exclude_cas_outside_section_3": true,
+    "required_filename_marker": "★"
+  },
+  "cases": [
+    {
+      "id": "001",
+      "file": "001_(O)002_MSDS(보통휘발유(Regular Unleaded Gasoline)_SOIL)(O).pdf",
+      "source_sha256": "f1430d78bd813955e62e48678a131857d16fc17db955b23e81758b436e1c7511",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "보통 휘발유 (Regular Unleaded Gasoline)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "가솔린",
+          "cas": "86290-81-5",
+          "content_raw": "<86",
+          "content_expected": "<86%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "벤젠",
+          "cas": "71-43-2",
+          "content_raw": "0.1~0.7",
+          "content_expected": "0.1~0.7%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "메틸삼차부틸에테르",
+          "cas": "1634-04-4",
+          "content_raw": "11",
+          "content_expected": "11%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "톨루엔",
+          "cas": "108-88-3",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "크실렌",
+          "cas": "1330-20-7",
+          "content_raw": "2~4",
+          "content_expected": "2~4%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-than",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 21,
+        "text_character_count": 14848,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 2,
+        "section3_end_page": 2,
+        "cas_count": 5,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "002",
+      "file": "002_(O)011_SDS_ICP-08N-1(Cd).pdf",
+      "source_sha256": "6e93604bd721371c06f6eb8b540c19f9f2be21ff68eb5e4feafad1b6f23a2a41",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "ICP-08N-1",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "카드뮴(호흡성)",
+          "cas": "7440-43-9",
+          "content_raw": "0.1",
+          "content_expected": "0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "2",
+          "content_expected": "2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "97.9",
+          "content_expected": "97.9%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 6,
+        "text_character_count": 11110,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 3,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "003",
+      "file": "003_(O)018_[K.S.PEARL] MSDS - Iron Oxide Red 3AS (KR).pdf",
+      "source_sha256": "75f896ea835a6f945b7fe83499877831c23cb9f12138d5518200566e637c983d",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Iron Oxide Red 3AS",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "산화철(분진, 흄)",
+          "cas": "1309-37-1",
+          "content_raw": "97",
+          "content_expected": "97%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "트리에톡시옥틸실란",
+          "cas": "2943-75-1",
+          "content_raw": "3",
+          "content_expected": "3%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 8,
+        "text_character_count": 6625,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 0,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "004",
+      "file": "004_(-)SHIKIMIC ACID.PDF",
+      "source_sha256": "eae05d6a3f30d9bd0e38481766b51a99dfa5656c6e18b34798abb0ce4457c7d0",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Shikimic acid",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "(-)-SHIKIMIC ACID",
+          "cas": "138-59-0",
+          "content_raw": "95~100",
+          "content_expected": "95~100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 11,
+        "text_character_count": 5698,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "005",
+      "file": "005_★SUPER WAY LUBE 32.pdf",
+      "source_sha256": "706abaf2d2af18836bcccee454d8ae5a2711d037223d8b6fe6eea4e7b957f7ac",
+      "document_type": "scanned",
+      "product_name": {
+        "expected": "Super Way Lube 32",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "수소처리된중질파라핀정제유(석유)",
+          "cas": "64742-54-7",
+          "content_raw": ">97",
+          "content_expected": ">97%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "포스포로다이싸이오산,O,O-다이-C1-14-알킬에스테르,아연염",
+          "cas": "68649-42-3",
+          "content_raw": "<2",
+          "content_expected": "<2%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "scanned",
+          "ocr-required"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [
+          "content-less-than",
+          "content-greater-than"
+        ],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함"
+        ]
+      },
+      "metadata": {
+        "page_count": 6,
+        "text_character_count": 0,
+        "document_type": "scanned",
+        "section1_page": null,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "006",
+      "file": "006_MSDS(순앤수 우드스테인 BASE)(O).pdf",
+      "source_sha256": "859af4d927ac3f59922593b33f595005a3033c62e624dd23b44d3df5e0e048ac",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "순&수 우드스테인 BASE",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "56~66",
+          "content_expected": "56~66%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "프로필렌글리콜",
+          "cas": "57-55-6",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "합성무정형실리카,흄",
+          "cas": "112945-52-5",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "디우론",
+          "cas": "330-54-1",
+          "content_raw": "0.1~4",
+          "content_expected": "0.1~4%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "카벤다짐",
+          "cas": "10605-21-7",
+          "content_raw": "0.1~4",
+          "content_expected": "0.1~4%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 12,
+        "text_character_count": 15530,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 5,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "007",
+      "file": "007_★MSDS(프로스테인)(O).pdf",
+      "source_sha256": "9cc72a928b432382b5d46273e32148626deeb37a100234683176391981de9ad8",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "프로스테인 네오-PC100(크리어)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "다이메틸카르보네이트",
+          "cas": "616-38-6",
+          "content_raw": "45~50",
+          "content_expected": "45~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "수소탈황화된중질나프타(석유)(Naphtha(petroleum),hydrodesulfurizedheavy)",
+          "cas": "64742-82-1",
+          "content_raw": "13~20",
+          "content_expected": "13~20%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "68333-70-0",
+          "content_raw": "10~17",
+          "content_expected": "10~17%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "아마씨기름",
+          "cas": "8001-26-1",
+          "content_raw": "7~14",
+          "content_expected": "7~14%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "크실렌",
+          "cas": "1330-20-7",
+          "content_raw": "4~11",
+          "content_expected": "4~11%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2-에틸헥산산지르코늄(ZIRCONIUM2-ETHYLHEXANOATE)",
+          "cas": "22464-99-9",
+          "content_raw": "1~6",
+          "content_expected": "1~6%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "에틸벤젠",
+          "cas": "100-41-4",
+          "content_raw": "1~6",
+          "content_expected": "1~6%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "비스(1,2,2,6,6,-펜타메틸-4-피페리딜)데탄디온산(BIS(1,2,2,6,6,-PENTAMETHYL-4...",
+          "cas": "41556-26-7",
+          "content_raw": "0.1~<1",
+          "content_expected": "0.1~<1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2-부타논옥심",
+          "cas": "96-29-7",
+          "content_raw": "0.1~<1",
+          "content_expected": "0.1~<1%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-than",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 60,
+        "text_character_count": 89907,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 9,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "008",
+      "file": "008_★msds_사라퐁.pdf",
+      "source_sha256": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "사라퐁",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "60~70",
+          "content_expected": "60~70%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "수산화나트륨",
+          "cas": "1310-73-2",
+          "content_raw": "<1",
+          "content_expected": "<1%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital"
+        ],
+        "section": [
+          "section3-standard"
+        ],
+        "layout": [
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range",
+          "content-less-than"
+        ],
+        "failure_modes": [
+          "content-classification-column-confusion",
+          "cas-content-pairing",
+          "content-wrong"
+        ],
+        "product": [
+          "product-cleaner"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": [
+          "사용자 검토로 확인된 다열 표의 분류 열/함유량 열 결합 회귀 사례"
+        ]
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 4136,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "009",
+      "file": "009_수피아물비누-MSDS(O).pdf",
+      "source_sha256": "50e33dc83d0a2de907a5d1a20ac834e026e57b00e55dd4ea8b999fb5a6e1cfe8",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "수피아 모이스쳐 핸드워시",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "C10-C16알킬알콜황산나트륨염(C10-C16ALKYLALCOHOLSULFURICACIDS...",
+          "cas": "68585-47-7",
+          "content_raw": "4~10",
+          "content_expected": "4~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "코코넛기름아미도프로필베타인",
+          "cas": "61789-40-0",
+          "content_raw": "2~4",
+          "content_expected": "2~4%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "글리세롤",
+          "cas": "56-81-5",
+          "content_raw": "0.5~2",
+          "content_expected": "0.5~2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "시트르산모노수화물",
+          "cas": "5949-29-1",
+          "content_raw": "0.01~0.1",
+          "content_expected": "0.01~0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "에틸렌디아민테트라아세트산,이나트륨염",
+          "cas": "139-33-3",
+          "content_raw": "0.02~0.5",
+          "content_expected": "0.02~0.5%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 2732,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 5,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "010",
+      "file": "010_포름알데하이드_시그마.pdf",
+      "source_sha256": "f23429cb7389571d5203d3836c4b6737946ab63936205d38d9f8026c80b98127",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Formaldehyde solution, 36.5-38%",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "포름알데히드",
+          "cas": "50-00-0",
+          "content_raw": "35~40",
+          "content_expected": "35~40%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "메탄올",
+          "cas": "67-56-1",
+          "content_raw": "15~20",
+          "content_expected": "15~20%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 14,
+        "text_character_count": 9248,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "011",
+      "file": "011_★GHS MK WD-40 (REV30, 240722)(O).pdf",
+      "source_sha256": "8f22618f8cdffc4e069bc62332c2a3a2ae0444aaa8d5110d7c2da203af3fc259",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "더블유디-40 (WD-40)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "수소처리된경질정제유(석유)(DISTILLATES(PETROLEUM),HYDROTREATEDLIGHT)",
+          "cas": "64742-47-8",
+          "content_raw": "40~50",
+          "content_expected": "40~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "수소처리된중질파라핀정제유(석유)",
+          "cas": "64742-54-7",
+          "content_raw": "10~25",
+          "content_expected": "10~25%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "프로페인",
+          "cas": "74-98-6",
+          "content_raw": "16~21",
+          "content_expected": "16~21%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "부탄",
+          "cas": "106-97-8",
+          "content_raw": "11~14",
+          "content_expected": "11~14%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 15,
+        "text_character_count": 24433,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 4,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "012",
+      "file": "012_싸이클오일).pdf",
+      "source_sha256": "7e1a95961b6d89a5cce4ae4fc71c0fa0a09cc12d8c9fc78ebe72668108be240d",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "MOLIV 2T",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "수소처리된중질파라핀정제유(석유)",
+          "cas": "64742-54-7",
+          "content_raw": "80~90",
+          "content_expected": "80~90%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-no-cas"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 4,
+        "text_character_count": 2920,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "013",
+      "file": "013_블루우드스테인(Blue wood stain) [자단] (DHC-109).pdf",
+      "source_sha256": "63c9fae1c341e0fb8b20efc54de0dff291e0f24cb4d7d289bcae063bbb61525c",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "블루우드스테인(Blue wood stain) [자단]",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "다이메틸카르보네이트",
+          "cas": "616-38-6",
+          "content_raw": "45~50",
+          "content_expected": "45~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "수소처리된경질정제유(석유)(DISTILLATES(PETROLEUM),HYDROTREATEDLIGHT)",
+          "cas": "64742-47-8",
+          "content_raw": "20~25",
+          "content_expected": "20~25%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "아마씨기름",
+          "cas": "8001-26-1",
+          "content_raw": "15~25",
+          "content_expected": "15~25%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "로신;푸마산염,중합물,함유에틸렌글리콜AND펜타에리트리톨(ROSIN;FUMARATED,POLY...",
+          "cas": "68152-57-8",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "프로필렌글리콜모노메틸에테르아세트산",
+          "cas": "108-65-6",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2-Ethylhexanoic acid cobalt salt",
+          "cas": "13586-82-8",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "케로젠",
+          "cas": "8008-20-6",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Fatty acids, (C=16-18) and (C=18)-unsatd. compds. with diethanolamine -",
+          "cas": "68002-82-4",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "세피올라이트",
+          "cas": "63800-37-3",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "펜타에리트리톨",
+          "cas": "115-77-5",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "n-부틸아세테이트",
+          "cas": "123-86-4",
+          "content_raw": "≤0.1",
+          "content_expected": "≤0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "n-부탄올",
+          "cas": "71-36-3",
+          "content_raw": "≤0.1",
+          "content_expected": "≤0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "옥타놀-1",
+          "cas": "111-87-5",
+          "content_raw": "≤0.1",
+          "content_expected": "≤0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "디이소부틸케톤",
+          "cas": "108-83-8",
+          "content_raw": "≤0.1",
+          "content_expected": "≤0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "다이메틸벤질수소화된텔로암모늄염화물",
+          "cas": "61789-72-8",
+          "content_raw": "≤0.1",
+          "content_expected": "≤0.1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "67923-21-1",
+          "content_raw": "≤0.01",
+          "content_expected": "≤0.01%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "폴리다이메틸실록산",
+          "cas": "63148-62-9",
+          "content_raw": "≤0.01",
+          "content_expected": "≤0.01%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "산화철(분진, 흄)",
+          "cas": "1309-37-1",
+          "content_raw": "1~3",
+          "content_expected": "1~3%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "산화철,황색",
+          "cas": "51274-00-1",
+          "content_raw": "1~2",
+          "content_expected": "1~2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "카본블랙",
+          "cas": "1333-86-4",
+          "content_raw": "0.1~1",
+          "content_expected": "0.1~1%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-equal",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-paint"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 14,
+        "text_character_count": 10019,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 2,
+        "section3_end_page": 3,
+        "cas_count": 20,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "014",
+      "file": "014_세신 카트리지 구리스 MSDS-한글판-CG400.pdf",
+      "source_sha256": "97ce89996e50cfa6add88c7ede4c6dd89426f9f24ec7cfbe6705f49c8ef68483",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "구리스카트리지(Universal lithium grease)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "석유",
+          "cas": "8002-05-9",
+          "content_raw": "≥80",
+          "content_expected": "≥80%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "12-하이드록시스테아릭산",
+          "cas": "106-14-9",
+          "content_raw": "0~8",
+          "content_expected": "0~8%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "스테아린산",
+          "cas": "57-11-4",
+          "content_raw": "≤5",
+          "content_expected": "≤5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "히드록시 리튬, 모노수화물",
+          "cas": "1310-66-3",
+          "content_raw": "≤2",
+          "content_expected": "≤2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2,6-디-삼차-부틸-파라-크레졸",
+          "cas": "128-37-0",
+          "content_raw": "≤2",
+          "content_expected": "≤2%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-equal",
+          "content-greater-equal",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 14,
+        "text_character_count": 8725,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 2,
+        "section3_end_page": 2,
+        "cas_count": 5,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "015",
+      "file": "015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf",
+      "source_sha256": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "TECA-BIOMETM",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "Unknown",
+          "cas": "84696-21-9",
+          "content_raw": "54.98",
+          "content_expected": "54.98%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "96507-89-0",
+          "content_raw": "10",
+          "content_expected": "10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "니코틴아마이드",
+          "cas": "98-92-0",
+          "content_raw": "5",
+          "content_expected": "5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "옥시비스프로판올",
+          "cas": "25265-71-8",
+          "content_raw": "5",
+          "content_expected": "5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,2-헥산다이올",
+          "cas": "6920-22-5",
+          "content_raw": "2",
+          "content_expected": "2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "D-판텐올",
+          "cas": "81-13-0",
+          "content_raw": "1",
+          "content_expected": "1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "92128-87-5",
+          "content_raw": "1",
+          "content_expected": "1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "308068-11-3",
+          "content_raw": "1",
+          "content_expected": "1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "16830-15-2",
+          "content_raw": "0.4",
+          "content_expected": "0.4%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "18449-41-7",
+          "content_raw": "0.3",
+          "content_expected": "0.3%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "464-92-6",
+          "content_raw": "0.3",
+          "content_expected": "0.3%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "53238-80-5",
+          "content_raw": "0.01",
+          "content_expected": "0.01%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 5,
+        "text_character_count": 3644,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 12,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "016",
+      "file": "016_[SFG] SinoWhite NCA(CG) MSDS Kor. (Rev.03) 2025-06-09.pdf",
+      "source_sha256": "39b786d9353360547d1979c7d40fa095bf10d6c01ff7bf2428d9299173be2906",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "SinoWhite NCA(CG)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "니코틴아마이드",
+          "cas": "98-92-0",
+          "content_raw": "100",
+          "content_expected": "100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 6702,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "017",
+      "file": "017_[래디안]달팽이점액여과물(HD2)_영문 GHS MSDS(240429)삼정-씨엔티드림_요청 조성비 서류.pdf",
+      "source_sha256": "06462a504b65ae3979694e1d9feb7c92bef235fc202cdc1d151cb2c565cf5d6f",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Snail Secretion Filtrate(HD2)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "5",
+          "content_expected": "5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,2-헥산다이올",
+          "cas": "6920-22-5",
+          "content_raw": "3",
+          "content_expected": "3%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 11,
+        "text_character_count": 11180,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "018",
+      "file": "018_3-ETHOXY-1,2-PROPANEDIOL, 98%.PDF",
+      "source_sha256": "ea2791d0cfa53f8f5796b2b3b8c59841cf788124535240340fd7f60d1cc11312",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "3-Ethoxy-1,2-propanediol",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "Unknown",
+          "cas": "1874-62-0",
+          "content_raw": "95~100",
+          "content_expected": "95~100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 10,
+        "text_character_count": 4741,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "019",
+      "file": "019_Bentone Gel ISD V _ MSDS (KO).pdf",
+      "source_sha256": "04787cca72f80983192c92897a8f265339236691d37a58302cba9e83c70f2a42",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "BENTONE GELÒ ISD V",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "탄산프로필렌",
+          "cas": "108-32-7",
+          "content_raw": "2.5~10",
+          "content_expected": "2.5~10%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함"
+        ]
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 10155,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "020",
+      "file": "020_★[SFG] Suncide EPH MSDS Kor. (Rev.04) 2025-05-13.pdf",
+      "source_sha256": "f03d327c1911095bed384aeb5213402523f60f0bb5c551dc895068a49c6f4a03",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Suncide EPH",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "에틸렌글리콜페닐에테르",
+          "cas": "122-99-6",
+          "content_raw": "100",
+          "content_expected": "100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 6948,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "021",
+      "file": "021_RED(적색)227_MSDS(E)_190730.pdf",
+      "source_sha256": "822a1493705a041b094e6f9b41dae74ac15f96cde1ed9691d0e7139756793e6a",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "RED No. 227",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "D&C적NO.33",
+          "cas": "3567-66-6",
+          "content_raw": ">85",
+          "content_expected": ">85%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-greater-than"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 5,
+        "text_character_count": 9381,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "022",
+      "file": "022_SKIN CARE G28345_MSDS_국문.pdf",
+      "source_sha256": "70d6c9b1ee2ac5a23c09928a7ead3bf448908b98054fbd171ae024928bf9db3e",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "SKIN CARE G28345",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "1,3,4,6,7,8-Hexahydro-4,6,6,7,8,8-hexamethylcyclopenta[g]-2-benzopyran",
+          "cas": "1222-05-5",
+          "content_raw": "10~20",
+          "content_expected": "10~20%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,2,3,4,5,6,7,8-Octahydro-2,3,8,8-tetramethyl-2-acetonaphthalenone",
+          "cas": "54464-57-2",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "테트라하이드로-2-이소부틸-4-메틸피란-4-올과혼합된이성질체(cis-및trans-)(CASNo.63500-71-0)",
+          "cas": "63500-71-0",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "3,7-디메틸노나-1,6-디엔-3-올",
+          "cas": "10339-55-6",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2-tert-Butylcyclohexyl acetate; Verdox",
+          "cas": "88-41-5",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "n-헥실아세트산",
+          "cas": "142-92-7",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Unknown",
+          "cas": "27606-09-3",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "3-(4-tert-부틸페닐)프로피온",
+          "cas": "18127-01-0",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2,6-dimethylhept-5-enal",
+          "cas": "106-72-9",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 8,
+        "text_character_count": 8626,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 9,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "023",
+      "file": "023_GHS MSDS 38571 국문.pdf",
+      "source_sha256": "966fe572fcfe3a276c54f60c29e7436679d5f03777417edcab1f63b3e60c5f8e",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Frag-38571",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "게라닐아세트산",
+          "cas": "105-87-3",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,3,4,6,7,8-Hexahydro-4,6,6,7,8,8-hexamethylcyclopenta[g]-2-benzopyran",
+          "cas": "1222-05-5",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,2,3,4,5,6,7,8-Octahydro-2,3,8,8-tetramethyl-2-acetonaphthalenone",
+          "cas": "54464-57-2",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "P-바닐린",
+          "cas": "121-33-5",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "이소프로필미리스트산",
+          "cas": "110-27-0",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "1,4-Dioxacycloheptadecane-5,17-dione; Astratone Ethylene brassylate",
+          "cas": "105-95-3",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "9-아세틸-8-세드렌(9-ACETYL-8-CEDRENE)",
+          "cas": "32388-55-9",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2-(Phenylmethylene)octanal; Hexyl cinnamic aldehyde",
+          "cas": "101-86-0",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "4-(1,1-다이메틸에틸)-알파-메틸벤젠프로판알",
+          "cas": "80-54-6",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "리날로올",
+          "cas": "78-70-6",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": ".alpha.-Methyl-1,3-benzodioxole-5-propionaldehyde; Helional",
+          "cas": "1205-17-0",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": ".alpha.,.alpha.-Dimethylphenethyl acetate",
+          "cas": "151-05-3",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "아세트산벤질에스테르",
+          "cas": "140-11-4",
+          "content_raw": "0~5",
+          "content_expected": "0~5%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 9520,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 13,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "024",
+      "file": "024_★Sodium Hydroxide(NaOH).pdf",
+      "source_sha256": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "수산화나트륨",
+          "cas": "1310-73-2",
+          "content_raw": "92~100",
+          "content_expected": "92~100%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "0~8",
+          "content_expected": "0~8%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-alkali"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 6305,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "025",
+      "file": "025_AMMONIUM ACETATE.PDF",
+      "source_sha256": "bff36f8db5539559a32c5f4d1cc3dd07cea8b989bfb0b4a9d72a1216eeeb1153",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Ammonium acetate",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "아세트산암모늄",
+          "cas": "631-61-8",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-missing"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 11,
+        "text_character_count": 5600,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "026",
+      "file": "026_Acetonitrile.pdf",
+      "source_sha256": "f9670f0447f167051ba30e91897fe29cc209cf833895647e1a5b28aeab520241",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Acetonitrile hypergrade for LC-MS LiChrosolv®",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "아세토니트릴",
+          "cas": "75-05-8",
+          "content_raw": "95~100",
+          "content_expected": "95~100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-solvent"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 14,
+        "text_character_count": 8597,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "027",
+      "file": "027_D-GLUCONIC ACID LACTONE.PDF",
+      "source_sha256": "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "D-(+)-Gluconic acid δ-lactone",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "글루코노-델타-락톤",
+          "cas": "90-80-2",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [],
+        "section": [],
+        "layout": [],
+        "content": [],
+        "failure_modes": [],
+        "product": []
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "PDF 누락"
+        ]
+      },
+      "metadata": {}
+    },
+    {
+      "id": "028",
+      "file": "028_D-Sorbitol.PDF",
+      "source_sha256": "559d0e575a2f87ee28370f643ffc7e2d90ffaec374a530d88d73adc685d1c1e9",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "D-Sorbitol",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "D-소비톨",
+          "cas": "50-70-4",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-missing"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 4774,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "029",
+      "file": "029_Formic Acid.pdf",
+      "source_sha256": "ea6f65b8e8a8376f5e96e3a299557d5af9f80d8f59f078b39af0750a0e73c51b",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Formic acid, OPTIMA LC/MS Grade (99.5%)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "개미산",
+          "cas": "64-18-6",
+          "content_raw": "99~100",
+          "content_expected": "99~100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 11,
+        "text_character_count": 19685,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 2,
+        "section3_end_page": 2,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "030",
+      "file": "030_★HYDROCHLORIC ACID, 37%, A.C.S. REAGENT.PDF",
+      "source_sha256": "fd6457e7d8d649cdf3ad5330fad7ac30cd89b5cb0e502491b7d8699f8448665c",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Hydrochloric acid",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "염화수소",
+          "cas": "7647-01-0",
+          "content_raw": "35~40",
+          "content_expected": "35~40%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 13,
+        "text_character_count": 8170,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "031",
+      "file": "031_Methanol.pdf",
+      "source_sha256": "f484626982680bd2fd3a21d489244fa179008cd958f94261b721222273f37138",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Methanol hypergrade for LC-MS LiChrosolv®",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "메탄올",
+          "cas": "67-56-1",
+          "content_raw": "95~100",
+          "content_expected": "95~100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-solvent"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 15,
+        "text_character_count": 9297,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "032",
+      "file": "032_★NITRIC ACID, ACS REAGENT, 70%.PDF",
+      "source_sha256": "293b5445bac50744c9e533ea08c1323531d2f51400de04adbf438a6e678b69a8",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Nitric acid",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "70~75",
+          "content_expected": "70~75%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 12,
+        "text_character_count": 7018,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "033",
+      "file": "033_Water.pdf",
+      "source_sha256": "b7c6012fef3a1fd281ea4ec8fde2628fba7d419d9e8e6dc9d56e6191aebde531",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Water for chromatography (LC-MS Grade) LiChrosolv®",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "미기재",
+          "content_expected": "미기재%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-missing"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 4093,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "034",
+      "file": "034_용접봉CR-13 CSW-0001_MSDS_용접재료(연강용 피복아크 용접봉)_(국문)v5_2023.08.22 (2).pdf",
+      "source_sha256": "894afb28e3a34c460bd77c33d9a7babcf3b7ef420db4f98093356c88f529b75c",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "용접재료(연강용 피복아크 용접봉) CR-13",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "이산화티타늄",
+          "cas": "13463-67-7",
+          "content_raw": "10~15",
+          "content_expected": "10~15%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "펠드스파",
+          "cas": "68476-25-5",
+          "content_raw": "5~10",
+          "content_expected": "5~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "망간 및 그 무기화합물",
+          "cas": "7439-96-5",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "규산나트륨",
+          "cas": "1344-09-8",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Limestone",
+          "cas": "1317-65-3",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "운모",
+          "cas": "12001-26-2",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "철",
+          "cas": "7439-89-6",
+          "content_raw": "Rem.",
+          "content_expected": "Rem.%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range",
+          "content-balance"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 24,
+        "text_character_count": 20821,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 4,
+        "cas_count": 11,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "035",
+      "file": "035_용접봉_코리아나_논가스와이어_(K-308)MSDS.pdf",
+      "source_sha256": "5c3f73aaf6383550c41d5c372f361b43c9ccf5664de4fe0ed9047369b029cb8e",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "K-308",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "철",
+          "cas": "7439-89-6",
+          "content_raw": "55~65",
+          "content_expected": "55~65%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "6가크롬(불용성)",
+          "cas": "7440-47-3",
+          "content_raw": "17~20",
+          "content_expected": "17~20%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "니켈(불용성)",
+          "cas": "7440-02-0",
+          "content_raw": "8~10",
+          "content_expected": "8~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "이산화 실리콘",
+          "cas": "7631-86-9",
+          "content_raw": "1~2",
+          "content_expected": "1~2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "이산화티타늄",
+          "cas": "13463-67-7",
+          "content_raw": "5~7",
+          "content_expected": "5~7%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "망간 및 그 무기화합물",
+          "cas": "7439-96-5",
+          "content_raw": "1~2",
+          "content_expected": "1~2%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "산화지르코늄",
+          "cas": "1314-23-4",
+          "content_raw": "1~2",
+          "content_expected": "1~2%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 23,
+        "text_character_count": 10253,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 7,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "036",
+      "file": "036_★아이생각수성내부프로 (M-BASE)_GHS국문.pdf",
+      "source_sha256": "82e2b1131f3a7f049176ec563bf0dd60a9e64f3e37a13ab43a57d4398c159def",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "아이생각수성내부프로 (M-BASE)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "40~50",
+          "content_expected": "40~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "소우프스톤",
+          "cas": "14807-96-6",
+          "content_raw": "20~30",
+          "content_expected": "20~30%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Limestone",
+          "cas": "1317-65-3",
+          "content_raw": "10~20",
+          "content_expected": "10~20%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "Methacrylic acid-2-ethylhexyl acrylate-styrene polymer",
+          "cas": "26636-08-8",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "생석회된카올린",
+          "cas": "92704-41-1",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "이산화티타늄",
+          "cas": "13463-67-7",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "탄산칼슘",
+          "cas": "471-34-1",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "프로필렌글리콜",
+          "cas": "57-55-6",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "N,N-다이메틸에탄올아민",
+          "cas": "108-01-0",
+          "content_raw": "0.1~<1",
+          "content_expected": "0.1~<1%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-than",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 10,
+        "text_character_count": 10936,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 1,
+        "cas_count": 9,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "037",
+      "file": "037_Sodium Cacodylate Buffer, 0.2M, pH 7.4.pdf",
+      "source_sha256": "2cfeb856eb74fe447eb36666ac80a653e340baebe92fc3a49473856be25b9441",
+      "document_type": "scanned",
+      "product_name": {
+        "expected": "SODIUM CACODYLATE BUFFER 0.2M, pH 7.4",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "나트륨카코딜산염",
+          "cas": "124-65-2",
+          "content_raw": "2.5~10",
+          "content_expected": "2.5~10%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "scanned",
+          "ocr-required"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함"
+        ]
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 0,
+        "document_type": "scanned",
+        "section1_page": null,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "038",
+      "file": "038_GHSMSDS-녹수클린업 (2).pdf",
+      "source_sha256": "5ee0a97a1d49ede49785bcdbc67d1e4504e9114884e3585e73a05b4bd3db8d91",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "녹수클린업",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "염화벤질(C12-C16)알킬다이메틸암모늄(BENZYL(C12-C16)ALKYLDIMETHYLAMMONIUM...",
+          "cas": "68424-85-1",
+          "content_raw": "10",
+          "content_expected": "10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "시트르산모노수화물",
+          "cas": "5949-29-1",
+          "content_raw": "20",
+          "content_expected": "20%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "인산",
+          "cas": "7664-38-2",
+          "content_raw": "5",
+          "content_expected": "5%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함"
+        ]
+      },
+      "metadata": {
+        "page_count": 6,
+        "text_character_count": 2135,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "039",
+      "file": "039_노면표지용_도료_KSM-6080_1종_DHW-8800_GHS-MSDS.pdf",
+      "source_sha256": "ca33ab8dde7eaa31bed3a62b8d7709d0686ec173957eed1bb72b132a0987e336",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "노면표지용 도료 KS M 6080 1 종 DHW-8800 (노란색(N))",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "Limestone",
+          "cas": "1317-65-3",
+          "content_raw": "29~39",
+          "content_expected": "29~39%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "톨루엔",
+          "cas": "108-88-3",
+          "content_raw": "21~31",
+          "content_expected": "21~31%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "소우프스톤",
+          "cas": "14807-96-6",
+          "content_raw": "8~18",
+          "content_expected": "8~18%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "다이메틸카르보네이트",
+          "cas": "616-38-6",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "알케인,C14-7,클로로",
+          "cas": "85535-85-9",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "금홍석",
+          "cas": "1317-80-2",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "C.I.색소황색74",
+          "cas": "6358-31-2",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "크실렌",
+          "cas": "1330-20-7",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "C.I.염료황색81(C.I.PIGMENTYELLOW81)",
+          "cas": "22094-93-5",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "탄산칼슘",
+          "cas": "471-34-1",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "C.I.색소황색83(C.I.PIGMENTYELLOW83)",
+          "cas": "5567-15-7",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-paint"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 16,
+        "text_character_count": 20470,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 11,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "040",
+      "file": "040_★Giemsa SDS.pdf",
+      "source_sha256": "efa354221893da14a5d63de79697684c4141c721d72808556e48a2e86349104b",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Giemsa's azur eosin methylene blue solution for microscopy",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "메탄올",
+          "cas": "67-56-1",
+          "content_raw": "45~50",
+          "content_expected": "45~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "글리세롤",
+          "cas": "56-81-5",
+          "content_raw": "45~50",
+          "content_expected": "45~50%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "염산디에틸아민",
+          "cas": "660-68-4",
+          "content_raw": "<1",
+          "content_expected": "<1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "EOSIN Y",
+          "cas": "17372-87-1",
+          "content_raw": "<1",
+          "content_expected": "<1%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-less-than",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 16,
+        "text_character_count": 22511,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 4,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "041",
+      "file": "041_★페놀(PHENOL).pdf",
+      "source_sha256": "85dcdb840a9a2e3a8a88cf8fb05fd3e53c55a54b2fad57a4b630ccad1050b2eb",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "페놀",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "페놀",
+          "cas": "108-95-2",
+          "content_raw": "100",
+          "content_expected": "100%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 7497,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "042",
+      "file": "042_Chromium Standard.pdf",
+      "source_sha256": "1f34bc61c04f14ddc7330c02b6423c9209456a3062b98a8ef04e5d63bebb82cc",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Chromium standard solution 1 (Cr 100)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "Potassium dichromate",
+          "cas": "7778-50-9",
+          "content_raw": "0.029",
+          "content_expected": "0.029%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-multicolumn"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-standard-solution"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 12918,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 0,
+        "section3_end_page": 0,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "043",
+      "file": "043_★클리신 56-40-6.pdf",
+      "source_sha256": "2e280481df209ad12f6606cd7faaf6a4fa9f8675385c6480d4213a1fede6d3bb",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Glycine",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "글리신",
+          "cas": "56-40-6",
+          "content_raw": "98.5~101.5",
+          "content_expected": "98.5~101.5%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 8,
+        "text_character_count": 13554,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 2,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "044",
+      "file": "044_염화수소 7647-01-0.pdf",
+      "source_sha256": "b81c276684480eab790706c4a3483bdf67fef43149eb6cf946313d1adafeb97e",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "염산 (Hydrochloric acid)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "염화수소",
+          "cas": "7647-01-0",
+          "content_raw": "35~37",
+          "content_expected": "35~37%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "Rem.",
+          "content_expected": "Rem.%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn"
+        ],
+        "content": [
+          "content-range",
+          "content-balance"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 6,
+        "text_character_count": 4955,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "045",
+      "file": "045_ CS006A_MSDS.pdf",
+      "source_sha256": "105218587dc6f18fb144fec5d99dee573f3c0fac41205a65fc697a503d299f1f",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "CS006A",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "비닐/STPD폴리다이메틸실록산(VINYL/STPDPOLYDIMETHYLSILOXANE)",
+          "cas": "68083-19-2",
+          "content_raw": "≥95",
+          "content_expected": "≥95%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "mixed",
+          "ocr-required"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-image-table"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column",
+          "table-image"
+        ],
+        "content": [
+          "content-greater-equal"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 5595,
+        "document_type": "mixed",
+        "section1_page": 0,
+        "section3_start_page": 0,
+        "section3_end_page": 0,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "046",
+      "file": "046_★THF_MSDS.pdf",
+      "source_sha256": "61d3adc29ef4aa1a6317cb2ecca5da7de6b10d3e90c1683f2cb177e2bcf43833",
+      "document_type": "scanned",
+      "product_name": {
+        "expected": "테트라하이드로퓨란 250ppm BHT[Tetrahydrofuran Stabilized with 250ppm BHT]",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "테트라히드로푸란",
+          "cas": "109-99-9",
+          "content_raw": "99~100",
+          "content_expected": "99~100%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "0~1",
+          "content_expected": "0~1%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "2,6-디-삼차-부틸-파라-크레졸",
+          "cas": "128-37-0",
+          "content_raw": "0.025",
+          "content_expected": "0.025%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "scanned",
+          "ocr-required"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함"
+        ]
+      },
+      "metadata": {
+        "page_count": 9,
+        "text_character_count": 0,
+        "document_type": "scanned",
+        "section1_page": null,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "047",
+      "file": "047_★GL-2002.pdf",
+      "source_sha256": "0174dc703b201ff2f94f255f726e0ad9370d8545b1632f4f310826c0a774bb10",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "GL-2002 (지엘-2002)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "흑연",
+          "cas": "7782-42-5",
+          "content_raw": "1~10",
+          "content_expected": "1~10%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "아세톤",
+          "cas": "67-64-1",
+          "content_raw": "25~35",
+          "content_expected": "25~35%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "이소프로필알코올",
+          "cas": "67-63-0",
+          "content_raw": "1~5",
+          "content_expected": "1~5%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "n-프로필아세테이트",
+          "cas": "109-60-4",
+          "content_raw": "5~15",
+          "content_expected": "5~15%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "다이메틸에테르",
+          "cas": "115-10-6",
+          "content_raw": "45~55",
+          "content_expected": "45~55%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-late-page"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 16,
+        "text_character_count": 15517,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 2,
+        "section3_end_page": 2,
+        "cas_count": 5,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "048",
+      "file": "048_질산 60 7697-37-2.pdf",
+      "source_sha256": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "질산60 % (Nitric acid 60 %)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "60~62",
+          "content_expected": "60~62%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "38~40",
+          "content_expected": "38~40%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 12,
+        "text_character_count": 9630,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "048",
+      "file": "048_★질산 60 7697-37-2.pdf",
+      "source_sha256": "67325548eea164a853543673bdec1b3b5d6de3a27780ec6b50e0adae8afeb3ef",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "질산60 % (Nitric acid 60 %)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "60~62",
+          "content_expected": "60~62%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "물",
+          "cas": "7732-18-5",
+          "content_raw": "38~40",
+          "content_expected": "38~40%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-acid"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 12,
+        "text_character_count": 9630,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 2,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "049",
+      "file": "049_★Zinc Standard.pdf",
+      "source_sha256": "bb7888a6023b6c5a5ec7780df21552bc07b99c13f7d65c81e3c39cbfd336e005",
+      "document_type": "digital",
+      "product_name": {
+        "expected": "Zinc standard solution (Zn 1000)",
+        "allowed_variants": []
+      },
+      "components": [
+        {
+          "chemical_name": "질산아연",
+          "cas": "7779-88-6",
+          "content_raw": "0.3",
+          "content_expected": "0.3%",
+          "source_page": 1
+        },
+        {
+          "chemical_name": "질산",
+          "cas": "7697-37-2",
+          "content_raw": "0.6",
+          "content_expected": "0.6%",
+          "source_page": 1
+        }
+      ],
+      "cas_missing_components": [],
+      "regression_tags": [],
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-multicolumn"
+        ],
+        "content": [
+          "content-single"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-standard-solution"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "HIGH",
+        "needs_review": false,
+        "reasons": []
+      },
+      "metadata": {
+        "page_count": 7,
+        "text_character_count": 11427,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 2,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    }
+  ],
+  "classification_generated": true,
+  "unregistered_pdfs": [
+    {
+      "id": "027",
+      "file": "027_★D-GLUCONIC ACID LACTONE.PDF",
+      "source_sha256": "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5",
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-standard",
+          "section3-multipage"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-missing"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 10,
+        "text_character_count": 4835,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 1,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "050",
+      "file": "050_★D748C4004.pdf",
+      "source_sha256": "1bded6b4b8eb2d6c3b7da6f86c7c2ef672d4dee935cf0976569cfd0639e6470b",
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-greater-equal",
+          "content-less-than",
+          "content-range"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 15,
+        "text_character_count": 19964,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 1,
+        "cas_count": 13,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "051",
+      "file": "051_★금속광택제(피칼)_MSDS.pdf",
+      "source_sha256": "71da22ce5d81587791014d3087402dec2db8d3aefbe52599331f9da502bff748",
+      "regression_tier": "core",
+      "tags": {
+        "document": [
+          "mixed",
+          "ocr-required",
+          "ai-fallback"
+        ],
+        "section": [
+          "section3-late-page",
+          "section3-image-table"
+        ],
+        "layout": [
+          "table-image"
+        ],
+        "content": [],
+        "failure_modes": [
+          "section3-not-found",
+          "section3-wrong-page",
+          "section3-page-image-mismatch",
+          "all-components-missing",
+          "product-name-unverified-ai",
+          "duplicate-ai-retry"
+        ],
+        "product": [
+          "product-metal-polish"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "사용자 검토로 확인된 Section 3 이미지 페이지 매핑 및 제품명 근거 회귀 사례",
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 23,
+        "text_character_count": 7121,
+        "document_type": "digital",
+        "section1_page": null,
+        "section3_start_page": 2,
+        "section3_end_page": 4,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "052",
+      "file": "052_R000800 KAOLIN, COLLOIDAL USP BC 2457.pdf",
+      "source_sha256": "79895cf4cf2b3946572dd8fd54b9f0eb2fc11a65b3baf3adacd94c44128de869",
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "scanned",
+          "ocr-required"
+        ],
+        "section": [
+          "section1-nonstandard",
+          "section3-heading-damaged"
+        ],
+        "layout": [],
+        "content": [],
+        "failure_modes": [
+          "section3-not-found"
+        ],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "Section 3 제목을 디지털 텍스트에서 확인하지 못함",
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 6,
+        "text_character_count": 0,
+        "document_type": "scanned",
+        "section1_page": null,
+        "section3_start_page": null,
+        "section3_end_page": null,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "053",
+      "file": "053_R000820 향)PURIFYING WATER NATCO 2004055.pdf",
+      "source_sha256": "81e1fed730ad92a972d6b64292cc2c818c84fe3134ae698409067dd0aa1847c6",
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-no-cas"
+        ],
+        "layout": [
+          "table-basic",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-greater-equal",
+          "content-mixed-unit"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 10,
+        "text_character_count": 16840,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    },
+    {
+      "id": "054",
+      "file": "054_R000120 향)FRESH COTTON HYPO NATCO 1805663.pdf",
+      "source_sha256": "8b9a715a089ef33b79121ee9f2fff2db0b62b90caebfadea83be2e6b4536d1ab",
+      "regression_tier": "full",
+      "tags": {
+        "document": [
+          "digital",
+          "local-only"
+        ],
+        "section": [
+          "section1-standard",
+          "section3-standard",
+          "section3-multipage",
+          "section3-no-cas"
+        ],
+        "layout": [
+          "table-basic",
+          "table-multicolumn",
+          "table-classification-column"
+        ],
+        "content": [
+          "content-greater-equal",
+          "content-less-than",
+          "content-greater-than",
+          "content-ppm",
+          "content-mixed-unit"
+        ],
+        "failure_modes": [],
+        "product": [
+          "product-other"
+        ]
+      },
+      "classification": {
+        "source": "auto",
+        "confidence": "LOW",
+        "needs_review": true,
+        "reasons": [
+          "골든 미등록 PDF"
+        ]
+      },
+      "metadata": {
+        "page_count": 8,
+        "text_character_count": 12957,
+        "document_type": "digital",
+        "section1_page": 0,
+        "section3_start_page": 1,
+        "section3_end_page": 3,
+        "cas_count": 0,
+        "ocr_history": false,
+        "ai_fallback_history": false
+      }
+    }
+  ]
+}

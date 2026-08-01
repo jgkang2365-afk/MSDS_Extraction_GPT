@@ -128,16 +128,37 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(summary["source_pdf_counts"]["TOO_LARGE"], 1)
             self.assertFalse(list(package.rglob("*.pdf")))
 
-    def test_user_review_diagnosis_records_known_pairing_and_page_mismatch(self):
+    def test_user_review_diagnosis_uses_structural_pairing_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
-            record = self._record(tmp, trace_id="sarafong")
-            record["filename"] = "008_★msds_사라퐁.pdf"
-            record["user_review"]["user_note"] = "1310-73-2(>3%) -->(<1%)"
+            record = self._record(tmp, trace_id="pairing")
+            record["user_review"]["component_corrections"] = [
+                {"cas": "140-11-4", "actual": "2%", "expected": "0.5%"}
+            ]
+            diagnostic_path = Path(record["diagnostics"]["diagnostic_json"])
+            diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+            diagnostic["engine_results"] = [{
+                "source_column_role": "classification",
+                "selected_value": "1,2,3",
+                "same_row_candidates": [{"source_column_role": "content", "value": "0.5%"}],
+            }]
+            diagnostic_path.write_text(json.dumps(diagnostic, ensure_ascii=False), encoding="utf-8")
             package, summary = build_share_package([record], tmp)
             diagnosis = summary["files"][0]["diagnosis"]
             self.assertEqual(diagnosis["reason_code"], "CLASSIFICATION_COLUMN_MISREAD_AS_CONCENTRATION")
             review = json.loads(next(package.rglob("user_review.json")).read_text(encoding="utf-8"))
-            self.assertEqual(review["diagnosis"]["expected"], "<1%")
+            self.assertEqual(review["diagnosis"]["component_corrections"][0]["expected"], "0.5%")
+
+    def test_user_review_filename_alone_does_not_force_pairing_diagnosis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._record(tmp, trace_id="name-only")
+            record["filename"] = "008_★msds_사라퐁.pdf"
+            package, summary = build_share_package([record], tmp)
+            self.assertEqual(summary["files"][0]["diagnosis"]["reason_code"], "USER_REPORTED_RESULT_MISMATCH")
+
+    def test_custom_total_size_limit_is_enforced(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(DiagnosticShareError):
+                build_share_package([self._record(tmp)], tmp, max_total_bytes=32)
 
     def test_safe_name_preserves_readable_prefix_and_trace_suffix(self):
         value = safe_export_name('가:나/다*라?.pdf', 'abcdef123456')

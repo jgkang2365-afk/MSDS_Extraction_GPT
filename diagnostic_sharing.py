@@ -14,11 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from diagnostic_trace import redact
+from msds_validation import PageMapValidationError, validate_component_image_page_map
 
 
 EXPECTED_REPOSITORY = "jgkang2365-afk/MSDS_Extraction_GPT"
 MAX_IMAGES_PER_FILE = 10
-MAX_SHARE_BYTES = 50 * 1024 * 1024
 SOURCE_PDF_NOTICE_BYTES = 25 * 1024 * 1024
 SOURCE_PDF_HARD_LIMIT_BYTES = 100 * 1024 * 1024
 MAX_PACKAGE_BYTES = 500 * 1024 * 1024
@@ -138,37 +138,107 @@ def _find_event(value, event_name):
     return None
 
 
+def _parse_component_corrections(user_review):
+    structured = user_review.get("component_corrections")
+    if isinstance(structured, list):
+        return [dict(item) for item in structured if isinstance(item, dict)]
+    note = str(user_review.get("user_note") or "")
+    pattern = re.compile(
+        r"(?P<cas>\d{2,7}-\d{2}-\d)\s*\(?(?P<actual>[^()\n]*?(?:%|미기재|잔량|balance))?\)?"
+        r"\s*(?:--?>|=>|→|에서)\s*\(?(?P<expected>[^()\n]+?)\)?(?=\s*(?:;|$))",
+        re.I,
+    )
+    corrections = []
+    for match in pattern.finditer(note):
+        corrections.append({
+            "cas": match.group("cas").strip(),
+            "actual": (match.group("actual") or "").strip(),
+            "expected": match.group("expected").strip(),
+        })
+    return corrections
+
+
+def _is_number_list(value):
+    return bool(re.fullmatch(r"\s*\d+(?:\s*[,，/]\s*\d+)+\s*", str(value or "")))
+
+
+def _is_content_expression(value):
+    text = str(value or "")
+    return bool(re.search(r"[%<>≤≥≦≧~∼～]|\b(?:balance|rem\.?|잔량)\b", text, re.I))
+
+
+def _classification_pairing_evidence(value):
+    if isinstance(value, dict):
+        role = str(value.get("source_column_role") or value.get("column_role") or "").lower()
+        selected = value.get("selected_value", value.get("value", ""))
+        row_candidates = value.get("same_row_candidates") or value.get("row_candidates") or []
+        valid_content = any(
+            isinstance(item, dict)
+            and str(item.get("source_column_role") or item.get("column_role") or "").lower() in {"content", "concentration"}
+            and _is_content_expression(item.get("value"))
+            for item in row_candidates
+        )
+        if role in {"classification", "category", "type"} and _is_number_list(selected) and valid_content:
+            return value
+        for child in value.values():
+            found = _classification_pairing_evidence(child)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _classification_pairing_evidence(child)
+            if found:
+                return found
+    return None
+
+
 def _user_review_diagnosis(record, diagnostic, user_review):
     """자동 성공 여부와 무관하게 사용자 지적을 재현 가능한 원인 코드로 요약한다."""
-    file_name = str(record.get("filename") or "")
-    note = str(user_review.get("user_note") or "")
     error_types = list(user_review.get("error_types") or [])
     diagnosis = {"basis": "USER_REVIEW", "error_types": error_types}
-    if "사라퐁" in file_name or "1310-73-2(>3%)" in note.replace(" ", ""):
+    corrections = _parse_component_corrections(user_review)
+    product_correction = user_review.get("product_name_correction")
+    evidence = _classification_pairing_evidence(diagnostic)
+    reports_content_error = "함유량 오류" in error_types
+    has_changed_value = any(item.get("actual") != item.get("expected") for item in corrections)
+    if reports_content_error and has_changed_value and evidence:
         diagnosis.update({
             "stage": "refine_msds_components_strict",
             "reason_code": "CLASSIFICATION_COLUMN_MISREAD_AS_CONCENTRATION",
             "impact": "incorrect_concentration",
-            "cas_no": "1310-73-2",
-            "expected": "<1%",
-            "actual": ">3%",
+            "component_corrections": corrections,
+            "evidence": {
+                "source_column_role": evidence.get("source_column_role") or evidence.get("column_role"),
+                "selected_value": evidence.get("selected_value", evidence.get("value")),
+                "same_row_candidates": evidence.get("same_row_candidates") or evidence.get("row_candidates") or [],
+            },
         })
     selection = _find_event(diagnostic, "ai.component_input_selection")
     details = selection.get("details", selection) if isinstance(selection, dict) else {}
-    target = details.get("target_page_index")
-    sources = details.get("source_page_indexes") or details.get("image_page_map") or []
-    if target is not None and target not in sources:
+    try:
+        validate_component_image_page_map(details)
+    except PageMapValidationError as exc:
         diagnosis.update({
             "stage": "ai.component_input_selection",
-            "reason_code": "COMPONENT_IMAGE_PAGE_MISMATCH",
+            "reason_code": exc.error_code,
             "impact": "all_components_missing",
-            "target_page_index": target,
-            "source_page_indexes": sources,
+            "target_page_index": details.get("target_page_index"),
+            "target_page_indexes": details.get("target_page_indexes"),
+            "source_page_indexes": details.get("source_page_indexes"),
+            "image_page_map": details.get("image_page_map"),
         })
-    if "제품명 오류" in error_types:
+    product_event = _find_event(diagnostic, "candidate_verification")
+    product_details = product_event.get("details", product_event) if isinstance(product_event, dict) else {}
+    if (
+        "제품명 오류" in error_types
+        and isinstance(product_correction, dict)
+        and product_correction.get("actual") != product_correction.get("expected")
+        and product_details.get("reason_code") == "UNVERIFIED_AI_PRODUCT_ACCEPTED"
+    ):
         diagnosis["product_name"] = {
             "reason_code": "UNVERIFIED_AI_PRODUCT_ACCEPTED",
             "impact": "incorrect_product_name",
+            "correction": dict(product_correction),
         }
     if len(diagnosis) == 2:
         diagnosis.update({
@@ -292,7 +362,7 @@ def _manifest_entries(package_dir, trace_by_relative):
 
 
 def build_share_package(records, repo_root, output_root=None, max_images_per_file=MAX_IMAGES_PER_FILE,
-                        max_total_bytes=MAX_SHARE_BYTES):
+                        max_total_bytes=MAX_PACKAGE_BYTES):
     selected = [record for record in records if (record.get("user_review") or {}).get("user_marked_error")]
     if not selected:
         raise DiagnosticShareError("공유할 오류 파일을 선택해 주세요.")
@@ -346,6 +416,8 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
             "auto_selected": bool((record.get("user_review") or {}).get("auto_selected")),
             "error_types": list((record.get("user_review") or {}).get("error_types") or []),
             "user_note": str((record.get("user_review") or {}).get("user_note") or ""),
+            "component_corrections": _parse_component_corrections(record.get("user_review") or {}),
+            "product_name_correction": (record.get("user_review") or {}).get("product_name_correction") or {},
             "shared_at": _utc_now(),
         }
         diagnosis = _user_review_diagnosis(record, diagnostic, user_review)
@@ -454,11 +526,11 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
         "files": _manifest_entries(package_dir, trace_by_relative),
         "source_pdfs": [dict(item["source_pdf"], file_trace_id=item["file_trace_id"]) for item in summary_files],
     })
-    assert_share_is_safe(package_dir)
+    assert_share_is_safe(package_dir, max_total_bytes=max_total_bytes)
     return package_dir, summary
 
 
-def assert_share_is_safe(package_dir):
+def assert_share_is_safe(package_dir, max_total_bytes=MAX_PACKAGE_BYTES):
     root = Path(package_dir).resolve()
     total = 0
     for path in root.rglob("*"):
@@ -475,8 +547,8 @@ def assert_share_is_safe(package_dir):
             text = path.read_text(encoding="utf-8", errors="replace")
             if any(pattern.search(text) for pattern in SECRET_PATTERNS):
                 raise DiagnosticShareError(f"민감정보 패턴이 발견되어 공유를 중단했습니다: {path.name}")
-    if total > MAX_PACKAGE_BYTES:
-        raise DiagnosticShareError("공유 패키지가 안전 한도 500MiB를 초과했습니다.")
+    if total > max_total_bytes:
+        raise DiagnosticShareError(f"공유 패키지가 최대 용량 {max_total_bytes}바이트를 초과했습니다.")
     return total
 
 

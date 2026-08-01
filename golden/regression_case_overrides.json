@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "cases": {
+    "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d": {
+      "regression_tier": "core",
+      "tags": {
+        "document": ["digital"],
+        "section": ["section3-standard"],
+        "layout": ["table-multicolumn", "table-classification-column"],
+        "content": ["content-range", "content-less-than"],
+        "failure_modes": ["content-classification-column-confusion", "cas-content-pairing", "content-wrong"],
+        "product": ["product-cleaner"]
+      },
+      "reasons": ["사용자 검토로 확인된 다열 표의 분류 열/함유량 열 결합 회귀 사례"]
+    },
+    "71da22ce5d81587791014d3087402dec2db8d3aefbe52599331f9da502bff748": {
+      "regression_tier": "core",
+      "tags": {
+        "document": ["mixed", "ocr-required", "ai-fallback"],
+        "section": ["section3-late-page", "section3-image-table"],
+        "layout": ["table-image"],
+        "content": [],
+        "failure_modes": ["section3-not-found", "section3-wrong-page", "section3-page-image-mismatch", "all-components-missing", "product-name-unverified-ai", "duplicate-ai-retry"],
+        "product": ["product-metal-polish"]
+      },
+      "reasons": ["사용자 검토로 확인된 Section 3 이미지 페이지 매핑 및 제품명 근거 회귀 사례"]
+    }
+  }
+}

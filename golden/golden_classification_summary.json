@@ -1,0 +1,15 @@
+{
+  "pdf_total": 55,
+  "golden_registered": 50,
+  "matched": 49,
+  "missing": 1,
+  "hash_mismatch": 0,
+  "unregistered": 6,
+  "document_counts": {
+    "digital": 50,
+    "scanned": 4,
+    "mixed": 1
+  },
+  "core_suggested": 20,
+  "needs_review": 13
+}
