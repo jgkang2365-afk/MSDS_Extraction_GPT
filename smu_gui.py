@@ -2193,6 +2193,8 @@ class DiagnosticShareWorker(QThread):
                 "push_status": "success",
                 "package_dir": str(package_dir),
                 "selected_count": len(trace_ids),
+                "source_pdf_counts": dict(summary.get("source_pdf_counts") or {}),
+                "large_source_pdf_count": int(summary.get("large_source_pdf_count", 0) or 0),
                 **published,
             }
             append_share_history(self.repo_root, history)
@@ -7148,7 +7150,8 @@ class SMUGUI(QMainWindow):
             self,
             "선택 진단 공유 확인",
             f"선택한 {len(records)}개 파일의 진단자료만 diagnostics/run-* 브랜치로 푸시합니다.\n"
-            "원본 PDF, 설정, 캐시, AI 입력 이미지는 포함하지 않습니다. 계속할까요?",
+            "원본 PDF는 변환 없이 그대로 포함합니다(100MiB 초과 또는 복사 실패 파일은 사유와 함께 제외).\n"
+            "설정, 캐시, AI 입력 이미지는 포함하지 않습니다. 계속할까요?",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -7189,9 +7192,17 @@ class SMUGUI(QMainWindow):
             )
             QApplication.clipboard().setText(prompt)
             self.log(f"[진단 공유] 완료: {branch} ({commit[:12]})")
+            source_counts = result.get("source_pdf_counts") or {}
+            included = int(source_counts.get("FULL", 0) or 0)
+            excluded = sum(int(source_counts.get(key, 0) or 0) for key in (
+                "PARTIAL_SOURCE_PDF_MISSING", "TOO_LARGE", "COPY_FAILED"
+            ))
+            large_notice = int(result.get("large_source_pdf_count", 0) or 0)
             QMessageBox.information(
                 self, "진단 공유 완료",
                 f"브랜치: {branch}\n선택 파일: {result.get('selected_count', len(f_hashes))}개\n"
+                f"원본 PDF 포함: {included}개 / 제외: {excluded}개\n"
+                f"25MiB 초과 대용량 포함: {large_notice}개\n"
                 f"커밋: {commit}\n분석 요청문을 클립보드에 복사했습니다.",
             )
         else:

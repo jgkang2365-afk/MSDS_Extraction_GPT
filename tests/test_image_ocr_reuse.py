@@ -134,6 +134,12 @@ class _Document:
     def close(self):
         return None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
+
 
 def _ocr_line(text, x0, y0, x1, y1):
     return [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]], (text, 0.99)]
@@ -1013,6 +1019,65 @@ class AICallMetricsTests(unittest.TestCase):
         self.assertFalse(engine._ai_call_metrics[0]["response_received"])
         self.assertTrue(engine._ai_call_metrics[0]["discard_reason"].startswith("CALL_ERROR:"))
         self.assertTrue(engine._ai_call_metrics[1]["response_received"])
+
+
+class SectionTablePairingRegressionTests(unittest.TestCase):
+    def test_classification_number_list_is_not_a_concentration(self):
+        engine = engine_module.MSDSEngineV6()
+        self.assertTrue(engine._is_classification_number_list("1, 2, 3"))
+        for valid in ("<1", "〈1", ">3", "1~3", "1-3", "1 to 3"):
+            self.assertFalse(engine._is_classification_number_list(valid))
+        self.assertEqual(engine._normalize_single_content("〈 1"), "<1%")
+
+    def test_html_parser_uses_named_content_column_not_classification_column(self):
+        engine = engine_module.MSDSEngineV6()
+        html = """
+        <table><tr><td>CAS No.</td><td>구분</td><td>함유량(%)</td></tr>
+        <tr><td>1310-73-2</td><td>1, 2, 3</td><td>&lt; 1</td></tr></table>
+        """
+        result = engine.parse_html_table_to_components(html)
+        self.assertEqual(result[0]["cas_no"], "1310-73-2")
+        self.assertEqual(result[0]["content"], "<1%")
+
+    def test_duplicate_component_ai_attempt_is_blocked(self):
+        engine = engine_module.MSDSEngineV6()
+        payload = {"contents": [{"parts": [{"text": "same"}, {"inlineData": {"data": "abc"}}]}]}
+        self.assertTrue(engine._component_ai_attempt_allowed(payload, "model", "prompt-v1"))
+        self.assertFalse(engine._component_ai_attempt_allowed(payload, "model", "prompt-v1"))
+
+    def test_component_target_pages_stops_before_section_four(self):
+        engine = engine_module.MSDSEngineV6()
+        pages = [
+            unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock()
+        ]
+        for index, page in enumerate(pages):
+            page.number = index
+            page.get_text.side_effect = lambda mode, i=index: (
+                [(0, 0, 1, 1, "4. 응급조치 요령" if i == 3 else "성분 표 계속")]
+                if mode == "blocks" else []
+            )
+        document = _Document(pages)
+        with patch.object(engine_module.fitz, "open", return_value=document):
+            self.assertEqual(engine._component_target_pages("pikal.pdf", 2), [2, 3])
+
+    @unittest.skipUnless(hasattr(fitz, "Document"), "PyMuPDF required")
+    def test_actual_sarafong_and_pikal_pages_preserve_expected_evidence(self):
+        test_root = Path(__file__).resolve().parents[1] / "TEST_File"
+        sarafong = next(test_root.glob("008_*.pdf"), None)
+        pikal = next(test_root.glob("051_*.pdf"), None)
+        if not sarafong or not pikal:
+            self.skipTest("actual regression PDFs not available")
+        engine = engine_module.MSDSEngineV6()
+        with fitz.open(sarafong) as document:
+            components = engine.extract_table_by_density_clustering(document[1])
+        pairing = {item["cas_no"]: item["content"] for item in components}
+        self.assertEqual(pairing["1310-73-2"], "<1%")
+        self.assertNotEqual(pairing["1310-73-2"], ">3%")
+
+        rendered = engine._render_component_pages(str(pikal), [2, 3])
+        self.assertEqual([item["page_index"] for item in rendered], [2, 3])
+        self.assertTrue(all(item["data"] for item in rendered))
+        self.assertEqual(engine_module._romanize_hangul_token("피칼"), "pikal")
 
 
 if __name__ == "__main__":

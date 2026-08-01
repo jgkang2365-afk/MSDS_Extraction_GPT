@@ -1,6 +1,8 @@
 import os
 print("[*] [현재 실행 중인 진짜 도면 위치]:", os.path.abspath(__file__))
 import base64
+import hashlib
+import html
 import sys
 import re
 import time
@@ -83,6 +85,20 @@ def _trace_is_full():
         return getattr(mode, "value", str(mode)) == "FULL"
     except Exception:
         return False
+
+
+def _romanize_hangul_token(value):
+    initials = ("g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h")
+    vowels = ("a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i")
+    finals = ("", "k", "k", "ks", "n", "nj", "nh", "t", "l", "lk", "lm", "lb", "ls", "lt", "lp", "lh", "m", "p", "ps", "t", "t", "ng", "t", "t", "k", "t", "p", "h")
+    output = []
+    for char in str(value or ""):
+        code = ord(char) - 0xAC00
+        if 0 <= code < 11172:
+            output.append(initials[code // 588] + vowels[(code % 588) // 28] + finals[code % 28])
+        elif char.isalnum():
+            output.append(char.lower())
+    return "".join(output)
 
 
 def _trace_enabled():
@@ -574,6 +590,8 @@ class MSDSEngineV6:
 
                 content = "미기재%"
                 for candidate in reversed(candidates):
+                    if self._is_classification_number_list(candidate):
+                        continue
                     normalized = self._normalize_single_content(candidate)
                     if normalized != "미기재%":
                         content = normalized
@@ -1213,7 +1231,7 @@ class MSDSEngineV6:
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
 
-    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None):
+    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None, error_code=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
         
         # 🚀 [생산성 고도화] 실패 자재의 내역을 식별성이 높은 ★별표 접두사 장부에 자동 적출
@@ -1251,7 +1269,7 @@ class MSDSEngineV6:
         # 파일명은 진단 표시용일 뿐 제품명 보정 근거로 사용하지 않는다.
         pn_fallback = hybrid_pn or ""
             
-        return {
+        result = {
             "구성성분": "",
             "제품명": pn_fallback,
             "측정대상": "",
@@ -1264,6 +1282,10 @@ class MSDSEngineV6:
             "product_engine": product_engine if product_engine else "제미나이",
             "comp_engine": comp_engine if comp_engine else "제미나이"
         }
+        if error_code:
+            result["status"] = "incomplete"
+            result["error_code"] = error_code
+        return result
 
     def process_msds_pipeline(
         self,
@@ -1498,6 +1520,7 @@ class MSDSEngineV6:
         # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
         original_log_func = log_func
         log_func = None
+        self._component_ai_attempt_fingerprints = set()
 
         start_time = time.time()
         
@@ -1759,6 +1782,29 @@ class MSDSEngineV6:
             recon_data=recon_data,
         )
         labeled_pn = extract_labeled_product_name(compact_context)
+        # 파일명 괄호 표기는 단독 근거로 쓰지 않는다. 같은 토큰(또는 한글의
+        # 로마자 표기)이 실제 1페이지 제목에도 존재할 때만 문서 근거 후보로 승격한다.
+        bracket_candidates = re.findall(r'[\(\[（【]([^\)\]）】]{2,30})[\)\]）】]', os.path.basename(pdf_path))
+        first_page_key = re.sub(r'[^a-z0-9가-힣]', '', str(first_page_text or "").lower())
+        evidence_alias = next((
+            token.strip() for token in bracket_candidates
+            if token.strip()
+            and (
+                re.sub(r'[^a-z0-9가-힣]', '', token.lower()) in first_page_key
+                or _romanize_hangul_token(token) in re.sub(r'[^a-z0-9]', '', first_page_key)
+            )
+        ), "")
+        if evidence_alias and (not labeled_pn or any(
+            generic in re.sub(r'\s+', '', labeled_pn)
+            for generic in ("금속광택제", "세정제", "접착제", "윤활제")
+        )):
+            labeled_pn = evidence_alias
+            _trace_event(
+                "section1.product_alias_evidence",
+                source="filename_bracket_and_page1_title",
+                accepted=True,
+                alias=evidence_alias,
+            )
         local_product_candidate_id = _trace_candidate(
             labeled_pn,
             source="section1_local_text",
@@ -1820,7 +1866,26 @@ class MSDSEngineV6:
 
         verification_status, product_confidence = verify_product_name(hybrid_pn, labeled_pn)
         product_name_source = "ai"
-        if hybrid_pn:
+        generic_ai_name = bool(hybrid_pn) and any(
+            token in re.sub(r'\s+', '', hybrid_pn).lower()
+            for token in ("금속광택제", "세정제", "접착제", "윤활제", "metalpolish", "cleaner", "adhesive")
+        )
+        if labeled_pn and hybrid_pn and (verification_status == "mismatch" or (verification_status == "unverified" and generic_ai_name)):
+            rejected_ai_name = hybrid_pn
+            hybrid_pn = labeled_pn
+            product_name_source = "section1_verified_override"
+            verification_status, product_confidence = "local_evidence", "review"
+            self._diagnostic_product_candidate_id = local_product_candidate_id
+            _trace_event(
+                "candidate_verification",
+                candidate_id=ai_product_candidate_id,
+                verification_status="rejected",
+                reason_code="UNVERIFIED_AI_PRODUCT_ACCEPTED",
+                ai_candidate=rejected_ai_name,
+                local_candidate=labeled_pn,
+                final_disposition="section1_local_text",
+            )
+        if hybrid_pn and product_name_source == "ai":
             self._mark_ai_result_applied(result, "product_name")
             self._diagnostic_product_candidate_id = ai_product_candidate_id
         if not hybrid_pn and labeled_pn:
@@ -2295,6 +2360,54 @@ class MSDSEngineV6:
             original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
         return self._attach_final_diagnostic(res_obj)
 
+    def _component_target_pages(self, pdf_path, target_page_index, limit=3):
+        if target_page_index is None:
+            return []
+        selected = []
+        with fitz.open(pdf_path) as doc:
+            for page_index in range(target_page_index, min(len(doc), target_page_index + limit)):
+                text = self._get_sorted_and_normalized_text(doc[page_index])
+                selected.append(page_index)
+                if page_index > target_page_index and re.search(
+                    r'(?:SECTION\s*)?4[\s.:]*(?:응급|FIRST\s*AID)', text, re.I
+                ):
+                    break
+        return selected or [target_page_index]
+
+    def _render_component_pages(self, pdf_path, page_indexes):
+        rendered = []
+        with fitz.open(pdf_path) as doc:
+            for page_index in page_indexes:
+                if page_index < 0 or page_index >= len(doc):
+                    continue
+                pixmap = doc[page_index].get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+                rendered.append({
+                    "data": base64.b64encode(pixmap.tobytes("png")).decode("utf-8"),
+                    "mime_type": "image/png",
+                    "page_index": page_index,
+                })
+        return rendered
+
+    def _component_ai_attempt_allowed(self, payload, model, prompt_version, crop_bounds=None):
+        fingerprint_source = json.dumps({
+            "payload": payload,
+            "model": model,
+            "prompt_version": prompt_version,
+            "crop_bounds": crop_bounds,
+        }, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        fingerprint = hashlib.sha256(fingerprint_source).hexdigest()
+        attempts = getattr(self, "_component_ai_attempt_fingerprints", set())
+        if fingerprint in attempts:
+            _trace_event(
+                "ai.component_retry_blocked",
+                reason_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
+                fingerprint=fingerprint,
+            )
+            return False
+        attempts.add(fingerprint)
+        self._component_ai_attempt_fingerprints = attempts
+        return True
+
     def _trigger_ai_extraction(
         self,
         pdf_path,
@@ -2361,7 +2474,12 @@ class MSDSEngineV6:
         # 🚀 [비용 절감 2단계] 유료 API 송신 전, 로컬 텍스트 가루 기반 문패 선제 타격
         try:
             doc = fitz.open(pdf_path)
-            for idx, page in enumerate(doc):
+            scout_indexes = set(range(min(4, len(doc))))
+            scout_indexes.update(index for index in pages if 0 <= index < len(doc))
+            if target_page_index is not None and 0 <= target_page_index < len(doc):
+                scout_indexes.add(target_page_index)
+            for idx in sorted(scout_indexes):
+                page = doc[idx]
                 page_text = page.get_text().lower()
                 # 3번 섹션을 뜻하는 핵심 문패 검문
                 if any(k in page_text for k in ["composition", "ingredients", "구성성분", "혼합물"]):
@@ -2377,28 +2495,55 @@ class MSDSEngineV6:
             
         # 🎯 진짜 성분이 적힌 '단 1장의 페이지'만 추출하여 API 페이로드로 확정
         optimized_payload = []
+        image_page_map = []
         try:
-            target_image_idx = None
-            if target_page_index is not None and pages:
-                if target_page_index in pages:
-                    target_image_idx = pages.index(target_page_index)
-            
-            if target_image_idx is not None and target_image_idx < len(image_list):
-                # 🛡️ [Multi-page Bridge Filter] 페이지 경계면 성분 단절 치유를 위해 문패 지점부터 최대 3장 결착 송신
-                optimized_payload = image_list[target_image_idx : target_image_idx + 3]
-                if original_log_func: original_log_func(f"  🎯 [비용 다이어트] 로컬 문패 저격 성공 (Target {target_page_index + 1}p부터 핵심 {len(optimized_payload)}장 정밀 송신 완착)")
+            if precomputed_sandwich and precomputed_sandwich.get("status") == "SUCCESS":
+                optimized_payload = image_list[:1]
+                image_page_map = [target_page_index] if target_page_index is not None else []
+                target_pages = image_page_map
             else:
-                # 문패를 못 찾은 최악의 경우에만 상위 3장 가변 제한망 가동
+                target_pages = self._component_target_pages(pdf_path, target_page_index)
+            declared_map = [item.get("page_index") for item in image_list if isinstance(item, dict)]
+            if len(declared_map) != len(image_list) or any(index is None for index in declared_map):
+                declared_map = list(pages[:len(image_list)]) if len(pages) >= len(image_list) else []
+            if precomputed_sandwich and precomputed_sandwich.get("status") == "SUCCESS":
+                pass
+            elif target_page_index is not None and target_page_index not in declared_map:
+                _trace_event(
+                    "ai.component_input_rebuild",
+                    reason_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+                    target_page_index=target_page_index,
+                    source_page_indexes=declared_map,
+                )
+                optimized_payload = self._render_component_pages(pdf_path, target_pages)
+                image_page_map = [item["page_index"] for item in optimized_payload]
+            else:
+                indexes = [declared_map.index(index) for index in target_pages if index in declared_map]
+                optimized_payload = [image_list[index] for index in indexes]
+                image_page_map = [declared_map[index] for index in indexes]
+            if target_page_index is None:
                 optimized_payload = image_list[:3]
+                image_page_map = declared_map[:len(optimized_payload)]
+            if target_page_index is not None and (not optimized_payload or target_page_index not in image_page_map):
+                return self._get_graceful_error_dict(
+                    pdf_path, "성분 AI 입력 이미지 페이지 불일치", log_func=None,
+                    hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                    comp_engine="제미나이", error_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+                )
         except Exception as e:
-            raise ValueError(f"페이로드 빌드 중 치명적 결함 격발: {e}")
+            return self._get_graceful_error_dict(
+                pdf_path, f"성분 이미지 재구성 실패: {e}", log_func=None,
+                hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                comp_engine="제미나이", error_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+            )
 
         # 이중 스캔 방지 및 페이로드 축소를 위해 최적화된 이미지 목록으로 교체
         image_list = optimized_payload
         _trace_event(
             "ai.component_input_selection",
             target_page_index=target_page_index,
-            source_page_indexes=list(pages or []),
+            source_page_indexes=image_page_map,
+            image_page_map=image_page_map,
             image_count=len(image_list),
             section3_text_length=len(section3_text or ""),
         )
@@ -2525,6 +2670,15 @@ class MSDSEngineV6:
                     "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                 }
                 
+                if not self._component_ai_attempt_allowed(
+                    payload_fallback, "gemini-2.5-flash", "fallback_crop_v1",
+                    crop_bounds=res_acc.get("crop_bounds"),
+                ):
+                    return self._get_graceful_error_dict(
+                        pdf_path, "동일 성분 AI 재호출 차단", hybrid_pn=hybrid_pn,
+                        doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이",
+                        error_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
+                    )
                 raw_ai_fallback = self.call_llm_router(payload_fallback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                 if raw_ai_fallback:
                     try:
@@ -2578,6 +2732,14 @@ class MSDSEngineV6:
                         "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                     }
                     
+                    if not self._component_ai_attempt_allowed(
+                        payload_rollback, "gemini-2.5-flash", "rollback_full_page_v1",
+                    ):
+                        return self._get_graceful_error_dict(
+                            pdf_path, "동일 성분 AI 재호출 차단", hybrid_pn=hybrid_pn,
+                            doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이",
+                            error_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
+                        )
                     raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                     rollback_success = False
                     if raw_ai_rollback:
@@ -2659,7 +2821,11 @@ class MSDSEngineV6:
             reason = ai_res.get("교정_사유", "AI 완착")
         else:
             if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
-            return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않음", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
+            return self._get_graceful_error_dict(
+                pdf_path, "근거 입력은 있으나 성분 추출 결과가 비어 있음", log_func=None,
+                hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                comp_engine="제미나이", error_code="COMPONENT_EXTRACTION_EMPTY_WITH_EVIDENCE",
+            )
 
         components = self.refine_msds_components_strict(components)
         
@@ -3287,8 +3453,21 @@ class MSDSEngineV6:
             text_list.append(normalized_block)
         return "\n".join(text_list)
 
+    @staticmethod
+    def _is_classification_number_list(value):
+        """위험성 구분 열의 `1, 2, 3`을 함유량으로 오인하지 않는다."""
+        compact = unicodedata.normalize("NFKC", str(value or "")).strip()
+        if re.search(r'[%<>≤≥≦≧~∼～\-]|\bto\b', compact, re.I):
+            return False
+        return bool(re.fullmatch(r'\s*\d+(?:\s*[,，/]\s*\d+){1,}\s*', compact))
+
     def _normalize_single_content(self, content_str):
         original_content = str(content_str or "")
+        content_str = original_content.translate(str.maketrans({
+            "〈": "<", "＜": "<", "≺": "<", "〉": ">", "＞": ">", "≻": ">",
+        }))
+        if self._is_classification_number_list(content_str):
+            return "미기재%"
         content_str = msds_utils_v3.normalize_decimal_comma_content(content_str)
         _trace_event("normalization.content.input", input_value=str(content_str or ""))
         if content_str != original_content and "%" in original_content:
@@ -3738,6 +3917,8 @@ class MSDSEngineV6:
                 if re.match(r'^\d+$', txt.strip()):
                     val = int(txt.strip())
                     if val > 100: continue
+                if self._is_classification_number_list(txt):
+                    continue
                         
                 cleaned_txt = msds_utils_v3.clean_content_text(txt)
                 norm_val = self._normalize_single_content(cleaned_txt)
@@ -4932,6 +5113,8 @@ class MSDSEngineV6:
             if not c: continue
             c = msds_utils_v3.sanitize_chemical_formulas(c)
             c = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', c)
+            if self._is_classification_number_list(c):
+                continue
 
             found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)
             if found_cas:
@@ -4973,7 +5156,7 @@ class MSDSEngineV6:
                         # 🛡️ [데이터 검증 및 에러 예외 처리 - 회귀 차단 인터락 완착]
                         # 조기 탈출(break)을 철거하여 우측 Cas No. 격실 순회가 강제 취소되는 장해를 원천 소각합니다.
                         continue
-                    elif not strong_content:
+                    elif priority_col_idx < 0 and not strong_content:
                         strong_content = self._clean_content_odl(norm_c)
                 else:
                     # 한글 또는 영문 알파벳 포함 시 함량 후보군(weak_content) 등록 제외 (Bypass)
@@ -5139,10 +5322,17 @@ class MSDSEngineV6:
         noise_keywords = {"twa", "stel", "pel", "tlv", "mg/m", "mg/㎥", "노출기준", "exposure"}
         
         extracted_items = []
-        
+        content_col_idx = -1
+        parsed_rows = []
         for tr in rows:
-            td_contents = td_pattern.findall(tr)
-            row_cells = [re.sub(r'<[^>]+>', '', td).strip() for td in td_contents]
+            cells = [html.unescape(re.sub(r'<[^>]+>', '', td)).strip() for td in td_pattern.findall(tr)]
+            parsed_rows.append(cells)
+            for index, cell in enumerate(cells):
+                header = re.sub(r'[\s\(\)\.%\|_]', '', cell.lower())
+                if any(key in header for key in ("함유량", "함량", "content", "concentration", "weight")):
+                    content_col_idx = index
+
+        for row_cells in parsed_rows:
             row_clean_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in row_cells}
             
             if row_clean_set.intersection(header_keywords): continue
@@ -5153,9 +5343,15 @@ class MSDSEngineV6:
             if not cas_candidates: continue
             
             content_candidates = []
-            for c in row_cells:
+            indexed_candidates = (
+                [(content_col_idx, row_cells[content_col_idx])]
+                if 0 <= content_col_idx < len(row_cells)
+                else list(enumerate(row_cells))
+            )
+            for _cell_idx, c in indexed_candidates:
                 if not c: continue
                 if any(cand in c for cand in cas_candidates): continue
+                if self._is_classification_number_list(c): continue
                 
                 norm_c = self._normalize_single_content(c)
                 is_percent = '%' in c

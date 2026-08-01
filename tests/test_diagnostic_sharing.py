@@ -53,6 +53,8 @@ class ReviewStateTests(unittest.TestCase):
 
 class PackageTests(unittest.TestCase):
     def _record(self, root, run_id="run-1", trace_id="trace-1", selected=True, status="completed"):
+        source_pdf = Path(root) / f"{trace_id}.pdf"
+        source_pdf.write_bytes(b"%PDF-1.4\noriginal-source-bytes\n%%EOF")
         source_dir = Path(root) / "logs" / "runs" / run_id / "files" / trace_id
         images_dir = source_dir / "images"
         images_dir.mkdir(parents=True)
@@ -72,6 +74,7 @@ class PackageTests(unittest.TestCase):
         (source_dir / "diagnostic.md").write_text(r"source C:\Users\someone\private\sample.pdf", encoding="utf-8")
         return {
             "filename": "012_긴 파일명: FRESH?.pdf", "product_name": "제품",
+            "full_path": str(source_pdf),
             "raw_content": "140-11-4(2.00%)", "status": status,
             "source_branch": "codex/source", "source_commit": "abc123",
             "diagnostics": {
@@ -102,6 +105,9 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(len(list((package / "files").iterdir())), 1)
             self.assertEqual(len(list(package.rglob("section3_crop.png"))), 1)
             self.assertFalse(list(package.rglob("*ai_input*")))
+            shared_pdf = next(package.rglob("*.pdf"))
+            self.assertEqual(shared_pdf.read_bytes(), Path(selected["full_path"]).read_bytes())
+            self.assertEqual(summary["source_pdf_counts"]["FULL"], 1)
             self.assertTrue((package / "run_summary.md").exists())
             self.assertTrue((package / "run_summary.json").exists())
             manifest = json.loads((package / "manifest.json").read_text(encoding="utf-8"))
@@ -110,6 +116,28 @@ class PackageTests(unittest.TestCase):
             self.assertNotIn(r"C:\Users\someone", shared_text)
             self.assertNotIn("should not be shared", shared_text)
             assert_share_is_safe(package)
+
+    def test_missing_and_too_large_source_pdf_do_not_block_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = self._record(tmp, trace_id="missing")
+            Path(missing["full_path"]).unlink()
+            large = self._record(tmp, trace_id="large")
+            with patch("diagnostic_sharing.SOURCE_PDF_HARD_LIMIT_BYTES", 8):
+                package, summary = build_share_package([missing, large], tmp)
+            self.assertEqual(summary["source_pdf_counts"]["PARTIAL_SOURCE_PDF_MISSING"], 1)
+            self.assertEqual(summary["source_pdf_counts"]["TOO_LARGE"], 1)
+            self.assertFalse(list(package.rglob("*.pdf")))
+
+    def test_user_review_diagnosis_records_known_pairing_and_page_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._record(tmp, trace_id="sarafong")
+            record["filename"] = "008_★msds_사라퐁.pdf"
+            record["user_review"]["user_note"] = "1310-73-2(>3%) -->(<1%)"
+            package, summary = build_share_package([record], tmp)
+            diagnosis = summary["files"][0]["diagnosis"]
+            self.assertEqual(diagnosis["reason_code"], "CLASSIFICATION_COLUMN_MISREAD_AS_CONCENTRATION")
+            review = json.loads(next(package.rglob("user_review.json")).read_text(encoding="utf-8"))
+            self.assertEqual(review["diagnosis"]["expected"], "<1%")
 
     def test_safe_name_preserves_readable_prefix_and_trace_suffix(self):
         value = safe_export_name('가:나/다*라?.pdf', 'abcdef123456')
