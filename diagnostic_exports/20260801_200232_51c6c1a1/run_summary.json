@@ -1,0 +1,55 @@
+{
+  "run_id": "20260801_200232_51c6c1a1",
+  "source_branch": "codex/msds-engine-v7",
+  "source_commit": "29d7c0442ec02ee3250593b6c44b0a38bd6e3afd",
+  "diagnostic_mode": "SUMMARY",
+  "total_files": 8,
+  "normal_files": 8,
+  "automatic_failure_files": 0,
+  "selected_error_files": 2,
+  "started_at": 1785582152.8535705,
+  "finished_at": 1785582368.8358994,
+  "files": [
+    {
+      "file_name": "008_★msds_사라퐁.pdf",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "system_status": "completed",
+      "user_marked_error": true,
+      "error_types": [
+        "함유량 오류"
+      ],
+      "user_note": "1310-73-2(>3%) -->(<1%)",
+      "product_name": "사라퐁",
+      "component_count": 2,
+      "diagnostic_path": "files/008_★msds_사라퐁__5e8f78b3/diagnostic.md",
+      "image_paths": [],
+      "first_failure_stage": "진단자료에서 확인되지 않음",
+      "direct_failure_reason": "미확인",
+      "fallback_path": "기록 없음",
+      "ai_calls": 1,
+      "ocr_calls": 0
+    },
+    {
+      "file_name": "051_★금속광택제(피칼)_MSDS.pdf",
+      "file_trace_id": "76c6e3f866b15da3caf204c5",
+      "system_status": "completed",
+      "user_marked_error": true,
+      "error_types": [
+        "제품명 오류",
+        "전체 성분 누락"
+      ],
+      "user_note": "CAS번호 및 함유량 모두 누락",
+      "product_name": "금속광택제튜브타입",
+      "component_count": 0,
+      "diagnostic_path": "files/051_★금속광택제(피칼)_MSDS__76c6e3f8/diagnostic.md",
+      "image_paths": [],
+      "first_failure_stage": "진단자료에서 확인되지 않음",
+      "direct_failure_reason": "미확인",
+      "fallback_path": "기록 없음",
+      "ai_calls": 4,
+      "ocr_calls": 1
+    }
+  ],
+  "images_excluded_by_policy": true,
+  "original_pdfs_included": false
+}

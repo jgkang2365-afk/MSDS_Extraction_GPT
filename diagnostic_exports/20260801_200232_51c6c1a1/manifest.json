@@ -1,0 +1,61 @@
+{
+  "run_id": "20260801_200232_51c6c1a1",
+  "files": [
+    {
+      "relative_path": "files/008_★msds_사라퐁__5e8f78b3/diagnostic.json",
+      "size": 38283,
+      "sha256": "79d2ce8c2b70a044320b2657d51786263b960f2b99996dc6e58d88405b17714e",
+      "kind": "json",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34"
+    },
+    {
+      "relative_path": "files/008_★msds_사라퐁__5e8f78b3/diagnostic.md",
+      "size": 5621,
+      "sha256": "16107b745da97f76efe89d2b29b582413f2d5da4eb9bd0dafccfffa2d76657a5",
+      "kind": "md",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34"
+    },
+    {
+      "relative_path": "files/008_★msds_사라퐁__5e8f78b3/user_review.json",
+      "size": 328,
+      "sha256": "2d8286ab1eefce8868eb9824d90e17d965ea0598e884bb87d6558408dbb4e17f",
+      "kind": "json",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34"
+    },
+    {
+      "relative_path": "files/051_★금속광택제(피칼)_MSDS__76c6e3f8/diagnostic.json",
+      "size": 54537,
+      "sha256": "18ef5129c22062b2ee214b3f41a8aad917351d2c146b0ebc81672555c868221b",
+      "kind": "json",
+      "file_trace_id": "76c6e3f866b15da3caf204c5"
+    },
+    {
+      "relative_path": "files/051_★금속광택제(피칼)_MSDS__76c6e3f8/diagnostic.md",
+      "size": 9496,
+      "sha256": "118baa4770f78c1131ba9c221d0508dd9f44237005227865f37972775738043d",
+      "kind": "md",
+      "file_trace_id": "76c6e3f866b15da3caf204c5"
+    },
+    {
+      "relative_path": "files/051_★금속광택제(피칼)_MSDS__76c6e3f8/user_review.json",
+      "size": 385,
+      "sha256": "ebf123e666cb912679300f262719ef2575507961fdc2a7c0fd1f4772468ac2b7",
+      "kind": "json",
+      "file_trace_id": "76c6e3f866b15da3caf204c5"
+    },
+    {
+      "relative_path": "run_summary.json",
+      "size": 1892,
+      "sha256": "8ddd3560f03064f944647fe52ed5faf1c50c1576e68324dc37b7156cfe100366",
+      "kind": "json",
+      "file_trace_id": ""
+    },
+    {
+      "relative_path": "run_summary.md",
+      "size": 1669,
+      "sha256": "fac4260a7ca7b93364dc17ce3bc5a6d075bc80b6d4f6fc83e222ae5a86c4dc61",
+      "kind": "md",
+      "file_trace_id": ""
+    }
+  ]
+}

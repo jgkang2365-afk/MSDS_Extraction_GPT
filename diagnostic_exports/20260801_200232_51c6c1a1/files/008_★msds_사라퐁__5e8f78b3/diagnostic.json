@@ -1,0 +1,1165 @@
+{
+  "context": {
+    "run_id": "20260801_200232_51c6c1a1",
+    "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+    "mode": "SUMMARY",
+    "base_dir": "logs\\runs",
+    "source_name": "<repo>/TEST_File/008_★msds_사라퐁.pdf",
+    "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+    "file_path": "[EXCLUDED FROM SHARE]",
+    "created_at": "2026-08-01T11:02:50.865+00:00"
+  },
+  "result": {
+    "status": "completed",
+    "제품명": "사라퐁",
+    "구성성분": "7732-18-5(60~70%); 1310-73-2(>3%)",
+    "함유량": "7732-18-5(60~70%); 1310-73-2(>3%)",
+    "신호등": "🟢",
+    "used_engine": "analytic",
+    "document_type": "text",
+    "product_name_source": "ai",
+    "local_text_candidate": "",
+    "verification_status": "unverified",
+    "cas_candidates": [],
+    "content_matching_complete": true,
+    "error_code": "",
+    "last_completed_stage": ""
+  },
+  "details": {
+    "status": "completed",
+    "elapsed_seconds": 10.562
+  },
+  "failed": false,
+  "events_count": 482,
+  "candidates": [
+    {
+      "candidate_id": "candidate-001",
+      "derived_from": null,
+      "value": "사라퐁",
+      "transform": "product_name_cleanup",
+      "before": "사라퐁",
+      "after": "사라퐁"
+    },
+    {
+      "candidate_id": "candidate-002",
+      "derived_from": null,
+      "value": {
+        "cas": "7732-18-5",
+        "content": "60~70%"
+      },
+      "transform": "quality_accepted"
+    },
+    {
+      "candidate_id": "candidate-003",
+      "derived_from": null,
+      "value": {
+        "cas": "1310-73-2",
+        "content": ">3%"
+      },
+      "transform": "quality_accepted"
+    },
+    {
+      "candidate_id": "candidate-004",
+      "derived_from": "candidate-001",
+      "value": {
+        "product_name": "사라퐁",
+        "components": "7732-18-5(60~70%); 1310-73-2(>3%)"
+      },
+      "source": "engine_final_result",
+      "role": "engine_final_candidate"
+    },
+    {
+      "candidate_id": "candidate-005",
+      "derived_from": null,
+      "value": {
+        "cas": "7732-18-5",
+        "content": "60~70%"
+      },
+      "transform": "core_result_contract_normalization",
+      "module": "msds_core",
+      "function": "_postprocess_extraction_result"
+    },
+    {
+      "candidate_id": "candidate-006",
+      "derived_from": null,
+      "value": {
+        "cas": "1310-73-2",
+        "content": ">3%"
+      },
+      "transform": "core_result_contract_normalization",
+      "module": "msds_core",
+      "function": "_postprocess_extraction_result"
+    },
+    {
+      "candidate_id": "candidate-007",
+      "derived_from": "candidate-004",
+      "value": {
+        "product_name": "사라퐁",
+        "components": "7732-18-5(60~70%); 1310-73-2(>3%)"
+      },
+      "role": "gui_final_candidate"
+    }
+  ],
+  "transforms": [
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-001",
+      "timestamp": "2026-08-01T11:02:59.011+00:00",
+      "elapsed_ms": 5000.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": "사라퐁",
+        "transform": "product_name_cleanup",
+        "before": "사라퐁",
+        "after": "사라퐁"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-002",
+      "timestamp": "2026-08-01T11:03:01.323+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "transform": "refine_msds_components_strict"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-003",
+      "timestamp": "2026-08-01T11:03:01.328+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "transform": "refine_msds_components_strict"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-002",
+      "timestamp": "2026-08-01T11:03:01.331+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "transform": "quality_accepted"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-003",
+      "timestamp": "2026-08-01T11:03:01.334+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "transform": "quality_accepted"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-002",
+      "timestamp": "2026-08-01T11:03:01.338+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "transform": "refine_msds_components_strict"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-003",
+      "timestamp": "2026-08-01T11:03:01.340+00:00",
+      "elapsed_ms": 7328.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "transform": "refine_msds_components_strict"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-002",
+      "timestamp": "2026-08-01T11:03:01.358+00:00",
+      "elapsed_ms": 7344.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "transform": "quality_accepted"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-003",
+      "timestamp": "2026-08-01T11:03:01.361+00:00",
+      "elapsed_ms": 7344.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "transform": "quality_accepted"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-005",
+      "timestamp": "2026-08-01T11:03:01.406+00:00",
+      "elapsed_ms": 16.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "transform": "core_result_contract_normalization",
+        "module": "msds_core",
+        "function": "_postprocess_extraction_result"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-006",
+      "timestamp": "2026-08-01T11:03:01.412+00:00",
+      "elapsed_ms": 16.0,
+      "event_type": "candidate_transform",
+      "event": "candidate_transform",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "transform": "core_result_contract_normalization",
+        "module": "msds_core",
+        "function": "_postprocess_extraction_result"
+      }
+    }
+  ],
+  "rejections": [],
+  "merges": [
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-004",
+      "timestamp": "2026-08-01T11:03:01.368+00:00",
+      "elapsed_ms": 7344.0,
+      "event_type": "candidate_merged",
+      "event": "candidate_merged",
+      "level": "info",
+      "details": {
+        "source_candidate_ids": [
+          "candidate-001",
+          "candidate-002",
+          "candidate-003"
+        ],
+        "reason": "final_component_serialization"
+      }
+    }
+  ],
+  "overrides": [],
+  "images": [],
+  "stages": [
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "msds_pipeline",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.019+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "stage_start",
+      "event": "stage_start",
+      "level": "info",
+      "details": {
+        "module": "msds_engine_v6",
+        "function": "process_msds_pipeline",
+        "engine": "MSDSEngineV6",
+        "input_summary": {
+          "file_path": "[EXCLUDED FROM SHARE]"
+        }
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "msds_pipeline",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.376+00:00",
+      "elapsed_ms": 7360.0,
+      "event_type": "stage_result",
+      "event": "stage_result",
+      "level": "info",
+      "details": {
+        "status": "success",
+        "output_summary": {
+          "used_engine": "analytic"
+        },
+        "candidate_count": 2,
+        "elapsed_ms": 7356.458
+      }
+    }
+  ],
+  "engine_results": [
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "engine",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:50.892+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_isolation_started",
+      "event": "engine_isolation_started",
+      "level": "info",
+      "details": {
+        "document_type": "text",
+        "timeout_seconds": 180.0
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "engine",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.015+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_child_started",
+      "event": "engine_child_started",
+      "level": "info",
+      "details": {
+        "file_path": "[EXCLUDED FROM SHARE]"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "msds_pipeline",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.019+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "stage_start",
+      "event": "stage_start",
+      "level": "info",
+      "details": {
+        "module": "msds_engine_v6",
+        "function": "process_msds_pipeline",
+        "engine": "MSDSEngineV6",
+        "input_summary": {
+          "file_path": "[EXCLUDED FROM SHARE]"
+        }
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.138+00:00",
+      "elapsed_ms": 125.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 1,
+        "block_count": 33,
+        "word_count": 116
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.147+00:00",
+      "elapsed_ms": 125.0,
+      "event_type": "section3.page_search",
+      "event": "section3.page_search",
+      "level": "info",
+      "details": {
+        "page_indexes": [
+          1,
+          2,
+          3
+        ],
+        "document_pages": 7
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.154+00:00",
+      "elapsed_ms": 141.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 2,
+        "block_count": 32,
+        "word_count": 149
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.334+00:00",
+      "elapsed_ms": 313.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 3,
+        "block_count": 32,
+        "word_count": 72
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.462+00:00",
+      "elapsed_ms": 438.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 4,
+        "block_count": 35,
+        "word_count": 110
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.564+00:00",
+      "elapsed_ms": 547.0,
+      "event_type": "section3.text_source_result",
+      "event": "section3.text_source_result",
+      "level": "info",
+      "details": {
+        "engine": "PyMuPDF blocks",
+        "page_indexes": [
+          1,
+          2,
+          3
+        ],
+        "page_numbers": [
+          2,
+          3,
+          4
+        ],
+        "character_count": 2232,
+        "raw_text": "[EXCLUDED FROM SHARE]",
+        "status": "success"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.566+00:00",
+      "elapsed_ms": 547.0,
+      "event_type": "section3.selection",
+      "event": "section3.selection",
+      "level": "info",
+      "details": {
+        "page_indexes": [
+          1,
+          2,
+          3
+        ],
+        "image_count": 3,
+        "text_length": 2232,
+        "recon_used": false
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.576+00:00",
+      "elapsed_ms": 563.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 1,
+        "block_count": 33,
+        "word_count": 116
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.581+00:00",
+      "elapsed_ms": 563.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 2,
+        "block_count": 32,
+        "word_count": 149
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.586+00:00",
+      "elapsed_ms": 563.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 3,
+        "block_count": 32,
+        "word_count": 72
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.591+00:00",
+      "elapsed_ms": 578.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 4,
+        "block_count": 35,
+        "word_count": 110
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.596+00:00",
+      "elapsed_ms": 578.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 5,
+        "block_count": 34,
+        "word_count": 106
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.600+00:00",
+      "elapsed_ms": 578.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 6,
+        "block_count": 32,
+        "word_count": 104
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.603+00:00",
+      "elapsed_ms": 594.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 7,
+        "block_count": 24,
+        "word_count": 88
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.722+00:00",
+      "elapsed_ms": 703.0,
+      "event_type": "ai.input",
+      "event": "ai.input",
+      "level": "info",
+      "details": {
+        "purpose": "product_name",
+        "requested_model": "gemini-2.5-flash",
+        "input_mode": "text",
+        "text_length": 1596,
+        "image_count": 0,
+        "max_retries": 2
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:54.724+00:00",
+      "elapsed_ms": 703.0,
+      "event_type": "ai.call.start",
+      "event": "ai.call.start",
+      "level": "info",
+      "details": {
+        "provider": "deepseek",
+        "model": "deepseek/deepseek-v4-flash",
+        "purpose": "product_name",
+        "input_mode": "text",
+        "attempt_number": 1
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:59.007+00:00",
+      "elapsed_ms": 4985.0,
+      "event_type": "ai.call.response",
+      "event": "ai.call.response",
+      "level": "info",
+      "details": {
+        "provider": "deepseek",
+        "model": "deepseek/deepseek-v4-flash",
+        "purpose": "product_name",
+        "response_text_length": 3,
+        "provider_response_returned": true,
+        "json_parse_succeeded": false,
+        "raw_response": "[EXCLUDED FROM SHARE]",
+        "product_name_harvested": true,
+        "cas_harvested": false,
+        "content_harvested": false,
+        "discard_reason": ""
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-001",
+      "timestamp": "2026-08-01T11:02:59.011+00:00",
+      "elapsed_ms": 5000.0,
+      "event_type": "candidate_registered",
+      "event": "candidate_registered",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": "사라퐁",
+        "source": "ai_product_name_response",
+        "field": "product_name",
+        "engine": "deepseek"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:59.012+00:00",
+      "elapsed_ms": 5000.0,
+      "event_type": "ai.result_application",
+      "event": "ai.result_application",
+      "level": "info",
+      "details": {
+        "purpose": "product_name",
+        "applied_fields": [
+          "product_name"
+        ],
+        "applied": true,
+        "discard_reason": ""
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "ai_response_complete",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:59.013+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_checkpoint",
+      "event": "engine_checkpoint",
+      "level": "info",
+      "details": {
+        "checkpoint_stage": "ai_response_complete",
+        "next_stage": "product_name_verification"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "product_name_complete",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:02:59.015+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_checkpoint",
+      "event": "engine_checkpoint",
+      "level": "info",
+      "details": {
+        "checkpoint_stage": "product_name_complete",
+        "next_stage": "section3_recon"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.312+00:00",
+      "elapsed_ms": 7297.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 2,
+        "block_count": 32,
+        "word_count": 149
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.315+00:00",
+      "elapsed_ms": 7297.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 3,
+        "block_count": 32,
+        "word_count": 72
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.317+00:00",
+      "elapsed_ms": 7297.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 4,
+        "block_count": 35,
+        "word_count": 110
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-002",
+      "timestamp": "2026-08-01T11:03:01.321+00:00",
+      "elapsed_ms": 7297.0,
+      "event_type": "candidate_registered",
+      "event": "candidate_registered",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "7732-18-5",
+          "content": "60~70%"
+        },
+        "source": "refine_msds_components_strict",
+        "engine": "Regex-Recovery",
+        "page": ""
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": "candidate-003",
+      "timestamp": "2026-08-01T11:03:01.326+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "candidate_registered",
+      "event": "candidate_registered",
+      "level": "info",
+      "details": {
+        "derived_from": null,
+        "value": {
+          "cas": "1310-73-2",
+          "content": ">3%"
+        },
+        "source": "refine_msds_components_strict",
+        "engine": "Regex-Recovery",
+        "page": ""
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.337+00:00",
+      "elapsed_ms": 7313.0,
+      "event_type": "section3.local_branch",
+      "event": "section3.local_branch",
+      "level": "info",
+      "details": {
+        "candidate_count": 2,
+        "perfect": false,
+        "invalid_cas": false,
+        "integrity_valid": true
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.349+00:00",
+      "elapsed_ms": 7328.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 2,
+        "block_count": 32,
+        "word_count": 149
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.352+00:00",
+      "elapsed_ms": 7328.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 3,
+        "block_count": 32,
+        "word_count": 72
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": null,
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.355+00:00",
+      "elapsed_ms": 7344.0,
+      "event_type": "pymupdf.text_source",
+      "event": "pymupdf.text_source",
+      "level": "info",
+      "details": {
+        "page_number": 4,
+        "block_count": 35,
+        "word_count": 110
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "cas_candidates_complete",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.365+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_checkpoint",
+      "event": "engine_checkpoint",
+      "level": "info",
+      "details": {
+        "checkpoint_stage": "cas_candidates_complete",
+        "next_stage": "cas_content_pairing"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "cas_content_matching_complete",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.367+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_checkpoint",
+      "event": "engine_checkpoint",
+      "level": "info",
+      "details": {
+        "checkpoint_stage": "cas_content_matching_complete",
+        "next_stage": "finalize"
+      }
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "engine",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.377+00:00",
+      "elapsed_ms": 7360.0,
+      "event_type": "engine_child_completed",
+      "event": "engine_child_completed",
+      "level": "info",
+      "details": {}
+    },
+    {
+      "run_id": "20260801_200232_51c6c1a1",
+      "file_trace_id": "5e8f78b3fd6689ce1618ef34",
+      "file_hash": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+      "file_path": "[EXCLUDED FROM SHARE]",
+      "stage_id": "engine",
+      "parent_stage_id": null,
+      "candidate_id": null,
+      "timestamp": "2026-08-01T11:03:01.399+00:00",
+      "elapsed_ms": 0.0,
+      "event_type": "engine_isolation_completed",
+      "event": "engine_isolation_completed",
+      "level": "info",
+      "details": {}
+    }
+  ],
+  "failures": []
+}
