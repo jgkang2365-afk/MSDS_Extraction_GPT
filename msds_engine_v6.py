@@ -14,7 +14,7 @@ import fitz
 from google.oauth2 import service_account
 import google.auth.transport.requests 
 import unicodedata
-from batch_pipeline import verify_product_name
+from batch_pipeline import normalize_product_name, verify_product_name
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
 from dotenv import load_dotenv
@@ -911,47 +911,145 @@ class MSDSEngineV6:
                     time.sleep(1.0)
         raise Exception("DeepSeek API 호출 최종 실패")
 
-    def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False):
-        """
-        [Failover 관문] 1선 DeepSeek(30초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
-        (단, is_scanned_strict가 True인 경우 DeepSeek를 Bypass하고 곧바로 Gemini 비전 채널로 다이렉트 직결)
-        """
-        self._ai_call_count += 1
-        ai_started = time.perf_counter()
-        ai_metric = {
-            "provider": "vertex" if is_scanned_strict else "router",
-            "model": model,
-            "purpose": "image_extraction" if is_scanned_strict else "text_extraction",
-            "called": True,
-            "response_received": False,
-            "elapsed_seconds": 0.0,
-            "product_name_harvested": False,
-            "cas_harvested": False,
-            "content_harvested": False,
-            "final_result_applied": False,
-            "discard_reason": "",
+    @staticmethod
+    def _ai_response_text(response):
+        if not isinstance(response, dict):
+            return ""
+        try:
+            return str(response.get("candidates", [])[0].get("content", {}).get("parts", [])[0].get("text", "")).strip()
+        except (IndexError, AttributeError, TypeError):
+            return ""
+
+    @classmethod
+    def _analyze_ai_response(cls, response, purpose):
+        """한 AI 응답 자체에서 실제 수확된 필드를 판정한다."""
+        text = cls._ai_response_text(response)
+        clean = text.replace("```json", "").replace("```", "").strip()
+        parsed = None
+        try:
+            parsed = json.loads(clean) if clean else None
+        except (ValueError, TypeError):
+            parsed = None
+
+        product_name = ""
+        components = []
+        if isinstance(parsed, dict):
+            product_name = str(parsed.get("product_name") or parsed.get("제품명") or "").strip()
+            for key in ("components", "구성성분", "성분", "items", "substances"):
+                if isinstance(parsed.get(key), list):
+                    components = parsed[key]
+                    break
+        elif isinstance(parsed, list):
+            components = parsed
+
+        if purpose == "product_name" and not product_name and clean and len(clean) < 100 and not re.search(r"\d{2,7}-\d{2}-\d", clean):
+            product_name = clean
+
+        cas_values = set(re.findall(r"\d{2,7}-\d{2}-\d", text))
+        content_pairs = []
+        content_found = False
+        for item in components:
+            if not isinstance(item, dict):
+                continue
+            cas = str(item.get("cas") or item.get("cas_no") or "").strip()
+            content = str(item.get("content") or item.get("percentage") or item.get("concentration") or "").strip()
+            if cas:
+                cas_values.add(cas)
+            if content:
+                content_found = True
+                if cas:
+                    content_pairs.append((cas, content))
+        if not content_found and re.search(r"\d{2,7}-\d{2}-\d[^\n]{0,80}(?:%|\([^)]*\d[^)]*\))", text):
+            content_found = True
+        return {
+            "product_name_harvested": bool(product_name),
+            "cas_harvested": bool(cas_values),
+            "content_harvested": content_found,
+            "_harvested_product_name": product_name,
+            "_harvested_cas_values": sorted(cas_values),
+            "_harvested_content_pairs": content_pairs,
         }
-        self._ai_call_metrics.append(ai_metric)
+
+    def _invoke_ai_provider(self, provider, model, purpose, input_mode, invoke):
+        started = time.perf_counter()
+        metric = {
+            "provider": provider, "model": model, "purpose": purpose,
+            "input_mode": input_mode, "called": True, "response_received": False,
+            "elapsed_seconds": 0.0, "product_name_harvested": False,
+            "cas_harvested": False, "content_harvested": False,
+            "final_result_applied": False, "applied_fields": [], "discard_reason": "",
+        }
+        metric_index = len(self._ai_call_metrics)
+        self._ai_call_metrics.append(metric)
+        self._ai_call_count += 1
+        try:
+            response = invoke()
+        except Exception as exc:
+            metric.update({
+                "elapsed_seconds": round(time.perf_counter() - started, 3),
+                "discard_reason": f"CALL_ERROR:{type(exc).__name__}",
+            })
+            raise
+
+        response_text = self._ai_response_text(response)
+        harvested = self._analyze_ai_response(response, purpose)
+        metric.update({
+            "response_received": bool(response_text),
+            "elapsed_seconds": round(time.perf_counter() - started, 3),
+            **harvested,
+        })
+        if not response_text:
+            metric["discard_reason"] = "NO_RESPONSE"
+        elif not any(harvested[key] for key in ("product_name_harvested", "cas_harvested", "content_harvested")):
+            metric["discard_reason"] = "AI_NO_HARVEST"
+        if isinstance(response, dict):
+            response["_ai_metric_index"] = metric_index
+        return response
+
+    def _mark_ai_result_applied(self, response, *fields):
+        if not isinstance(response, dict):
+            return
+        metric_index = response.get("_ai_metric_index")
+        if not isinstance(metric_index, int) or not (0 <= metric_index < len(self._ai_call_metrics)):
+            return
+        metric = self._ai_call_metrics[metric_index]
+        field_map = {"product_name": "product_name_harvested", "cas": "cas_harvested", "content": "content_harvested"}
+        applied = [field for field in fields if metric.get(field_map.get(field, ""))]
+        metric["applied_fields"] = sorted(set(metric.get("applied_fields", []) + applied))
+        metric["final_result_applied"] = bool(metric["applied_fields"])
+        if metric["final_result_applied"]:
+            metric["discard_reason"] = ""
+
+    def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False, purpose="general_extraction"):
+        """실제 공급자 호출마다 독립 계측하며 DeepSeek 장애 시 Vertex로 전환한다."""
+        input_mode = "image" if is_scanned_strict or "inlineData" in str(payload) else "text"
         if is_scanned_strict:
             if log_func:
                 log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
-            res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
-            ai_metric.update({"provider": "vertex", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
+            res = self._invoke_ai_provider(
+                "vertex", model, purpose, input_mode,
+                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
+            )
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
-            
+
         try:
             if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (12초 타임아웃 가드)")
-            res = self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
-            ai_metric.update({"provider": "deepseek", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
+            deepseek_model = "deepseek/deepseek-v4-flash"
+            res = self._invoke_ai_provider(
+                "deepseek", deepseek_model, purpose, input_mode,
+                lambda: self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func, model=deepseek_model),
+            )
             if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
             return res
         except Exception as ds_err:
             if log_func:
                 log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
                 log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
-            res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
-            ai_metric.update({"provider": "vertex", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
+            res = self._invoke_ai_provider(
+                "vertex", model, purpose, input_mode,
+                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
+            )
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
 
@@ -1116,25 +1214,48 @@ class MSDSEngineV6:
                     pass
 
             if isinstance(res, dict):
-                harvested_product = bool(res.get("제품명"))
-                harvested_components = bool(res.get("구성성분"))
+                final_product = normalize_product_name(res.get("제품명", ""))
+                final_components = str(res.get("구성성분", ""))
+                final_content_by_cas = {
+                    cas: re.sub(r"\s+", "", content).casefold()
+                    for cas, content in re.findall(r"(\d{2,7}-\d{2}-\d)\s*\(([^)]*)\)", final_components)
+                }
                 for metric in self._ai_call_metrics:
-                    metric.update({
-                        "product_name_harvested": harvested_product,
-                        "cas_harvested": harvested_components,
-                        "content_harvested": harvested_components,
-                        "final_result_applied": harvested_product or harvested_components,
-                        "discard_reason": "" if (harvested_product or harvested_components) else "AI_NO_HARVEST",
-                    })
+                    applied_fields = []
+                    harvested_product = normalize_product_name(metric.pop("_harvested_product_name", ""))
+                    harvested_cas = metric.pop("_harvested_cas_values", [])
+                    harvested_content_pairs = metric.pop("_harvested_content_pairs", [])
+                    if harvested_product and harvested_product == final_product:
+                        applied_fields.append("product_name")
+                    cas_applied = any(cas in final_components for cas in harvested_cas)
+                    if cas_applied:
+                        applied_fields.append("cas")
+                    content_applied = any(
+                        final_content_by_cas.get(cas) == re.sub(r"\s+", "", content).casefold()
+                        for cas, content in harvested_content_pairs
+                    )
+                    if content_applied:
+                        applied_fields.append("content")
+                    metric["applied_fields"] = applied_fields
+                    metric["final_result_applied"] = bool(applied_fields)
+                    harvested_any = any(metric.get(key) for key in ("product_name_harvested", "cas_harvested", "content_harvested"))
+                    if harvested_any and not applied_fields:
+                        metric["discard_reason"] = "NOT_APPLIED_TO_FINAL_RESULT"
+                    elif applied_fields:
+                        metric["discard_reason"] = ""
+                harvested_calls = sum(
+                    any(metric.get(key) for key in ("product_name_harvested", "cas_harvested", "content_harvested"))
+                    for metric in self._ai_call_metrics
+                )
                 res.setdefault("metrics", {})
                 res["metrics"].update({
                     "recon_ocr_calls": len(self._paddle_call_metrics),
                     "precision_ocr_calls": self._ppstructure_usage_count,
                     "ppstructure_calls": self._ppstructure_usage_count,
-                    "ai_text_calls": self._ai_call_count if not self._image_pipeline_active else 0,
-                    "ai_image_calls": self._ai_call_count if self._image_pipeline_active else 0,
-                    "ai_harvest_success": int(bool(res.get("제품명") or res.get("구성성분"))),
-                    "ai_no_harvest": int(self._ai_call_count > 0 and not (res.get("제품명") or res.get("구성성분"))),
+                    "ai_text_calls": sum(metric.get("input_mode") == "text" for metric in self._ai_call_metrics),
+                    "ai_image_calls": sum(metric.get("input_mode") == "image" for metric in self._ai_call_metrics),
+                    "ai_harvest_success": harvested_calls,
+                    "ai_no_harvest": len(self._ai_call_metrics) - harvested_calls,
                     "valid_cas_count": len(re.findall(r"\d{2,7}-\d{2}-\d", str(res.get("구성성분", "")))),
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
@@ -1247,7 +1368,7 @@ class MSDSEngineV6:
             }
 
             try:
-                res_ai = self.call_llm_router(payload_oneshot, log_func=None, model="gemini-2.5-flash", is_scanned_strict=True)
+                res_ai = self.call_llm_router(payload_oneshot, log_func=None, model="gemini-2.5-flash", is_scanned_strict=True, purpose="full_extraction")
                 text_response = res_ai.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 clean_json = text_response.replace("```json", "").replace("```", "").strip()
                 parsed_obj = json.loads(clean_json)
@@ -1267,6 +1388,12 @@ class MSDSEngineV6:
                     original_log_func("  ⚠️ [제품명 근거 미검출] 문서 내부에서 확인되지 않아 공란으로 유지합니다.")
 
             refined_comps = self.refine_msds_components_strict(ai_comps)
+            applied_fields = []
+            if ai_pn:
+                applied_fields.append("product_name")
+            if refined_comps:
+                applied_fields.extend(["cas", "content"])
+            self._mark_ai_result_applied(res_ai, *applied_fields)
             comp_parts = [f"{c['cas']}({c['content']})" for c in refined_comps if isinstance(c, dict) and 'cas' in c]
             comp_str = "; ".join(comp_parts) if comp_parts else "미기재%"
             
@@ -1367,10 +1494,11 @@ class MSDSEngineV6:
         }
 
         hybrid_pn = ""
+        result = None
         product_engine = "제미나이"
         try:
             # 제품명은 AI 결과를 기본값으로 사용하고 Section 1 후보는 검증 근거로만 쓴다.
-            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="product_name")
             if result:
                 pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
@@ -1384,6 +1512,8 @@ class MSDSEngineV6:
 
         verification_status, product_confidence = verify_product_name(hybrid_pn, labeled_pn)
         product_name_source = "ai"
+        if hybrid_pn:
+            self._mark_ai_result_applied(result, "product_name")
         if not hybrid_pn and labeled_pn:
             hybrid_pn = labeled_pn
             product_name_source = "local_fallback"
@@ -1686,8 +1816,13 @@ class MSDSEngineV6:
         components = refined_comps
 
         if checkpoint_func:
-            cas_only = "; ".join(str(c.get("cas", "")) for c in components if isinstance(c, dict) and c.get("cas"))
-            checkpoint_func({"stage": "cas_candidates_complete", "product_name": hybrid_pn, "구성성분": cas_only, "next_stage": "cas_content_pairing", "timestamp": time.time()})
+            cas_candidates = [str(c.get("cas", "")) for c in components if isinstance(c, dict) and c.get("cas")]
+            checkpoint_func({
+                "stage": "cas_candidates_complete", "product_name": hybrid_pn,
+                "cas_candidates": cas_candidates, "content_matching_complete": False,
+                "validation_eligible": False, "next_stage": "cas_content_pairing",
+                "timestamp": time.time(),
+            })
 
         # 🚨 [소장님 지시 완착]: 최종 추출 자산 즉시 인쇄 로그 배선 (개별 항목 가독성 확보)
         if log_func:
@@ -1770,7 +1905,7 @@ class MSDSEngineV6:
             res_obj["신호등"] = "🟡"
             res_obj["error_code"] = "PRODUCT_NAME_MISMATCH"
         if checkpoint_func:
-            checkpoint_func({"stage": "cas_content_matching_complete", "product_name": product_name, "구성성분": comp_str, "함유량": comp_str, "next_stage": "finalize", "timestamp": time.time()})
+            checkpoint_func({"stage": "cas_content_matching_complete", "product_name": product_name, "구성성분": comp_str, "함유량": comp_str, "content_matching_complete": True, "validation_eligible": True, "next_stage": "finalize", "timestamp": time.time()})
         
         # 🚀 [생산성 고도화] 초록불 오독(False Green) 섀도우 교차 검문 및 별표 장부 자동 적출
         if res_obj.get("신호등") == "🟢":
@@ -2025,7 +2160,7 @@ class MSDSEngineV6:
                     "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                 }
                 
-                raw_ai_fallback = self.call_llm_router(payload_fallback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+                raw_ai_fallback = self.call_llm_router(payload_fallback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                 if raw_ai_fallback:
                     try:
                         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] str object has no attribute 'get' 결함 원천 소탕
@@ -2043,6 +2178,8 @@ class MSDSEngineV6:
                 if ai_res and "구성성분" in ai_res and ai_res["구성성분"]:
                     # 오타 수선 로직
                     refined_comps = self.refine_msds_components_strict(ai_res["구성성분"])
+                    if refined_comps:
+                        self._mark_ai_result_applied(raw_ai_fallback, "cas", "content")
                     invalid_cas_dict = {}
                     for old_cas in list(invalid_cas_dict.keys()):
                         normalized_old = re.sub(r'\s+', '', old_cas)
@@ -2076,7 +2213,7 @@ class MSDSEngineV6:
                         "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                     }
                     
-                    raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+                    raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                     rollback_success = False
                     if raw_ai_rollback:
                         try:
@@ -2098,6 +2235,7 @@ class MSDSEngineV6:
                                 is_ai_extracted = True
                                 used_engine = "gemini_cleaner_rollback"
                                 rollback_success = True
+                                self._mark_ai_result_applied(raw_ai_rollback, "cas", "content")
                                 if log_func: log_func(f" 🟢 [롤백 회군 정제 완료] 성분 {len(ai_res_rb['구성성분'])}건 확보 완착.")
                         except Exception as rollback_err:
                             if log_func: log_func(f" ⚠️ [롤백 회군 호출 실패] {rollback_err}")

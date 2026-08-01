@@ -1119,6 +1119,9 @@ class ExtractionWorker(QThread):
                     "integrity_score": ext_res.get("integrity_score", 100), "integrity_reason": ext_res.get("integrity_reason", ""),
                     "document_type": kind, "doc_type": kind, "verification_status": ext_res.get("verification_status", "unverified"),
                     "local_text_candidate": ext_res.get("local_text_candidate", ""), "last_completed_stage": ext_res.get("last_completed_stage", ""),
+                    "cas_candidates": ext_res.get("cas_candidates", []),
+                    "content_matching_complete": ext_res.get("content_matching_complete", True),
+                    "validation_eligible": ext_res.get("validation_eligible", True),
                 }
                 self.cache_update_signal.emit(f_hash, res_data)
                 self.result_signal.emit(res_data)
@@ -2188,7 +2191,7 @@ class SMUGUI(QMainWindow):
         cursor.movePosition(QTextCursor.End)
         if not self.log_view.document().isEmpty():
             cursor.insertBlock()
-        cursor.insertHtml("<br>".join(lines))
+        cursor.insertText("\n".join(lines))
         if is_at_bottom:
             self.log_view.ensureCursorVisible()
 
@@ -6167,6 +6170,10 @@ class SMUGUI(QMainWindow):
             if not f_hash or f_hash in seen_hashes:
                 continue
             seen_hashes.add(f_hash)
+            cached_result = self.cache.get(f_hash, {})
+            if cached_result.get("validation_eligible") is False:
+                self.log(f"[검증 제외] {cached_result.get('filename', f_hash)}: CAS·함유량 매칭 미완료")
+                continue
             
             fn = self.table.item(r, 7).text().strip() if self.table.item(r, 7) else ""
             prod = self.table.item(r, 2).text().strip() if self.table.item(r, 2) else ""
@@ -6192,6 +6199,10 @@ class SMUGUI(QMainWindow):
                 "cas_content": cas_content
             })
 
+        if not table_data:
+            self.table.blockSignals(False)
+            QMessageBox.information(self, "검증 대상 없음", "CAS·함유량 매칭이 완료된 검증 대상이 없습니다.")
+            return
 
         self.progress.setValue(0)
         self.btn_stop.setEnabled(True)

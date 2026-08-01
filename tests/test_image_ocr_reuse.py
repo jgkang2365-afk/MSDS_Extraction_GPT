@@ -934,5 +934,86 @@ class BulkExtractionResponsivenessTests(unittest.TestCase):
         self.assertIn("process.terminate()", core_source)
 
 
+class AICallMetricsTests(unittest.TestCase):
+    @staticmethod
+    def _response(text):
+        return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
+
+    def test_each_ai_response_tracks_its_own_harvest_and_final_application(self):
+        engine = engine_module.MSDSEngineV6()
+        responses = [
+            self._response("Unused AI Product"),
+            self._response('{"components":[{"cas":"64-17-5","content":"50%"}]}'),
+        ]
+
+        def fake_pipeline(_path, log_func=None):
+            engine.call_llm_router({}, purpose="product_name")
+            engine.call_llm_router({}, purpose="component_extraction")
+            return {"제품명": "Local Product", "구성성분": "64-17-5(50%)", "교정_사유": "정상"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "metrics.pdf"
+            pdf_path.write_bytes(b"metrics")
+            with patch.object(engine, "call_deepseek_with_retry", side_effect=responses), patch.object(
+                engine, "_process_msds_pipeline_impl", side_effect=fake_pipeline
+            ):
+                result = engine.process_msds_pipeline(str(pdf_path), bypass_cache=True)
+
+        metrics = result["metrics"]["ai"]
+        self.assertEqual(len(metrics), 2)
+        self.assertTrue(metrics[0]["response_received"])
+        self.assertTrue(metrics[0]["product_name_harvested"])
+        self.assertFalse(metrics[0]["final_result_applied"])
+        self.assertEqual(metrics[0]["discard_reason"], "NOT_APPLIED_TO_FINAL_RESULT")
+        self.assertFalse(metrics[1]["product_name_harvested"])
+        self.assertTrue(metrics[1]["cas_harvested"])
+        self.assertTrue(metrics[1]["content_harvested"])
+        self.assertEqual(metrics[1]["applied_fields"], ["cas", "content"])
+        self.assertTrue(metrics[1]["final_result_applied"])
+
+    def test_empty_synthetic_response_is_not_counted_as_received(self):
+        engine = engine_module.MSDSEngineV6()
+        with patch.object(engine, "call_deepseek_with_retry", return_value=self._response("")):
+            engine.call_llm_router({}, purpose="product_name")
+
+        metric = engine._ai_call_metrics[0]
+        self.assertFalse(metric["response_received"])
+        self.assertFalse(metric["product_name_harvested"])
+        self.assertEqual(metric["discard_reason"], "NO_RESPONSE")
+
+    def test_content_is_applied_only_when_the_final_cas_content_pair_matches(self):
+        engine = engine_module.MSDSEngineV6()
+
+        def fake_pipeline(_path, log_func=None):
+            engine.call_llm_router({}, purpose="component_extraction")
+            return {"제품명": "P", "구성성분": "64-17-5(70%)", "교정_사유": "정상"}
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pdf_path = Path(temp_dir) / "content-mismatch.pdf"
+            pdf_path.write_bytes(b"metrics")
+            with patch.object(
+                engine,
+                "call_deepseek_with_retry",
+                return_value=self._response('{"components":[{"cas":"64-17-5","content":"50%"}]}'),
+            ), patch.object(engine, "_process_msds_pipeline_impl", side_effect=fake_pipeline):
+                result = engine.process_msds_pipeline(str(pdf_path), bypass_cache=True)
+
+        metric = result["metrics"]["ai"][0]
+        self.assertEqual(metric["applied_fields"], ["cas"])
+        self.assertTrue(metric["final_result_applied"])
+
+    def test_failover_records_failed_and_received_calls_separately(self):
+        engine = engine_module.MSDSEngineV6()
+        with patch.object(engine, "call_deepseek_with_retry", side_effect=RuntimeError("offline")), patch.object(
+            engine, "call_vertex_gemini_with_retry", return_value=self._response("Vertex Product")
+        ):
+            engine.call_llm_router({}, purpose="product_name")
+
+        self.assertEqual(len(engine._ai_call_metrics), 2)
+        self.assertFalse(engine._ai_call_metrics[0]["response_received"])
+        self.assertTrue(engine._ai_call_metrics[0]["discard_reason"].startswith("CALL_ERROR:"))
+        self.assertTrue(engine._ai_call_metrics[1]["response_received"])
+
+
 if __name__ == "__main__":
     unittest.main()

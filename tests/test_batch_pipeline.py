@@ -49,12 +49,29 @@ class PartialCheckpointTests(unittest.TestCase):
 
     def test_cas_partial_result_is_preserved(self):
         result = build_partial_timeout_result(
-            {"stage": "cas_content_matching_complete", "product_name": "P", "구성성분": "64-17-5(50%)"},
+            {"stage": "cas_content_matching_complete", "product_name": "P", "구성성분": "64-17-5(50%)", "content_matching_complete": True},
             240,
             "timeout",
         )
         self.assertEqual(result["구성성분"], "64-17-5(50%)")
         self.assertEqual(result["error_code"], "PARTIAL_TIMEOUT")
+
+    def test_cas_candidates_are_not_promoted_to_unlisted_content(self):
+        result = build_partial_timeout_result(
+            {
+                "stage": "cas_candidates_complete",
+                "product_name": "P",
+                "cas_candidates": ["64-17-5", "67-64-1"],
+                "content_matching_complete": False,
+            },
+            360,
+            "timeout",
+        )
+        self.assertEqual(result["cas_candidates"], ["64-17-5", "67-64-1"])
+        self.assertEqual(result["구성성분"], "")
+        self.assertEqual(result["함유량"], "")
+        self.assertFalse(result["content_matching_complete"])
+        self.assertFalse(result["validation_eligible"])
 
     def test_empty_checkpoint_is_distinguishable_from_partial(self):
         result = build_partial_timeout_result({}, 180, "timeout")
@@ -111,6 +128,10 @@ class StructuredLoggingTests(unittest.TestCase):
         self.assertIn("setMaximumBlockCount(3000)", source)
         self.assertIn("_pending_table_results", source)
         self.assertIn("setInterval(250)", source)
+        flush_source = source.split("    def _flush_gui_logs", 1)[1].split("    def log", 1)[0]
+        self.assertIn("cursor.insertText", flush_source)
+        self.assertNotIn("cursor.insertHtml", flush_source)
+        self.assertIn('cached_result.get("validation_eligible") is False', source)
 
 
 if __name__ == "__main__":

@@ -179,7 +179,7 @@ class MSDSCore:
         if was_cancelled:
             raise InterruptedError("사용자 중지 요청")
         if final_error:
-            if last_checkpoint.get("product_name") or last_checkpoint.get("구성성분"):
+            if last_checkpoint.get("product_name") or last_checkpoint.get("구성성분") or last_checkpoint.get("cas_candidates"):
                 return build_partial_timeout_result(last_checkpoint, timeout_seconds, final_error)
             raise TimeoutError(final_error)
         return final_result
@@ -209,6 +209,15 @@ class MSDSCore:
         finally:
             if lock:
                 lock.release()
+
+        # CAS 후보까지만 확보된 시간 초과 결과는 함유량 미기재로 승격하지 않는다.
+        # 후보는 검토용으로만 보존하고 2단계 정상 검증 대상에서 제외한다.
+        if (
+            isinstance(ext_res, dict)
+            and ext_res.get("status") == "partial_timeout"
+            and not ext_res.get("content_matching_complete", False)
+        ):
+            return ext_res
         
         # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동
         if ext_res and isinstance(ext_res, dict):

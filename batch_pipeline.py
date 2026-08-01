@@ -139,12 +139,17 @@ def verify_product_name(ai_name, local_candidate):
 def build_partial_timeout_result(checkpoint, timeout_seconds, error_message):
     """마지막 정상 체크포인트를 GUI가 보존할 수 있는 표준 결과로 변환한다."""
     checkpoint = checkpoint or {}
-    components = checkpoint.get("구성성분", "")
+    content_matching_complete = bool(checkpoint.get("content_matching_complete"))
+    components = checkpoint.get("구성성분", "") if content_matching_complete else ""
+    cas_candidates = list(checkpoint.get("cas_candidates") or [])
     return {
         "status": "partial_timeout",
         "제품명": checkpoint.get("product_name", ""),
         "구성성분": components,
         "함유량": checkpoint.get("함유량", components),
+        "cas_candidates": cas_candidates,
+        "content_matching_complete": content_matching_complete,
+        "validation_eligible": content_matching_complete,
         "last_completed_stage": checkpoint.get("stage", ""),
         "failed_stage": checkpoint.get("next_stage", "file_processing"),
         "timeout_seconds": timeout_seconds,
@@ -210,7 +215,10 @@ class BatchRunLogger:
             "error_code": result.get("error_code", ""),
             "error_message": result.get("error_message", ""),
             "last_completed_stage": result.get("last_completed_stage", ""),
-            "partial_result_present": bool(result.get("제품명") or result.get("구성성분")),
+            "partial_result_present": bool(result.get("제품명") or result.get("구성성분") or result.get("cas_candidates")),
+            "cas_candidates": result.get("cas_candidates", []),
+            "content_matching_complete": result.get("content_matching_complete", True),
+            "validation_eligible": result.get("validation_eligible", True),
             "product_name_ai": result.get("제품명", ""),
             "product_name_local_candidate": result.get("local_text_candidate", ""),
             "product_name_verification_status": result.get("verification_status", "unverified"),
