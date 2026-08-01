@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import threading
 import time
 import unicodedata
@@ -94,6 +95,23 @@ def file_trace_id_for(run_id, file_hash="", file_path=""):
     """같은 실행에서 같은 파일은 재기록해도 동일 진단 ID를 사용한다."""
     source = f"{run_id}\0{file_hash or os.path.abspath(str(file_path))}"
     return hashlib.sha256(source.encode("utf-8", "replace")).hexdigest()[:24]
+
+
+def git_source_identity(repo_dir=None):
+    """실행에 사용된 브랜치·커밋을 한 번만 fail-soft로 고정한다."""
+    cwd = str(repo_dir or Path(__file__).resolve().parent)
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=cwd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=5, check=True,
+        ).stdout.strip()
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"], cwd=cwd, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=5, check=True,
+        ).stdout.strip()
+        return branch, commit
+    except Exception:
+        return "", ""
 
 
 def _positive_float(value, fallback):
@@ -240,6 +258,7 @@ class BatchRunLogger:
         self._lock = threading.Lock()
         self.counters = Counter()
         self.started_at = time.time()
+        self.source_branch, self.source_commit = git_source_identity()
         self.diagnostic_mode = (
             str(diagnostic_mode).upper()
             if diagnostic_mode is not None
@@ -247,7 +266,10 @@ class BatchRunLogger:
         )
         if self.diagnostic_mode not in DIAGNOSTIC_MODES:
             self.diagnostic_mode = "SUMMARY"
-        self.append({"stage": "run", "status": "started", "diagnostic_mode": self.diagnostic_mode})
+        self.append({
+            "stage": "run", "status": "started", "diagnostic_mode": self.diagnostic_mode,
+            "source_branch": self.source_branch, "source_commit": self.source_commit,
+        })
 
     def _new_trace_context(self, source, file_trace_id=None):
         """진단 저장 실패·계약 변경이 실행 경로에 영향을 주지 않게 한다."""
@@ -300,6 +322,8 @@ class BatchRunLogger:
         return {
             "run_id": self.run_id,
             "file_trace_id": str(trace_id),
+            "source_branch": self.source_branch,
+            "source_commit": self.source_commit,
             "trace_context": context_data,
             "diagnostic_json": str(directory / "diagnostic.json"),
             "diagnostic_markdown": str(directory / "diagnostic.md"),

@@ -336,7 +336,8 @@ class MSDSCore:
                         raw_comps.append({"cas": cas, "content": content})
             # 경로 2: ext_res["구성성분"]에 세미콜론 텍스트 체인이 들어있는 경우 역분석
             elif "구성성분" in ext_res and isinstance(ext_res["구성성분"], str):
-                comp_str = ext_res["구성성분"]
+                from msds_utils_v3 import normalize_cas_separators_in_text
+                comp_str = normalize_cas_separators_in_text(ext_res["구성성분"])
                 parts = [p.strip() for p in comp_str.split(";") if p.strip()]
                 for part in parts:
                     cas_match = re.search(r"(\d{2,7}-\d{2}-\d)", part)
@@ -349,7 +350,11 @@ class MSDSCore:
                         raw_comps.append({"cas": cas, "content": content})
                         
             # 가공 및 정제 단계 집행
-            from msds_utils_v3 import is_valid_cas
+            from msds_utils_v3 import (
+                is_valid_cas,
+                normalize_cas_candidate,
+                normalize_decimal_comma_content,
+            )
             comp_parts = []
             for item in raw_comps:
                 cas_val = item.get("cas")
@@ -373,7 +378,9 @@ class MSDSCore:
                     continue
                     
                 # [공정 1] 전역 트림 및 소문자 세탁
+                cas_val = normalize_cas_candidate(cas_val, candidate_id=candidate_id)
                 cas_val = str(cas_val).strip().replace("\n", "").replace("\r", "").lower()
+                content_val = normalize_decimal_comma_content(content_val, candidate_id=candidate_id) if content_val else ""
                 content_val = str(content_val).strip().replace("\n", "").replace("\r", "").lower() if content_val else ""
                 
                 # [차세대 방법론] 유효 CAS 체크디지트 필터 선행 가동

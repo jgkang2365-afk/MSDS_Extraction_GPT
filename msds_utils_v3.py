@@ -24,6 +24,78 @@ def _trace_normalization(name, before, after):
     except Exception:
         pass
 
+
+_CAS_DASH_CHARS = "\u002d\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
+_CAS_TOKEN_PATTERN = re.compile(
+    rf"(?<![\d-])\d{{2,7}}\s*[{re.escape(_CAS_DASH_CHARS)}]\s*"
+    rf"\d{{2}}\s*[{re.escape(_CAS_DASH_CHARS)}]\s*\d(?![\d-])"
+)
+_DECIMAL_COMMA_PERCENT_PATTERN = re.compile(
+    r"(?:[<>=≤≥]\s*)?\d+,\d+"
+    r"(?:\s*[-~∼～–—]\s*(?:[<>=≤≥]\s*)?\d+,\d+)?\s*%"
+)
+
+
+def _trace_candidate_transform(field, before, after, transform, candidate_id=None):
+    if before == after:
+        return
+    try:
+        tracer = get_tracer()
+        details = {
+            "field": field,
+            "before": before,
+            "after": after,
+            "transform": transform,
+            "module": "msds_utils_v3",
+        }
+        if candidate_id:
+            tracer.transform(candidate_id, after, **details)
+        else:
+            tracer.event("candidate_transform", candidate_id=None, **details)
+    except Exception:
+        pass
+
+
+def normalize_cas_candidate(value, candidate_id=None):
+    """이미 CAS 후보인 값의 유니코드 대시만 ASCII 구분자로 정규화한다."""
+    if value is None:
+        return ""
+    before = str(value)
+    normalized = unicodedata.normalize("NFKC", before)
+    normalized = normalized.translate(str.maketrans({char: "-" for char in _CAS_DASH_CHARS}))
+    normalized = re.sub(r"(?<=\d)\s*-\s*(?=\d)", "-", normalized).strip()
+    _trace_candidate_transform(
+        "cas", before, normalized, "unicode_dash_normalization", candidate_id
+    )
+    return normalized
+
+
+def normalize_cas_separators_in_text(text):
+    """CAS 모양 토큰에만 대시 정규화를 적용하며 일반 범위를 승격하지 않는다."""
+    if not text:
+        return text or ""
+    normalized_text = unicodedata.normalize("NFKC", str(text))
+    return _CAS_TOKEN_PATTERN.sub(
+        lambda match: normalize_cas_candidate(match.group(0)), normalized_text
+    )
+
+
+def normalize_decimal_comma_content(value, candidate_id=None):
+    """퍼센트 농도 문맥 안의 유럽식 소수점 쉼표만 점으로 변환한다."""
+    if value is None:
+        return ""
+    source = unicodedata.normalize("NFKC", str(value))
+
+    def replace(match):
+        before = match.group(0)
+        after = re.sub(r"(?<=\d),(?=\d)", ".", before)
+        _trace_candidate_transform(
+            "content", before, after, "decimal_comma_normalization", candidate_id
+        )
+        return after
+
+    return _DECIMAL_COMMA_PERCENT_PATTERN.sub(replace, source)
+
 def clean_content_text(text: str) -> str:
     """
     한글 혼용 범위어 조건을 표준 물결 기호 형태로 세척합니다.
@@ -79,7 +151,7 @@ def clean_content_text(text: str) -> str:
 def is_valid_cas(cas):
     """CAS 번호 체크디지트 검증 (유효성 99% 보장)"""
     if not cas or not isinstance(cas, str): return False
-    clean_cas = cas.strip()
+    clean_cas = normalize_cas_candidate(cas)
     if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas): return False
     
     try:
@@ -197,8 +269,10 @@ def clean_percentage(content_str):
         _trace_normalization("clean_percentage", content_str, result)
         return result
     
+    original_content = str(content_str)
+    decimal_comma_source = bool(re.search(r"\d+,\d+", original_content) and "%" in original_content)
     # 1. 한글 혼용 범위어 오타 정류 및 유니코드 정규화
-    raw = clean_content_text(str(content_str))
+    raw = clean_content_text(normalize_decimal_comma_content(original_content))
     raw = unicodedata.normalize('NFKC', raw).strip()
     
     # 2. [고정 가드선] 상류 정제 고정 단어 원형 보존
@@ -217,12 +291,18 @@ def clean_percentage(content_str):
     if len(nums) >= 2:
         try:
             v1, v2 = float(nums[0]), float(nums[1])
+            was_reversed = v1 > v2
             # 앞 숫자가 뒷 숫자보다 크면 논리적 모순이므로 오름차순 스왑(Swap) 집도
-            if v1 > v2:
+            if was_reversed:
                 v1, v2 = v2, v1
             
-            v1_str = int(v1) if v1.is_integer() else v1
-            v2_str = int(v2) if v2.is_integer() else v2
+            if decimal_comma_source:
+                v1_str, v2_str = nums[0], nums[1]
+                if was_reversed:
+                    v1_str, v2_str = v2_str, v1_str
+            else:
+                v1_str = int(v1) if v1.is_integer() else v1
+                v2_str = int(v2) if v2.is_integer() else v2
             
             v2_prefix = ""
             if any(c in content_lower for c in ["<", "미만", "below", "less"]):
@@ -243,7 +323,7 @@ def clean_percentage(content_str):
     
     try:
         v1 = float(nums[0])
-        v1_str = int(v1) if v1.is_integer() else v1
+        v1_str = nums[0] if decimal_comma_source else (int(v1) if v1.is_integer() else v1)
         return f"{prefix}{v1_str}{suffix}"
     except Exception:
         return raw

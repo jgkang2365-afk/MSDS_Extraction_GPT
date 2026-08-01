@@ -64,6 +64,14 @@ import msds_engine_v6 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
 from batch_pipeline import BatchRunLogger, classify_and_order, diagnostic_mode_from_sources, timeout_for_document
+from diagnostic_sharing import (
+    append_share_history,
+    build_share_package,
+    default_user_review,
+    duplicate_share_exists,
+    latest_successful_share,
+    publish_share_package,
+)
 try:
     from diagnostic_trace import TraceContext, cleanup_retention
 except Exception:
@@ -76,6 +84,14 @@ COL_IDX_FILENAME = 7
 COL_IDX_HASH = 8
 COL_IDX_FILEPATH = 9
 COL_IDX_PAGE = 10
+COL_IDX_REVIEW_REQUEST = 11
+COL_IDX_ERROR_TYPE = 12
+COL_IDX_USER_NOTE = 13
+COL_IDX_SHARE_STATUS = 14
+REVIEW_ERROR_TYPES = (
+    "제품명 오류", "CAS 오류", "함유량 오류", "성분 연결 오류", "일부 성분 누락",
+    "전체 성분 누락", "처리 중단·시간 초과", "신호등 오류", "기타",
+)
 
 # [Part 1] 탐색기 스타일 자연스러운 정렬 (Natural Sort)
 def natural_sort_key(s):
@@ -1946,6 +1962,55 @@ class MeasurePlanMappingPanel(QGroupBox):
                 self.inputs[k].setText(v)
 
 
+class DiagnosticShareWorker(QThread):
+    """선택 진단 패키지 생성과 Git 게시를 GUI 스레드 밖에서 수행한다."""
+    completed = pyqtSignal(dict)
+    progress = pyqtSignal(str)
+
+    def __init__(self, records, repo_root):
+        super().__init__()
+        self.records = list(records)
+        self.repo_root = str(repo_root)
+
+    def run(self):
+        package_dir = None
+        run_id = ""
+        trace_ids = []
+        try:
+            package_dir, summary = build_share_package(self.records, self.repo_root)
+            self.progress.emit("푸시 중")
+            run_id = str(summary.get("run_id") or "")
+            trace_ids = [str(item.get("file_trace_id") or "") for item in summary.get("files", [])]
+            source_commit = str(summary.get("source_commit") or "")
+            published = publish_share_package(
+                self.repo_root, package_dir, source_commit, run_id,
+            )
+            history = {
+                "run_id": run_id,
+                "selected_file_trace_ids": trace_ids,
+                "push_status": "success",
+                "package_dir": str(package_dir),
+                "selected_count": len(trace_ids),
+                **published,
+            }
+            append_share_history(self.repo_root, history)
+            self.completed.emit({"ok": True, **history})
+        except Exception as exc:
+            failure = {
+                "run_id": run_id,
+                "selected_file_trace_ids": trace_ids,
+                "push_status": "failed",
+                "package_dir": str(package_dir or ""),
+                "error": f"{type(exc).__name__}: {exc}",
+                "failure_reason": f"{type(exc).__name__}: {exc}",
+            }
+            try:
+                append_share_history(self.repo_root, failure)
+            except Exception:
+                pass
+            self.completed.emit({"ok": False, **failure})
+
+
 class SMUGUI(QMainWindow):
     @staticmethod
     def c2i(c):
@@ -1967,6 +2032,8 @@ class SMUGUI(QMainWindow):
         self.results = []
         self.cache = {} 
         self.diagnostic_mode = "SUMMARY"
+        self.last_diagnostic_share = {}
+        self.diagnostic_share_worker = None
         self.sidebar_slim = False
         self.previous_error_states = {} # [주님 지침] 직전 에러(🔴/🟡) 상태 이력 추적용 저장소
         self.last_selected_row = -1 # [NEW] 동일 행 내 열 이동 시 미리보기 초기화 방지용
@@ -4882,9 +4949,20 @@ class SMUGUI(QMainWindow):
         diagnostic_menu.addAction("진단 이미지 폴더 열기", self.open_selected_diagnostic_images)
         diagnostic_menu.addAction("진단 JSON 복사", self.copy_selected_diagnostic_json)
         diagnostic_menu.addSeparator()
+        diagnostic_menu.addAction("선택 오류 GitHub 공유", self.share_selected_diagnostics)
+        diagnostic_menu.addAction("최근 공유 브랜치 복사", self.copy_latest_share_branch)
+        diagnostic_menu.addAction("실행 요약 열기", self.open_latest_share_summary)
+        diagnostic_menu.addAction("공유 폴더 열기", self.open_share_folder)
+        diagnostic_menu.addSeparator()
         diagnostic_menu.addAction("진단 로그 정리…", self.cleanup_diagnostic_logs)
         self.btn_diagnostics.setMenu(diagnostic_menu)
         header.addWidget(self.btn_diagnostics)
+
+        self.btn_share_diagnostics = QPushButton("선택 오류 공유")
+        self.btn_share_diagnostics.setFixedHeight(35)
+        self.btn_share_diagnostics.setToolTip("분석 요청으로 선택한 파일의 진단자료만 별도 Git 브랜치에 공유합니다.")
+        self.btn_share_diagnostics.clicked.connect(self.share_selected_diagnostics)
+        header.addWidget(self.btn_share_diagnostics)
 
         # 하단 우측 교정창 토글 단추 추가
         self.btn_toggle_corr = QPushButton("📋 교정창 ↔")
@@ -4964,10 +5042,11 @@ class SMUGUI(QMainWindow):
         self.left_vbox = QVBoxLayout(self.left_container)
         self.left_vbox.setContentsMargins(0, 0, 0, 0)
 
-        self.table = QTableWidget(0, 11)
+        self.table = QTableWidget(0, 15)
         self.table.setHorizontalHeaderLabels([
             "순번", "No", "원본 제품명", "CAS 원본(수정)", 
-            "측정대상", "2차 결과(규제)", "1차 결과(전체)", "파일명", "Hash", "Full Path", "Page"
+            "측정대상", "2차 결과(규제)", "1차 결과(전체)", "파일명", "Hash", "Full Path", "Page",
+            "분석 요청", "오류 유형", "사용자 메모", "공유 상태"
         ])
         self.table.horizontalHeaderItem(3).setToolTip("CAS 번호를 클릭하면 KOSHA 화학물질정보 페이지로 이동합니다.")
         self.table.verticalHeader().setVisible(False)
@@ -4984,6 +5063,10 @@ class SMUGUI(QMainWindow):
         self.table.setColumnWidth(4, 110)
         self.table.setColumnWidth(5, 250)
         self.table.setColumnWidth(6, 300)
+        self.table.setColumnWidth(COL_IDX_REVIEW_REQUEST, 90)
+        self.table.setColumnWidth(COL_IDX_ERROR_TYPE, 145)
+        self.table.setColumnWidth(COL_IDX_USER_NOTE, 220)
+        self.table.setColumnWidth(COL_IDX_SHARE_STATUS, 180)
         # [V7.0] 관리용 열들은 모두 숨김 처리
         for hidden_col in [7, 8, 9, 10]:
             self.table.setColumnHidden(hidden_col, True)
@@ -5445,6 +5528,9 @@ class SMUGUI(QMainWindow):
 
     def update_cache(self, f_hash, data):
         """[NEW] 워커로부터 받은 새 분석 결과를 캐시에 저장"""
+        previous_review = self.cache.get(f_hash, {}).get("user_review")
+        if previous_review and "user_review" not in data:
+            data["user_review"] = dict(previous_review)
         self.cache[f_hash] = data
         
         # 🚨 [주님 의도 복구] 3중 스냅샷 캐시 레이어 분리 설계 이식
@@ -6290,6 +6376,8 @@ class SMUGUI(QMainWindow):
             item_page = QTableWidgetItem(str(data.get("page", 1)))
             self.table.setItem(row, COL_IDX_PAGE, item_page)
 
+            self._install_review_widgets(row, f_hash, data)
+
             # 입력 파일은 이미 자연 정렬되어 있다. 대량 처리 중 매 결과마다 전체
             # 테이블을 재정렬/재측정하면 행 수에 비례해 GUI가 멈추므로 현재 행만
             # 높이를 맞추고, 전체 정렬은 작업 종료 시 한 번만 수행한다.
@@ -6689,6 +6777,205 @@ class SMUGUI(QMainWindow):
         except: pass
         
         event.accept()
+
+    def _default_user_review(self, data):
+        return default_user_review(data)
+
+    def _review_for_hash(self, f_hash, data=None):
+        record = self.cache.get(f_hash, data or {})
+        review = record.get("user_review") if isinstance(record, dict) else None
+        if not isinstance(review, dict):
+            review = self._default_user_review(data or record or {})
+            if isinstance(record, dict):
+                record["user_review"] = review
+        return review
+
+    def _install_review_widgets(self, row, f_hash, data, span=1):
+        review = self._review_for_hash(f_hash, data)
+        checkbox = QCheckBox()
+        checkbox.setToolTip("이 파일의 진단자료를 다음 공유 패키지에 포함합니다.")
+        checkbox.setChecked(bool(review.get("user_marked_error")))
+        checkbox.stateChanged.connect(lambda state, key=f_hash: self._set_review_selected(key, state == Qt.Checked))
+        self.table.setCellWidget(row, COL_IDX_REVIEW_REQUEST, checkbox)
+
+        error_box = QComboBox()
+        error_box.addItems(REVIEW_ERROR_TYPES)
+        error_types = review.get("error_types") or []
+        current_error = str(error_types[0]) if error_types else "기타"
+        error_box.setCurrentText(current_error if current_error in REVIEW_ERROR_TYPES else "기타")
+        error_box.currentTextChanged.connect(lambda value, key=f_hash: self._set_review_error_type(key, value))
+        self.table.setCellWidget(row, COL_IDX_ERROR_TYPE, error_box)
+
+        note = QLineEdit(str(review.get("user_note") or ""))
+        note.setPlaceholderText("재현 조건이나 기대값")
+        note.editingFinished.connect(lambda key=f_hash, widget=note: self._set_review_note(key, widget.text()))
+        self.table.setCellWidget(row, COL_IDX_USER_NOTE, note)
+
+        status_item = QTableWidgetItem(str(review.get("share_status") or "미선택"))
+        status_item.setTextAlignment(Qt.AlignCenter)
+        self.table.setItem(row, COL_IDX_SHARE_STATUS, status_item)
+        if span > 1:
+            for col in range(COL_IDX_REVIEW_REQUEST, COL_IDX_SHARE_STATUS + 1):
+                self.table.setSpan(row, col, span, 1)
+
+    def _set_review_selected(self, f_hash, selected):
+        if f_hash not in self.cache:
+            return
+        review = self._review_for_hash(f_hash)
+        review["user_marked_error"] = bool(selected)
+        review["share_status"] = "선택됨" if selected else "미선택"
+        if selected and not review.get("error_types"):
+            review["error_types"] = ["기타"]
+        self._set_share_status_items(f_hash, review["share_status"])
+        self.save_cache()
+
+    def _set_review_error_type(self, f_hash, value):
+        if f_hash not in self.cache:
+            return
+        self._review_for_hash(f_hash)["error_types"] = [str(value or "기타")]
+        self.save_cache()
+
+    def _set_review_note(self, f_hash, value):
+        if f_hash not in self.cache:
+            return
+        self._review_for_hash(f_hash)["user_note"] = str(value or "").strip()
+        self.save_cache()
+
+    def _set_share_status_items(self, f_hash, status):
+        for row in range(self.table.rowCount()):
+            item = self.table.item(row, COL_IDX_HASH)
+            if item and item.text() == f_hash:
+                status_item = self.table.item(row, COL_IDX_SHARE_STATUS) or QTableWidgetItem()
+                status_item.setText(str(status))
+                status_item.setTextAlignment(Qt.AlignCenter)
+                self.table.setItem(row, COL_IDX_SHARE_STATUS, status_item)
+
+    def _update_share_status(self, f_hash, status, branch="", commit=""):
+        review = self._review_for_hash(f_hash)
+        review["share_status"] = status
+        if branch:
+            review["shared_branch"] = branch
+        if commit:
+            review["shared_commit"] = commit
+        self._set_share_status_items(f_hash, status)
+
+    def _selected_share_records(self):
+        records = []
+        for f_hash, record in self.cache.items():
+            if not isinstance(record, dict):
+                continue
+            review = record.get("user_review") or {}
+            if review.get("user_marked_error"):
+                selected = dict(record)
+                selected["f_hash"] = f_hash
+                records.append(selected)
+        return records
+
+    def share_selected_diagnostics(self):
+        if self.diagnostic_share_worker and self.diagnostic_share_worker.isRunning():
+            QMessageBox.information(self, "진단 공유", "진단 패키지를 이미 공유 중입니다.")
+            return
+        records = self._selected_share_records()
+        if not records:
+            QMessageBox.information(self, "진단 공유", "분석 요청으로 선택한 파일이 없습니다.")
+            return
+        run_ids = {str((item.get("diagnostics") or {}).get("run_id") or "") for item in records}
+        run_ids.discard("")
+        if len(run_ids) != 1:
+            QMessageBox.warning(self, "진단 공유", "동일한 실행(run_id)의 파일만 한 번에 공유할 수 있습니다.")
+            return
+        run_id = next(iter(run_ids))
+        trace_ids = [str((item.get("diagnostics") or {}).get("file_trace_id") or "") for item in records]
+        repo_root = os.path.dirname(os.path.abspath(__file__))
+        if duplicate_share_exists(repo_root, run_id, trace_ids):
+            duplicate = QMessageBox.question(
+                self, "중복 공유 확인", "같은 파일 조합을 이미 공유했습니다. 새 버전으로 다시 공유할까요?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if duplicate != QMessageBox.Yes:
+                return
+        answer = QMessageBox.question(
+            self,
+            "선택 진단 공유 확인",
+            f"선택한 {len(records)}개 파일의 진단자료만 diagnostics/run-* 브랜치로 푸시합니다.\n"
+            "원본 PDF, 설정, 캐시, AI 입력 이미지는 포함하지 않습니다. 계속할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        for record in records:
+            self._update_share_status(record["f_hash"], "공유 준비")
+        self.save_cache()
+        self.btn_share_diagnostics.setEnabled(False)
+        self.diagnostic_share_worker = DiagnosticShareWorker(records, repo_root)
+        self.diagnostic_share_worker.completed.connect(
+            lambda result, keys=[item["f_hash"] for item in records]: self._diagnostic_share_finished(result, keys)
+        )
+        self.diagnostic_share_worker.progress.connect(
+            lambda status, keys=[item["f_hash"] for item in records]: self._diagnostic_share_progress(status, keys)
+        )
+        self.diagnostic_share_worker.start()
+        self.log(f"[진단 공유] 선택 {len(records)}건의 안전 패키지 생성과 푸시를 시작했습니다.")
+
+    def _diagnostic_share_progress(self, status, f_hashes):
+        for f_hash in f_hashes:
+            self._update_share_status(f_hash, status)
+
+    def _diagnostic_share_finished(self, result, f_hashes):
+        self.btn_share_diagnostics.setEnabled(True)
+        if result.get("ok"):
+            branch = str(result.get("branch_name") or "")
+            commit = str(result.get("commit_sha") or "")
+            status = f"공유 완료 ({branch})"
+            for f_hash in f_hashes:
+                self._update_share_status(f_hash, status, branch, commit)
+            self.last_diagnostic_share = dict(result)
+            prompt = (
+                "MSDS_Extraction_GPT 저장소의\n"
+                f"{branch}\n브랜치를 분석해 주세요.\n\n"
+                "사용자가 오류로 지정한 파일의 진단 JSON, Markdown, 이미지 오버레이를 함께 검토하여 "
+                "최초 실패 지점, 직접 원인, 후속 우회 실패 및 수정 우선순위를 설명해 주세요."
+            )
+            QApplication.clipboard().setText(prompt)
+            self.log(f"[진단 공유] 완료: {branch} ({commit[:12]})")
+            QMessageBox.information(
+                self, "진단 공유 완료",
+                f"브랜치: {branch}\n선택 파일: {result.get('selected_count', len(f_hashes))}개\n"
+                f"커밋: {commit}\n분석 요청문을 클립보드에 복사했습니다.",
+            )
+        else:
+            for f_hash in f_hashes:
+                self._update_share_status(f_hash, "공유 실패")
+            package = str(result.get("package_dir") or "")
+            self.last_diagnostic_share = dict(result)
+            self.log(f"[진단 공유] 실패: {result.get('error', '알 수 없는 오류')}")
+            QMessageBox.warning(self, "진단 공유 실패", f"Git 공유에 실패했습니다. 로컬 패키지는 보존됩니다.\n{package}")
+        self.save_cache()
+
+    def copy_latest_share_branch(self):
+        latest = self.last_diagnostic_share or latest_successful_share(os.path.dirname(os.path.abspath(__file__)))
+        branch = str(latest.get("branch_name") or "")
+        if not branch:
+            QMessageBox.information(self, "최근 공유", "현재 실행에서 완료된 공유 브랜치가 없습니다.")
+            return
+        QApplication.clipboard().setText(branch)
+        self.log(f"[진단 공유] 브랜치명을 복사했습니다: {branch}")
+
+    def open_latest_share_summary(self):
+        latest = self.last_diagnostic_share or latest_successful_share(os.path.dirname(os.path.abspath(__file__)))
+        package = str(latest.get("package_dir") or "")
+        summary = os.path.join(package, "run_summary.md") if package else ""
+        if not summary or not os.path.isfile(summary):
+            QMessageBox.information(self, "실행 요약", "최근 로컬 공유 요약을 찾을 수 없습니다.")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(summary))
+
+    def open_share_folder(self):
+        package = str(self.last_diagnostic_share.get("package_dir") or "")
+        target = package if package and os.path.isdir(package) else os.path.join(os.path.dirname(os.path.abspath(__file__)), "diagnostic_exports")
+        os.makedirs(target, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(target))
 
     def _selected_diagnostic_paths(self):
         """테이블 열을 늘리지 않고 선택 행의 캐시 연결 정보만 조회한다."""
@@ -7165,6 +7452,8 @@ class SMUGUI(QMainWindow):
                 
             if N > 1:
                 self.table.setSpan(start_row, col, N, 1)
+
+        self._install_review_widgets(start_row, f_hash, data, span=N)
             
         self._safe_resize_rows()
 

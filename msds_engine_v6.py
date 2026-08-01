@@ -179,9 +179,10 @@ EXCEPTION_REGISTRY = {
     }
 }
 
-cas_pattern = re.compile(r'(?<![\d-])(\d{2,7}\s*-\s*\d{2}\s*-\s*\d)(?![\d-])')
-cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:\.\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:\.\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
-cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:\.\d+)?\s*%?)', re.IGNORECASE)
+_CAS_DASH_CLASS = r"\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
+cas_pattern = re.compile(rf'(?<![\d-])(\d{{2,7}}\s*[{_CAS_DASH_CLASS}]\s*\d{{2}}\s*[{_CAS_DASH_CLASS}]\s*\d)(?![\d-])')
+cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:[.,]\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:[.,]\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
+cont_pattern_single = re.compile(r'([<>≤≥=\uff1c\uff1e\uff1d~∼～\-\u2013\u2014\s]*\d+(?:[.,]\d+)?\s*%?)', re.IGNORECASE)
 
 # ==============================================================================
 # 🛠️ [Chunk 21] msds_engine_v6.py ➔ 일본식 부동호 및 함량 보존 정제 로직
@@ -3171,7 +3172,8 @@ class MSDSEngineV6:
                 page=page_val,
             )
             
-            clean_cas = re.sub(r'\s+', '', cas)
+            clean_cas = msds_utils_v3.normalize_cas_candidate(cas, candidate_id=candidate_id)
+            clean_cas = re.sub(r'\s+', '', clean_cas)
             if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
                 _trace_reject(candidate_id, "INVALID_CAS_FORMAT", raw_value=cas, normalized_value=clean_cas)
                 continue
@@ -3184,6 +3186,7 @@ class MSDSEngineV6:
             elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
                 pct = "미기재"
             else:
+                msds_utils_v3.normalize_decimal_comma_content(pct, candidate_id=candidate_id)
                 pct = msds_utils_v3.clean_percentage(pct)
                 
             combined_text = f"{clean_cas}({pct})"
@@ -3210,6 +3213,9 @@ class MSDSEngineV6:
 
     def verify_cas_number(self, cas_string, grounding_text=None):
         if not cas_string: return False
+        cas_string = msds_utils_v3.normalize_cas_candidate(cas_string)
+        if grounding_text:
+            grounding_text = msds_utils_v3.normalize_cas_separators_in_text(grounding_text)
         if re.match(r'^\d{4}-\d{2}-\d{2}$', cas_string):
             return False
             
@@ -3258,11 +3264,16 @@ class MSDSEngineV6:
         blocks.sort(key=lambda b: (b[1], b[0]))
         text_list = []
         for b in blocks:
-            text_list.append(unicodedata.normalize("NFKC", b[4]))
+            normalized_block = unicodedata.normalize("NFKC", b[4])
+            text_list.append(normalized_block)
         return "\n".join(text_list)
 
     def _normalize_single_content(self, content_str):
+        original_content = str(content_str or "")
+        content_str = msds_utils_v3.normalize_decimal_comma_content(content_str)
         _trace_event("normalization.content.input", input_value=str(content_str or ""))
+        if content_str != original_content and "%" in original_content:
+            return msds_utils_v3.clean_percentage(original_content)
         # 🚨 [데이터 무결성 사수] 복합 부등호 패턴 매칭 장치를 최상단 분기로 끌어올려 선제 격발
         if content_str:
             complex_bounds_match = re.search(

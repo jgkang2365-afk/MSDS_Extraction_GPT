@@ -21,7 +21,7 @@ def _fixture_path():
 
 
 class FreshCottonDiagnosticRegressionTests(unittest.TestCase):
-    def test_real_pdf_records_raw_unicode_and_current_rejection_without_external_calls(self):
+    def test_real_pdf_normalizes_unicode_cas_and_decimal_comma_without_external_calls(self):
         if fitz is None or MSDSEngineV6 is None:
             self.skipTest("PyMuPDF 또는 운영 엔진 의존성이 이 테스트 런타임에 없음")
         pdf_path = _fixture_path()
@@ -48,22 +48,20 @@ class FreshCottonDiagnosticRegressionTests(unittest.TestCase):
                 self.assertIn("2,00%", section3_text)
                 self.assertTrue(images)
 
-                # 현재 추출 규칙을 고치지 않고, 원시 후보가 ASCII CAS 형식 검사에서
-                # 탈락하는 사실만 진단 계층이 증명하는지 확인한다.
-                self.assertEqual(
-                    engine.refine_msds_components_strict(
-                        [{"name": "benzyl acetate", "cas": "140−11−4", "content": "2,00%", "page": 2, "engine": "PyMuPDF"}]
-                    ),
-                    [],
+                refined = engine.refine_msds_components_strict(
+                    [{"name": "benzyl acetate", "cas": "140−11−4", "content": "2,00%", "page": 2, "engine": "PyMuPDF"}]
                 )
+                self.assertEqual(len(refined), 1)
+                self.assertEqual(refined[0]["name"], "benzyl acetate")
+                self.assertEqual(refined[0]["cas"], "140-11-4")
+                self.assertEqual(refined[0]["content"], "2.00%")
                 diagnostic_path = finalize_trace(
                     context,
                     {
-                        "status": "failed",
+                        "status": "completed",
                         "document_type": "text",
                         "제품명": "FRESH COTTON HYPO% NATCO 1805663",
-                        "구성성분": "",
-                        "error_code": "CAS_CONTENT_PAIRING_FAILED",
+                        "구성성분": "140-11-4(2.00%)",
                     },
                 )
 
@@ -73,10 +71,12 @@ class FreshCottonDiagnosticRegressionTests(unittest.TestCase):
             self.assertEqual(raw_event["details"]["page_numbers"], [index + 1 for index in pages])
             self.assertIn("140−11−4", raw_event["details"]["raw_text"])
             self.assertIn("2,00%", raw_event["details"]["raw_text"])
-            self.assertEqual(diagnostic["rejections"][0]["details"]["reason"], "INVALID_CAS_FORMAT")
+            transforms = [item for item in events if item["event_type"] == "candidate_transform"]
+            self.assertTrue(any(item["details"].get("before") == "140−11−4" and item["details"].get("after") == "140-11-4" for item in transforms))
+            self.assertTrue(any(item["details"].get("before") == "2,00%" and item["details"].get("after") == "2.00%" for item in transforms))
+            self.assertFalse(any(item.get("details", {}).get("reason") == "INVALID_CAS_FORMAT" for item in diagnostic.get("rejections", [])))
             report = (Path(tmp) / "fresh-cotton" / "files" / "real-pdf" / "diagnostic.md").read_text(encoding="utf-8")
-            self.assertIn("직접 실패 원인", report)
-            self.assertIn("INVALID_CAS_FORMAT", report)
+            self.assertIn("140-11-4(2.00%)", report)
 
 
 if __name__ == "__main__":
