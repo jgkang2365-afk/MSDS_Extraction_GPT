@@ -40,6 +40,7 @@ import time
 import json
 import re
 import shutil
+from collections import deque
 from datetime import datetime
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
@@ -62,6 +63,7 @@ from kosha_client import KoshaRequestBudgetExceeded
 import msds_engine_v6 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
+from batch_pipeline import BatchRunLogger, classify_and_order, timeout_for_document
 
 # [V7.0] 테이블 컬럼 인덱스 정의 (미리보기 브릿지용)
 COL_IDX_FILENAME = 7
@@ -1075,6 +1077,7 @@ class ExtractionWorker(QThread):
     result_signal = pyqtSignal(dict)
     finished_signal = pyqtSignal(dict)
     cache_update_signal = pyqtSignal(str, dict) # [NEW] 캐시 업데이트 요청용
+    queue_progress_signal = pyqtSignal(dict)
 
     def __init__(self, core, pdf_paths, cache=None):
         super().__init__()
@@ -1086,7 +1089,66 @@ class ExtractionWorker(QThread):
     def stop(self):
         self.is_running = False
 
+    def _run_classified_batch(self):
+        run_logger = BatchRunLogger()
+        classified = classify_and_order(self.pdf_paths)
+        totals = {kind: sum(item["document_type"] == kind for item in classified) for kind in ("text", "mixed", "image")}
+        completed = {kind: 0 for kind in totals}
+        stats = {"total_files": 0, "digital_count": totals["text"], "mixed_count": totals["mixed"], "image_count": totals["image"], "completed_count": 0, "partial_count": 0, "timeout_count": 0, "failed_count": 0, "cancelled_count": 0}
+        total = len(classified)
+        for index, info in enumerate(classified):
+            path, kind = info["path"], info["document_type"]
+            if not self.is_running:
+                stats["cancelled_count"] += total - index
+                break
+            started = time.monotonic()
+            timeout_seconds = timeout_for_document(kind)
+            f_hash = self.core.calculate_file_hash(path) or f"fallback_{index}"
+            fn = os.path.basename(path)
+            self.update_log_signal.emit(f"[{kind.upper()} 큐] {fn} 처리 시작 (제한 {timeout_seconds:g}초)")
+            try:
+                ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit, cancel_check=lambda: not self.is_running, timeout_seconds=timeout_seconds, document_type=kind)
+                status = ext_res.get("status", "completed")
+                signal = "🟡" if status == "partial_timeout" or ext_res.get("verification_status") == "mismatch" else ext_res.get("신호등", "🟢")
+                res_data = {
+                    "filename": fn, "f_hash": f_hash, "full_path": path,
+                    "product_name": ext_res.get("제품명", ""), "raw_content": ext_res.get("구성성분", ""),
+                    "reliability": ext_res.get("confidence", ext_res.get("신뢰도", "N/A")), "신호등": signal,
+                    "status": "부분 완료" if status == "partial_timeout" else "추출 완료",
+                    "used_engine": ext_res.get("used_engine", ""), "engine_version": engine.VERSION,
+                    "integrity_score": ext_res.get("integrity_score", 100), "integrity_reason": ext_res.get("integrity_reason", ""),
+                    "document_type": kind, "doc_type": kind, "verification_status": ext_res.get("verification_status", "unverified"),
+                    "local_text_candidate": ext_res.get("local_text_candidate", ""), "last_completed_stage": ext_res.get("last_completed_stage", ""),
+                }
+                self.cache_update_signal.emit(f_hash, res_data)
+                self.result_signal.emit(res_data)
+                stats["partial_count" if status == "partial_timeout" else "completed_count"] += 1
+            except InterruptedError:
+                stats["cancelled_count"] += 1
+                run_logger.append({"file_name": fn, "file_path": path, "document_type": kind, "status": "cancelled", "error_code": "USER_CANCELLED"})
+                break
+            except TimeoutError as exc:
+                stats["timeout_count"] += 1
+                ext_res = {"status": "timeout", "error_code": "FILE_TIMEOUT", "error_message": str(exc), "제품명": "", "구성성분": ""}
+                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "시간 초과"})
+            except Exception as exc:
+                stats["failed_count"] += 1
+                ext_res = {"status": "failed", "error_code": "PDF_OPEN_FAILED", "error_message": f"{type(exc).__name__}: {exc}", "제품명": "", "구성성분": ""}
+                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "완전 실패"})
+            elapsed = time.monotonic() - started
+            run_logger.record_file(info, ext_res, elapsed, timeout_seconds, f_hash)
+            stats["total_files"] += 1
+            completed[kind] += 1
+            self.queue_progress_signal.emit({"totals": totals.copy(), "completed": completed.copy(), "current": kind, "overall_completed": index + 1, "overall_total": total})
+            self.progress_signal.emit(int((index + 1) / max(1, total) * 100))
+
+        kosha = self.core.api_client.get_metrics()
+        stats.update(run_logger.finalize({"kosha_network_requests": kosha.get("network_requests", 0), "kosha_memory_cache_hits": kosha.get("memory_cache_hits", 0), "kosha_persistent_cache_hits": kosha.get("persistent_cache_hits", 0), "kosha_negative_cache_hits": kosha.get("negative_cache_hits", 0), "kosha_retries": kosha.get("retries", 0), "kosha_budget_remaining": kosha.get("budget_remaining", 0)}))
+        stats["run_dir"] = str(run_logger.run_dir)
+        self.finished_signal.emit(stats)
+
     def run(self):
+        return self._run_classified_batch()
         stats = {
             "total_files": 0,
             "digital_count": 0,
@@ -1340,7 +1402,7 @@ class ExtractionWorker(QThread):
                 stats["gemini_comp_count"] += 1
             
             # [지능형 속도 조절] 파일 간 최소 1초의 간격을 두어 RPM 제한 회피
-            time.sleep(1.0)
+            # 고정 냉각 대기는 대량 처리 경로에서 사용하지 않는다.
         
         self.finished_signal.emit(stats)
 
@@ -2012,8 +2074,14 @@ class SMUGUI(QMainWindow):
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
+        self.log_view.document().setMaximumBlockCount(3000)
         self.log_view.setStyleSheet("background-color: #2b2b2b; color: #a9b7c6; font-family: 'Consolas'; border: none;")
         self.log_v_layout.addWidget(self.log_view)
+        self._pending_gui_logs = deque()
+        self._log_flush_timer = QTimer(self)
+        self._log_flush_timer.setInterval(350)
+        self._log_flush_timer.timeout.connect(self._flush_gui_logs)
+        self._log_flush_timer.start()
 
         # [V10.8] 생성 순서 보정: log_view가 정의된 후 시그널 연결 (AttributeError 방지)
         self.btn_clear_log.clicked.connect(self.log_view.clear)
@@ -2106,20 +2174,28 @@ class SMUGUI(QMainWindow):
         # 높이 제약 해제하여 QSplitter가 자동화하도록 위임
 
 
+    def _flush_gui_logs(self):
+        """최대 50건을 한 번의 QTextDocument 수정으로 반영한다."""
+        if not hasattr(self, "_pending_gui_logs") or not self._pending_gui_logs:
+            return
+        v_bar = self.log_view.verticalScrollBar()
+        is_at_bottom = v_bar.value() >= v_bar.maximum() - 10
+        lines = []
+        for _ in range(min(50, len(self._pending_gui_logs))):
+            timestamp, message = self._pending_gui_logs.popleft()
+            lines.append(f"[{timestamp}] {message}")
+        cursor = self.log_view.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        if not self.log_view.document().isEmpty():
+            cursor.insertBlock()
+        cursor.insertHtml("<br>".join(lines))
+        if is_at_bottom:
+            self.log_view.ensureCursorVisible()
+
     def log(self, message):
-        """[V17.4.0.2] 지능형 시스템 로그 출력: 사용자가 검토 중일 땐 스크롤 고정"""
-        if hasattr(self, 'log_view'):
-            # 1. 현재 스크롤바 상태 확인 (최하단 여부)
-            v_bar = self.log_view.verticalScrollBar()
-            is_at_bottom = v_bar.value() >= v_bar.maximum() - 10 # 약간의 마진 허용
-            
-            # 2. 로그 추가
-            timestamp = datetime.now().strftime("%H:%M:%S")
-            self.log_view.append(f"[{timestamp}] {message}")
-            
-            # 3. 조건부 자동 스크롤: 최하단에 있었을 때만 화면을 내림
-            if is_at_bottom:
-                self.log_view.ensureCursorVisible()
+        """워커 로그를 GUI 배치 큐에 넣고 터미널에는 즉시 기록한다."""
+        if hasattr(self, '_pending_gui_logs'):
+            self._pending_gui_logs.append((datetime.now().strftime("%H:%M:%S"), str(message)))
             
         # [무결점] 터미널 출력 시 cp949 인코딩 오류 방지 (이모지 필터링 및 텍스트 태그 변환)
         try:
@@ -5893,6 +5969,11 @@ class SMUGUI(QMainWindow):
         self.worker = ExtractionWorker(self.core, target_paths, cache=self.cache)
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
+        self._pending_table_results = deque()
+        self._table_flush_timer = QTimer(self)
+        self._table_flush_timer.setInterval(250)
+        self._table_flush_timer.timeout.connect(self._flush_table_results)
+        self._table_flush_timer.start()
         # [NEW] 진행 상황 텍스트 업데이트 연결
         cached_count = len(self.pdf_paths) - len(target_paths)
         target_count = len(target_paths)
@@ -5902,10 +5983,27 @@ class SMUGUI(QMainWindow):
                 f"{len(self.pdf_paths)}건 ({v}%)"
             )
         )
-        self.worker.result_signal.connect(self.add_result_to_table)
+        self.worker.queue_progress_signal.connect(self._show_queue_progress)
+        self.worker.result_signal.connect(self._queue_table_result)
         self.worker.cache_update_signal.connect(self.update_cache) # [NEW] 캐시 업데이트 연동
         self.worker.finished_signal.connect(self.on_extraction_finished)
         self.worker.start()
+
+    def _show_queue_progress(self, state):
+        labels = {"text": "텍스트 문서", "mixed": "혼합 문서", "image": "OCR 문서"}
+        totals, completed = state["totals"], state["completed"]
+        parts = [f"{labels[k]}: {completed[k]}/{totals[k]}" for k in ("text", "mixed", "image")]
+        parts.append(f"전체: {state['overall_completed']}/{state['overall_total']}")
+        self.lbl_extraction_progress.setText(" | ".join(parts))
+
+    def _queue_table_result(self, data):
+        self._pending_table_results.append(data)
+
+    def _flush_table_results(self):
+        if not hasattr(self, "_pending_table_results"):
+            return
+        for _ in range(min(10, len(self._pending_table_results))):
+            self.add_result_to_table(self._pending_table_results.popleft())
 
     def add_result_to_table(self, data):
         """1단계 결과를 테이블에 추가 (V7.3 캐시 쉴드 적용)"""
@@ -6110,6 +6208,9 @@ class SMUGUI(QMainWindow):
 
     def on_extraction_finished(self, stats):
         """1단계 PDF 추출 완료 요약 보고 (V12.8 통계 대시보드)"""
+        self._flush_table_results()
+        if hasattr(self, "_table_flush_timer"):
+            self._table_flush_timer.stop()
         self.table.setSortingEnabled(True)
         self.table.sortItems(1, Qt.AscendingOrder)
         self._safe_resize_rows()
@@ -6138,19 +6239,19 @@ class SMUGUI(QMainWindow):
             self.log("[*] 1단계 PDF 추출 작업이 완료되었습니다.")
 
         digital_count = stats.get("digital_count", 0)
+        mixed_count = stats.get("mixed_count", 0)
         image_count = stats.get("image_count", 0)
-        deepseek_product_count = stats.get("deepseek_product_count", 0)
-        gemini_product_count = stats.get("gemini_product_count", 0)
-        regex_comp_count = stats.get("regex_comp_count", 0)
-        gemini_comp_count = stats.get("gemini_comp_count", 0)
 
         summary = f"""MSDS 추출 가동 현황 보고
 
 총 처리 파일 : {total_files}건
 
-- 문서종류 : 디지털 {digital_count}건, 이미지 {image_count}건
-- 제품명   : 딥시크 {deepseek_product_count}건, 제미나이 {gemini_product_count}건
-- 구성성분 : 정규식 {regex_comp_count}건, 제미나이 {gemini_comp_count}건
+- 문서종류 : 텍스트 {digital_count}건, 혼합 {mixed_count}건, 이미지 {image_count}건
+- OCR      : 정찰 {stats.get('recon_ocr_calls', 0)}회, 정밀 {stats.get('precision_ocr_calls', 0)}회, PPStructure {stats.get('ppstructure_calls', 0)}회
+- AI       : 텍스트 {stats.get('ai_text_calls', 0)}회, 이미지 {stats.get('ai_image_calls', 0)}회, 수확 {stats.get('ai_harvest_success', 0)}회, 무수확 {stats.get('ai_no_harvest', 0)}회
+- KOSHA    : 네트워크 {stats.get('kosha_network_requests', 0)}회, 메모리 캐시 {stats.get('kosha_memory_cache_hits', 0)}회, 영구 캐시 {stats.get('kosha_persistent_cache_hits', 0)}회, 재시도 {stats.get('kosha_retries', 0)}회
+- 상태     : 정상 {stats.get('completed_count', 0)}건, 부분 {stats.get('partial_count', 0)}건, 시간초과 {stats.get('timeout_count', 0)}건, 실패 {stats.get('failed_count', 0)}건, 중지 {stats.get('cancelled_count', 0)}건
+- 상세 로그: {stats.get('run_dir', '')}
 
 추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요."""
         if not was_cancelled:

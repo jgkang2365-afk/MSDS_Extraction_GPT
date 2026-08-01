@@ -92,6 +92,7 @@ class KoshaAPIClient:
         self._metrics = {
             "network_requests": 0,
             "persistent_cache_hits": 0,
+            "negative_cache_hits": 0,
             "memory_cache_hits": 0,
             "retries": 0,
         }
@@ -240,6 +241,8 @@ class KoshaAPIClient:
             self._persistent_entries.pop(key, None)
             return _CACHE_MISS
         self._metrics["persistent_cache_hits"] += 1
+        if value is None:
+            self._metrics["negative_cache_hits"] += 1
         return copy.deepcopy(value)
 
     def _set_cached_result(self, key, value):
@@ -254,6 +257,7 @@ class KoshaAPIClient:
             **self._metrics,
             "daily_requests": self._usage_count,
             "daily_budget": self.daily_request_budget,
+            "budget_remaining": max(0, self.daily_request_budget - self._usage_count),
         }
 
     def get_chem_id(self, cas_no: str):

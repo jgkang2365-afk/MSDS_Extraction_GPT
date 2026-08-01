@@ -12,6 +12,12 @@ import queue
 import time
 
 import hashlib
+import threading
+
+from batch_pipeline import build_partial_timeout_result, timeout_for_document
+
+
+_OCR_FILE_SEMAPHORE = threading.Semaphore(1)
 
 
 def _isolated_engine_entry(pdf_path, result_queue, cancel_event):
@@ -21,6 +27,7 @@ def _isolated_engine_entry(pdf_path, result_queue, cancel_event):
             pdf_path,
             log_func=lambda message: result_queue.put(("log", str(message))),
             cancel_check=cancel_event.is_set,
+            checkpoint_func=lambda payload: result_queue.put(("checkpoint", payload)),
         )
         result_queue.put(("result", result))
     except InterruptedError:
@@ -96,12 +103,11 @@ class MSDSCore:
         log_func=None,
         cancel_check=None,
         timeout_seconds=None,
+        document_type=None,
     ):
         """멈춘 PDF 한 건이 GUI와 후속 파일을 붙잡지 못하게 격리 실행한다."""
         if timeout_seconds is None:
-            timeout_seconds = float(
-                os.environ.get("MSDS_FILE_TIMEOUT_SECONDS", "180")
-            )
+            timeout_seconds = timeout_for_document(document_type)
 
         context = multiprocessing.get_context("spawn")
         result_queue = context.Queue()
@@ -116,6 +122,7 @@ class MSDSCore:
         final_result = None
         final_error = None
         was_cancelled = False
+        last_checkpoint = {}
 
         try:
             while True:
@@ -136,6 +143,8 @@ class MSDSCore:
                     elif message_type == "result":
                         final_result = payload
                         break
+                    elif message_type == "checkpoint" and isinstance(payload, dict):
+                        last_checkpoint = {**last_checkpoint, **payload}
                     elif message_type == "cancelled":
                         if final_error is None:
                             was_cancelled = True
@@ -170,6 +179,8 @@ class MSDSCore:
         if was_cancelled:
             raise InterruptedError("사용자 중지 요청")
         if final_error:
+            if last_checkpoint.get("product_name") or last_checkpoint.get("구성성분"):
+                return build_partial_timeout_result(last_checkpoint, timeout_seconds, final_error)
             raise TimeoutError(final_error)
         return final_result
 
@@ -179,16 +190,25 @@ class MSDSCore:
         log_func=None,
         cancel_check=None,
         timeout_seconds=None,
+        document_type=None,
     ):
         """1단계: PDF에서 제품명 및 성분 추출"""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"파일을 찾을 수 없습니다: {pdf_path}")
-        ext_res = self._run_engine_isolated(
-            pdf_path,
-            log_func=log_func,
-            cancel_check=cancel_check,
-            timeout_seconds=timeout_seconds,
-        )
+        lock = _OCR_FILE_SEMAPHORE if document_type == "image" else None
+        if lock:
+            lock.acquire()
+        try:
+            ext_res = self._run_engine_isolated(
+                pdf_path,
+                log_func=log_func,
+                cancel_check=cancel_check,
+                timeout_seconds=timeout_seconds,
+                document_type=document_type,
+            )
+        finally:
+            if lock:
+                lock.release()
         
         # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동
         if ext_res and isinstance(ext_res, dict):

@@ -14,6 +14,7 @@ import fitz
 from google.oauth2 import service_account
 import google.auth.transport.requests 
 import unicodedata
+from batch_pipeline import verify_product_name
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
 from dotenv import load_dotenv
@@ -77,7 +78,7 @@ def get_table_engine():
 GOLDEN_HASH = "e4771a2f166c4cd6"
 
 # 버전을 V6 사양에 맞게 명시
-VERSION = "24.6.0.0"
+VERSION = "24.7.0.0"
 
 # MES 마스터 데이터 로드
 MES_MASTER_MAP = {}
@@ -275,6 +276,8 @@ class MSDSEngineV6:
         # 만들어지므로 한 파일 처리 중 발생한 호출만 자연스럽게 집계된다.
         self._paddle_call_metrics = []
         self._ppstructure_usage_count = 0
+        self._ai_call_count = 0
+        self._ai_call_metrics = []
         self._image_pipeline_active = False
         self.remote_ocr_client = remote_ocr_client or RemoteOCRClient(enabled=use_remote_ocr)
         # 운영 기본값은 기존 1.5배 단일 정찰과 완전히 동일하다. 아래 두 값은
@@ -913,16 +916,34 @@ class MSDSEngineV6:
         [Failover 관문] 1선 DeepSeek(30초 타임아웃) ➔ 에러 시 2선 Vertex Gemini 비전 자동 Failover 결착
         (단, is_scanned_strict가 True인 경우 DeepSeek를 Bypass하고 곧바로 Gemini 비전 채널로 다이렉트 직결)
         """
+        self._ai_call_count += 1
+        ai_started = time.perf_counter()
+        ai_metric = {
+            "provider": "vertex" if is_scanned_strict else "router",
+            "model": model,
+            "purpose": "image_extraction" if is_scanned_strict else "text_extraction",
+            "called": True,
+            "response_received": False,
+            "elapsed_seconds": 0.0,
+            "product_name_harvested": False,
+            "cas_harvested": False,
+            "content_harvested": False,
+            "final_result_applied": False,
+            "discard_reason": "",
+        }
+        self._ai_call_metrics.append(ai_metric)
         if is_scanned_strict:
             if log_func:
                 log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
             res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
+            ai_metric.update({"provider": "vertex", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
             
         try:
             if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (12초 타임아웃 가드)")
             res = self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func)
+            ai_metric.update({"provider": "deepseek", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
             if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
             return res
         except Exception as ds_err:
@@ -930,6 +951,7 @@ class MSDSEngineV6:
                 log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
                 log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
             res = self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model)
+            ai_metric.update({"provider": "vertex", "response_received": True, "elapsed_seconds": round(time.perf_counter() - ai_started, 3)})
             if isinstance(res, dict): res["actual_engine_label"] = "gemini"
             return res
 
@@ -991,6 +1013,7 @@ class MSDSEngineV6:
         log_func=None,
         bypass_cache=False,
         cancel_check=None,
+        checkpoint_func=None,
     ):
         pipeline_started = time.perf_counter()
         paddle_calls_before = len(self._paddle_call_metrics)
@@ -1039,6 +1062,8 @@ class MSDSEngineV6:
                 raise InterruptedError("사용자 중지 요청")
 
             pipeline_kwargs = {"log_func": log_func}
+            if checkpoint_func is not None:
+                pipeline_kwargs["checkpoint_func"] = checkpoint_func
             if cancel_check is not None:
                 pipeline_kwargs["cancel_check"] = cancel_check
             res = self._process_msds_pipeline_impl(pdf_path, **pipeline_kwargs)
@@ -1090,6 +1115,30 @@ class MSDSEngineV6:
                 except:
                     pass
 
+            if isinstance(res, dict):
+                harvested_product = bool(res.get("제품명"))
+                harvested_components = bool(res.get("구성성분"))
+                for metric in self._ai_call_metrics:
+                    metric.update({
+                        "product_name_harvested": harvested_product,
+                        "cas_harvested": harvested_components,
+                        "content_harvested": harvested_components,
+                        "final_result_applied": harvested_product or harvested_components,
+                        "discard_reason": "" if (harvested_product or harvested_components) else "AI_NO_HARVEST",
+                    })
+                res.setdefault("metrics", {})
+                res["metrics"].update({
+                    "recon_ocr_calls": len(self._paddle_call_metrics),
+                    "precision_ocr_calls": self._ppstructure_usage_count,
+                    "ppstructure_calls": self._ppstructure_usage_count,
+                    "ai_text_calls": self._ai_call_count if not self._image_pipeline_active else 0,
+                    "ai_image_calls": self._ai_call_count if self._image_pipeline_active else 0,
+                    "ai_harvest_success": int(bool(res.get("제품명") or res.get("구성성분"))),
+                    "ai_no_harvest": int(self._ai_call_count > 0 and not (res.get("제품명") or res.get("구성성분"))),
+                    "valid_cas_count": len(re.findall(r"\d{2,7}-\d{2}-\d", str(res.get("구성성분", "")))),
+                    "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
+                    "ai": list(self._ai_call_metrics),
+                })
             return res
         except InterruptedError:
             raise
@@ -1097,7 +1146,7 @@ class MSDSEngineV6:
             if log_func: log_func(f" ⚠️ [치명적 런타임 예외 격리] {e}")
             return self._get_graceful_error_dict(pdf_path, str(e), log_func=log_func)
 
-    def _process_msds_pipeline_impl(self, pdf_path, log_func=None, cancel_check=None):
+    def _process_msds_pipeline_impl(self, pdf_path, log_func=None, cancel_check=None, checkpoint_func=None):
         """
         대장 키 단독 직렬 분쇄 메인 파이프라인 실체 (오류는 외부 쉴드에서 격리 수거)
         """
@@ -1231,7 +1280,7 @@ class MSDSEngineV6:
                     original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
                 original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
 
-            return {
+            result_package = {
                 "구성성분": comp_str, "제품명": ai_pn, "측정대상": "",
                 "교정_사유": "통합 원샷 비전 추출 완착",
                 "신호등": "🟢" if comp_parts and ai_pn else "🟡",
@@ -1242,6 +1291,9 @@ class MSDSEngineV6:
                 "product_engine": "제미나이",
                 "comp_engine": "제미나이"
             }
+            if checkpoint_func:
+                checkpoint_func({"stage": "ai_response_complete", "product_name": ai_pn, "구성성분": comp_str, "함유량": comp_str, "timestamp": time.time()})
+            return result_package
         # ==============================================================================
 
         # 3섹션 성분 탐색 페이지 식별
@@ -1314,34 +1366,30 @@ class MSDSEngineV6:
             "contents": [{"parts": parts}]
         }
 
-        hybrid_pn = labeled_pn or ""
-        product_engine = "정규식" if labeled_pn else "제미나이"
-        if not labeled_pn:
-            try:
-                # 문서 내부의 명시적 제품명 레이블이 없을 때만 보조 AI를 사용한다.
-                result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
-                if result:
-                    pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                    if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
-                        hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
-                        hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
-                    engine_label = result.get("actual_engine_label", "gemini")
-                    if engine_label == "deepseek":
-                        product_engine = "딥시크"
-                    else:
-                        product_engine = "제미나이"
-            except Exception as e:
-                if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
-                hybrid_pn = ""
+        hybrid_pn = ""
+        product_engine = "제미나이"
+        try:
+            # 제품명은 AI 결과를 기본값으로 사용하고 Section 1 후보는 검증 근거로만 쓴다.
+            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict)
+            if result:
+                pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
+                    hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
+                    hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
+                product_engine = "딥시크" if result.get("actual_engine_label") == "deepseek" else "제미나이"
+                if checkpoint_func:
+                    checkpoint_func({"stage": "ai_response_complete", "product_name": hybrid_pn, "product_name_source": "ai", "next_stage": "product_name_verification", "timestamp": time.time()})
+        except Exception as e:
+            if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
 
-        # 문서의 1항 레이블 값은 파일명이나 생성형 응답보다 우선하는 확정 근거다.
-        if labeled_pn:
-            if log_func and hybrid_pn != labeled_pn:
-                log_func(
-                    f" ✅ [제품명 로컬 교차검증] 명시적 제품명 레이블 "
-                    f"'{labeled_pn}'을 최종값으로 확정합니다."
-                )
+        verification_status, product_confidence = verify_product_name(hybrid_pn, labeled_pn)
+        product_name_source = "ai"
+        if not hybrid_pn and labeled_pn:
             hybrid_pn = labeled_pn
+            product_name_source = "local_fallback"
+            verification_status, product_confidence = "unverified", "review"
+        if verification_status == "mismatch" and original_log_func:
+            original_log_func(f"⚠️ [제품명 불일치] AI='{hybrid_pn}' | Section 1='{labeled_pn}'")
 
         # 제품명은 문서 내부 근거만 허용한다. 불량/공란이어도 파일명으로 보정하지 않는다.
         is_empty_or_blacklisted = (
@@ -1356,6 +1404,14 @@ class MSDSEngineV6:
                     f"'{hybrid_pn}'을 사용할 수 없어 공란으로 유지합니다."
                 )
             hybrid_pn = ""
+
+        if checkpoint_func:
+            checkpoint_func({
+                "stage": "product_name_complete", "product_name": hybrid_pn,
+                "product_name_source": product_name_source, "local_text_candidate": labeled_pn,
+                "verification_status": verification_status, "confidence": product_confidence,
+                "next_stage": "section3_recon", "timestamp": time.time(),
+            })
 
         # [최종 출구 파일명 검문소 철거] 1선 직결 파이프라인 마감: AI의 순수 결과를 바이패스 통과시킵니다.
         pass
@@ -1629,6 +1685,10 @@ class MSDSEngineV6:
                     })
         components = refined_comps
 
+        if checkpoint_func:
+            cas_only = "; ".join(str(c.get("cas", "")) for c in components if isinstance(c, dict) and c.get("cas"))
+            checkpoint_func({"stage": "cas_candidates_complete", "product_name": hybrid_pn, "구성성분": cas_only, "next_stage": "cas_content_pairing", "timestamp": time.time()})
+
         # 🚨 [소장님 지시 완착]: 최종 추출 자산 즉시 인쇄 로그 배선 (개별 항목 가독성 확보)
         if log_func:
             log_func(f"  ✅ [최종 확정 자산 명세]")
@@ -1700,6 +1760,17 @@ class MSDSEngineV6:
             "product_engine": product_engine if product_engine else "제미나이",
             "comp_engine": "정규식"
         }
+        res_obj.update({
+            "product_name_source": product_name_source,
+            "local_text_candidate": labeled_pn,
+            "verification_status": verification_status,
+            "confidence": product_confidence,
+        })
+        if verification_status == "mismatch":
+            res_obj["신호등"] = "🟡"
+            res_obj["error_code"] = "PRODUCT_NAME_MISMATCH"
+        if checkpoint_func:
+            checkpoint_func({"stage": "cas_content_matching_complete", "product_name": product_name, "구성성분": comp_str, "함유량": comp_str, "next_stage": "finalize", "timestamp": time.time()})
         
         # 🚀 [생산성 고도화] 초록불 오독(False Green) 섀도우 교차 검문 및 별표 장부 자동 적출
         if res_obj.get("신호등") == "🟢":
@@ -1757,8 +1828,7 @@ class MSDSEngineV6:
         recon_data=None,
         precomputed_sandwich=None,
     ):
-        # 🚀 [API Rate Limit 방어벽] AI 호출 전 3.0초 쿨다운 지연 배선
-        time.sleep(3.0)
+        # 고정 쿨다운은 두지 않는다. 공급자별 재시도/백오프만 장애 시 적용한다.
         # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
         original_log_func = log_func
         log_func = None
@@ -4501,7 +4571,7 @@ class MSDSEngineV6:
 # ----------------------------------------------------------------------
 # 호환성을 위한 모듈 단위 래퍼 함수들
 # ----------------------------------------------------------------------
-def process_pdf(pdf_path, log_func=None, bypass_cache=False, cancel_check=None):
+def process_pdf(pdf_path, log_func=None, bypass_cache=False, cancel_check=None, checkpoint_func=None):
     engine = MSDSEngineV6()
     pipeline_kwargs = {
         "log_func": log_func,
@@ -4509,6 +4579,8 @@ def process_pdf(pdf_path, log_func=None, bypass_cache=False, cancel_check=None):
     }
     if cancel_check is not None:
         pipeline_kwargs["cancel_check"] = cancel_check
+    if checkpoint_func is not None:
+        pipeline_kwargs["checkpoint_func"] = checkpoint_func
     return engine.process_msds_pipeline(pdf_path, **pipeline_kwargs)
 
 analyze_msds = process_pdf

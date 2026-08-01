@@ -926,9 +926,11 @@ class BulkExtractionResponsivenessTests(unittest.TestCase):
     def test_pdf_engine_is_process_isolated_and_time_limited(self):
         repo_root = Path(__file__).resolve().parents[1]
         core_source = (repo_root / "msds_core.py").read_text(encoding="utf-8")
+        batch_source = (repo_root / "batch_pipeline.py").read_text(encoding="utf-8")
 
         self.assertIn('multiprocessing.get_context("spawn")', core_source)
-        self.assertIn('"MSDS_FILE_TIMEOUT_SECONDS", "180"', core_source)
+        self.assertIn('"MSDS_FILE_TIMEOUT_SECONDS"', batch_source)
+        self.assertIn('"MSDS_TEXT_FILE_TIMEOUT_SECONDS"', batch_source)
         self.assertIn("process.terminate()", core_source)
 
 
