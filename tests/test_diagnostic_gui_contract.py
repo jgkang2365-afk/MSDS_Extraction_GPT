@@ -12,8 +12,26 @@ class DiagnosticGuiContractTests(unittest.TestCase):
         for action in ("선택 오류 GitHub 공유", "최근 공유 브랜치 복사", "실행 요약 열기", "공유 폴더 열기"):
             self.assertIn(action, SOURCE)
 
+    def test_review_columns_are_moved_next_to_number_column(self):
+        setup = SOURCE.split("enumerate(REVIEW_COLUMN_INDICES)", 1)[1].split("# [V8.6]", 1)[0]
+        for constant in ("COL_IDX_REVIEW_REQUEST", "COL_IDX_ERROR_TYPE", "COL_IDX_USER_NOTE", "COL_IDX_SHARE_STATUS"):
+            self.assertIn(constant, SOURCE.split("REVIEW_COLUMN_INDICES =", 1)[1].split("class MultiSelectErrorCombo", 1)[0])
+        self.assertIn("header_table.moveSection", setup)
+
+    def test_review_columns_can_be_collapsed_as_a_group(self):
+        method = SOURCE.split("def toggle_review_columns", 1)[1].split("def _set_review_note", 1)[0]
+        self.assertIn("for column in REVIEW_COLUMN_INDICES", method)
+        self.assertIn("setColumnHidden", method)
+        self.assertIn("오류 입력 펼치기", method)
+
+    def test_error_type_combo_supports_multiple_checked_values(self):
+        widget = SOURCE.split("class MultiSelectErrorCombo", 1)[1].split("def natural_sort_key", 1)[0]
+        self.assertIn("Qt.ItemIsUserCheckable", widget)
+        self.assertIn("def checkedItems", widget)
+        self.assertIn("selectionChanged.emit(self.checkedItems())", widget)
+
     def test_checkbox_updates_cache_without_starting_git(self):
-        method = SOURCE.split("def _set_review_selected", 1)[1].split("def _set_review_error_type", 1)[0]
+        method = SOURCE.split("def _set_review_selected", 1)[1].split("def _set_review_error_types", 1)[0]
         self.assertIn('review["user_marked_error"]', method)
         self.assertIn("self.save_cache()", method)
         self.assertNotIn("publish_share_package", method)

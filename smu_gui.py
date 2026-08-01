@@ -52,8 +52,8 @@ from PyQt5.QtWidgets import (
     QButtonGroup, QRadioButton, QAbstractItemView, QCheckBox
 )
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QTextDocument, QCursor, QTextCursor, QImage, QPixmap, QDesktopServices
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer, QEvent
+from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QTextDocument, QCursor, QTextCursor, QImage, QPixmap, QDesktopServices, QStandardItem, QStandardItemModel
 from html import escape
 
 import msds_core
@@ -92,6 +92,63 @@ REVIEW_ERROR_TYPES = (
     "제품명 오류", "CAS 오류", "함유량 오류", "성분 연결 오류", "일부 성분 누락",
     "전체 성분 누락", "처리 중단·시간 초과", "신호등 오류", "기타",
 )
+REVIEW_COLUMN_INDICES = (
+    COL_IDX_REVIEW_REQUEST,
+    COL_IDX_ERROR_TYPE,
+    COL_IDX_USER_NOTE,
+    COL_IDX_SHARE_STATUS,
+)
+
+
+class MultiSelectErrorCombo(QComboBox):
+    """팝업을 닫지 않고 여러 오류 유형을 체크하는 콤보박스."""
+    selectionChanged = pyqtSignal(list)
+
+    def __init__(self, values, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        self.lineEdit().setReadOnly(True)
+        self.lineEdit().setPlaceholderText("오류 유형 선택")
+        self.setInsertPolicy(QComboBox.NoInsert)
+        model = QStandardItemModel(self)
+        self.setModel(model)
+        for value in values:
+            item = QStandardItem(str(value))
+            item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+            item.setData(Qt.Unchecked, Qt.CheckStateRole)
+            model.appendRow(item)
+        self.view().viewport().installEventFilter(self)
+        self._refresh_text()
+
+    def eventFilter(self, watched, event):
+        if watched is self.view().viewport() and event.type() == QEvent.MouseButtonRelease:
+            index = self.view().indexAt(event.pos())
+            if index.isValid():
+                item = self.model().itemFromIndex(index)
+                item.setCheckState(Qt.Unchecked if item.checkState() == Qt.Checked else Qt.Checked)
+                self._refresh_text()
+                self.selectionChanged.emit(self.checkedItems())
+            return True
+        return super().eventFilter(watched, event)
+
+    def checkedItems(self):
+        return [
+            self.model().item(row).text()
+            for row in range(self.model().rowCount())
+            if self.model().item(row).checkState() == Qt.Checked
+        ]
+
+    def setCheckedItems(self, values):
+        wanted = {str(value) for value in (values or [])}
+        for row in range(self.model().rowCount()):
+            item = self.model().item(row)
+            item.setCheckState(Qt.Checked if item.text() in wanted else Qt.Unchecked)
+        self._refresh_text()
+
+    def _refresh_text(self):
+        selected = self.checkedItems()
+        self.lineEdit().setText(", ".join(selected))
+        self.setToolTip("\n".join(selected) if selected else "오류 유형을 복수 선택할 수 있습니다.")
 
 # [Part 1] 탐색기 스타일 자연스러운 정렬 (Natural Sort)
 def natural_sort_key(s):
@@ -4964,6 +5021,14 @@ class SMUGUI(QMainWindow):
         self.btn_share_diagnostics.clicked.connect(self.share_selected_diagnostics)
         header.addWidget(self.btn_share_diagnostics)
 
+        self.btn_toggle_review_columns = QPushButton("오류 입력 접기 ◀")
+        self.btn_toggle_review_columns.setFixedHeight(35)
+        self.btn_toggle_review_columns.setCheckable(True)
+        self.btn_toggle_review_columns.setChecked(True)
+        self.btn_toggle_review_columns.setToolTip("테이블 좌측의 분석 요청·오류 유형·메모·공유 상태 열을 접거나 펼칩니다.")
+        self.btn_toggle_review_columns.clicked.connect(self.toggle_review_columns)
+        header.addWidget(self.btn_toggle_review_columns)
+
         # 하단 우측 교정창 토글 단추 추가
         self.btn_toggle_corr = QPushButton("📋 교정창 ↔")
         self.btn_toggle_corr.setFixedHeight(35)
@@ -5070,6 +5135,14 @@ class SMUGUI(QMainWindow):
         # [V7.0] 관리용 열들은 모두 숨김 처리
         for hidden_col in [7, 8, 9, 10]:
             self.table.setColumnHidden(hidden_col, True)
+
+        # 검토 입력 열은 논리 인덱스를 유지하되 화면에서는 No 바로 뒤에 둔다.
+        # 넓은 추출 결과 열 뒤로 밀려 사용자가 가로 스크롤 없이는 찾지 못하는
+        # 문제를 막고, 기존 캐시·미리보기·수동 편집 인덱스 계약은 보존한다.
+        for visual_index, logical_index in enumerate(REVIEW_COLUMN_INDICES):
+            current_visual = header_table.visualIndex(logical_index)
+            if current_visual != visual_index:
+                header_table.moveSection(current_visual, visual_index)
         
         # [V8.6] HTML 델리게이트 복원 및 MultiLineDelegate 적용
         self.table.setItemDelegateForColumn(3, MultiLineDelegate(self))
@@ -6798,12 +6871,11 @@ class SMUGUI(QMainWindow):
         checkbox.stateChanged.connect(lambda state, key=f_hash: self._set_review_selected(key, state == Qt.Checked))
         self.table.setCellWidget(row, COL_IDX_REVIEW_REQUEST, checkbox)
 
-        error_box = QComboBox()
-        error_box.addItems(REVIEW_ERROR_TYPES)
+        error_box = MultiSelectErrorCombo(REVIEW_ERROR_TYPES)
         error_types = review.get("error_types") or []
-        current_error = str(error_types[0]) if error_types else "기타"
-        error_box.setCurrentText(current_error if current_error in REVIEW_ERROR_TYPES else "기타")
-        error_box.currentTextChanged.connect(lambda value, key=f_hash: self._set_review_error_type(key, value))
+        known_errors = [value for value in error_types if value in REVIEW_ERROR_TYPES]
+        error_box.setCheckedItems(known_errors or ["기타"])
+        error_box.selectionChanged.connect(lambda values, key=f_hash: self._set_review_error_types(key, values))
         self.table.setCellWidget(row, COL_IDX_ERROR_TYPE, error_box)
 
         note = QLineEdit(str(review.get("user_note") or ""))
@@ -6829,11 +6901,22 @@ class SMUGUI(QMainWindow):
         self._set_share_status_items(f_hash, review["share_status"])
         self.save_cache()
 
-    def _set_review_error_type(self, f_hash, value):
+    def _set_review_error_types(self, f_hash, values):
         if f_hash not in self.cache:
             return
-        self._review_for_hash(f_hash)["error_types"] = [str(value or "기타")]
+        selected = [str(value) for value in (values or []) if str(value) in REVIEW_ERROR_TYPES]
+        self._review_for_hash(f_hash)["error_types"] = selected
         self.save_cache()
+
+    def toggle_review_columns(self, expanded=None):
+        """좌측 검토 입력 묶음을 접거나 펼치되 논리 컬럼 계약은 유지한다."""
+        if expanded is None:
+            expanded = self.table.isColumnHidden(COL_IDX_REVIEW_REQUEST)
+        expanded = bool(expanded)
+        for column in REVIEW_COLUMN_INDICES:
+            self.table.setColumnHidden(column, not expanded)
+        self.btn_toggle_review_columns.setText("오류 입력 접기 ◀" if expanded else "오류 입력 펼치기 ▶")
+        self.btn_toggle_review_columns.setChecked(expanded)
 
     def _set_review_note(self, f_hash, value):
         if f_hash not in self.cache:
