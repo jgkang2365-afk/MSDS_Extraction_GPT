@@ -6,6 +6,24 @@
 import re
 import unicodedata
 
+try:
+    from diagnostic_trace import get_tracer
+except Exception:
+    def get_tracer():
+        return None
+
+
+def _trace_normalization(name, before, after):
+    try:
+        get_tracer().event(
+            "utility.normalization",
+            utility=name,
+            input_value=str(before or ""),
+            output_value=str(after or ""),
+        )
+    except Exception:
+        pass
+
 def clean_content_text(text: str) -> str:
     """
     한글 혼용 범위어 조건을 표준 물결 기호 형태로 세척합니다.
@@ -13,6 +31,7 @@ def clean_content_text(text: str) -> str:
     """
     if not text:
         return ""
+    original_text = text
     
     # 1. 스캔 가루/오타 단어 원천 정류 세척 세트 격발
     text = re.sub(r'미\s*[만맊밖먄내발방안]|밎안|미밖', '미만', text)
@@ -53,7 +72,9 @@ def clean_content_text(text: str) -> str:
         v2 = match.group(2)
         return f"{v1}~<{v2}%"
     text = re.sub(pattern, replace_match, text)
-    return text.strip()
+    result = text.strip()
+    _trace_normalization("clean_content_text", original_text, result)
+    return result
 
 def is_valid_cas(cas):
     """CAS 번호 체크디지트 검증 (유효성 99% 보장)"""
@@ -151,6 +172,7 @@ def clean_candidate(text):
 def normalize_text(text):
     """[V4.1] 유니코드 정규화 및 중점(·) 등 노이즈 문자 치환"""
     if not text: return ""
+    original_text = text
     try:
         # 1. NFKC 정규화 (전각 -> 반각, 유사 기호 통합)
         t = unicodedata.normalize("NFKC", text)
@@ -163,13 +185,17 @@ def normalize_text(text):
         for src, dst in replacements.items(): 
             t = t.replace(src, dst)
             
-        return t.strip()
+        result = t.strip()
+        _trace_normalization("normalize_text", original_text, result)
+        return result
     except Exception: return text
 
 def clean_percentage(content_str):
     """🛡️ [데이터 검증 및 예외 처리] 1~0% 와 같은 역방향 범위어 노이즈 발견 즉시 0~1% 오름차순 평탄화 정류 및 포맷 수선"""
     if not content_str:
-        return "미기재%"
+        result = "미기재%"
+        _trace_normalization("clean_percentage", content_str, result)
+        return result
     
     # 1. 한글 혼용 범위어 오타 정류 및 유니코드 정규화
     raw = clean_content_text(str(content_str))

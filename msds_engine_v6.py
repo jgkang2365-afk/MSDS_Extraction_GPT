@@ -25,6 +25,73 @@ from remote_ocr_client import (
     log_remote_ocr_disabled_once,
 )
 
+# 진단 모듈은 선택 기능이다. 운영 추출 경로는 모듈 부재·기록 실패와 무관하게
+# 기존 결과/호출 수를 그대로 유지해야 한다.
+try:
+    from diagnostic_trace import get_tracer
+except Exception:
+    class _NoopDiagnosticTracer:
+        def event(self, *args, **kwargs):
+            return None
+
+        def image(self, *args, **kwargs):
+            return None
+
+    def get_tracer():
+        return _NoopDiagnosticTracer()
+
+
+def _trace_event(name, **fields):
+    try:
+        get_tracer().event(name, **fields)
+    except Exception:
+        pass
+
+
+def _trace_image(image_bytes, **fields):
+    """이미 생성된 pixmap/PNG만 기록한다. 진단을 위해 렌더링하지 않는다."""
+    try:
+        get_tracer().image(image_bytes, **fields)
+    except Exception:
+        pass
+
+
+def _trace_candidate(value=None, **fields):
+    try:
+        return get_tracer().candidate(value, **fields)
+    except Exception:
+        return None
+
+
+def _trace_transform(candidate_id, value=None, **fields):
+    try:
+        return get_tracer().transform(candidate_id, value, **fields)
+    except Exception:
+        return candidate_id
+
+
+def _trace_reject(candidate_id, reason, **fields):
+    try:
+        get_tracer().reject(candidate_id, reason, **fields)
+    except Exception:
+        pass
+
+
+def _trace_is_full():
+    try:
+        mode = getattr(get_tracer(), "mode", None)
+        return getattr(mode, "value", str(mode)) == "FULL"
+    except Exception:
+        return False
+
+
+def _trace_enabled():
+    try:
+        mode = getattr(get_tracer(), "mode", None)
+        return getattr(mode, "value", str(mode)) in {"SUMMARY", "FULL"}
+    except Exception:
+        return False
+
 # 모든 소켓 통신의 기본 타임아웃을 20초로 강제 설정하여 API 지연 시 프로세스 영구 블로킹 방어
 socket.setdefaulttimeout(20.0)
 
@@ -286,6 +353,40 @@ class MSDSEngineV6:
         self._recon_confidence_evaluator = recon_confidence_evaluator
         self._recon_attempt_metrics = []
         self._last_recon_data = None
+        self._diagnostic_candidate_ids = {}
+        self._diagnostic_last_candidate_ids = []
+        self._diagnostic_product_candidate_id = None
+
+    def _diagnostic_candidate(self, value, source, obj=None, **fields):
+        """동일 후보 객체가 정제/QC를 지나도 같은 candidate_id를 유지한다."""
+        key = id(obj) if obj is not None else None
+        if key is not None and key in self._diagnostic_candidate_ids:
+            return self._diagnostic_candidate_ids[key]
+        candidate_id = _trace_candidate(value, source=source, **fields)
+        if key is not None and candidate_id:
+            self._diagnostic_candidate_ids[key] = candidate_id
+        return candidate_id
+
+    def _bind_diagnostic_candidate(self, obj, candidate_id):
+        if obj is not None and candidate_id:
+            self._diagnostic_candidate_ids[id(obj)] = candidate_id
+
+    def _attach_final_diagnostic(self, result):
+        parents = [value for value in ([self._diagnostic_product_candidate_id] + self._diagnostic_last_candidate_ids) if value]
+        final_id = _trace_candidate(
+            {"product_name": result.get("제품명", ""), "components": result.get("구성성분", "")},
+            source="engine_final_result",
+            derived_from=parents[0] if parents else None,
+            role="engine_final_candidate",
+        )
+        if final_id and len(parents) > 1:
+            try:
+                get_tracer().merge(parents, final_id, reason="final_component_serialization")
+            except Exception:
+                pass
+        if final_id:
+            result["_diagnostic"] = {"final_candidate_id": final_id, "source_candidate_ids": parents}
+        return result
 
     def _run_paddle_call(self, engine, method_name, image, purpose, page_index, log_func=None, **kwargs):
         """Paddle 호출을 단일 계측 관문으로 통과시킨다."""
@@ -298,6 +399,14 @@ class MSDSEngineV6:
             )
 
         started = time.perf_counter()
+        _trace_event(
+            "ocr.paddle.start",
+            method=method_name,
+            purpose=purpose,
+            page_index=page_index,
+            image_width=width,
+            image_height=height,
+        )
         try:
             return getattr(engine, method_name)(image, **kwargs)
         finally:
@@ -312,6 +421,7 @@ class MSDSEngineV6:
                 "elapsed_seconds": elapsed,
             }
             self._paddle_call_metrics.append(metric)
+            _trace_event("ocr.paddle.complete", **metric)
             if log_func:
                 log_func(
                     f"[Paddle 완료] 페이지 {page_number} | 이미지 {width}x{height}px | "
@@ -982,6 +1092,14 @@ class MSDSEngineV6:
         metric_index = len(self._ai_call_metrics)
         self._ai_call_metrics.append(metric)
         self._ai_call_count += 1
+        _trace_event(
+            "ai.call.start",
+            provider=provider,
+            model=model,
+            purpose=purpose,
+            input_mode=input_mode,
+            attempt_number=self._ai_call_count,
+        )
         try:
             response = invoke()
         except Exception as exc:
@@ -989,12 +1107,21 @@ class MSDSEngineV6:
                 "elapsed_seconds": round(time.perf_counter() - started, 3),
                 "discard_reason": f"CALL_ERROR:{type(exc).__name__}",
             })
+            _trace_event("ai.call.failure", provider=provider, model=model, purpose=purpose, error_type=type(exc).__name__)
             raise
 
         response_text = self._ai_response_text(response)
+        parsed_response = False
+        try:
+            json.loads(response_text.replace("```json", "").replace("```", "").strip())
+            parsed_response = bool(response_text.strip())
+        except (ValueError, TypeError):
+            parsed_response = False
         harvested = self._analyze_ai_response(response, purpose)
         metric.update({
             "response_received": bool(response_text),
+            "provider_response_returned": response is not None,
+            "json_parse_succeeded": parsed_response,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             **harvested,
         })
@@ -1004,6 +1131,20 @@ class MSDSEngineV6:
             metric["discard_reason"] = "AI_NO_HARVEST"
         if isinstance(response, dict):
             response["_ai_metric_index"] = metric_index
+        _trace_event(
+            "ai.call.response",
+            provider=provider,
+            model=model,
+            purpose=purpose,
+            response_text_length=len(response_text or ""),
+            provider_response_returned=response is not None,
+            json_parse_succeeded=parsed_response,
+            raw_response=response_text if _trace_is_full() else None,
+            product_name_harvested=bool(metric["product_name_harvested"]),
+            cas_harvested=bool(metric["cas_harvested"]),
+            content_harvested=bool(metric["content_harvested"]),
+            discard_reason=metric["discard_reason"],
+        )
         return response
 
     def _mark_ai_result_applied(self, response, *fields):
@@ -1019,10 +1160,27 @@ class MSDSEngineV6:
         metric["final_result_applied"] = bool(metric["applied_fields"])
         if metric["final_result_applied"]:
             metric["discard_reason"] = ""
+        _trace_event(
+            "ai.result_application",
+            purpose=metric.get("purpose"),
+            applied_fields=list(metric.get("applied_fields", [])),
+            applied=bool(metric.get("final_result_applied")),
+            discard_reason=metric.get("discard_reason", ""),
+        )
 
     def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False, purpose="general_extraction"):
         """실제 공급자 호출마다 독립 계측하며 DeepSeek 장애 시 Vertex로 전환한다."""
         input_mode = "image" if is_scanned_strict or "inlineData" in str(payload) else "text"
+        parts = ((payload.get("contents") or [{}])[0].get("parts") or []) if isinstance(payload, dict) else []
+        _trace_event(
+            "ai.input",
+            purpose=purpose,
+            requested_model=model,
+            input_mode=input_mode,
+            text_length=sum(len(str(part.get("text", ""))) for part in parts if isinstance(part, dict)),
+            image_count=sum(1 for part in parts if isinstance(part, dict) and part.get("inlineData")),
+            max_retries=max_retries,
+        )
         if is_scanned_strict:
             if log_func:
                 log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
@@ -1043,6 +1201,7 @@ class MSDSEngineV6:
             if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
             return res
         except Exception as ds_err:
+            _trace_event("ai.failover", from_provider="deepseek", to_provider="vertex", purpose=purpose, error_type=type(ds_err).__name__)
             if log_func:
                 log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
                 log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
@@ -1114,6 +1273,14 @@ class MSDSEngineV6:
         checkpoint_func=None,
     ):
         pipeline_started = time.perf_counter()
+        _trace_event(
+            "stage_start",
+            stage_id="msds_pipeline",
+            module="msds_engine_v6",
+            function="process_msds_pipeline",
+            engine="MSDSEngineV6",
+            input_summary={"file_path": str(pdf_path)},
+        )
         paddle_calls_before = len(self._paddle_call_metrics)
         pp_calls_before = self._ppstructure_usage_count
         try:
@@ -1135,6 +1302,13 @@ class MSDSEngineV6:
                 not bypass_cache
                 and os.environ.get("ANTIGRAVITY_GOLDEN_VALIDATION") != "1"
             )
+            _trace_event(
+                "pipeline.cache.lookup",
+                cache_enabled=cache_enabled,
+                bypass_cache=bool(bypass_cache),
+                engine_version=VERSION,
+                has_file_hash=bool(f_hash),
+            )
 
             # 2. 캐시 조회 (Cache-Hit Bypass)
             cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "msds_cache_registry.json")
@@ -1146,11 +1320,27 @@ class MSDSEngineV6:
                         if f_hash in cache_data:
                             cached_item = cache_data[f_hash]
                             if cached_item.get("engine_version") == VERSION:
+                                _trace_event("pipeline.cache.hit", engine_version=VERSION)
+                                _trace_event(
+                                    "stage_result",
+                                    stage_id="msds_pipeline",
+                                    status="skipped",
+                                    output_summary={"cache": "persistent", "reused": True},
+                                    candidate_count=0,
+                                    elapsed_ms=round((time.perf_counter() - pipeline_started) * 1000, 3),
+                                )
                                 if log_func:
                                     log_func(f"⚡ [Cache-Hit Bypass] 캐시 자산 발견으로 분석 우회: {os.path.basename(pdf_path)}")
                                 return cached_item.get("result")
+                            _trace_event(
+                                "pipeline.cache.version_miss",
+                                expected_version=VERSION,
+                                cached_version=cached_item.get("engine_version"),
+                            )
                 except:
                     pass
+
+            _trace_event("pipeline.cache.miss", cache_enabled=cache_enabled)
 
             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 전역 싱글톤 캐시 오염 원천 분쇄 가드레일 완착
             import gc
@@ -1196,8 +1386,11 @@ class MSDSEngineV6:
                         cache_data = {}
                     cache_data[f_hash] = {
                         "engine_version": VERSION,
-                        "result": res
+                        # 실행별 candidate_id는 캐시 재사용 시 의미가 없으므로
+                        # 추출값 캐시 계약에는 포함하지 않는다.
+                        "result": {key: value for key, value in res.items() if key != "_diagnostic"}
                     }
+                    _trace_event("pipeline.cache.store", engine_version=VERSION)
                     cache_temp_path = (
                         f"{cache_path}.{os.getpid()}.tmp"
                     )
@@ -1260,10 +1453,36 @@ class MSDSEngineV6:
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
                 })
+                _trace_event(
+                    "pipeline.final_lineage",
+                    doc_type=res.get("doc_type"),
+                    used_engine=res.get("used_engine"),
+                    product_engine=res.get("product_engine"),
+                    comp_engine=res.get("comp_engine"),
+                    component_count=len(re.findall(r"\d{2,7}-\d{2}-\d", str(res.get("구성성분", "")))),
+                )
+            _trace_event(
+                "stage_result",
+                stage_id="msds_pipeline",
+                status="success" if isinstance(res, dict) and res.get("구성성분") else "empty",
+                output_summary={"used_engine": res.get("used_engine", "") if isinstance(res, dict) else ""},
+                candidate_count=len(re.findall(r"\d{2,7}-\d{2}-\d", str(res.get("구성성분", "")))) if isinstance(res, dict) else 0,
+                elapsed_ms=round((time.perf_counter() - pipeline_started) * 1000, 3),
+            )
             return res
         except InterruptedError:
+            _trace_event("stage_error", stage_id="msds_pipeline", error_code="USER_CANCELLED", exception_type="InterruptedError")
             raise
         except Exception as e:
+            _trace_event("pipeline.error", error_type=type(e).__name__)
+            _trace_event(
+                "stage_error",
+                stage_id="msds_pipeline",
+                error_code="ENGINE_RUNTIME_ERROR",
+                exception_type=type(e).__name__,
+                message=str(e),
+                fallback_stage="error_isolation",
+            )
             if log_func: log_func(f" ⚠️ [치명적 런타임 예외 격리] {e}")
             return self._get_graceful_error_dict(pdf_path, str(e), log_func=log_func)
 
@@ -1289,8 +1508,16 @@ class MSDSEngineV6:
             doc_check = fitz.open(pdf_path)
             is_scanned = not any(page.get_text().strip() for page in doc_check)
             total_chars = sum(len(page.get_text().strip()) for page in doc_check)
+            _trace_event(
+                "document.classification",
+                page_count=len(doc_check),
+                text_char_count=total_chars,
+                scanned_by_text=bool(is_scanned),
+            )
             doc_check.close()
-        except: is_scanned = True
+        except:
+            is_scanned = True
+            _trace_event("document.classification_error")
 
         is_scanned_strict = is_scanned or (total_chars < 10)
         if is_scanned_strict and log_func: log_func(" 🔍 스캔본(Image-only) 감지. 즉시 AI 스나이퍼 모드 가동.")
@@ -1374,6 +1601,13 @@ class MSDSEngineV6:
                 parsed_obj = json.loads(clean_json)
                 
                 ai_pn = str(parsed_obj.get("product_name", "")).strip()
+                if ai_pn:
+                    self._diagnostic_product_candidate_id = _trace_candidate(
+                        ai_pn,
+                        source="ai_full_extraction_response",
+                        field="product_name",
+                        engine="vertex",
+                    )
                 ai_comps = parsed_obj.get("components", [])
                 if not isinstance(ai_comps, list): ai_comps = []
             except Exception as e:
@@ -1420,7 +1654,7 @@ class MSDSEngineV6:
             }
             if checkpoint_func:
                 checkpoint_func({"stage": "ai_response_complete", "product_name": ai_pn, "구성성분": comp_str, "함유량": comp_str, "timestamp": time.time()})
-            return result_package
+            return self._attach_final_diagnostic(result_package)
         # ==============================================================================
 
         # 3섹션 성분 탐색 페이지 식별
@@ -1428,6 +1662,13 @@ class MSDSEngineV6:
             pdf_path,
             log_func=original_log_func,
             cancel_check=cancel_check,
+        )
+        _trace_event(
+            "section3.selection",
+            page_indexes=list(pages or []),
+            image_count=len(image_list or []),
+            text_length=len(section3_text or ""),
+            recon_used=bool(recon_data),
         )
         if cancel_check and cancel_check():
             raise InterruptedError("사용자 중지 요청")
@@ -1439,7 +1680,20 @@ class MSDSEngineV6:
             first_page_text = self._get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
             for page in doc: full_text_for_grounding += self._get_sorted_and_normalized_text(page)
             pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            cover_img = [{"mimeType": "image/png", "data": base64.b64encode(pix_cover.tobytes("png")).decode("utf-8")}]
+            cover_bytes = pix_cover.tobytes("png")
+            _trace_image(
+                cover_bytes,
+                name="product_ai_cover_page_1",
+                page_index=0,
+                source_width=pix_cover.w,
+                source_height=pix_cover.h,
+                output_width=pix_cover.w,
+                output_height=pix_cover.h,
+                dpi=144,
+                rotation=0,
+                ai_input=True,
+            )
+            cover_img = [{"mimeType": "image/png", "data": base64.b64encode(cover_bytes).decode("utf-8")}]
             doc.close()
             
             # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 메인 관로 내 가변 데이터 무결성 표준 디지털 우선 가드레일 완착
@@ -1455,6 +1709,13 @@ class MSDSEngineV6:
         except:
             cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
             doc_type = "디지털" if len(full_text_for_grounding.strip()) >= 500 else "스캔본"
+
+        _trace_event(
+            "document.classification.final",
+            doc_type=doc_type,
+            scanned_strict=bool(is_scanned_strict),
+            full_text_length=len(full_text_for_grounding or ""),
+        )
 
         # 1선 가동 직후 문서 유형 판별
         raw_text = full_text_for_grounding
@@ -1478,6 +1739,18 @@ class MSDSEngineV6:
             recon_data=recon_data,
         )
         labeled_pn = extract_labeled_product_name(compact_context)
+        local_product_candidate_id = _trace_candidate(
+            labeled_pn,
+            source="section1_local_text",
+            field="product_name",
+            engine="local_section1",
+        ) if labeled_pn else None
+        _trace_event(
+            "section1.product_context",
+            pdf_type=pdf_type,
+            context_length=len(compact_context or ""),
+            labeled_candidate=bool(labeled_pn),
+        )
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
         # 스캔본 이미지일 경우 cover_img의 데이터를 inlineData 형식으로 payload에 추가
@@ -1494,6 +1767,7 @@ class MSDSEngineV6:
         }
 
         hybrid_pn = ""
+        ai_product_candidate_id = None
         result = None
         product_engine = "제미나이"
         try:
@@ -1504,22 +1778,52 @@ class MSDSEngineV6:
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
                     hybrid_pn = msds_utils_v3.clean_candidate(pn_ai)
                     hybrid_pn = re.sub(r'^(\S)\1(?=[가-힣])', r'\1', hybrid_pn)
+                    ai_product_candidate_id = _trace_candidate(
+                        pn_ai,
+                        source="ai_product_name_response",
+                        field="product_name",
+                        engine=result.get("actual_engine_label", "vertex"),
+                    )
+                    _trace_transform(
+                        ai_product_candidate_id,
+                        hybrid_pn,
+                        transform="product_name_cleanup",
+                        before=pn_ai,
+                        after=hybrid_pn,
+                    )
                 product_engine = "딥시크" if result.get("actual_engine_label") == "deepseek" else "제미나이"
                 if checkpoint_func:
                     checkpoint_func({"stage": "ai_response_complete", "product_name": hybrid_pn, "product_name_source": "ai", "next_stage": "product_name_verification", "timestamp": time.time()})
         except Exception as e:
+            _trace_event("ai.product_name.error", error_type=type(e).__name__)
             if log_func: log_func(f" ⚠️ [[상표명 정찰병] 1선 호출 실패] {e}")
 
         verification_status, product_confidence = verify_product_name(hybrid_pn, labeled_pn)
         product_name_source = "ai"
         if hybrid_pn:
             self._mark_ai_result_applied(result, "product_name")
+            self._diagnostic_product_candidate_id = ai_product_candidate_id
         if not hybrid_pn and labeled_pn:
             hybrid_pn = labeled_pn
             product_name_source = "local_fallback"
             verification_status, product_confidence = "unverified", "review"
+            self._diagnostic_product_candidate_id = local_product_candidate_id
+            if local_product_candidate_id:
+                try:
+                    get_tracer().override(local_product_candidate_id, "AI_RESULT_UNAVAILABLE_LOCAL_FALLBACK")
+                except Exception:
+                    pass
         if verification_status == "mismatch" and original_log_func:
             original_log_func(f"⚠️ [제품명 불일치] AI='{hybrid_pn}' | Section 1='{labeled_pn}'")
+        if verification_status == "mismatch" and ai_product_candidate_id:
+            _trace_event(
+                "candidate_verification",
+                candidate_id=ai_product_candidate_id,
+                verification_status="mismatch",
+                reason_code="PRODUCT_NAME_MISMATCH",
+                compared_candidate_id=local_product_candidate_id,
+                final_disposition="accepted_for_review",
+            )
 
         # 제품명은 문서 내부 근거만 허용한다. 불량/공란이어도 파일명으로 보정하지 않는다.
         is_empty_or_blacklisted = (
@@ -1534,6 +1838,14 @@ class MSDSEngineV6:
                     f"'{hybrid_pn}'을 사용할 수 없어 공란으로 유지합니다."
                 )
             hybrid_pn = ""
+
+        _trace_event(
+            "section1.product_result",
+            source=product_name_source,
+            verification_status=verification_status,
+            accepted=bool(hybrid_pn),
+            engine=product_engine,
+        )
 
         if checkpoint_func:
             checkpoint_func({
@@ -1558,6 +1870,7 @@ class MSDSEngineV6:
                 parser = PDFParser()
                 odl_doc = parser.parse(pdf_path, cancel_check=cancel_check)
                 odl_components = self.extract_components_odl_robust(odl_doc, pages, pdf_path, log_func=log_func)
+                _trace_event("candidates.odl", count=len(odl_components), page_indexes=list(pages or []))
                 if log_func: log_func(f" 🔍 [[정규식] 1선 ODL 성공] 격자 분석을 통해 {len(odl_components)}건의 성분 선제 확보.")
             except InterruptedError:
                 raise
@@ -1574,6 +1887,7 @@ class MSDSEngineV6:
                         density_components.extend(p_comps)
                 doc_dc.close()
                 if log_func: log_func(f" 🔍 [밀도 클러스터링 성공] {len(density_components)}건의 성분 확보.")
+                _trace_event("candidates.density", count=len(density_components), page_indexes=list(pages or []))
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [밀도 클러스터링 예외] 분석 스킵: {e}")
 
@@ -1621,6 +1935,7 @@ class MSDSEngineV6:
                         continue
                 merged_map_1st[cas] = c
         odl_density_comps = list(merged_map_1st.values())
+        _trace_event("candidates.odl_density_merged", count=len(odl_density_comps))
 
         # 1선 완착 무결성 판별
         checked_1st = []
@@ -1685,6 +2000,14 @@ class MSDSEngineV6:
                 not has_complex_bounds_1st):
                 has_perfect_1st_line = True
                 if log_func: log_func(" 🟢 [1선 완착 통과] 1선 엔진 결과 및 2선 청소부 수선 완료로 무결성이 확보되어 AI 호출을 생략(Bypass)합니다.")
+
+            _trace_event(
+                "section3.local_branch",
+                candidate_count=len(checked_1st),
+                perfect=bool(has_perfect_1st_line),
+                invalid_cas=bool(has_invalid_cas_1st),
+                integrity_valid=bool(is_integrity_valid),
+            )
 
 # ==============================================================================
 # 🛠️ [Chunk 12] msds_engine_v6.py ➔ 1선 무결성 검증 및 예외 자재 가속 우회 스위처 통합 배선 완착
@@ -1950,7 +2273,7 @@ class MSDSEngineV6:
             else:
                 original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
             original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
-        return res_obj
+        return self._attach_final_diagnostic(res_obj)
 
     def _trigger_ai_extraction(
         self,
@@ -2052,6 +2375,13 @@ class MSDSEngineV6:
 
         # 이중 스캔 방지 및 페이로드 축소를 위해 최적화된 이미지 목록으로 교체
         image_list = optimized_payload
+        _trace_event(
+            "ai.component_input_selection",
+            target_page_index=target_page_index,
+            source_page_indexes=list(pages or []),
+            image_count=len(image_list),
+            section3_text_length=len(section3_text or ""),
+        )
 
         # 3선 AI 호출을 위한 이미지 리스트 정비
         image_base64_list = []
@@ -2066,6 +2396,21 @@ class MSDSEngineV6:
                         image_base64_list.append(encoded_string)
             except Exception as e:
                 if log_func: log_func(f" ⚠️ [인코더 오류] 이미지 변환 실패: {e}")
+        _trace_event(
+            "ai.component_image_metadata",
+            image_count=len(image_base64_list),
+            encoded_byte_lengths=[len(item) for item in image_base64_list],
+        )
+        for image_index, encoded_image in enumerate(image_base64_list):
+            try:
+                _trace_image(
+                    base64.b64decode(encoded_image),
+                    name=f"component_ai_input_{image_index + 1}",
+                    ai_input=True,
+                    input_index=image_index,
+                )
+            except Exception:
+                pass
 
         # 🛡️ [데이터 검증 및 에러 예외 처리 - 동적 레이아웃 라우터 배선 실시간 판독]
         is_vertical_block = False
@@ -2414,7 +2759,7 @@ class MSDSEngineV6:
             else:
                 original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
             original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
-        return res_obj
+        return self._attach_final_diagnostic(res_obj)
 
     # ----------------------------------------------------------------------
     # 내부 서브 파이프라인 및 헬퍼 함수들 (클래스 메소드로 전환 및 self 바인딩)
@@ -2552,6 +2897,7 @@ class MSDSEngineV6:
                         f"[정찰 재단 재사용] 페이지 {target_page_idx + 1} | "
                         f"이미지 {crop_image_width}x{crop_image_height}px | 띠 OCR·재렌더링 0회"
                     )
+                _trace_event("sandwich.crop_reuse", page_index=target_page_idx, image_width=crop_image_width, image_height=crop_image_height)
             else:
                 doc = fitz.open(pdf_path)
                 # 🛡️ [데이터 검증 및 예외 처리 - Test Case] 인덱스 초과 시 0번 표지 회군 병목을 차단하고 맨 마지막 유효 페이지로 구출 안착
@@ -2619,6 +2965,14 @@ class MSDSEngineV6:
                 final_pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect)
                 cropped_bytes = final_pix.tobytes("png")
                 crop_image_width, crop_image_height = final_pix.w, final_pix.h
+                _trace_image(
+                    cropped_bytes,
+                    name="sandwich_crop",
+                    page_index=target_page_idx,
+                    crop_rect_pdf=[crop_rect.x0, crop_rect.y0, crop_rect.x1, crop_rect.y1],
+                    image_width=crop_image_width,
+                    image_height=crop_image_height,
+                )
                 doc.close()
             
             # 재단 이미지는 원격 OCR 활성 여부와 무관하게 후속 멀티모달 경로에서 재사용한다.
@@ -2628,6 +2982,7 @@ class MSDSEngineV6:
             # 비활성 상태에서는 클라이언트 메서드 자체를 호출하지 않는다. 따라서
             # 서버 상태 확인, HTTP 요청, 재시도 및 타임아웃 로직이 전혀 실행되지 않는다.
             if not self.remote_ocr_client.enabled:
+                _trace_event("remote_ocr.skipped", reason="remote_disabled", page_index=target_page_idx)
                 log_remote_ocr_disabled_once(log_func)
                 return {
                     "status": "FALLBACK",
@@ -2644,9 +2999,11 @@ class MSDSEngineV6:
 
             try:
                 local_raw_text = self.remote_ocr_client.extract_png(cropped_bytes)
+                _trace_event("remote_ocr.complete", page_index=target_page_idx, text_length=len(local_raw_text or ""))
                 if log_func:
                     log_func("🟢 [수납 완료] 깡통 컴퓨터 비전 인공지능이 정밀 분석 완료한 청정 격실 텍스트 접수.")
             except RemoteOCRError as network_fault:
+                _trace_event("remote_ocr.failure", page_index=target_page_idx, error_type=type(network_fault).__name__)
                 if log_func:
                     log_func(f"🚨 [원격 가속망 장애] {network_fault}")
                     log_func(
@@ -2673,6 +3030,7 @@ class MSDSEngineV6:
                     recon_data, target_page_idx, local_raw_text
                 )
                 if use_ppstructure:
+                    _trace_event("ppstructure.selected", page_index=target_page_idx, reason=pp_reason)
                     if log_func:
                         log_func(f"[조건부 PPStructure 실행] {pp_reason}")
                     cropped_image_list = [{"data": cropped_b64, "mime_type": "image/png"}]
@@ -2691,9 +3049,11 @@ class MSDSEngineV6:
                     else:
                         anomaly_reason = f"{anomaly_reason}; PPStructure 복구 실패: {pp_anomaly}"
                 elif log_func:
+                    _trace_event("ppstructure.skipped", page_index=target_page_idx, reason=pp_reason)
                     log_func(f"[PPStructure 생략] {pp_reason} | 멀티모달 AI로 전환")
             
             if is_clean:
+                _trace_event("sandwich.result", status="SUCCESS", engine="local_bypass", page_index=target_page_idx)
                 if log_func: log_func("🟢 [1선 자가 진단 통과] 오독 없는 청정 수치 확정. 외부 AI 호출 비용 0원 처리 (Bypass).")
                 return {
                     "status": "SUCCESS",
@@ -2705,6 +3065,7 @@ class MSDSEngineV6:
                     "page_index": target_page_idx,
                 }
             else:
+                _trace_event("sandwich.result", status="FALLBACK", engine="external_cleaner", page_index=target_page_idx, reason=anomaly_reason)
                 if log_func:
                     log_func(f"⚠️ [[함량 검문소] 검문 탈락] {anomaly_reason}")
                     log_func("🚀 [선로 연결] 독단적 AI 호출을 금지하고, 상류 마스터 멀티모달 가속선으로 권한을 양도합니다.")
@@ -2802,9 +3163,17 @@ class MSDSEngineV6:
             pct = (comp.get('percentage') or '').strip() or (comp.get('content') or '').strip()
             page_val = comp.get('page', '')
             engine_val = comp.get('engine', 'Unknown')
+            candidate_id = self._diagnostic_candidate(
+                {"cas": cas, "content": pct},
+                source="refine_msds_components_strict",
+                obj=comp,
+                engine=engine_val,
+                page=page_val,
+            )
             
             clean_cas = re.sub(r'\s+', '', cas)
             if not re.match(r'^\d{2,7}-\d{2}-\d$', clean_cas):
+                _trace_reject(candidate_id, "INVALID_CAS_FORMAT", raw_value=cas, normalized_value=clean_cas)
                 continue
                 
             # [108-01-0 성분 강제 수납 정류]
@@ -2818,8 +3187,13 @@ class MSDSEngineV6:
                 pct = msds_utils_v3.clean_percentage(pct)
                 
             combined_text = f"{clean_cas}({pct})"
+            _trace_transform(
+                candidate_id,
+                {"cas": clean_cas, "content": pct},
+                transform="refine_msds_components_strict",
+            )
             
-            refined.append({
+            refined_item = {
                 'name': name,
                 'chemical_name': name,
                 'cas': clean_cas,
@@ -2829,7 +3203,9 @@ class MSDSEngineV6:
                 'page': page_val,
                 'engine': engine_val,
                 'combined_format': combined_text
-            })
+            }
+            self._bind_diagnostic_candidate(refined_item, candidate_id)
+            refined.append(refined_item)
         return refined
 
     def verify_cas_number(self, cas_string, grounding_text=None):
@@ -2869,6 +3245,16 @@ class MSDSEngineV6:
 
     def _get_sorted_and_normalized_text(self, page):
         blocks = page.get_text("blocks")
+        try:
+            words = page.get_text("words")
+        except Exception:
+            words = []
+        _trace_event(
+            "pymupdf.text_source",
+            page_number=getattr(page, "number", None) + 1 if isinstance(getattr(page, "number", None), int) else None,
+            block_count=len(blocks),
+            word_count=len(words),
+        )
         blocks.sort(key=lambda b: (b[1], b[0]))
         text_list = []
         for b in blocks:
@@ -2876,6 +3262,7 @@ class MSDSEngineV6:
         return "\n".join(text_list)
 
     def _normalize_single_content(self, content_str):
+        _trace_event("normalization.content.input", input_value=str(content_str or ""))
         # 🚨 [데이터 무결성 사수] 복합 부등호 패턴 매칭 장치를 최상단 분기로 끌어올려 선제 격발
         if content_str:
             complex_bounds_match = re.search(
@@ -2889,7 +3276,9 @@ class MSDSEngineV6:
                     f2 = float(complex_bounds_match.group(2))
                     n1 = int(f1) if f1.is_integer() else f1
                     n2 = int(f2) if f2.is_integer() else f2
-                    return f"{n1}~{n2}%"
+                    result = f"{n1}~{n2}%"
+                    _trace_event("normalization.content.output", output_value=result, rule="complex_bounds")
+                    return result
                 except:
                     pass
 
@@ -2928,6 +3317,7 @@ class MSDSEngineV6:
             # [무결성 보완] 표준 부등호(≥, ≤)까지 조기 반환 락(Lock) 가드레일에 동기화하여 중복 기호 누출 완전 방어
             has_special = any(sym in normalized for sym in ["≥", "≤", "≧", "≦", "이상", "미만", "이하", "초과", ">", "<", "="])
             if has_special or normalized == "미기재%":
+                _trace_event("normalization.content.output", output_value=normalized, rule="concentration")
                 return normalized
 
         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 외부 파일 오염 원천 거세 인터락 완착
@@ -3052,10 +3442,17 @@ class MSDSEngineV6:
         has_invalid = False
         norm_text = re.sub(r'\s+', '', full_text).upper() if full_text else ""
         
+        accepted_ids = {}
         for comp in components:
             raw_cas_field = str(comp.get("cas", "") or comp.get("cas_no", "")).strip()
             clean_cas = re.sub(r'\s+', '', raw_cas_field)
             raw_content = str(comp.get("content", "")).strip()
+            candidate_id = self._diagnostic_candidate(
+                {"cas": raw_cas_field, "content": raw_content},
+                source="final_quality_control",
+                obj=comp,
+                is_ai=bool(is_ai),
+            )
             
             has_any_valid_cas = bool(re.search(r'\d{2,7}-\d{2}-\d', clean_cas))
             if not has_any_valid_cas:
@@ -3070,6 +3467,7 @@ class MSDSEngineV6:
                 if any(k in raw_cas_field for k in ["영업비밀", "비공개", "해당없음", "Secret", "Proprietary"]):
                     cas_list = [raw_cas_field]
                 else:
+                    _trace_reject(candidate_id, "no_cas_pattern", stage="format")
                     continue
             
             content_parts = [self._normalize_single_content(c) for c in re.split(r'\s*/\s*', raw_content) if c.strip()]
@@ -3097,6 +3495,7 @@ class MSDSEngineV6:
                             break
                     else:
                         if log_func: log_func(f" 🔴 [Fuzzy 방어] 3단계 퍼지 쉴드 붕괴. 환각 CAS 영구 폐기: {cas}")
+                        _trace_reject(candidate_id, "checksum_and_fuzzy_rejected", cas=cas)
                         has_invalid = True
                         continue 
 
@@ -3115,6 +3514,10 @@ class MSDSEngineV6:
                     if is_better:
                         refined_dict[cas]["content"] = cv
                         if comp.get("name"): refined_dict[cas]["name"] = comp.get("name")
+                        _trace_transform(candidate_id, {"cas": cas, "content": cv}, transform="duplicate_replaced")
+                        accepted_ids[cas] = candidate_id
+                    else:
+                        _trace_reject(candidate_id, "duplicate_priority_lost", cas=cas)
                     try:
                         if page_val:
                             old_p = refined_dict[cas].get("page", 999)
@@ -3122,15 +3525,20 @@ class MSDSEngineV6:
                                 refined_dict[cas]["page"] = page_val
                     except: pass
                 else:
-                    refined_dict[cas] = {
+                    accepted_item = {
                         "cas": cas,
                         "name": comp.get("name", ""),
                         "content": cv if cv else "미기재%",
                         "page": page_val,
                         "engine": origin_engine
                     }
+                    refined_dict[cas] = accepted_item
+                    accepted_ids[cas] = candidate_id
+                    self._bind_diagnostic_candidate(accepted_item, candidate_id)
+                    _trace_transform(candidate_id, {"cas": cas, "content": cv if cv else "미기재%"}, transform="quality_accepted")
 
         refined = list(refined_dict.values()) 
+        self._diagnostic_last_candidate_ids = [accepted_ids.get(item.get("cas")) for item in refined if accepted_ids.get(item.get("cas"))]
         if is_ai:
             try: self.check_omission(full_text, refined)
             except ValueError as e:
@@ -4003,6 +4411,7 @@ class MSDSEngineV6:
             doc = fitz.open(pdf_path)
             pages = self.find_section3_pages(doc)
             recon_data = None
+            _trace_event("section3.page_search", page_indexes=list(pages or []), document_pages=len(doc))
             
             if not pages:
                 self._image_pipeline_active = True
@@ -4042,6 +4451,43 @@ class MSDSEngineV6:
                                 raise InterruptedError("사용자 중지 요청")
                             self._paddle_call_metrics[-1]["render_scale"] = scale
                             recon_lines = self._normalize_recon_ocr_lines(result, scale=scale)
+                            if _trace_enabled():
+                                candidate_boxes = {}
+                                for line in recon_lines:
+                                    line_text = line.get("text", "")
+                                    field = None
+                                    if re.search(r'(?<![\d-])\d{2,7}[-−–—]\d{2}[-−–—]\d(?![\d-])', line_text):
+                                        field = "cas"
+                                    elif re.search(r'\d+(?:[.,]\d+)?\s*%', line_text):
+                                        field = "content"
+                                    elif re.search(r'(?:3|4)\s*항|SECTION\s*[34]|COMPOSITION|FIRST\s*AID', line_text, re.I):
+                                        field = "section_heading"
+                                    if not field:
+                                        continue
+                                    candidate_id = self._diagnostic_candidate(
+                                        {"field": field, "raw_text": line_text},
+                                        source="PaddleOCR recon",
+                                        obj=line,
+                                        page=i + 1,
+                                        bbox=line.get("bbox_px"),
+                                    )
+                                    line["candidate_id"] = candidate_id
+                                    if candidate_id and line.get("bbox_px"):
+                                        candidate_boxes[candidate_id] = line["bbox_px"]
+                                _trace_image(
+                                    pix.tobytes("png"),
+                                    name=f"recon_ocr_page_{i + 1}_scale_{scale:g}",
+                                    page_index=i,
+                                    display_page=i + 1,
+                                    source_width=pix.w,
+                                    source_height=pix.h,
+                                    output_width=pix.w,
+                                    output_height=pix.h,
+                                    dpi=72 * float(scale),
+                                    rotation=0,
+                                    candidate_boxes=candidate_boxes,
+                                    intermediate=True,
+                                )
                             page_text_original = "\n".join(
                                 line.get("text", "") for line in recon_lines if line.get("text", "")
                             )
@@ -4078,6 +4524,14 @@ class MSDSEngineV6:
                                 "elapsed_seconds": self._paddle_call_metrics[-1]["elapsed_seconds"],
                             }
                             page_attempts.append(attempt)
+                            _trace_event(
+                                "section3.recon_attempt",
+                                page_index=i,
+                                render_scale=float(scale),
+                                line_count=len(recon_lines),
+                                score=float(evaluation["score"]),
+                                accepted=bool(evaluation["accepted"]),
+                            )
                             self._recon_attempt_metrics.append({
                                 key: value for key, value in attempt.items() if key not in {"lines", "text"}
                             })
@@ -4149,6 +4603,13 @@ class MSDSEngineV6:
                     recon_data["direct_components"] = direct_components
                     recon_data["direct_integrity_passed"] = direct_integrity
                     recon_data["section_bounds"] = bounds
+                    _trace_event(
+                        "section3.recon_direct_decision",
+                        page_index=target_index,
+                        bounds=bounds,
+                        candidate_count=len(direct_components),
+                        accepted=bool(direct_integrity),
+                    )
                     pages = [target_index]
 
                     if direct_integrity:
@@ -4175,6 +4636,14 @@ class MSDSEngineV6:
                         matrix=fitz.Matrix(2.0, 2.0), clip=crop_rect
                     )
                     cropped_bytes = crop_pix.tobytes("png")
+                    _trace_image(
+                        cropped_bytes,
+                        name=f"section3_crop_page_{target_index + 1}",
+                        page_index=target_index,
+                        crop_rect_pdf=[crop_rect.x0, crop_rect.y0, crop_rect.x1, crop_rect.y1],
+                        image_width=crop_pix.w,
+                        image_height=crop_pix.h,
+                    )
                     image_item = {
                         "mimeType": "image/png",
                         "data": base64.b64encode(cropped_bytes).decode("utf-8"),
@@ -4214,7 +4683,20 @@ class MSDSEngineV6:
                 page = doc[p_idx]
                 raw_text += self._get_sorted_and_normalized_text(page) + "\n"
                 pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-                images.append({"mimeType": "image/png", "data": base64.b64encode(pix.tobytes("png")).decode("utf-8")})
+                png_bytes = pix.tobytes("png")
+                _trace_image(
+                    png_bytes,
+                    name=f"section3_page_{p_idx + 1}",
+                    page_index=p_idx,
+                    display_page=p_idx + 1,
+                    source_width=pix.w,
+                    source_height=pix.h,
+                    output_width=pix.w,
+                    output_height=pix.h,
+                    dpi=144,
+                    rotation=0,
+                )
+                images.append({"mimeType": "image/png", "data": base64.b64encode(png_bytes).decode("utf-8")})
                 if len(images) >= 6: break 
                 
             doc.close()
@@ -4227,6 +4709,16 @@ class MSDSEngineV6:
                     section3_text_only = raw_text[start_m.start():start_m.end() + ends[0].start()]
                 else:
                     section3_text_only = raw_text[start_m.start():]
+
+            _trace_event(
+                "section3.text_source_result",
+                engine="PyMuPDF blocks",
+                page_indexes=list(pages or []),
+                page_numbers=[index + 1 for index in pages or []],
+                character_count=len(section3_text_only),
+                raw_text=section3_text_only if _trace_is_full() else None,
+                status="success" if section3_text_only.strip() else "empty",
+            )
 
             return images, section3_text_only, pages, recon_data
         except InterruptedError:

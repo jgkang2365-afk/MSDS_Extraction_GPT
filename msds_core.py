@@ -13,26 +13,71 @@ import time
 
 import hashlib
 import threading
+from contextlib import nullcontext
 
 from batch_pipeline import build_partial_timeout_result, timeout_for_document
+
+try:
+    from diagnostic_trace import TraceContext, activate_trace, finalize_trace, get_tracer
+except Exception:  # 진단 배포 순서와 무관하게 엔진 격리를 유지한다.
+    TraceContext = None
+
+    def activate_trace(_context):
+        return nullcontext()
+
+    def get_tracer():
+        return None
+
+    def finalize_trace(*_args, **_kwargs):
+        return None
 
 
 _OCR_FILE_SEMAPHORE = threading.Semaphore(1)
 
 
-def _isolated_engine_entry(pdf_path, result_queue, cancel_event):
-    """PDF 한 건의 엔진 처리를 별도 프로세스에 격리한다."""
+def _trace_event(name, **details):
+    """진단 오류를 무시해 PDF 추출·중지 계약을 보존한다."""
     try:
-        result = msds_engine_v6.process_pdf(
-            pdf_path,
-            log_func=lambda message: result_queue.put(("log", str(message))),
-            cancel_check=cancel_event.is_set,
-            checkpoint_func=lambda payload: result_queue.put(("checkpoint", payload)),
-        )
-        result_queue.put(("result", result))
+        tracer = get_tracer()
+        if tracer:
+            tracer.event(name, **details)
+    except Exception:
+        pass
+
+
+def _deserialize_trace_context(payload):
+    if not payload or TraceContext is None:
+        return None
+    try:
+        return TraceContext.from_dict(payload)
+    except Exception:
+        return None
+
+
+def _isolated_engine_entry(pdf_path, result_queue, cancel_event, trace_context_payload=None):
+    """PDF 한 건의 엔진 처리를 별도 프로세스에 격리한다."""
+    trace_context = _deserialize_trace_context(trace_context_payload)
+    try:
+        with activate_trace(trace_context):
+            _trace_event("engine_child_started", stage_id="engine", file_path=str(pdf_path))
+            result = msds_engine_v6.process_pdf(
+                pdf_path,
+                log_func=lambda message: result_queue.put(("log", str(message))),
+                cancel_check=cancel_event.is_set,
+                checkpoint_func=lambda payload: result_queue.put(("checkpoint", payload)),
+            )
+            _trace_event("engine_child_completed", stage_id="engine")
+            result_queue.put(("result", result))
     except InterruptedError:
+        _trace_event("engine_child_cancelled", stage_id="engine", level="warning")
         result_queue.put(("cancelled", None))
     except BaseException as exc:
+        _trace_event(
+            "engine_child_error",
+            stage_id="engine",
+            level="error",
+            error_type=type(exc).__name__,
+        )
         result_queue.put(("error", f"{type(exc).__name__}: {exc}"))
 
 
@@ -104,6 +149,7 @@ class MSDSCore:
         cancel_check=None,
         timeout_seconds=None,
         document_type=None,
+        trace_context=None,
     ):
         """멈춘 PDF 한 건이 GUI와 후속 파일을 붙잡지 못하게 격리 실행한다."""
         if timeout_seconds is None:
@@ -112,9 +158,14 @@ class MSDSCore:
         context = multiprocessing.get_context("spawn")
         result_queue = context.Queue()
         cancel_event = context.Event()
+        trace_context_payload = None
+        try:
+            trace_context_payload = trace_context.to_dict() if trace_context else None
+        except Exception:
+            trace_context_payload = None
         process = context.Process(
             target=_isolated_engine_entry,
-            args=(pdf_path, result_queue, cancel_event),
+            args=(pdf_path, result_queue, cancel_event, trace_context_payload),
             daemon=False,
         )
         process.start()
@@ -124,16 +175,39 @@ class MSDSCore:
         was_cancelled = False
         last_checkpoint = {}
 
+        def trace_event(name, **details):
+            if trace_context is None:
+                return
+            try:
+                with activate_trace(trace_context):
+                    _trace_event(name, **details)
+            except Exception:
+                pass
+
+        trace_event(
+            "engine_isolation_started",
+            stage_id="engine",
+            document_type=document_type,
+            timeout_seconds=timeout_seconds,
+        )
+
         try:
             while True:
                 if cancel_check and cancel_check():
                     was_cancelled = True
                     cancel_event.set()
+                    trace_event("engine_cancel_requested", stage_id="engine", level="warning")
                 elif time.monotonic() >= deadline:
                     final_error = (
                         f"파일별 제한시간 {timeout_seconds:g}초 초과"
                     )
                     cancel_event.set()
+                    trace_event(
+                        "engine_timeout",
+                        stage_id="engine",
+                        level="warning",
+                        timeout_seconds=timeout_seconds,
+                    )
 
                 try:
                     message_type, payload = result_queue.get(timeout=0.1)
@@ -145,12 +219,19 @@ class MSDSCore:
                         break
                     elif message_type == "checkpoint" and isinstance(payload, dict):
                         last_checkpoint = {**last_checkpoint, **payload}
+                        trace_event(
+                            "engine_checkpoint",
+                            stage_id=str(payload.get("stage", "checkpoint")),
+                            checkpoint_stage=payload.get("stage", ""),
+                            next_stage=payload.get("next_stage", ""),
+                        )
                     elif message_type == "cancelled":
                         if final_error is None:
                             was_cancelled = True
                         break
                     elif message_type == "error":
                         final_error = payload
+                        trace_event("engine_error", stage_id="engine", level="error")
                         break
                 except queue.Empty:
                     pass
@@ -177,11 +258,20 @@ class MSDSCore:
             result_queue.join_thread()
 
         if was_cancelled:
+            trace_event("engine_cancelled", stage_id="engine", level="warning")
             raise InterruptedError("사용자 중지 요청")
         if final_error:
             if last_checkpoint.get("product_name") or last_checkpoint.get("구성성분") or last_checkpoint.get("cas_candidates"):
+                trace_event(
+                    "engine_partial_timeout",
+                    stage_id="engine",
+                    level="warning",
+                    last_checkpoint_stage=last_checkpoint.get("stage", ""),
+                )
                 return build_partial_timeout_result(last_checkpoint, timeout_seconds, final_error)
+            trace_event("engine_failed", stage_id="engine", level="error")
             raise TimeoutError(final_error)
+        trace_event("engine_isolation_completed", stage_id="engine")
         return final_result
 
     def extract_from_pdf(
@@ -191,6 +281,7 @@ class MSDSCore:
         cancel_check=None,
         timeout_seconds=None,
         document_type=None,
+        trace_context=None,
     ):
         """1단계: PDF에서 제품명 및 성분 추출"""
         if not os.path.exists(pdf_path):
@@ -205,6 +296,7 @@ class MSDSCore:
                 cancel_check=cancel_check,
                 timeout_seconds=timeout_seconds,
                 document_type=document_type,
+                trace_context=trace_context,
             )
         finally:
             if lock:
@@ -218,7 +310,19 @@ class MSDSCore:
             and not ext_res.get("content_matching_complete", False)
         ):
             return ext_res
-        
+
+        trace_scope = activate_trace(trace_context) if trace_context is not None else nullcontext()
+        with trace_scope:
+            return self._postprocess_extraction_result(ext_res)
+
+    def _postprocess_extraction_result(self, ext_res):
+        """엔진 결과를 GUI 계약으로 정류하며 모든 후보 변경을 진단 계보에 남긴다."""
+        _trace_event(
+            "core.postprocess_started",
+            stage_id="core_postprocess",
+            status="started",
+            input_component_type=type(ext_res.get("구성성분")).__name__ if isinstance(ext_res, dict) else "none",
+        )
         # LLM 엔진으로부터 반환된 데이터를 정류 가공하여 세미콜론 체인으로 가동
         if ext_res and isinstance(ext_res, dict):
             raw_comps = []
@@ -250,9 +354,22 @@ class MSDSCore:
             for item in raw_comps:
                 cas_val = item.get("cas")
                 content_val = item.get("content")
+                candidate_id = ""
+                try:
+                    candidate_id = get_tracer().candidate(
+                        {"cas": cas_val or "", "content": content_val or ""},
+                        source="msds_core.postprocess",
+                        stage="core_postprocess",
+                    )
+                except Exception:
+                    pass
                 
                 # CAS 번호가 없고 함유량만 있는 것 또는 CAS 번호가 아예 없는 것 기각 (버림)
                 if not cas_val:
+                    try:
+                        get_tracer().reject(candidate_id, "INVALID_CAS_FORMAT", module="msds_core", function="_postprocess_extraction_result")
+                    except Exception:
+                        pass
                     continue
                     
                 # [공정 1] 전역 트림 및 소문자 세탁
@@ -261,6 +378,10 @@ class MSDSCore:
                 
                 # [차세대 방법론] 유효 CAS 체크디지트 필터 선행 가동
                 if not is_valid_cas(cas_val):
+                    try:
+                        get_tracer().reject(candidate_id, "CAS_CHECKDIGIT_FAILED", normalized_value=cas_val, module="msds_core", function="_postprocess_extraction_result")
+                    except Exception:
+                        pass
                     continue
                     
                 # CAS 번호는 유효한데 함유량이 비어 있는 경우 -> 미기재% 처리
@@ -280,25 +401,62 @@ class MSDSCore:
                         final_content = content_val.replace("rem.%", "Rem.%")
                         
                 comp_parts.append(f"{cas_val}({final_content})")
+                try:
+                    get_tracer().transform(
+                        candidate_id,
+                        {"cas": cas_val, "content": final_content},
+                        transform="core_result_contract_normalization",
+                        module="msds_core",
+                        function="_postprocess_extraction_result",
+                    )
+                except Exception:
+                    pass
                 
             # [공정 4] 최종 안착 및 토스 계약 집행
             # 세미콜론 뒤 한 칸의 공백(; )을 완벽하게 보존하여 조인
             chain_str = "; ".join(comp_parts) if comp_parts else ""
             ext_res["함유량"] = chain_str
             ext_res["구성성분"] = chain_str
-            
+            _trace_event(
+                "core.result_overwritten",
+                stage_id="core_postprocess",
+                reason_code="GUI_CONTRACT_SERIALIZATION",
+                input_candidate_count=len(raw_comps),
+                output_candidate_count=len(comp_parts),
+                status="success" if comp_parts else "empty",
+            )
+
+        _trace_event("core.postprocess_completed", stage_id="core_postprocess", status="success")
         return ext_res
 
     # [수정] 인자에 f_hash=None 추가
-    def validate_with_kosha(self, cas_content, log_func=None, full=False, f_hash=None):
+    def validate_with_kosha(self, cas_content, log_func=None, full=False, f_hash=None, trace_context=None):
+        trace_scope = activate_trace(trace_context) if trace_context is not None else nullcontext()
+        with trace_scope:
+            result = self._validate_with_kosha_impl(cas_content, log_func, full, f_hash)
+        if trace_context is not None:
+            try:
+                finalize_trace(trace_context, None, kosha_validation_status=result.get("status", ""))
+            except Exception:
+                pass
+        return result
+
+    def _validate_with_kosha_impl(self, cas_content, log_func=None, full=False, f_hash=None):
+        _trace_event(
+            "kosha.validation_started",
+            stage_id="kosha_validation",
+            candidate_count=len([v for v in str(cas_content or "").split(";") if v.strip()]),
+        )
         # [V7.0 캐시 선제 타격] 주님의 교정 데이터가 있다면 API 통신 전면 차단
         manual_data = self._get_cached_manual_data(f_hash)
         if manual_data:
+            _trace_event("kosha.validation_cache_reused", stage_id="kosha_validation", cache_type="manual")
             if log_func: log_func(f"[*] 🛡️ 캐시 방어막 가동: 교정 데이터 발견 (API 통신 스킵)")
             return {"status": "Cache-Hit", "manual_data": manual_data}
 
         """2단계: CSV 및 KOSHA API를 통한 성분 검증 및 상세 규제 정보 조회"""
         if not cas_content or cas_content.strip() in ["", "미기재%"] or "오류" in cas_content:
+            _trace_event("kosha.validation_skipped", stage_id="kosha_validation", reason_code="CONTENT_NOT_FOUND")
             return {"status": "검증 불가", "components": []}
 
         detailed_components = []
@@ -354,10 +512,17 @@ class MSDSCore:
             }
             detailed_components.append(comp_detail)
 
-        return {
+        result = {
             "status": "검증 완료 (특검 포함)" if has_special_overall else "검증 완료",
             "components": detailed_components
         }
+        _trace_event(
+            "kosha.validation_completed",
+            stage_id="kosha_validation",
+            status="success",
+            component_count=len(detailed_components),
+        )
+        return result
 
 def main():
     parser = argparse.ArgumentParser(description="MSDS Core CLI (1SMU High-Fidelity)")

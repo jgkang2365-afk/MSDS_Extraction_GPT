@@ -11,12 +11,28 @@ from threading import RLock
 import requests
 from dotenv import load_dotenv
 
+try:
+    from diagnostic_trace import get_tracer
+except Exception:  # 관측성 배포 전에도 API 동작을 보존한다.
+    def get_tracer():
+        return None
+
 
 load_dotenv()
 
 SERVICE_KEY = os.getenv("SERVICE_KEY")
 BASE_URL = os.getenv("BASE_URL")
 _CACHE_MISS = object()
+
+
+def _trace_kosha(name, **details):
+    """URL 파라미터·서비스 키를 남기지 않는 fail-soft KOSHA 계측 경계."""
+    try:
+        tracer = get_tracer()
+        if tracer:
+            tracer.event(name, stage_id="kosha", **details)
+    except Exception:
+        pass
 
 
 def _env_float(name, default):
@@ -166,12 +182,23 @@ class KoshaAPIClient:
     def _reserve_request(self):
         self._refresh_usage_day()
         if self.daily_request_budget and self._usage_count >= self.daily_request_budget:
+            _trace_kosha(
+                "kosha_budget_exhausted",
+                level="warning",
+                daily_budget=self.daily_request_budget,
+                daily_requests=self._usage_count,
+            )
             raise KoshaRequestBudgetExceeded(
                 f"KOSHA 일일 안전 호출 예산({self.daily_request_budget}회)을 모두 사용했습니다."
             )
         self._usage_count += 1
         self._metrics["network_requests"] += 1
         self._save_usage()
+        _trace_kosha(
+            "kosha_request_reserved",
+            daily_budget=self.daily_request_budget,
+            daily_requests=self._usage_count,
+        )
 
     def _paced_get(self, url, params):
         with self.lock:
@@ -182,6 +209,7 @@ class KoshaAPIClient:
                 time.sleep(remaining + random.uniform(0.0, jitter))
             self._reserve_request()
             self._last_request_started = time.monotonic()
+            _trace_kosha("kosha_network_request", operation=url.rsplit("/", 1)[-1])
             return self.session.get(url, params=params, timeout=10)
 
     @staticmethod
@@ -212,23 +240,29 @@ class KoshaAPIClient:
                 raise
             except _TransientKoshaError as exc:
                 if attempt >= 2:
+                    _trace_kosha("kosha_request_failed", level="warning", operation=operation, attempt=attempt + 1)
                     return None
                 self._metrics["retries"] += 1
                 delay = exc.retry_after if exc.retry_after is not None else 2 ** attempt
+                _trace_kosha("kosha_retry", level="warning", operation=operation, attempt=attempt + 1, retry_delay=delay)
                 time.sleep(max(0.5, delay))
             except (requests.Timeout, requests.ConnectionError, ET.ParseError):
                 if attempt >= 2:
+                    _trace_kosha("kosha_request_failed", level="warning", operation=operation, attempt=attempt + 1)
                     return None
                 self._metrics["retries"] += 1
+                _trace_kosha("kosha_retry", level="warning", operation=operation, attempt=attempt + 1, retry_delay=2 ** attempt)
                 time.sleep(2 ** attempt)
             except requests.RequestException:
                 # 인증 실패·잘못된 요청 등 일반 4xx는 반복해도 회복되지 않는다.
+                _trace_kosha("kosha_request_rejected", level="warning", operation=operation)
                 return None
         return None
 
     def _get_cached_result(self, key):
         entry = self._persistent_entries.get(key)
         if not isinstance(entry, dict):
+            _trace_kosha("kosha_cache_miss", cache="persistent")
             return _CACHE_MISS
         cached_at = entry.get("cached_at")
         try:
@@ -239,10 +273,14 @@ class KoshaAPIClient:
         ttl = self.negative_cache_ttl if value is None else self.cache_ttl
         if ttl <= 0 or age > ttl:
             self._persistent_entries.pop(key, None)
+            _trace_kosha("kosha_cache_miss", cache="persistent", reason="expired")
             return _CACHE_MISS
         self._metrics["persistent_cache_hits"] += 1
         if value is None:
             self._metrics["negative_cache_hits"] += 1
+            _trace_kosha("kosha_cache_hit", cache="negative")
+        else:
+            _trace_kosha("kosha_cache_hit", cache="persistent")
         return copy.deepcopy(value)
 
     def _set_cached_result(self, key, value):
@@ -266,6 +304,7 @@ class KoshaAPIClient:
             return None, None
         if cas_no in self.cache:
             self._metrics["memory_cache_hits"] += 1
+            _trace_kosha("kosha_cache_hit", cache="memory")
             return self.cache[cas_no]
 
         root = self._request_xml(
@@ -287,6 +326,7 @@ class KoshaAPIClient:
         cache_key = (chem_id, operation)
         if cache_key in self.detail_cache:
             self._metrics["memory_cache_hits"] += 1
+            _trace_kosha("kosha_cache_hit", cache="memory")
             return self.detail_cache[cache_key]
 
         root = self._request_xml(

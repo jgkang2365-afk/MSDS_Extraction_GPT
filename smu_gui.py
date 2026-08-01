@@ -53,7 +53,7 @@ from PyQt5.QtWidgets import (
 )
 import fitz  # [NEW] PyMuPDF: 주님이 원하신 무지연 미리보기 엔진
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QSize, QRect, QPropertyAnimation, QEasingCurve, QUrl, QTimer
-from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QTextDocument, QCursor, QTextCursor, QImage, QPixmap
+from PyQt5.QtGui import QFont, QIcon, QColor, QPalette, QTextDocument, QCursor, QTextCursor, QImage, QPixmap, QDesktopServices
 from html import escape
 
 import msds_core
@@ -63,7 +63,13 @@ from kosha_client import KoshaRequestBudgetExceeded
 import msds_engine_v6 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
-from batch_pipeline import BatchRunLogger, classify_and_order, timeout_for_document
+from batch_pipeline import BatchRunLogger, classify_and_order, diagnostic_mode_from_sources, timeout_for_document
+try:
+    from diagnostic_trace import TraceContext, cleanup_retention
+except Exception:
+    TraceContext = None
+    def cleanup_retention(*_args, **_kwargs):
+        return None
 
 # [V7.0] 테이블 컬럼 인덱스 정의 (미리보기 브릿지용)
 COL_IDX_FILENAME = 7
@@ -1079,19 +1085,31 @@ class ExtractionWorker(QThread):
     cache_update_signal = pyqtSignal(str, dict) # [NEW] 캐시 업데이트 요청용
     queue_progress_signal = pyqtSignal(dict)
 
-    def __init__(self, core, pdf_paths, cache=None):
+    def __init__(self, core, pdf_paths, cache=None, diagnostic_mode=None, cache_decisions=None):
         super().__init__()
         self.core = core
         self.pdf_paths = pdf_paths
         self.cache = cache or {}
         self.is_running = True
+        self.diagnostic_mode = diagnostic_mode
+        self.cache_decisions = list(cache_decisions or [])
 
     def stop(self):
         self.is_running = False
 
     def _run_classified_batch(self):
-        run_logger = BatchRunLogger()
+        run_logger = BatchRunLogger(diagnostic_mode=self.diagnostic_mode)
+        classification_started = time.monotonic()
         classified = classify_and_order(self.pdf_paths)
+        queued_at = time.monotonic()
+        classification_elapsed = queued_at - classification_started
+        for decision in self.cache_decisions:
+            diagnostic_paths = run_logger.record_cache_policy(decision)
+            f_hash = decision.get("file_hash", "")
+            if decision.get("action") == "skip" and f_hash in self.cache and diagnostic_paths:
+                cached_record = dict(self.cache[f_hash])
+                cached_record["diagnostics"] = diagnostic_paths
+                self.cache_update_signal.emit(f_hash, cached_record)
         totals = {kind: sum(item["document_type"] == kind for item in classified) for kind in ("text", "mixed", "image")}
         completed = {kind: 0 for kind in totals}
         stats = {"total_files": 0, "digital_count": totals["text"], "mixed_count": totals["mixed"], "image_count": totals["image"], "completed_count": 0, "partial_count": 0, "timeout_count": 0, "failed_count": 0, "cancelled_count": 0}
@@ -1104,12 +1122,28 @@ class ExtractionWorker(QThread):
             started = time.monotonic()
             timeout_seconds = timeout_for_document(kind)
             f_hash = self.core.calculate_file_hash(path) or f"fallback_{index}"
+            info["file_hash"] = f_hash
             fn = os.path.basename(path)
+            file_trace_context = run_logger.file_trace_context(info, f_hash)
+            run_logger.record_classification([info], classification_elapsed, file_trace_context)
+            run_logger.record_queue(info, index + 1, total, file_trace_context, queued_at=queued_at)
             self.update_log_signal.emit(f"[{kind.upper()} 큐] {fn} 처리 시작 (제한 {timeout_seconds:g}초)")
             try:
-                ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit, cancel_check=lambda: not self.is_running, timeout_seconds=timeout_seconds, document_type=kind)
+                ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit, cancel_check=lambda: not self.is_running, timeout_seconds=timeout_seconds, document_type=kind, trace_context=file_trace_context)
                 status = ext_res.get("status", "completed")
                 signal = "🟡" if status == "partial_timeout" or ext_res.get("verification_status") == "mismatch" else ext_res.get("신호등", "🟢")
+                final_candidate_id = run_logger.record_final_candidate(file_trace_context, ext_res)
+                elapsed = time.monotonic() - started
+                diagnostic_paths = run_logger.record_file(info, ext_res, elapsed, timeout_seconds, f_hash, file_trace_context)
+                raw_component_count = len([item for item in str(ext_res.get("구성성분", "")).split(";") if item.strip()])
+                self.update_log_signal.emit(
+                    f"[진단] {kind} 후보: CAS {len(ext_res.get('cas_candidates', [])) or raw_component_count} / "
+                    f"연결 {raw_component_count} / 상태 {status}"
+                )
+                if ext_res.get("error_code"):
+                    self.update_log_signal.emit(f"[진단] 최종 원인: {ext_res.get('error_code')}")
+                if diagnostic_paths.get("diagnostic_markdown"):
+                    self.update_log_signal.emit(f"[진단 파일] {diagnostic_paths['diagnostic_markdown']}")
                 res_data = {
                     "filename": fn, "f_hash": f_hash, "full_path": path,
                     "product_name": ext_res.get("제품명", ""), "raw_content": ext_res.get("구성성분", ""),
@@ -1122,6 +1156,8 @@ class ExtractionWorker(QThread):
                     "cas_candidates": ext_res.get("cas_candidates", []),
                     "content_matching_complete": ext_res.get("content_matching_complete", True),
                     "validation_eligible": ext_res.get("validation_eligible", True),
+                    "diagnostics": diagnostic_paths,
+                    "diagnostic_candidate_source": {"candidate_id": final_candidate_id, "source": "engine_result"},
                 }
                 self.cache_update_signal.emit(f_hash, res_data)
                 self.result_signal.emit(res_data)
@@ -1129,17 +1165,32 @@ class ExtractionWorker(QThread):
             except InterruptedError:
                 stats["cancelled_count"] += 1
                 run_logger.append({"file_name": fn, "file_path": path, "document_type": kind, "status": "cancelled", "error_code": "USER_CANCELLED"})
+                run_logger.record_file(
+                    info,
+                    {"status": "cancelled", "error_code": "USER_CANCELLED"},
+                    time.monotonic() - started,
+                    timeout_seconds,
+                    f_hash,
+                    file_trace_context,
+                )
                 break
             except TimeoutError as exc:
                 stats["timeout_count"] += 1
                 ext_res = {"status": "timeout", "error_code": "FILE_TIMEOUT", "error_message": str(exc), "제품명": "", "구성성분": ""}
-                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "시간 초과"})
+                diagnostic_paths = run_logger.record_file(info, ext_res, time.monotonic() - started, timeout_seconds, f_hash, file_trace_context)
+                self.update_log_signal.emit("[진단] 최종 원인: FILE_TIMEOUT")
+                self.update_log_signal.emit(f"[진단 파일] {diagnostic_paths.get('diagnostic_markdown', '')}")
+                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "시간 초과", "diagnostics": diagnostic_paths})
             except Exception as exc:
                 stats["failed_count"] += 1
                 ext_res = {"status": "failed", "error_code": "PDF_OPEN_FAILED", "error_message": f"{type(exc).__name__}: {exc}", "제품명": "", "구성성분": ""}
-                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "완전 실패"})
+                diagnostic_paths = run_logger.record_file(info, ext_res, time.monotonic() - started, timeout_seconds, f_hash, file_trace_context)
+                self.update_log_signal.emit(f"[진단] 최종 원인: {ext_res['error_code']}")
+                self.update_log_signal.emit(f"[진단 파일] {diagnostic_paths.get('diagnostic_markdown', '')}")
+                self.result_signal.emit({"filename": fn, "f_hash": f_hash, "full_path": path, "product_name": "", "raw_content": "", "신호등": "🔴", "status": "완전 실패", "diagnostics": diagnostic_paths})
             elapsed = time.monotonic() - started
-            run_logger.record_file(info, ext_res, elapsed, timeout_seconds, f_hash)
+            if ext_res.get("status") != "completed" and not ext_res.get("diagnostics"):
+                run_logger.record_file(info, ext_res, elapsed, timeout_seconds, f_hash, file_trace_context)
             stats["total_files"] += 1
             completed[kind] += 1
             self.queue_progress_signal.emit({"totals": totals.copy(), "completed": completed.copy(), "current": kind, "overall_completed": index + 1, "overall_total": total})
@@ -1480,7 +1531,20 @@ class ValidationWorker(QThread):
                     self.log_signal.emit(f"[*] CAS 수동 수정 감지: 과거 지식을 무시하고 KOSHA API를 재호출합니다.")
 
                 # [수정] 코어 호출 시 조건부 f_hash 파라미터 전달
-                raw_val_res = self.core.validate_with_kosha(pure_cas_str, log_func=self.log_signal.emit, full=False, f_hash=f_hash_for_api)
+                trace_context = None
+                context_payload = data.get("trace_context")
+                if context_payload and TraceContext is not None:
+                    try:
+                        trace_context = TraceContext.from_dict(context_payload)
+                    except Exception:
+                        trace_context = None
+                raw_val_res = self.core.validate_with_kosha(
+                    pure_cas_str,
+                    log_func=self.log_signal.emit,
+                    full=False,
+                    f_hash=f_hash_for_api,
+                    trace_context=trace_context,
+                )
                 
                 # [V7.0 추가] 캐시 적중 시 하위 파싱(components 루프 등) 전면 우회
                 if raw_val_res.get("status") == "Cache-Hit":
@@ -1902,6 +1966,7 @@ class SMUGUI(QMainWindow):
         self.pdf_paths = []
         self.results = []
         self.cache = {} 
+        self.diagnostic_mode = "SUMMARY"
         self.sidebar_slim = False
         self.previous_error_states = {} # [주님 지침] 직전 에러(🔴/🟡) 상태 이력 추적용 저장소
         self.last_selected_row = -1 # [NEW] 동일 행 내 열 이동 시 미리보기 초기화 방지용
@@ -2316,6 +2381,29 @@ class SMUGUI(QMainWindow):
         
         backup_group.setLayout(backup_layout)
         scroll_content_layout.addWidget(backup_group)
+
+        diagnostic_group = QGroupBox("추출 진단 설정")
+        diagnostic_layout = QGridLayout()
+        diagnostic_layout.addWidget(QLabel("진단 모드:"), 0, 0)
+        self.combo_diagnostic_mode = QComboBox()
+        self.combo_diagnostic_mode.addItems(["OFF", "SUMMARY", "FULL"])
+        self.combo_diagnostic_mode.setCurrentText("SUMMARY")
+        self.combo_diagnostic_mode.currentTextChanged.connect(
+            lambda value: setattr(self, "diagnostic_mode", value)
+        )
+        diagnostic_layout.addWidget(self.combo_diagnostic_mode, 0, 1)
+        diagnostic_layout.addWidget(QLabel("보존 기간(일):"), 1, 0)
+        self.edit_diagnostic_retention_days = QLineEdit("30")
+        diagnostic_layout.addWidget(self.edit_diagnostic_retention_days, 1, 1)
+        diagnostic_layout.addWidget(QLabel("최대 저장 용량(MB):"), 2, 0)
+        self.edit_diagnostic_max_mb = QLineEdit("2048")
+        diagnostic_layout.addWidget(self.edit_diagnostic_max_mb, 2, 1)
+        diagnostic_layout.addWidget(
+            QLabel("SUMMARY는 성공 파일의 중간 이미지를 제거하고 실패·부분·검토 파일을 우선 보존합니다."),
+            3, 0, 1, 2,
+        )
+        diagnostic_group.setLayout(diagnostic_layout)
+        scroll_content_layout.addWidget(diagnostic_group)
         
         scroll_content_layout.addStretch()
         scroll.setWidget(scroll_content)
@@ -4786,6 +4874,18 @@ class SMUGUI(QMainWindow):
         self.btn_stop.clicked.connect(self.stop_process)
         header.addWidget(self.btn_stop)
 
+        self.btn_diagnostics = QPushButton("진단 ▾")
+        self.btn_diagnostics.setFixedHeight(35)
+        self.btn_diagnostics.setToolTip("선택한 파일의 추출 진단 보고서를 확인합니다.")
+        diagnostic_menu = QMenu(self)
+        diagnostic_menu.addAction("진단 보고서 열기", self.open_selected_diagnostic_report)
+        diagnostic_menu.addAction("진단 이미지 폴더 열기", self.open_selected_diagnostic_images)
+        diagnostic_menu.addAction("진단 JSON 복사", self.copy_selected_diagnostic_json)
+        diagnostic_menu.addSeparator()
+        diagnostic_menu.addAction("진단 로그 정리…", self.cleanup_diagnostic_logs)
+        self.btn_diagnostics.setMenu(diagnostic_menu)
+        header.addWidget(self.btn_diagnostics)
+
         # 하단 우측 교정창 토글 단추 추가
         self.btn_toggle_corr = QPushButton("📋 교정창 ↔")
         self.btn_toggle_corr.setFixedHeight(35)
@@ -5167,6 +5267,14 @@ class SMUGUI(QMainWindow):
         config = {
             # UI가 설정 파일을 다시 저장해도 선택형 원격 OCR 플래그를 보존한다.
             "USE_REMOTE_OCR": getattr(self, "use_remote_ocr", False),
+            "DIAGNOSTIC_MODE": self.combo_diagnostic_mode.currentText() if hasattr(self, "combo_diagnostic_mode") else getattr(self, "diagnostic_mode", "SUMMARY"),
+            "diagnostic": {
+                "mode": self.combo_diagnostic_mode.currentText() if hasattr(self, "combo_diagnostic_mode") else getattr(self, "diagnostic_mode", "SUMMARY"),
+                "retention": {
+                    "retention_days": self.edit_diagnostic_retention_days.text().strip() if hasattr(self, "edit_diagnostic_retention_days") else "30",
+                    "max_total_mb": self.edit_diagnostic_max_mb.text().strip() if hasattr(self, "edit_diagnostic_max_mb") else "2048",
+                },
+            },
             "mapping": self.mapping_panel.get_mapping(),
             "measure_mapping": self.measure_mapping_panel.get_mapping(),
             "backup_path": self.edit_backup_path.text().strip(),
@@ -5193,6 +5301,15 @@ class SMUGUI(QMainWindow):
                 config = json.load(f)
 
             self.use_remote_ocr = bool(config.get("USE_REMOTE_OCR", False))
+            self.diagnostic_mode = diagnostic_mode_from_sources(config)
+            if hasattr(self, "combo_diagnostic_mode"):
+                self.combo_diagnostic_mode.setCurrentText(self.diagnostic_mode)
+            diagnostic_config = config.get("diagnostic", {}) if isinstance(config.get("diagnostic"), dict) else {}
+            retention_config = diagnostic_config.get("retention", {}) if isinstance(diagnostic_config.get("retention"), dict) else {}
+            if hasattr(self, "edit_diagnostic_retention_days"):
+                self.edit_diagnostic_retention_days.setText(str(retention_config.get("retention_days", "30")))
+            if hasattr(self, "edit_diagnostic_max_mb"):
+                self.edit_diagnostic_max_mb.setText(str(retention_config.get("max_total_mb", "2048")))
             
             # 1. 매핑 설정 복구
             if "mapping" in config:
@@ -5924,6 +6041,7 @@ class SMUGUI(QMainWindow):
         # 기준으로 삼지 않는다. 파일 해시와 엔진 버전이 일치하는 캐시는 완료로
         # 보고, 캐시가 없거나 사용자가 명시적으로 비운 항목만 대상으로 선정한다.
         target_paths = []
+        cache_decisions = []
         for path in self.pdf_paths:
             f_hash = self.core.calculate_file_hash(path)
             cached_data = self.cache.get(f_hash) if f_hash else None
@@ -5939,6 +6057,20 @@ class SMUGUI(QMainWindow):
             )
             if not cache_is_current:
                 target_paths.append(path)
+                cache_decisions.append({
+                    "file_hash": f_hash or "",
+                    "file_path": path,
+                    "action": "overwrite" if cached_data is not None else "miss",
+                    "reason": "manual_refresh" if manual_refresh_requested else "cache_not_current",
+                })
+            else:
+                cache_decisions.append({
+                    "file_hash": f_hash or "",
+                    "file_path": path,
+                    "action": "skip",
+                    "cache_disposition": "reuse",
+                    "reason": "current_engine_cache",
+                })
 
         is_partial = 0 < len(target_paths) < len(self.pdf_paths)
         if is_partial:
@@ -5949,6 +6081,13 @@ class SMUGUI(QMainWindow):
                 f"({first_target} ~ {last_target})"
             )
         elif not target_paths:
+            cache_logger = BatchRunLogger(diagnostic_mode=self.diagnostic_mode)
+            for decision in cache_decisions:
+                diagnostic_paths = cache_logger.record_cache_policy(decision)
+                f_hash = decision.get("file_hash", "")
+                if f_hash in self.cache and diagnostic_paths:
+                    self.cache[f_hash]["diagnostics"] = diagnostic_paths
+            cache_logger.finalize()
             self.table.blockSignals(False)
             self.log("[*] 모든 PDF에 현재 엔진 버전의 캐시가 있어 추출할 파일이 없습니다.")
             QMessageBox.information(
@@ -5969,7 +6108,13 @@ class SMUGUI(QMainWindow):
         self.btn_step1.setEnabled(False)
         self.btn_step2.setEnabled(False)
         
-        self.worker = ExtractionWorker(self.core, target_paths, cache=self.cache)
+        self.worker = ExtractionWorker(
+            self.core,
+            target_paths,
+            cache=self.cache,
+            diagnostic_mode=self.diagnostic_mode,
+            cache_decisions=cache_decisions,
+        )
         self.worker.update_log_signal.connect(self.log)
         self.worker.progress_signal.connect(self.progress.setValue)
         self._pending_table_results = deque()
@@ -6196,7 +6341,8 @@ class SMUGUI(QMainWindow):
                 "f_hash": f_hash,
                 "filename": fn,
                 "prod": prod,
-                "cas_content": cas_content
+                "cas_content": cas_content,
+                "trace_context": self.cache.get(f_hash, {}).get("diagnostics", {}).get("trace_context")
             })
 
         if not table_data:
@@ -6543,6 +6689,66 @@ class SMUGUI(QMainWindow):
         except: pass
         
         event.accept()
+
+    def _selected_diagnostic_paths(self):
+        """테이블 열을 늘리지 않고 선택 행의 캐시 연결 정보만 조회한다."""
+        try:
+            row = self.table.currentRow()
+            hash_item = self.table.item(row, COL_IDX_HASH) if row >= 0 else None
+            f_hash = hash_item.text().strip() if hash_item else ""
+            diagnostics = self.cache.get(f_hash, {}).get("diagnostics", {})
+            return diagnostics if isinstance(diagnostics, dict) else {}
+        except Exception:
+            return {}
+
+    def _open_diagnostic_path(self, key, title):
+        path = self._selected_diagnostic_paths().get(key, "")
+        if not path or not os.path.exists(path):
+            QMessageBox.information(self, title, "선택한 파일의 진단 결과가 아직 없거나 경로를 찾을 수 없습니다.")
+            return
+        try:
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(path)):
+                raise RuntimeError("운영체제에서 경로를 열지 못했습니다.")
+        except Exception as exc:
+            self.log(f"[진단] 경로 열기 실패: {type(exc).__name__}")
+            QMessageBox.warning(self, title, "진단 경로를 열지 못했습니다.")
+
+    def open_selected_diagnostic_report(self):
+        self._open_diagnostic_path("diagnostic_markdown", "진단 보고서")
+
+    def open_selected_diagnostic_images(self):
+        self._open_diagnostic_path("diagnostic_images_dir", "진단 이미지")
+
+    def copy_selected_diagnostic_json(self):
+        path = self._selected_diagnostic_paths().get("diagnostic_json", "")
+        if not path or not os.path.isfile(path):
+            QMessageBox.information(self, "진단 JSON", "선택한 파일의 진단 JSON이 아직 없습니다.")
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as stream:
+                QApplication.clipboard().setText(stream.read())
+            self.log("[진단] JSON을 클립보드에 복사했습니다.")
+        except Exception as exc:
+            self.log(f"[진단] JSON 복사 실패: {type(exc).__name__}")
+            QMessageBox.warning(self, "진단 JSON", "진단 JSON을 클립보드에 복사하지 못했습니다.")
+
+    def cleanup_diagnostic_logs(self):
+        """삭제 범위는 확인 후 logs/runs 하위로 공통 정리기에 한정한다."""
+        answer = QMessageBox.question(
+            self,
+            "진단 로그 정리",
+            "logs/runs 아래의 보존 기간이 지난 진단 로그만 정리합니다. 계속할까요?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        try:
+            cleanup_retention(base_dir="logs/runs", config_path="config.json")
+            self.log("[진단] logs/runs 보존 정책 정리를 요청했습니다.")
+        except Exception as exc:
+            self.log(f"[진단] 로그 정리 실패: {type(exc).__name__}")
+            QMessageBox.warning(self, "진단 로그 정리", "진단 로그를 정리하지 못했습니다.")
 
     def show_help_dialog(self):
         """[Page UX] 핵심 사용법 1분 가이드 팝업"""

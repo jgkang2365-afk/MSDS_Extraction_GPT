@@ -13,6 +13,45 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
+try:
+    from diagnostic_trace import (
+        activate_trace,
+        create_trace_context,
+        finalize_trace,
+        get_tracer,
+    )
+except Exception:  # 진단 모듈이 배포 전이어도 추출 경로를 막지 않는다.
+    from contextlib import nullcontext
+
+    class _NoopTraceContext:
+        def __init__(self, **values):
+            self.__dict__.update(values)
+
+        def to_dict(self):
+            return dict(self.__dict__)
+
+    def create_trace_context(source=None, **values):
+        return _NoopTraceContext(source=source, **values)
+
+    def activate_trace(_context):
+        return nullcontext(_NoopTracer())
+
+    def get_tracer():
+        return _NoopTracer()
+
+    def finalize_trace(_context, result=None, **_details):
+        return result
+
+    class _NoopTracer:
+        def event(self, *_args, **_kwargs):
+            return None
+
+        def candidate(self, *_args, **_kwargs):
+            return ""
+
+
+DIAGNOSTIC_MODES = frozenset({"OFF", "SUMMARY", "FULL"})
+
 DOCUMENT_TIMEOUT_DEFAULTS = {"text": 180.0, "mixed": 240.0, "image": 360.0}
 DOCUMENT_TIMEOUT_ENV = {
     "text": "MSDS_TEXT_FILE_TIMEOUT_SECONDS",
@@ -29,6 +68,32 @@ ERROR_CODES = frozenset({
     "CAS_CONTENT_PAIRING_FAILED", "FILE_TIMEOUT", "PARTIAL_TIMEOUT", "OUT_OF_MEMORY",
     "USER_CANCELLED",
 })
+
+
+def diagnostic_mode_from_sources(config=None, environ=None):
+    """환경변수 → 설정 파일 값 → SUMMARY 기본값으로 진단 수준을 고른다."""
+    environ = os.environ if environ is None else environ
+    if config is None:
+        try:
+            loaded = json.loads(Path("config.json").read_text(encoding="utf-8"))
+            config = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError, TypeError):
+            config = {}
+    config = config if isinstance(config, dict) else {}
+    section = config.get("diagnostic") or config.get("diagnostics") or {}
+    section_mode = section.get("mode") if isinstance(section, dict) else None
+    raw = environ.get(
+        "MSDS_DIAGNOSTIC_MODE",
+        config.get("DIAGNOSTIC_MODE", config.get("diagnostic_mode", config.get("MSDS_DIAGNOSTIC_MODE", section_mode or "SUMMARY"))),
+    )
+    mode = str(raw or "SUMMARY").strip().upper()
+    return mode if mode in DIAGNOSTIC_MODES else "SUMMARY"
+
+
+def file_trace_id_for(run_id, file_hash="", file_path=""):
+    """같은 실행에서 같은 파일은 재기록해도 동일 진단 ID를 사용한다."""
+    source = f"{run_id}\0{file_hash or os.path.abspath(str(file_path))}"
+    return hashlib.sha256(source.encode("utf-8", "replace")).hexdigest()[:24]
 
 
 def _positive_float(value, fallback):
@@ -163,9 +228,10 @@ def build_partial_timeout_result(checkpoint, timeout_seconds, error_message):
 class BatchRunLogger:
     """스레드 안전 JSONL append 로거와 종료 요약 작성기."""
 
-    def __init__(self, base_dir="logs/runs", run_id=None):
+    def __init__(self, base_dir="logs/runs", run_id=None, diagnostic_mode=None, config=None):
         self.run_id = run_id or time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
-        self.run_dir = Path(base_dir) / self.run_id
+        self.base_dir = Path(base_dir)
+        self.run_dir = self.base_dir / self.run_id
         self.failures_dir = self.run_dir / "failures"
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.failures_dir.mkdir(exist_ok=True)
@@ -174,6 +240,134 @@ class BatchRunLogger:
         self._lock = threading.Lock()
         self.counters = Counter()
         self.started_at = time.time()
+        self.diagnostic_mode = (
+            str(diagnostic_mode).upper()
+            if diagnostic_mode is not None
+            else diagnostic_mode_from_sources(config)
+        )
+        if self.diagnostic_mode not in DIAGNOSTIC_MODES:
+            self.diagnostic_mode = "SUMMARY"
+        self.append({"stage": "run", "status": "started", "diagnostic_mode": self.diagnostic_mode})
+
+    def _new_trace_context(self, source, file_trace_id=None):
+        """진단 저장 실패·계약 변경이 실행 경로에 영향을 주지 않게 한다."""
+        try:
+            return create_trace_context(
+                source=source,
+                run_id=self.run_id,
+                file_trace_id=file_trace_id,
+                mode=self.diagnostic_mode,
+                base_dir=str(self.base_dir),
+            )
+        except Exception:
+            return None
+
+    @staticmethod
+    def _trace_event(context, name, **details):
+        if context is None:
+            return
+        try:
+            with activate_trace(context):
+                get_tracer().event(name, **details)
+        except Exception:
+            pass
+
+    def file_trace_context(self, info, file_hash=""):
+        path = str(info.get("path", ""))
+        trace_id = file_trace_id_for(self.run_id, file_hash, path)
+        return self._new_trace_context(
+            source={
+                "component": "batch_file",
+                "file_path": path,
+                "file_hash": file_hash,
+                "document_type": info.get("document_type", ""),
+            },
+            file_trace_id=trace_id,
+        )
+
+    def diagnostic_paths(self, trace_context):
+        """결과/캐시에 저장할 경로 계약. OFF에서는 존재하지 않는 링크를 남기지 않는다."""
+        if trace_context is None or self.diagnostic_mode == "OFF":
+            return {}
+        try:
+            context_data = trace_context.to_dict()
+        except Exception:
+            context_data = {}
+        trace_id = context_data.get("file_trace_id") or getattr(trace_context, "file_trace_id", "")
+        if not trace_id:
+            return {}
+        directory = self.run_dir / "files" / str(trace_id)
+        return {
+            "run_id": self.run_id,
+            "file_trace_id": str(trace_id),
+            "trace_context": context_data,
+            "diagnostic_json": str(directory / "diagnostic.json"),
+            "diagnostic_markdown": str(directory / "diagnostic.md"),
+            "diagnostic_images_dir": str(directory / "images"),
+        }
+
+    def record_classification(self, classified, elapsed_seconds=0.0, trace_context=None):
+        for item in classified:
+            context = trace_context or self.file_trace_context(item, item.get("file_hash", ""))
+            self._trace_event(
+                context,
+                "document_classified",
+                stage_id="classification",
+                file_path=str(item.get("path", "")),
+                document_type=item.get("document_type", "text"),
+                page_count=item.get("page_count", 0),
+                classification_error=item.get("classification_error", ""),
+                classification_elapsed_seconds=round(elapsed_seconds, 3),
+            )
+
+    def record_queue(self, info, position, total, trace_context=None, queued_at=None):
+        self._trace_event(
+            trace_context,
+            "queue_dequeued",
+            stage_id="queue",
+            queue_position=position,
+            queue_total=total,
+            document_type=info.get("document_type", ""),
+            timeout_seconds=timeout_for_document(info.get("document_type")),
+            queue_wait_seconds=round(max(0.0, time.monotonic() - queued_at), 3) if queued_at else 0.0,
+        )
+
+    def record_cache_policy(self, decision):
+        info = {
+            "path": decision.get("file_path", ""),
+            "document_type": decision.get("document_type", "unknown"),
+        }
+        context = self.file_trace_context(info, decision.get("file_hash", ""))
+        self._trace_event(context, "gui_cache_policy", stage_id="cache", **decision)
+        if decision.get("action") == "skip":
+            try:
+                finalize_trace(
+                    context,
+                    result={"status": "cache_hit", "cache_disposition": "reuse"},
+                    status="cache_hit",
+                )
+            except Exception:
+                pass
+        return self.diagnostic_paths(context)
+
+    def record_final_candidate(self, trace_context, result, source="engine_result"):
+        """최종 GUI 후보가 어떤 추출 결과에서 왔는지 ID로만 연결한다."""
+        if trace_context is None:
+            return ""
+        try:
+            with activate_trace(trace_context):
+                engine_diagnostic = result.get("_diagnostic", {}) if isinstance(result.get("_diagnostic"), dict) else {}
+                parent_candidate = engine_diagnostic.get("final_candidate_id") or source
+                return get_tracer().candidate(
+                    {
+                        "product_name": result.get("제품명", ""),
+                        "components": result.get("구성성분", ""),
+                    },
+                    derived_from=parent_candidate,
+                    role="gui_final_candidate",
+                ) or ""
+        except Exception:
+            return ""
 
     def append(self, event):
         payload = {"run_id": self.run_id, "timestamp": time.time(), **event}
@@ -181,7 +375,7 @@ class BatchRunLogger:
         with self._lock, self.events_path.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")
 
-    def record_file(self, info, result, elapsed_seconds, timeout_seconds, file_hash=""):
+    def record_file(self, info, result, elapsed_seconds, timeout_seconds, file_hash="", trace_context=None):
         path = str(info["path"])
         status = str(result.get("status", "completed"))
         document_type = info["document_type"]
@@ -240,6 +434,45 @@ class BatchRunLogger:
             failure_path = self.failures_dir / f"{file_hash or hashlib.sha256(path.encode('utf-8')).hexdigest()}.json"
             with self._lock, failure_path.open("w", encoding="utf-8") as stream:
                 json.dump(event, stream, ensure_ascii=False, indent=2, default=str)
+        trace_context = trace_context or self.file_trace_context(info, file_hash)
+        self._trace_event(
+            trace_context,
+            "file_complete",
+            stage_id="file_complete",
+            status=status,
+            elapsed_seconds=round(elapsed_seconds, 3),
+            timeout_seconds=timeout_seconds,
+            error_code=result.get("error_code", ""),
+            partial_result_present=event["partial_result_present"],
+        )
+        try:
+            finalize_trace(
+                trace_context,
+                result={
+                    "status": status,
+                    "제품명": result.get("제품명", ""),
+                    "구성성분": result.get("구성성분", ""),
+                    "함유량": result.get("함유량", result.get("구성성분", "")),
+                    "신호등": result.get("신호등", ""),
+                    "used_engine": result.get("used_engine", ""),
+                    "document_type": document_type,
+                    "product_name_source": result.get("product_name_source", ""),
+                    "local_text_candidate": result.get("local_text_candidate", ""),
+                    "verification_status": result.get("verification_status", ""),
+                    "cas_candidates": result.get("cas_candidates", []),
+                    "content_matching_complete": result.get("content_matching_complete", True),
+                    "error_code": result.get("error_code", ""),
+                    "last_completed_stage": result.get("last_completed_stage", ""),
+                },
+                status=status,
+                elapsed_seconds=round(elapsed_seconds, 3),
+            )
+        except Exception:
+            pass
+        paths = self.diagnostic_paths(trace_context)
+        if paths:
+            result["diagnostics"] = paths
+        return paths
 
     def finalize(self, extra=None):
         summary = dict(self.counters)

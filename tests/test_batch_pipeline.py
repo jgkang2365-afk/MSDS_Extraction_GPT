@@ -117,10 +117,33 @@ class StructuredLoggingTests(unittest.TestCase):
             result = {"status": "completed", "제품명": "P", "구성성분": "64-17-5(50%)", "metrics": {"ai_text_calls": 1, "ai_harvest_success": 1}}
             logger.record_file(info, result, 0.1, 180, "hash")
             summary = logger.finalize()
-            event = json.loads(logger.events_path.read_text(encoding="utf-8").splitlines()[0])
+            events = [json.loads(line) for line in logger.events_path.read_text(encoding="utf-8").splitlines()]
+            event = next(item for item in events if item.get("stage") == "file_complete")
             self.assertEqual(event["document_type"], "text")
             self.assertEqual(summary["ai_text_calls"], 1)
             self.assertTrue(logger.summary_path.exists())
+
+    def test_file_trace_id_is_stable_and_artifacts_are_linked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logger = BatchRunLogger(base_dir=Path(tmp) / "logs", run_id="trace-run", diagnostic_mode="FULL")
+            info = {"path": str(Path(tmp) / "sample.pdf"), "document_type": "image", "page_count": 1}
+            first = logger.file_trace_context(info, "same-hash")
+            second = logger.file_trace_context(info, "same-hash")
+            self.assertEqual(first.file_trace_id, second.file_trace_id)
+            result = {"status": "partial_timeout", "제품명": "P", "구성성분": "", "error_code": "PARTIAL_TIMEOUT"}
+            paths = logger.record_file(info, result, 0.1, 360, "same-hash", first)
+            self.assertEqual(result["diagnostics"]["file_trace_id"], first.file_trace_id)
+            self.assertTrue(Path(paths["diagnostic_json"]).exists())
+
+    def test_diagnostics_redact_credentials(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logger = BatchRunLogger(base_dir=Path(tmp) / "logs", run_id="redact-run", diagnostic_mode="FULL")
+            info = {"path": str(Path(tmp) / "sample.pdf"), "document_type": "text", "page_count": 1}
+            context = logger.file_trace_context(info, "hash")
+            logger._trace_event(context, "test_secret", authorization="Bearer definitely-not-for-log")
+            paths = logger.record_file(info, {"status": "completed"}, 0.1, 180, "hash", context)
+            payload = Path(paths["diagnostic_json"]).read_text(encoding="utf-8")
+            self.assertNotIn("definitely-not-for-log", payload)
 
     def test_gui_uses_batched_log_and_table_queues(self):
         source = (Path(__file__).resolve().parents[1] / "smu_gui.py").read_text(encoding="utf-8")
@@ -132,6 +155,15 @@ class StructuredLoggingTests(unittest.TestCase):
         self.assertIn("cursor.insertText", flush_source)
         self.assertNotIn("cursor.insertHtml", flush_source)
         self.assertIn('cached_result.get("validation_eligible") is False', source)
+
+    def test_gui_diagnostic_actions_keep_table_contract(self):
+        source = (Path(__file__).resolve().parents[1] / "smu_gui.py").read_text(encoding="utf-8")
+        self.assertIn('"진단 보고서 열기"', source)
+        self.assertIn('"진단 이미지 폴더 열기"', source)
+        self.assertIn('"진단 JSON 복사"', source)
+        self.assertIn("QDesktopServices.openUrl(QUrl.fromLocalFile(path))", source)
+        self.assertIn("QApplication.clipboard().setText", source)
+        self.assertIn('"diagnostic_candidate_source"', source)
 
 
 if __name__ == "__main__":
