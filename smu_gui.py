@@ -5027,7 +5027,6 @@ class SMUGUI(QMainWindow):
         self.btn_toggle_review_columns.setChecked(True)
         self.btn_toggle_review_columns.setToolTip("테이블 좌측의 분석 요청·오류 유형·메모·공유 상태 열을 접거나 펼칩니다.")
         self.btn_toggle_review_columns.clicked.connect(self.toggle_review_columns)
-        header.addWidget(self.btn_toggle_review_columns)
 
         # 하단 우측 교정창 토글 단추 추가
         self.btn_toggle_corr = QPushButton("📋 교정창 ↔")
@@ -5203,6 +5202,11 @@ class SMUGUI(QMainWindow):
         """)
         self.btn_next_pending.clicked.connect(self.focus_next_pending_substance)
         pending_layout.addWidget(self.btn_next_pending)
+
+        # 오류 입력 열은 전역 실행 버튼이 아니라 결과표 전용 제어이므로
+        # 성상 선택 이동 버튼 옆에 배치한다.
+        self.btn_toggle_review_columns.setFixedHeight(28)
+        pending_layout.addWidget(self.btn_toggle_review_columns)
         pending_layout.addStretch()
         
         self.left_vbox.addLayout(pending_layout)

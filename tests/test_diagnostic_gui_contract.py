@@ -24,6 +24,12 @@ class DiagnosticGuiContractTests(unittest.TestCase):
         self.assertIn("setColumnHidden", method)
         self.assertIn("오류 입력 펼치기", method)
 
+    def test_review_toggle_is_in_table_control_bar(self):
+        pending_bar = SOURCE.split("pending_layout = QHBoxLayout()", 1)[1].split("self.left_vbox.addWidget(self.table)", 1)[0]
+        self.assertIn("pending_layout.addWidget(self.btn_toggle_review_columns)", pending_bar)
+        header_area = SOURCE.split("self.btn_toggle_review_columns =", 1)[1].split("# 하단 우측 교정창", 1)[0]
+        self.assertNotIn("header.addWidget(self.btn_toggle_review_columns)", header_area)
+
     def test_error_type_combo_supports_multiple_checked_values(self):
         widget = SOURCE.split("class MultiSelectErrorCombo", 1)[1].split("def natural_sort_key", 1)[0]
         self.assertIn("Qt.ItemIsUserCheckable", widget)
