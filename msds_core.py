@@ -3,7 +3,7 @@ import sys
 import json
 import argparse
 from datetime import datetime
-import msds_engine_v6
+import msds_engine
 from kosha_client import KoshaAPIClient
 from exposure_lookup import ExposureLookup
 import re
@@ -60,7 +60,7 @@ def _isolated_engine_entry(pdf_path, result_queue, cancel_event, trace_context_p
     try:
         with activate_trace(trace_context):
             _trace_event("engine_child_started", stage_id="engine", file_path=str(pdf_path))
-            result = msds_engine_v6.process_pdf(
+            result = msds_engine.process_pdf(
                 pdf_path,
                 log_func=lambda message: result_queue.put(("log", str(message))),
                 cancel_check=cancel_event.is_set,

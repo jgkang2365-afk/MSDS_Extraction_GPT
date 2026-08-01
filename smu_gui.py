@@ -60,7 +60,7 @@ import msds_core
 import importlib # [HOT-RELOAD] 모듈 새로고침용
 from msds_core import MSDSCore
 from kosha_client import KoshaRequestBudgetExceeded
-import msds_engine_v6 as engine
+import msds_engine as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
 from batch_pipeline import BatchRunLogger, classify_and_order, diagnostic_mode_from_sources, timeout_for_document
@@ -5850,8 +5850,8 @@ class SMUGUI(QMainWindow):
             self.results = []
             self.log("[!] 엔진이 새로고침 되었습니다. (정밀 분석 및 테이블 초기화 완료)")
 
-            import msds_engine_v6
-            importlib.reload(msds_engine_v6)
+            import msds_engine
+            importlib.reload(msds_engine)
             importlib.reload(msds_core)
             self.core = msds_core.MSDSCore()
             self.log("✅ 엔진 및 코어 모듈이 성공적으로 재로드되었습니다.")
