@@ -1,8 +1,4 @@
 {
-    "msds_engine_version": "v6",
-    "v7_section_scoped_extraction": true,
-    "v7_fallback_to_v6": true,
-    "v7_comparison_mode": false,
     "USE_REMOTE_OCR": false,
     "mapping": {
         "순번/No": "A",

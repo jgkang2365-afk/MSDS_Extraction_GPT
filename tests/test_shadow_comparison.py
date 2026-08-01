@@ -1,6 +1,7 @@
 import inspect
 import json
 import os
+import pickle
 from pathlib import Path
 import tempfile
 import unittest
@@ -15,6 +16,12 @@ from shadow_comparison import (
     export_comparison_report,
     failed_comparison,
     parse_components,
+)
+from result_safety import (
+    RuntimeExtractionResult,
+    detach_shadow_context,
+    encapsulate_runtime_result,
+    public_result,
 )
 
 
@@ -120,7 +127,51 @@ class ShadowReuseTests(unittest.TestCase):
     def test_v6_context_reuses_existing_document_iteration(self):
         source = (ROOT / "msds_engine_v6.py").read_text(encoding="utf-8")
         self.assertIn("page_texts = [self._get_sorted_and_normalized_text(page) for page in doc]", source)
-        self.assertIn('res["_shadow_context"] = dict(self._shadow_context)', source)
+        self.assertIn("RuntimeExtractionResult(", source)
+
+    def test_runtime_context_is_not_part_of_serialized_result(self):
+        result = RuntimeExtractionResult(
+            {"제품명": "P", "구성성분": "64-17-5(10%)"},
+            shadow_context={"page_texts": shared_text(content="10%")},
+        )
+        serialized = json.dumps(result, ensure_ascii=False)
+        self.assertNotIn("_shadow_context", serialized)
+        self.assertNotIn("page_texts", serialized)
+
+        result, context = detach_shadow_context(result)
+        comparison = build_shadow_comparison("C:/sample.pdf", result, context)
+        self.assertEqual(comparison.comparison_completeness, "FULL")
+        self.assertEqual(comparison.duplicate_ocr_calls, 0)
+        self.assertEqual(comparison.duplicate_ai_calls, 0)
+
+    def test_embedded_context_is_detached_at_process_boundary(self):
+        result = encapsulate_runtime_result({
+            "제품명": "P",
+            "_shadow_context": {"section3_text": "64-17-5 10%"},
+        })
+        self.assertNotIn("_shadow_context", result)
+        result, context = detach_shadow_context(result)
+        self.assertEqual(context["section3_text"], "64-17-5 10%")
+
+    def test_runtime_context_survives_process_serialization_without_mapping_key(self):
+        original = RuntimeExtractionResult(
+            {"제품명": "P"},
+            shadow_context={"section3_text": "64-17-5 10%"},
+        )
+        restored = pickle.loads(pickle.dumps(original))
+        self.assertNotIn("_shadow_context", restored)
+        restored, context = detach_shadow_context(restored)
+        self.assertEqual(context["section3_text"], "64-17-5 10%")
+
+    def test_public_result_removes_nested_context_from_cache_and_user_output(self):
+        unsafe = {
+            "result": {"제품명": "P", "_shadow_context": {"raw": "secret"}},
+            "items": [{"_shadow_context": {"page_texts": ["raw"]}}],
+        }
+        safe = public_result(unsafe)
+        encoded = json.dumps(safe, ensure_ascii=False)
+        self.assertNotIn("_shadow_context", encoded)
+        self.assertNotIn("page_texts", encoded)
 
 
 class SharedOutputTests(unittest.TestCase):
@@ -179,6 +230,9 @@ class SharedOutputTests(unittest.TestCase):
     def test_gui_and_worker_failure_isolation_contract(self):
         source = (ROOT / "smu_gui.py").read_text(encoding="utf-8")
         worker = source.split("class ExtractionWorker", 1)[1].split("class ValidationWorker", 1)[0]
+        extraction_path = worker.split("ext_res = self.core.extract_from_pdf", 1)[1]
+        self.assertLess(extraction_path.index("detach_shadow_context(ext_res)"), extraction_path.index("record_final_candidate"))
+        self.assertLess(extraction_path.index("detach_shadow_context(ext_res)"), extraction_path.index("cache_update_signal.emit"))
         self.assertLess(worker.index("self.result_signal.emit(res_data)"), worker.index("build_shadow_comparison"))
         self.assertIn("COMPARISON_REPORT_FAILED", worker)
         self.assertIn("comparison_dialog_exc", source)

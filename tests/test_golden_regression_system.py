@@ -24,7 +24,7 @@ from run_production_race import (
     normalize_content,
     select_cases,
 )
-from tools.classify_golden_cases import classify_pdf, load_taxonomy, validate_tags
+from tools.classify_golden_cases import DEFAULT_OUTPUT_DIR, classify_pdf, load_taxonomy, validate_tags
 from tools.update_golden import GoldenUpdateError, apply_approved_candidate, update_golden_file
 
 
@@ -64,6 +64,12 @@ class GeneralizedDiagnosisTests(unittest.TestCase):
         forbidden = ["사라퐁", "피칼", "1310-73-2", "7732-18-5", "008_★msds_사라퐁", "051_★금속광택제"]
         found = {name: value for name in files for value in forbidden if value in (ROOT / name).read_text(encoding="utf-8")}
         self.assertEqual(found, {})
+
+
+class ClassificationArtifactBoundaryTests(unittest.TestCase):
+    def test_generated_review_defaults_outside_managed_golden_directory(self):
+        self.assertEqual(DEFAULT_OUTPUT_DIR, ROOT / "artifacts" / "golden_classification")
+        self.assertNotEqual(DEFAULT_OUTPUT_DIR.parent, ROOT / "golden")
 
 
 class V6CompatibilityTests(unittest.TestCase):

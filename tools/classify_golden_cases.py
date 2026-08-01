@@ -366,7 +366,10 @@ def _write_review_xlsx(rows, output_path):
     raise RuntimeError("Excel 검토표 생성 실패: " + "; ".join(errors[-2:]))
 
 
-def write_outputs(draft, rows, summary, output_dir=GOLDEN_DIR):
+DEFAULT_OUTPUT_DIR = ROOT / "artifacts" / "golden_classification"
+
+
+def write_outputs(draft, rows, summary, output_dir=DEFAULT_OUTPUT_DIR):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     draft_path = output_dir / "msds_golden_v1.classification_draft.json"
@@ -390,7 +393,7 @@ def main(argv=None):
     parser.add_argument("--taxonomy", type=Path, default=GOLDEN_DIR / "regression_taxonomy.json")
     parser.add_argument("--overrides", type=Path, default=GOLDEN_DIR / "regression_case_overrides.json")
     parser.add_argument("--logs", type=Path, default=ROOT / "logs")
-    parser.add_argument("--output-dir", type=Path, default=GOLDEN_DIR)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     args = parser.parse_args(argv)
     draft, rows, summary = classify_cases(args.golden, args.pdf_dir, args.taxonomy, args.overrides, args.logs)
     outputs = write_outputs(draft, rows, summary, args.output_dir)

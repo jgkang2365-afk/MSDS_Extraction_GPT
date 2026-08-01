@@ -1039,12 +1039,6 @@ class SectionTablePairingRegressionTests(unittest.TestCase):
         self.assertEqual(result[0]["cas_no"], "1310-73-2")
         self.assertEqual(result[0]["content"], "<1%")
 
-    def test_duplicate_component_ai_attempt_is_blocked(self):
-        engine = engine_module.MSDSEngineV6()
-        payload = {"contents": [{"parts": [{"text": "same"}, {"inlineData": {"data": "abc"}}]}]}
-        self.assertTrue(engine._component_ai_attempt_allowed(payload, "model", "prompt-v1"))
-        self.assertFalse(engine._component_ai_attempt_allowed(payload, "model", "prompt-v1"))
-
     def test_component_target_pages_stops_before_section_four(self):
         engine = engine_module.MSDSEngineV6()
         pages = [

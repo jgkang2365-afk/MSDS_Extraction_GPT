@@ -21,6 +21,7 @@ except ImportError:
     google_auth_requests = None
 import unicodedata
 from batch_pipeline import normalize_product_name, verify_product_name
+from result_safety import RuntimeExtractionResult
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
 try:
@@ -1501,7 +1502,10 @@ class MSDSEngineV6:
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
                 })
-                res["_shadow_context"] = dict(self._shadow_context)
+                res = RuntimeExtractionResult(
+                    res,
+                    shadow_context=self._shadow_context,
+                )
                 _trace_event(
                     "pipeline.final_lineage",
                     doc_type=res.get("doc_type"),
@@ -2410,26 +2414,6 @@ class MSDSEngineV6:
                 })
         return rendered
 
-    def _component_ai_attempt_allowed(self, payload, model, prompt_version, crop_bounds=None):
-        fingerprint_source = json.dumps({
-            "payload": payload,
-            "model": model,
-            "prompt_version": prompt_version,
-            "crop_bounds": crop_bounds,
-        }, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
-        fingerprint = hashlib.sha256(fingerprint_source).hexdigest()
-        attempts = getattr(self, "_component_ai_attempt_fingerprints", set())
-        if fingerprint in attempts:
-            _trace_event(
-                "ai.component_retry_blocked",
-                reason_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
-                fingerprint=fingerprint,
-            )
-            return False
-        attempts.add(fingerprint)
-        self._component_ai_attempt_fingerprints = attempts
-        return True
-
     def _trigger_ai_extraction(
         self,
         pdf_path,
@@ -2714,15 +2698,6 @@ class MSDSEngineV6:
                     "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                 }
                 
-                if not self._component_ai_attempt_allowed(
-                    payload_fallback, "gemini-2.5-flash", "fallback_crop_v1",
-                    crop_bounds=res_acc.get("crop_bounds"),
-                ):
-                    return self._get_graceful_error_dict(
-                        pdf_path, "동일 성분 AI 재호출 차단", hybrid_pn=hybrid_pn,
-                        doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이",
-                        error_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
-                    )
                 raw_ai_fallback = self.call_llm_router(payload_fallback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                 if raw_ai_fallback:
                     try:
@@ -2776,14 +2751,6 @@ class MSDSEngineV6:
                         "generationConfig": {"temperature": 0.0, "responseMimeType": "application/json"}
                     }
                     
-                    if not self._component_ai_attempt_allowed(
-                        payload_rollback, "gemini-2.5-flash", "rollback_full_page_v1",
-                    ):
-                        return self._get_graceful_error_dict(
-                            pdf_path, "동일 성분 AI 재호출 차단", hybrid_pn=hybrid_pn,
-                            doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이",
-                            error_code="DUPLICATE_COMPONENT_AI_RETRY_BLOCKED",
-                        )
                     raw_ai_rollback = self.call_llm_router(payload_rollback, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="component_extraction")
                     rollback_success = False
                     if raw_ai_rollback:

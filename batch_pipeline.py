@@ -14,6 +14,8 @@ import uuid
 from collections import Counter
 from pathlib import Path
 
+from result_safety import public_result
+
 try:
     from diagnostic_trace import (
         activate_trace,
@@ -395,7 +397,7 @@ class BatchRunLogger:
             return ""
 
     def append(self, event):
-        payload = {"run_id": self.run_id, "timestamp": time.time(), **event}
+        payload = public_result({"run_id": self.run_id, "timestamp": time.time(), **event})
         line = json.dumps(payload, ensure_ascii=False, default=str)
         with self._lock, self.events_path.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")

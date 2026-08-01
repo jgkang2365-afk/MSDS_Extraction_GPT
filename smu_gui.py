@@ -71,6 +71,7 @@ from shadow_comparison import (
     export_comparison_report,
     failed_comparison,
 )
+from result_safety import detach_shadow_context, public_result
 from diagnostic_sharing import (
     append_share_history,
     build_share_package,
@@ -1328,6 +1329,8 @@ class ExtractionWorker(QThread):
             self.update_log_signal.emit(f"[{kind.upper()} 큐] {fn} 처리 시작 (제한 {timeout_seconds:g}초)")
             try:
                 ext_res = self.core.extract_from_pdf(path, log_func=self.update_log_signal.emit, cancel_check=lambda: not self.is_running, timeout_seconds=timeout_seconds, document_type=kind, trace_context=file_trace_context)
+                # 내부 비교 문맥은 어떤 진단·캐시·사용자 결과보다 먼저 분리한다.
+                ext_res, shadow_context = detach_shadow_context(ext_res)
                 status = ext_res.get("status", "completed")
                 signal = "🟡" if status == "partial_timeout" or ext_res.get("verification_status") == "mismatch" else ext_res.get("신호등", "🟢")
                 final_candidate_id = run_logger.record_final_candidate(file_trace_context, ext_res)
@@ -1361,7 +1364,6 @@ class ExtractionWorker(QThread):
                 self.result_signal.emit(res_data)
                 # V6 운영 결과를 먼저 전달·저장한 뒤 shadow 비교를 격리 실행한다.
                 # 비교 실패나 보고서 실패는 위 V6 결과를 되돌릴 수 없다.
-                shadow_context = ext_res.pop("_shadow_context", {})
                 try:
                     comparison = build_shadow_comparison(path, ext_res, shadow_context)
                 except Exception as comparison_exc:
@@ -5707,7 +5709,7 @@ class SMUGUI(QMainWindow):
                     loaded_cache = json.load(f)
                 if not isinstance(loaded_cache, dict):
                     continue
-                self.cache = loaded_cache
+                self.cache = public_result(loaded_cache)
                 if is_backup:
                     self.log("[!] 주 캐시 손상/유실 감지: 직전 백업 캐시로 복구했습니다.")
                 self.log(f"[*] {len(self.cache)}건의 분석 캐시를 불러왔습니다.")
@@ -5727,7 +5729,7 @@ class SMUGUI(QMainWindow):
         backup_path = f"{cache_path}.bak"
         try:
             with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(self.cache, f, ensure_ascii=False, indent=4)
+                json.dump(public_result(self.cache), f, ensure_ascii=False, indent=4)
                 f.flush()
                 os.fsync(f.fileno())
 
@@ -5752,6 +5754,7 @@ class SMUGUI(QMainWindow):
 
     def update_cache(self, f_hash, data):
         """[NEW] 워커로부터 받은 새 분석 결과를 캐시에 저장"""
+        data = public_result(data)
         previous_review = self.cache.get(f_hash, {}).get("user_review")
         if previous_review and "user_review" not in data:
             data["user_review"] = dict(previous_review)
