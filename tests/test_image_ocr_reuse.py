@@ -348,6 +348,57 @@ class ImageOCRReuseTests(unittest.TestCase):
             standard_save,
         )
 
+    def test_excel_traffic_display_uses_colored_plain_circle(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        gui_tree = ast.parse(
+            (repo_root / "smu_gui.py").read_text(encoding="utf-8")
+        )
+        selected_nodes = []
+        for node in gui_tree.body:
+            if (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name)
+                    and target.id == "EXCEL_TRAFFIC_COLORS"
+                    for target in node.targets
+                )
+            ) or (
+                isinstance(node, ast.FunctionDef)
+                and node.name == "format_excel_traffic_display"
+            ):
+                selected_nodes.append(node)
+        namespace = {}
+        exec(
+            compile(
+                ast.Module(body=selected_nodes, type_ignores=[]),
+                filename="smu_gui.py",
+                mode="exec",
+            ),
+            namespace,
+        )
+        formatter = namespace["format_excel_traffic_display"]
+
+        self.assertEqual(
+            formatter("🟢 201"),
+            ("● 201", 0x50B000),
+        )
+        self.assertEqual(
+            formatter("🔴 빨강"),
+            ("● 빨강", 0x0000FF),
+        )
+
+    def test_excel_traffic_color_has_whole_cell_fallback(self):
+        gui_source = (
+            Path(__file__).resolve().parents[1] / "smu_gui.py"
+        ).read_text(encoding="utf-8")
+        writer_source = gui_source.split(
+            "def write_excel_mapped_value", 1
+        )[1].split("class ExtractionWorker", 1)[0]
+
+        self.assertIn("cell.Characters(Start=1, Length=1)", writer_source)
+        self.assertIn("except Exception:", writer_source)
+        self.assertIn("cell.Font.Color = traffic_color", writer_source)
+
     def test_validation_worker_reports_kosha_cache_and_budget_metrics(self):
         repo_root = Path(__file__).resolve().parents[1]
         gui_source = (repo_root / "smu_gui.py").read_text(encoding="utf-8")

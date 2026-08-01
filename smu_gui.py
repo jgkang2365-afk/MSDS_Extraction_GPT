@@ -1024,6 +1024,50 @@ def parse_cached_raw_components(raw_content):
     return components
 
 
+EXCEL_TRAFFIC_COLORS = {
+    "🟢": 0x50B000,  # RGB(0, 176, 80) in Excel's BGR integer format
+    "🟡": 0x00C0FF,  # RGB(255, 192, 0)
+    "🔴": 0x0000FF,  # RGB(255, 0, 0)
+    "🔵": 0xFF7000,  # RGB(0, 112, 255)
+    "⚪": 0xA6A6A6,  # RGB(166, 166, 166)
+}
+
+
+def format_excel_traffic_display(value):
+    """컬러 이모지를 Excel에서 안정적으로 색칠 가능한 원형 문자로 바꾼다."""
+    text = str(value or "").strip()
+    for emoji, color in EXCEL_TRAFFIC_COLORS.items():
+        if emoji in text:
+            suffix = text.split(emoji, 1)[1].lstrip()
+            return f"● {suffix}".rstrip(), color
+    return text, None
+
+
+def write_excel_mapped_value(ws, row, column, key, value):
+    """셀 값을 기록하고 신호등 필드의 첫 글자에 실제 Excel 색상을 적용한다."""
+    cell = ws.Cells(row, column)
+    try:
+        cell.NumberFormat = "@"
+    except Exception:
+        pass
+
+    display_value = str(value)
+    traffic_color = None
+    if key in ("GUI 순번(신호등+번호)", "신호등"):
+        display_value, traffic_color = format_excel_traffic_display(value)
+
+    cell.Value = display_value
+    if traffic_color is not None and display_value:
+        # Excel 셀은 컬러 이모지를 흑백 글리프로 렌더링하므로 첫 글자만
+        # 일반 원형 문자로 저장하고 실제 글꼴색을 지정한다. Excel/pywin32
+        # 조합에 따라 Characters 멤버를 노출하지 않는 경우에는 저장을
+        # 중단하지 않고 셀 전체 글꼴색으로 안전하게 폴백한다.
+        try:
+            cell.Characters(Start=1, Length=1).Font.Color = traffic_color
+        except Exception:
+            cell.Font.Color = traffic_color
+
+
 class ExtractionWorker(QThread):
     """1단계: PDF에서 텍스트 기반 추출만 수행 (API 연동 없이)"""
     update_log_signal = pyqtSignal(str)
@@ -7812,9 +7856,9 @@ class SMUGUI(QMainWindow):
                             if key in ["CAS 원본", "1차 결과(전체)", "2차 결과(규제)"]:
                                 val = str(val).replace('\n', ' ').replace('\r', '').strip()
                                 val = re.sub(r'\s{2,}', ' ', val)
-                            try: ws.Cells(curr_row, c_idx).NumberFormat = "@"
-                            except: pass
-                            ws.Cells(curr_row, c_idx).Value = str(val)
+                            write_excel_mapped_value(
+                                ws, curr_row, c_idx, key, val
+                            )
                     saved_count += 1
                 else:
                     # 가로형: 기존의 세미콜론 정류 방식대로 한 줄로 압축 저장
@@ -7873,11 +7917,9 @@ class SMUGUI(QMainWindow):
                                 val = re.sub(r'\s{2,}', ' ', val)
                             
                             # [무결성 가드레일] 엑셀의 문자열 포맷을 강제 유지하여 물결표(~) 및 하이픈(-) 유실을 원천 차단
-                            try:
-                                ws.Cells(curr_row, c_idx).NumberFormat = "@"
-                            except:
-                                pass
-                            ws.Cells(curr_row, c_idx).Value = str(val)
+                            write_excel_mapped_value(
+                                ws, curr_row, c_idx, key, val
+                            )
 
 
                     written_files.add(fn)
