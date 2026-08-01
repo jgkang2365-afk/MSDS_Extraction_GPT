@@ -60,10 +60,17 @@ import msds_core
 import importlib # [HOT-RELOAD] 모듈 새로고침용
 from msds_core import MSDSCore
 from kosha_client import KoshaRequestBudgetExceeded
-import msds_engine as engine
+import msds_engine_v6 as engine
 import openpyxl  # [V6.994] 시트 목록 추출 및 사전 검증용
 import pandas as pd # [V10.5] 마스터 DB 로드용
 from batch_pipeline import BatchRunLogger, classify_and_order, diagnostic_mode_from_sources, timeout_for_document
+from shadow_comparison import (
+    build_shadow_comparison,
+    comparison_rows,
+    comparison_summary,
+    export_comparison_report,
+    failed_comparison,
+)
 from diagnostic_sharing import (
     append_share_history,
     build_share_package,
@@ -88,6 +95,123 @@ COL_IDX_REVIEW_REQUEST = 11
 COL_IDX_ERROR_TYPE = 12
 COL_IDX_USER_NOTE = 13
 COL_IDX_SHARE_STATUS = 14
+
+
+class ShadowComparisonDetailDialog(QDialog):
+    """EngineComparisonResult 한 건을 그대로 표시하는 읽기 전용 상세창."""
+
+    def __init__(self, comparison, parent=None):
+        super().__init__(parent)
+        self.comparison = comparison
+        self.setWindowTitle(f"V6/V7 상세 비교 - {comparison.get('file_name', '')}")
+        self.resize(1050, 720)
+        layout = QVBoxLayout(self)
+        info = QTextEdit()
+        info.setReadOnly(True)
+        info.setMaximumHeight(190)
+        info.setPlainText(
+            f"파일명: {comparison.get('file_name', '')}\n"
+            f"전체 경로: {comparison.get('file_path', '')}\n"
+            f"비교 수준: {comparison.get('comparison_completeness', '')}\n"
+            f"자동 판정: {comparison.get('auto_judgment', '')}\n"
+            f"판정 사유: {comparison.get('auto_judgment_reason', '')}\n\n"
+            f"[제품명]\nV6: {comparison.get('v6_product_name', '')}\n"
+            f"V7: {comparison.get('v7_product_name', '')}\n"
+            f"차이 사유: {comparison.get('product_name_reason', '')}"
+        )
+        layout.addWidget(info)
+        detail = QTableWidget(0, 7)
+        detail.setHorizontalHeaderLabels(["CAS", "성분명 V6", "성분명 V7", "함유량 V6", "함유량 V7", "상태", "V7 사유"])
+        component_rows = (
+            list(comparison.get("added_in_v7") or [])
+            + list(comparison.get("removed_in_v7") or [])
+            + list(comparison.get("changed_in_v7") or [])
+            + list(comparison.get("unchanged_components") or [])
+        )
+        for row_data in component_rows:
+            row = detail.rowCount()
+            detail.insertRow(row)
+            values = [row_data.get("cas", ""), row_data.get("v6_name", ""), row_data.get("v7_name", ""), row_data.get("v6_content", ""), row_data.get("v7_content", ""), row_data.get("status", ""), row_data.get("reason_text", "")]
+            for column, value in enumerate(values):
+                detail.setItem(row, column, QTableWidgetItem(str(value)))
+        detail.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        detail.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(detail)
+        section_info = QTextEdit()
+        section_info.setReadOnly(True)
+        section_info.setMaximumHeight(150)
+        section_info.setPlainText(
+            "[Section 1]\n" + json.dumps(comparison.get("section_1_meta") or {}, ensure_ascii=False, indent=2)
+            + "\n[Section 3]\n" + json.dumps(comparison.get("section_3_meta") or {}, ensure_ascii=False, indent=2)
+        )
+        layout.addWidget(section_info)
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+
+
+class ShadowComparisonDialog(QDialog):
+    FILTERS = ("전체", "제품명 차이", "CAS 추가", "CAS 제거", "함유량 변경", "V7 개선 추정", "V7 오류 가능", "수동 확인 필요", "부분 비교", "비교 실패")
+    HEADERS = ("문서명", "판정", "비교 수준", "제품명 V6", "제품명 V7", "성분 수 V6", "성분 수 V7", "추가", "제거", "함유량 변경", "Section 1", "Section 3", "V7 fallback", "차이 요약")
+
+    def __init__(self, results, parent=None):
+        super().__init__(parent)
+        self.results = list(results or [])
+        self.visible_results = []
+        self.setWindowTitle("V6/V7 백그라운드 비교 결과")
+        self.resize(1450, 650)
+        layout = QVBoxLayout(self)
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("필터"))
+        self.filter_combo = QComboBox()
+        self.filter_combo.addItems(self.FILTERS)
+        self.filter_combo.currentTextChanged.connect(self.refresh_table)
+        controls.addWidget(self.filter_combo)
+        controls.addStretch(1)
+        detail_button = QPushButton("상세보기")
+        detail_button.clicked.connect(self.open_selected_detail)
+        controls.addWidget(detail_button)
+        layout.addLayout(controls)
+        self.table = QTableWidget(0, len(self.HEADERS))
+        self.table.setHorizontalHeaderLabels(self.HEADERS)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.doubleClicked.connect(lambda _index: self.open_selected_detail())
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(self.table)
+        close_button = QPushButton("닫기")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+        self.refresh_table()
+
+    def refresh_table(self, *_args):
+        self.visible_results = comparison_rows(self.results, self.filter_combo.currentText())
+        self.table.setRowCount(0)
+        for data in self.visible_results:
+            row = self.table.rowCount()
+            self.table.insertRow(row)
+            content_changes = sum("함유량 변경" in item.get("status", "") for item in data.get("changed_in_v7", []))
+            values = [
+                data.get("file_name", ""), data.get("auto_judgment", ""), data.get("comparison_completeness", ""),
+                data.get("v6_product_name", ""), data.get("v7_product_name", ""), data.get("v6_component_count", 0),
+                data.get("v7_component_count", 0), len(data.get("added_in_v7") or []), len(data.get("removed_in_v7") or []),
+                content_changes, (data.get("section_1_meta") or {}).get("confidence", ""),
+                (data.get("section_3_meta") or {}).get("confidence", ""), "예" if data.get("v7_fallback_used") else "아니오",
+                data.get("difference_summary", ""),
+            ]
+            for column, value in enumerate(values):
+                cell = QTableWidgetItem(str(value))
+                if column == 0:
+                    cell.setData(Qt.UserRole, data)
+                self.table.setItem(row, column, cell)
+
+    def open_selected_detail(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        data = self.table.item(row, 0).data(Qt.UserRole)
+        ShadowComparisonDetailDialog(data, self).exec_()
 REVIEW_ERROR_TYPES = (
     "제품명 오류", "CAS 오류", "함유량 오류", "성분 연결 오류", "일부 성분 누락",
     "전체 성분 누락", "처리 중단·시간 초과", "신호등 오류", "기타",
@@ -1172,6 +1296,7 @@ class ExtractionWorker(QThread):
 
     def _run_classified_batch(self):
         run_logger = BatchRunLogger(diagnostic_mode=self.diagnostic_mode)
+        comparisons = []
         classification_started = time.monotonic()
         classified = classify_and_order(self.pdf_paths)
         queued_at = time.monotonic()
@@ -1234,6 +1359,16 @@ class ExtractionWorker(QThread):
                 }
                 self.cache_update_signal.emit(f_hash, res_data)
                 self.result_signal.emit(res_data)
+                # V6 운영 결과를 먼저 전달·저장한 뒤 shadow 비교를 격리 실행한다.
+                # 비교 실패나 보고서 실패는 위 V6 결과를 되돌릴 수 없다.
+                shadow_context = ext_res.pop("_shadow_context", {})
+                try:
+                    comparison = build_shadow_comparison(path, ext_res, shadow_context)
+                except Exception as comparison_exc:
+                    comparison = failed_comparison(path, comparison_exc)
+                comparison_data = comparison.to_dict()
+                comparisons.append(comparison_data)
+                run_logger.record_engine_comparison(comparison_data)
                 stats["partial_count" if status == "partial_timeout" else "completed_count"] += 1
             except InterruptedError:
                 stats["cancelled_count"] += 1
@@ -1269,8 +1404,18 @@ class ExtractionWorker(QThread):
             self.queue_progress_signal.emit({"totals": totals.copy(), "completed": completed.copy(), "current": kind, "overall_completed": index + 1, "overall_total": total})
             self.progress_signal.emit(int((index + 1) / max(1, total) * 100))
 
+        comparison_stats = comparison_summary(comparisons)
+        comparison_report = ""
+        if any(item.get("comparison_status") != "SAME" or item.get("comparison_completeness") != "FULL" for item in comparisons):
+            report_name = f"V6_V7_비교결과_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            try:
+                comparison_report = export_comparison_report(comparisons, str(run_logger.run_dir / report_name))
+            except Exception as report_exc:
+                run_logger.append({"stage": "v6_v7_comparison_report", "status": "failed", "error_code": "COMPARISON_REPORT_FAILED", "error_message": f"{type(report_exc).__name__}: {report_exc}"})
+                self.update_log_signal.emit(f"[V6/V7 비교] 엑셀 생성 실패(운영 결과 영향 없음): {report_exc}")
+        run_logger.record_comparison_summary(comparison_stats, comparison_report)
         kosha = self.core.api_client.get_metrics()
-        stats.update(run_logger.finalize({"kosha_network_requests": kosha.get("network_requests", 0), "kosha_memory_cache_hits": kosha.get("memory_cache_hits", 0), "kosha_persistent_cache_hits": kosha.get("persistent_cache_hits", 0), "kosha_negative_cache_hits": kosha.get("negative_cache_hits", 0), "kosha_retries": kosha.get("retries", 0), "kosha_budget_remaining": kosha.get("budget_remaining", 0)}))
+        stats.update(run_logger.finalize({"kosha_network_requests": kosha.get("network_requests", 0), "kosha_memory_cache_hits": kosha.get("memory_cache_hits", 0), "kosha_persistent_cache_hits": kosha.get("persistent_cache_hits", 0), "kosha_negative_cache_hits": kosha.get("negative_cache_hits", 0), "kosha_retries": kosha.get("retries", 0), "kosha_budget_remaining": kosha.get("budget_remaining", 0), **comparison_stats, "comparison_report": comparison_report, "comparison_results": comparisons, "comparison_log": str(run_logger.error_summary_path)}))
         stats["run_dir"] = str(run_logger.run_dir)
         self.finished_signal.emit(stats)
 
@@ -6573,11 +6718,29 @@ class SMUGUI(QMainWindow):
 - AI       : 텍스트 {stats.get('ai_text_calls', 0)}회, 이미지 {stats.get('ai_image_calls', 0)}회, 수확 {stats.get('ai_harvest_success', 0)}회, 무수확 {stats.get('ai_no_harvest', 0)}회
 - KOSHA    : 네트워크 {stats.get('kosha_network_requests', 0)}회, 메모리 캐시 {stats.get('kosha_memory_cache_hits', 0)}회, 영구 캐시 {stats.get('kosha_persistent_cache_hits', 0)}회, 재시도 {stats.get('kosha_retries', 0)}회
 - 상태     : 정상 {stats.get('completed_count', 0)}건, 부분 {stats.get('partial_count', 0)}건, 시간초과 {stats.get('timeout_count', 0)}건, 실패 {stats.get('failed_count', 0)}건, 중지 {stats.get('cancelled_count', 0)}건
+- V6/V7 비교: 동일 {stats.get('same', 0)}건, 차이 {stats.get('different', 0)}건, 부분 {stats.get('partial_comparison', 0)}건, 실패 {stats.get('comparison_failed', 0)}건
 - 상세 로그: {stats.get('run_dir', '')}
+- 비교 로그: {stats.get('comparison_log', '')}
+- 비교 엑셀: {stats.get('comparison_report') or '생성 안 함'}
 
 추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요."""
         if not was_cancelled:
             QMessageBox.information(self, "추출 완료 리포트", summary)
+
+        comparisons = list(stats.get("comparison_results") or [])
+        if comparisons:
+            self.log(
+                "[*] V6/V7 백그라운드 비교 완료: "
+                f"전체 {len(comparisons)}개 / 동일 {stats.get('same', 0)}개 / "
+                f"차이 {stats.get('different', 0)}개 / 부분 비교 {stats.get('partial_comparison', 0)}개 / "
+                f"비교 실패 {stats.get('comparison_failed', 0)}개"
+            )
+            visible = comparison_rows(comparisons)
+            if visible and not was_cancelled:
+                try:
+                    ShadowComparisonDialog(comparisons, self).exec_()
+                except Exception as comparison_dialog_exc:
+                    self.log(f"[V6/V7 비교] 비교창 표시 실패(운영 결과 영향 없음): {comparison_dialog_exc}")
         
         # [V17.3.0.8] 마스터 DB 로드 에러 사후 안내 (주님 지침: 1단계 종료 후 일괄 보고)
         if hasattr(engine, 'MES_MASTER_LOAD_ERROR') and engine.MES_MASTER_LOAD_ERROR:

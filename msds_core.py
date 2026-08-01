@@ -3,7 +3,9 @@ import sys
 import json
 import argparse
 from datetime import datetime
-import msds_engine
+# 운영 코어의 최종 결과는 검증 기간 동안 V6로 고정한다. V7은 GUI worker가
+# 동일 실행의 내부 문맥을 전달받아 shadow 규칙 비교로만 사용한다.
+import msds_engine_v6 as msds_engine
 from kosha_client import KoshaAPIClient
 from exposure_lookup import ExposureLookup
 import re

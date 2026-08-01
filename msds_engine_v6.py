@@ -1274,6 +1274,9 @@ class MSDSEngineV6:
         checkpoint_func=None,
     ):
         pipeline_started = time.perf_counter()
+        # V7 shadow 비교가 V6 실행 중 이미 생성된 텍스트/OCR 문맥만 재사용할 수
+        # 있도록 하는 내부 전용 슬롯이다. 운영 결과/영구 캐시 계약에는 저장하지 않는다.
+        self._shadow_context = {}
         _trace_event(
             "stage_start",
             stage_id="msds_pipeline",
@@ -1454,6 +1457,7 @@ class MSDSEngineV6:
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
                 })
+                res["_shadow_context"] = dict(self._shadow_context)
                 _trace_event(
                     "pipeline.final_lineage",
                     doc_type=res.get("doc_type"),
@@ -1678,8 +1682,16 @@ class MSDSEngineV6:
         doc_type = "스캔본"
         try:
             doc = fitz.open(pdf_path)
-            first_page_text = self._get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
-            for page in doc: full_text_for_grounding += self._get_sorted_and_normalized_text(page)
+            page_texts = [self._get_sorted_and_normalized_text(page) for page in doc]
+            first_page_text = page_texts[0] if page_texts else ""
+            full_text_for_grounding = "".join(page_texts)
+            self._shadow_context.update({
+                "page_texts": page_texts,
+                "first_page_text": first_page_text,
+                "section3_text": section3_text,
+                "section3_pages": list(pages or []),
+                "ocr_reused": bool(recon_data),
+            })
             pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             cover_bytes = pix_cover.tobytes("png")
             _trace_image(
@@ -1710,6 +1722,13 @@ class MSDSEngineV6:
         except:
             cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
             doc_type = "디지털" if len(full_text_for_grounding.strip()) >= 500 else "스캔본"
+            self._shadow_context.update({
+                "page_texts": [],
+                "first_page_text": "",
+                "section3_text": section3_text,
+                "section3_pages": list(pages or []),
+                "ocr_reused": bool(recon_data),
+            })
 
         _trace_event(
             "document.classification.final",

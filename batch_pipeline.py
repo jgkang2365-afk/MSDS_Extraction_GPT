@@ -255,6 +255,7 @@ class BatchRunLogger:
         self.failures_dir.mkdir(exist_ok=True)
         self.events_path = self.run_dir / "events.jsonl"
         self.summary_path = self.run_dir / "summary.json"
+        self.error_summary_path = self.run_dir / "error_summary.log"
         self._lock = threading.Lock()
         self.counters = Counter()
         self.started_at = time.time()
@@ -497,6 +498,75 @@ class BatchRunLogger:
         if paths:
             result["diagnostics"] = paths
         return paths
+
+    def record_engine_comparison(self, comparison):
+        """동일 공통 객체를 JSONL과 실행별 기존 종합 진단 디렉터리에 함께 기록한다."""
+        item = comparison.to_dict() if hasattr(comparison, "to_dict") else dict(comparison)
+        completeness = item.get("comparison_completeness", "FULL")
+        status = item.get("comparison_status", "SAME")
+        if completeness == "COMPARISON_FAILED":
+            identifier = "V6_V7_COMPARISON_FAILED"
+        elif str(completeness).startswith("PARTIAL_"):
+            identifier = "V6_V7_COMPARISON_PARTIAL"
+        elif status != "SAME":
+            identifier = "V6_V7_COMPARISON_DIFF"
+        else:
+            return
+        event = {"stage": "v6_v7_comparison", "event": identifier, **item}
+        self.append(event)
+        component_lines = []
+        for label, key in (("REMOVED_IN_V7", "removed_in_v7"), ("ADDED_IN_V7", "added_in_v7"), ("CHANGED_IN_V7", "changed_in_v7")):
+            values = item.get(key) or []
+            component_lines.append(f"[{label}]")
+            if not values:
+                component_lines.append("없음")
+            for index, value in enumerate(values, 1):
+                component_lines.extend([
+                    f"{index}.", f"  cas: {value.get('cas', '')}",
+                    f"  name_v6: {value.get('v6_name', '')}", f"  name_v7: {value.get('v7_name', '')}",
+                    f"  content_v6: {value.get('v6_content', '')}", f"  content_v7: {value.get('v7_content', '')}",
+                    f"  reason_code: {value.get('reason_code', '')}", f"  reason_text: {value.get('reason_text', '')}",
+                ])
+        lines = [
+            "=" * 60, f"[{identifier}]", f"timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"file_name: {item.get('file_name', '')}", f"file_path: {item.get('file_path', '')}",
+            f"primary_engine: {item.get('primary_engine', 'v6')}", f"comparison_engine: {item.get('comparison_engine', 'v7')}",
+            f"comparison_status: {status}", f"comparison_completeness: {completeness}",
+            f"auto_judgment: {item.get('auto_judgment', '')}", f"auto_judgment_reason: {item.get('auto_judgment_reason', '')}",
+            "", "[PRODUCT_NAME]", f"v6: {item.get('v6_product_name', '')}", f"v7: {item.get('v7_product_name', '')}",
+            f"different: {str(bool(item.get('product_name_different'))).lower()}", f"reason: {item.get('product_name_reason', '')}",
+            "", "[COMPONENT_SUMMARY]", f"v6_count: {item.get('v6_component_count', 0)}", f"v7_count: {item.get('v7_component_count', 0)}",
+            f"added_in_v7: {len(item.get('added_in_v7') or [])}", f"removed_in_v7: {len(item.get('removed_in_v7') or [])}",
+            f"changed_in_v7: {len(item.get('changed_in_v7') or [])}", "", *component_lines,
+        ]
+        for label, key in (("SECTION_1", "section_1_meta"), ("SECTION_3", "section_3_meta")):
+            meta = item.get(key) or {}
+            lines.extend(["", f"[{label}]", *[f"{name}: {value}" for name, value in meta.items()]])
+        lines.extend([
+            "", "[FALLBACK]", f"v7_fallback_used: {str(bool(item.get('v7_fallback_used'))).lower()}",
+            f"fallback_reasons: {json.dumps(item.get('v7_fallback_reasons') or [], ensure_ascii=False)}",
+            "", "[PROCESS_REUSE]", f"ocr_reused: {str(bool(item.get('ocr_reused', True))).lower()}",
+            f"ai_reused: {str(bool(item.get('ai_reused', True))).lower()}",
+            f"duplicate_ocr_calls: {item.get('duplicate_ocr_calls', 0)}", f"duplicate_ai_calls: {item.get('duplicate_ai_calls', 0)}",
+            "", "[COMPARISON_LIMIT]", f"status: {completeness}", f"reason: {item.get('limitation_reason') or 'none'}",
+            "", "[COMPARISON_JSON]", json.dumps({"event": identifier, **item}, ensure_ascii=False, default=str), "=" * 60, "",
+        ])
+        with self._lock, self.error_summary_path.open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines))
+
+    def record_comparison_summary(self, summary, comparison_report=""):
+        summary = dict(summary or {})
+        lines = ["=" * 60, "[V6_V7_COMPARISON_SUMMARY]"]
+        for key in (
+            "total_documents", "same", "different", "partial_comparison", "comparison_failed",
+            "v7_improvement_candidate", "v7_error_candidate", "manual_review_required",
+            "duplicate_ocr_calls", "duplicate_ai_calls",
+        ):
+            lines.append(f"{key}: {summary.get(key, 0)}")
+        lines.extend([f"comparison_report: {comparison_report or 'none'}", "=" * 60, ""])
+        with self._lock, self.error_summary_path.open("a", encoding="utf-8") as stream:
+            stream.write("\n".join(lines))
+        self.append({"stage": "v6_v7_comparison_summary", **summary, "comparison_report": comparison_report})
 
     def finalize(self, extra=None):
         summary = dict(self.counters)
