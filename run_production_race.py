@@ -13,6 +13,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -47,6 +48,15 @@ def normalize_content(value: Any) -> str:
     text = re.sub(r"(?<=\d)\s*-\s*(?=\d)", "~", text)
     text = re.sub(r"\s+", "", text)
     return text
+
+
+def normalize_product_name_for_golden(value: str) -> str:
+    """안전한 표기 차이만 제거하고 정규화 결과를 정확 일치 비교에 사용한다."""
+    # NFKC가 ™를 연속 문자열 TM으로 바꾸기 전에 원래 상표 기호를 제거한다.
+    text = unicodedata.normalize("NFKC", str(value or "").replace("™", "")).strip().casefold()
+    text = re.sub(r"\(\s*tm\s*\)", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"(?<![0-9a-z])tm(?![0-9a-z])", "", text, flags=re.IGNORECASE)
+    return re.sub(r"[\s\-_()./]+", "", text)
 
 
 def _flatten_tags(case: dict[str, Any]) -> set[str]:
@@ -186,45 +196,100 @@ def select_cases(
     return selected
 
 
-def _parse_components(result: dict[str, Any]) -> dict[str, str]:
-    values: dict[str, str] = {}
-    raw = result.get("함유량")
-    if isinstance(raw, list):
-        for item in raw:
-            if isinstance(item, dict):
-                cas = str(item.get("cas") or item.get("cas_no") or "").strip()
-                content = item.get("content") or item.get("percentage") or ""
-                if cas:
-                    values[cas] = normalize_content(content)
+def _parse_components(result: dict[str, Any]) -> dict[str, list[str]]:
+    """대표 성분 필드 하나를 읽어 동일 CAS의 모든 행을 순서대로 보존한다."""
+    values: dict[str, list[str]] = defaultdict(list)
+    structured = result.get("components")
+    if not isinstance(structured, list):
+        structured = result.get("함유량")
+    if not isinstance(structured, list):
+        structured = result.get("구성성분")
+    if isinstance(structured, list):
+        for item in structured:
+            if not isinstance(item, dict):
+                continue
+            cas = str(item.get("cas") or item.get("cas_no") or "").strip()
+            if cas:
+                values[cas].append(normalize_content(item.get("content") or item.get("percentage")))
+        return dict(values)
+
     components = result.get("구성성분")
-    if isinstance(components, list):
-        for item in components:
-            if isinstance(item, dict):
-                cas = str(item.get("cas") or item.get("cas_no") or "").strip()
-                if cas:
-                    values[cas] = normalize_content(item.get("content") or item.get("percentage"))
-    elif isinstance(components, str):
+    if isinstance(components, str):
         for cas, content in re.findall(r"(\d{2,7}-\d{2}-\d)[^;]*?\(([^()]*)\)", components):
-            values[cas] = normalize_content(content)
-    return values
+            values[cas.strip()].append(normalize_content(content))
+    return dict(values)
 
 
 def compare_case(case: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
     differences: list[dict[str, Any]] = []
     if case.get("_review_only"):
         return differences
-    expected_name = str((case.get("product_name") or {}).get("expected") or "").strip()
-    allowed = {expected_name, *[str(v).strip() for v in (case.get("product_name") or {}).get("allowed_variants", [])]}
+    product_name = case.get("product_name") or {}
+    expected_name = str(product_name.get("expected") or "").strip()
+    allowed_variants = [str(value).strip() for value in product_name.get("allowed_variants", [])]
+    normalized_expected = normalize_product_name_for_golden(expected_name)
+    normalized_allowed = {
+        normalize_product_name_for_golden(value)
+        for value in (expected_name, *allowed_variants)
+        if normalize_product_name_for_golden(value)
+    }
     actual_name = str(result.get("제품명") or result.get("product_name") or "").strip()
-    if expected_name and actual_name not in allowed:
-        differences.append({"field": "product_name", "expected": expected_name, "actual": actual_name})
+    normalized_actual = normalize_product_name_for_golden(actual_name)
+    if expected_name and normalized_actual not in normalized_allowed:
+        differences.append({
+            "field": "product_name",
+            "reason_code": "GOLDEN_PRODUCT_NAME_MISMATCH",
+            "expected": expected_name,
+            "allowed_variants": allowed_variants,
+            "actual": actual_name,
+            "normalized_expected": normalized_expected,
+            "normalized_actual": normalized_actual,
+        })
+
+    expected_components = {
+        str(component.get("cas") or "").strip(): normalize_content(
+            component.get("content_expected") or component.get("content_raw")
+        )
+        for component in case.get("components") or []
+        if str(component.get("cas") or "").strip()
+    }
     actual_components = _parse_components(result)
-    for component in case.get("components") or []:
-        cas = str(component.get("cas") or "")
-        expected = normalize_content(component.get("content_expected") or component.get("content_raw"))
-        actual = actual_components.get(cas)
+    expected_cas = set(expected_components)
+    actual_cas = set(actual_components)
+
+    for cas in sorted(expected_cas - actual_cas):
+        differences.append({
+            "field": "missing_component",
+            "reason_code": "GOLDEN_MISSING_CAS",
+            "cas": cas,
+        })
+    for cas in sorted(actual_cas - expected_cas):
+        differences.append({
+            "field": "unexpected_component",
+            "reason_code": "GOLDEN_UNEXPECTED_CAS",
+            "cas": cas,
+            "actual": actual_components[cas][0],
+        })
+    for cas in sorted(actual_cas):
+        actual_values = actual_components[cas]
+        if len(actual_values) > 1:
+            differences.append({
+                "field": "duplicate_component",
+                "reason_code": "GOLDEN_DUPLICATE_CAS",
+                "cas": cas,
+                "actual_values": actual_values,
+            })
+    for cas in sorted(expected_cas & actual_cas):
+        expected = expected_components[cas]
+        actual = actual_components[cas][0]
         if actual != expected:
-            differences.append({"field": "component", "cas": cas, "expected": expected, "actual": actual})
+            differences.append({
+                "field": "component_content",
+                "reason_code": "GOLDEN_CONTENT_MISMATCH",
+                "cas": cas,
+                "expected": expected,
+                "actual": actual,
+            })
     return differences
 
 
@@ -343,6 +408,11 @@ def main(argv: list[str] | None = None) -> int:
         counts["ai_not_run"] = sum(bool(run.get("ai_not_run")) for run in results)
         counts["duplicate_ocr_calls"] = sum(int(run.get("duplicate_ocr_calls", 0)) for run in results)
         counts["duplicate_ai_calls"] = sum(int(run.get("duplicate_ai_calls", 0)) for run in results)
+        for run in results:
+            for difference in run.get("differences", []):
+                reason_code = difference.get("reason_code")
+                if reason_code:
+                    counts[reason_code] += 1
         print("SUMMARY " + json.dumps(dict(counts), ensure_ascii=False, sort_keys=True))
         if args.write_golden_candidate:
             print(f"GOLDEN_CANDIDATE={write_candidate(selected, results)}")

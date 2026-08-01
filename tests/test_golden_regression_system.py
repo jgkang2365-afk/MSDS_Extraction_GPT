@@ -22,6 +22,7 @@ from run_production_race import (
     GoldenValidationError,
     load_cases,
     normalize_content,
+    normalize_product_name_for_golden,
     select_cases,
 )
 from tools.classify_golden_cases import DEFAULT_OUTPUT_DIR, classify_pdf, load_taxonomy, validate_tags
@@ -232,6 +233,142 @@ class SelectionAndSafetyTests(unittest.TestCase):
         self.assertEqual(normalize_content("10 ～ 20 %"), normalize_content("10 - 20%"))
         self.assertNotEqual(normalize_content("<1%"), normalize_content(">1%"))
         self.assertNotEqual(normalize_content("≤1%"), normalize_content("≥1%"))
+
+
+class GoldenComparisonTests(unittest.TestCase):
+    def _case(self, name="Product", components=None, **extra):
+        return {
+            "product_name": {"expected": name, "allowed_variants": []},
+            "components": components if components is not None else [
+                {"cas": "64-17-5", "content_expected": "10%"}
+            ],
+            **extra,
+        }
+
+    def _result(self, name="Product", components=None):
+        return {
+            "제품명": name,
+            "components": components if components is not None else [
+                {"cas": "64-17-5", "content": "10%"}
+            ],
+        }
+
+    def _reason_codes(self, case, result):
+        return [item.get("reason_code") for item in race.compare_case(case, result)]
+
+    def test_expected_components_exactly_match(self):
+        self.assertEqual(race.compare_case(self._case(), self._result()), [])
+
+    def test_missing_expected_cas_fails(self):
+        codes = self._reason_codes(self._case(), self._result(components=[]))
+        self.assertEqual(codes, ["GOLDEN_MISSING_CAS"])
+
+    def test_unexpected_actual_cas_fails(self):
+        result = self._result(components=[
+            {"cas": "64-17-5", "content": "10%"},
+            {"cas": "67-64-1", "content": "90%"},
+        ])
+        codes = self._reason_codes(self._case(), result)
+        self.assertIn("GOLDEN_UNEXPECTED_CAS", codes)
+
+    def test_component_content_mismatch_fails(self):
+        result = self._result(components=[{"cas": "64-17-5", "content": "20%"}])
+        codes = self._reason_codes(self._case(), result)
+        self.assertEqual(codes, ["GOLDEN_CONTENT_MISMATCH"])
+
+    def test_duplicate_cas_with_different_values_fails(self):
+        result = self._result(components=[
+            {"cas": "64-17-5", "content": "10%"},
+            {"cas": "64-17-5", "content": "20%"},
+        ])
+        differences = race.compare_case(self._case(), result)
+        duplicate = next(item for item in differences if item.get("reason_code") == "GOLDEN_DUPLICATE_CAS")
+        self.assertEqual(duplicate["actual_values"], ["10%", "20%"])
+
+    def test_duplicate_cas_with_same_value_is_reported(self):
+        result = self._result(components=[
+            {"cas": "64-17-5", "content": "10%"},
+            {"cas": "64-17-5", "content": "10%"},
+        ])
+        self.assertIn("GOLDEN_DUPLICATE_CAS", self._reason_codes(self._case(), result))
+
+    def test_zero_actual_components_reports_all_missing(self):
+        case = self._case(components=[
+            {"cas": "64-17-5", "content_expected": "10%"},
+            {"cas": "67-64-1", "content_expected": "20%"},
+        ])
+        codes = self._reason_codes(case, self._result(components=[]))
+        self.assertEqual(codes.count("GOLDEN_MISSING_CAS"), 2)
+
+    def test_review_only_case_skips_answer_comparison(self):
+        case = self._case(components=[], _review_only=True)
+        result = self._result(components=[{"cas": "67-64-1", "content": "90%"}])
+        self.assertEqual(race.compare_case(case, result), [])
+
+    def test_review_only_is_not_inferred_from_empty_golden_components(self):
+        case = self._case(components=[])
+        result = self._result(components=[{"cas": "67-64-1", "content": "90%"}])
+        self.assertIn("GOLDEN_UNEXPECTED_CAS", self._reason_codes(case, result))
+
+    def test_content_operator_direction_remains_distinct(self):
+        case = self._case(components=[{"cas": "64-17-5", "content_expected": "<1%"}])
+        result = self._result(components=[{"cas": "64-17-5", "content": ">1%"}])
+        self.assertIn("GOLDEN_CONTENT_MISMATCH", self._reason_codes(case, result))
+
+    def test_content_range_symbols_remain_equivalent(self):
+        case = self._case(components=[{"cas": "64-17-5", "content_expected": "10 ～ 20 %"}])
+        result = self._result(components=[{"cas": "64-17-5", "content": "10 - 20%"}])
+        self.assertEqual(race.compare_case(case, result), [])
+
+    def test_product_spacing_and_delimiters_match(self):
+        self.assertEqual(
+            normalize_product_name_for_golden("MICONOL C2M(H)"),
+            normalize_product_name_for_golden("MICONOL-C2M (H)"),
+        )
+
+    def test_product_trademark_notation_matches(self):
+        self.assertEqual(
+            normalize_product_name_for_golden("PRODUCT NAME™"),
+            normalize_product_name_for_golden("Product Name TM"),
+        )
+
+    def test_product_underscore_and_hyphen_match(self):
+        self.assertEqual(
+            normalize_product_name_for_golden("ABC_123"),
+            normalize_product_name_for_golden("ABC-123"),
+        )
+
+    def test_korean_product_spacing_matches(self):
+        self.assertEqual(
+            normalize_product_name_for_golden("가나다 제품"),
+            normalize_product_name_for_golden("가나다제품"),
+        )
+
+    def test_allowed_product_variant_is_normalized_for_comparison(self):
+        case = self._case(name="MICONOL-C2M", components=[])
+        case["product_name"]["allowed_variants"] = ["MICONOL-C2M (H)"]
+        result = self._result(name="MICONOL C2M(H)", components=[])
+        self.assertEqual(race.compare_case(case, result), [])
+
+    def test_different_model_number_fails(self):
+        case = self._case(name="MICONOL C2M(H)", components=[])
+        result = self._result(name="MICONOL C3M(H)", components=[])
+        self.assertIn("GOLDEN_PRODUCT_NAME_MISMATCH", self._reason_codes(case, result))
+
+    def test_different_korean_product_fails(self):
+        case = self._case(name="금속광택제", components=[])
+        result = self._result(name="금속세정제", components=[])
+        self.assertIn("GOLDEN_PRODUCT_NAME_MISMATCH", self._reason_codes(case, result))
+
+    def test_extra_digit_fails(self):
+        case = self._case(name="ABC-100", components=[])
+        result = self._result(name="ABC-1000", components=[])
+        self.assertIn("GOLDEN_PRODUCT_NAME_MISMATCH", self._reason_codes(case, result))
+
+    def test_company_prefix_does_not_hide_different_product(self):
+        case = self._case(name="회사명 제품A", components=[])
+        result = self._result(name="회사명 제품B", components=[])
+        self.assertIn("GOLDEN_PRODUCT_NAME_MISMATCH", self._reason_codes(case, result))
 
 
 class GoldenUpdateTests(unittest.TestCase):
