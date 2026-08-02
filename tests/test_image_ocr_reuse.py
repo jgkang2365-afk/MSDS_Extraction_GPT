@@ -1,5 +1,6 @@
 import ast
 import io
+import os
 import hashlib
 import json
 import re
@@ -133,6 +134,12 @@ class _Document:
 
     def close(self):
         return None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.close()
 
 
 def _ocr_line(text, x0, y0, x1, y1):
@@ -939,6 +946,14 @@ class AICallMetricsTests(unittest.TestCase):
     def _response(text):
         return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
 
+    @staticmethod
+    def _settings(*, vertex=False):
+        return types.SimpleNamespace(
+            novita_api_key="test-key",
+            vertex_credential_path=Path("vertex.json") if vertex else None,
+            vertex_error_code="",
+        )
+
     def test_each_ai_response_tracks_its_own_harvest_and_final_application(self):
         engine = engine_module.MSDSEngineV6()
         responses = [
@@ -954,7 +969,9 @@ class AICallMetricsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = Path(temp_dir) / "metrics.pdf"
             pdf_path.write_bytes(b"metrics")
-            with patch.object(engine, "call_deepseek_with_retry", side_effect=responses), patch.object(
+            with patch.object(
+                engine_module, "load_api_settings", return_value=self._settings()
+            ), patch.object(engine, "call_deepseek_with_retry", side_effect=responses), patch.object(
                 engine, "_process_msds_pipeline_impl", side_effect=fake_pipeline
             ):
                 result = engine.process_msds_pipeline(str(pdf_path), bypass_cache=True)
@@ -973,7 +990,9 @@ class AICallMetricsTests(unittest.TestCase):
 
     def test_empty_synthetic_response_is_not_counted_as_received(self):
         engine = engine_module.MSDSEngineV6()
-        with patch.object(engine, "call_deepseek_with_retry", return_value=self._response("")):
+        with patch.object(
+            engine_module, "load_api_settings", return_value=self._settings()
+        ), patch.object(engine, "call_deepseek_with_retry", return_value=self._response("")):
             engine.call_llm_router({}, purpose="product_name")
 
         metric = engine._ai_call_metrics[0]
@@ -992,6 +1011,8 @@ class AICallMetricsTests(unittest.TestCase):
             pdf_path = Path(temp_dir) / "content-mismatch.pdf"
             pdf_path.write_bytes(b"metrics")
             with patch.object(
+                engine_module, "load_api_settings", return_value=self._settings()
+            ), patch.object(
                 engine,
                 "call_deepseek_with_retry",
                 return_value=self._response('{"components":[{"cas":"64-17-5","content":"50%"}]}'),
@@ -1004,7 +1025,9 @@ class AICallMetricsTests(unittest.TestCase):
 
     def test_failover_records_failed_and_received_calls_separately(self):
         engine = engine_module.MSDSEngineV6()
-        with patch.object(engine, "call_deepseek_with_retry", side_effect=RuntimeError("offline")), patch.object(
+        with patch.object(
+            engine_module, "load_api_settings", return_value=self._settings(vertex=True)
+        ), patch.object(engine, "call_deepseek_with_retry", side_effect=RuntimeError("offline")), patch.object(
             engine, "call_vertex_gemini_with_retry", return_value=self._response("Vertex Product")
         ):
             engine.call_llm_router({}, purpose="product_name")
@@ -1013,6 +1036,59 @@ class AICallMetricsTests(unittest.TestCase):
         self.assertFalse(engine._ai_call_metrics[0]["response_received"])
         self.assertTrue(engine._ai_call_metrics[0]["discard_reason"].startswith("CALL_ERROR:"))
         self.assertTrue(engine._ai_call_metrics[1]["response_received"])
+
+
+class SectionTablePairingRegressionTests(unittest.TestCase):
+    def test_classification_number_list_is_not_a_concentration(self):
+        engine = engine_module.MSDSEngineV6()
+        self.assertTrue(engine._is_classification_number_list("1, 2, 3"))
+        for valid in ("<1", "〈1", ">3", "1~3", "1-3", "1 to 3"):
+            self.assertFalse(engine._is_classification_number_list(valid))
+        self.assertEqual(engine._normalize_single_content("〈 1"), "<1%")
+
+    def test_html_parser_uses_named_content_column_not_classification_column(self):
+        engine = engine_module.MSDSEngineV6()
+        html = """
+        <table><tr><td>CAS No.</td><td>구분</td><td>함유량(%)</td></tr>
+        <tr><td>1310-73-2</td><td>1, 2, 3</td><td>&lt; 1</td></tr></table>
+        """
+        result = engine.parse_html_table_to_components(html)
+        self.assertEqual(result[0]["cas_no"], "1310-73-2")
+        self.assertEqual(result[0]["content"], "<1%")
+
+    def test_component_target_pages_stops_before_section_four(self):
+        engine = engine_module.MSDSEngineV6()
+        pages = [
+            unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock(), unittest.mock.Mock()
+        ]
+        for index, page in enumerate(pages):
+            page.number = index
+            page.get_text.side_effect = lambda mode, i=index: (
+                [(0, 0, 1, 1, "4. 응급조치 요령" if i == 3 else "성분 표 계속")]
+                if mode == "blocks" else []
+            )
+        document = _Document(pages)
+        with patch.object(engine_module.fitz, "open", return_value=document):
+            self.assertEqual(engine._component_target_pages("pikal.pdf", 2), [2, 3])
+
+    @unittest.skipUnless(hasattr(fitz, "Document"), "PyMuPDF required")
+    def test_actual_sarafong_and_pikal_pages_preserve_expected_evidence(self):
+        test_root = Path(__file__).resolve().parents[1] / "TEST_File"
+        sarafong = next(test_root.glob("008_*.pdf"), None)
+        pikal = next(test_root.glob("051_*.pdf"), None)
+        if not sarafong or not pikal:
+            self.skipTest("actual regression PDFs not available")
+        engine = engine_module.MSDSEngineV6()
+        with fitz.open(sarafong) as document:
+            components = engine.extract_table_by_density_clustering(document[1])
+        pairing = {item["cas_no"]: item["content"] for item in components}
+        self.assertEqual(pairing["1310-73-2"], "<1%")
+        self.assertNotEqual(pairing["1310-73-2"], ">3%")
+
+        rendered = engine._render_component_pages(str(pikal), [2, 3])
+        self.assertEqual([item["page_index"] for item in rendered], [2, 3])
+        self.assertTrue(all(item["data"] for item in rendered))
+        self.assertEqual(engine_module._romanize_hangul_token("피칼"), "pikal")
 
 
 if __name__ == "__main__":

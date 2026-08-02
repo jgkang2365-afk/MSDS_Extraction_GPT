@@ -1,0 +1,5 @@
+{
+  "refine_msds_components_strict": ["cas-content-pairing", "content-classification-column-confusion", "content-less-than", "content-range"],
+  "extract_section3_images": ["section3-page-image-mismatch", "section3-late-page", "section3-image-table", "ocr-required"],
+  "extract_product_name": ["product-name-wrong", "product-name-unverified-ai", "section1-nonstandard"]
+}

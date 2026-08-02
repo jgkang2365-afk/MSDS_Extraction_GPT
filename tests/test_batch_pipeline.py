@@ -145,6 +145,24 @@ class StructuredLoggingTests(unittest.TestCase):
             payload = Path(paths["diagnostic_json"]).read_text(encoding="utf-8")
             self.assertNotIn("definitely-not-for-log", payload)
 
+    def test_diagnostics_never_persist_shadow_context(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            logger = BatchRunLogger(base_dir=Path(tmp) / "logs", run_id="shadow-safe", diagnostic_mode="FULL")
+            info = {"path": str(Path(tmp) / "sample.pdf"), "document_type": "text", "page_count": 1}
+            context = logger.file_trace_context(info, "hash")
+            result = {
+                "status": "completed",
+                "제품명": "P",
+                "_shadow_context": {"page_texts": ["원문 전체"]},
+            }
+            paths = logger.record_file(info, result, 0.1, 180, "hash", context)
+            stored = "\n".join(
+                path.read_text(encoding="utf-8")
+                for path in (logger.events_path, Path(paths["diagnostic_json"]))
+            )
+            self.assertNotIn("_shadow_context", stored)
+            self.assertNotIn("원문 전체", stored)
+
     def test_gui_uses_batched_log_and_table_queues(self):
         source = (Path(__file__).resolve().parents[1] / "smu_gui.py").read_text(encoding="utf-8")
         self.assertIn("_pending_gui_logs", source)

@@ -3,7 +3,9 @@ import sys
 import json
 import argparse
 from datetime import datetime
-import msds_engine_v6
+# 운영 코어의 최종 결과는 검증 기간 동안 V6로 고정한다. V7은 GUI worker가
+# 동일 실행의 내부 문맥을 전달받아 shadow 규칙 비교로만 사용한다.
+import msds_engine_v6 as msds_engine
 from kosha_client import KoshaAPIClient
 from exposure_lookup import ExposureLookup
 import re
@@ -16,6 +18,7 @@ import threading
 from contextlib import nullcontext
 
 from batch_pipeline import build_partial_timeout_result, timeout_for_document
+from result_safety import encapsulate_runtime_result
 
 try:
     from diagnostic_trace import TraceContext, activate_trace, finalize_trace, get_tracer
@@ -60,7 +63,7 @@ def _isolated_engine_entry(pdf_path, result_queue, cancel_event, trace_context_p
     try:
         with activate_trace(trace_context):
             _trace_event("engine_child_started", stage_id="engine", file_path=str(pdf_path))
-            result = msds_engine_v6.process_pdf(
+            result = msds_engine.process_pdf(
                 pdf_path,
                 log_func=lambda message: result_queue.put(("log", str(message))),
                 cancel_check=cancel_event.is_set,
@@ -215,7 +218,9 @@ class MSDSCore:
                         if log_func:
                             log_func(payload)
                     elif message_type == "result":
-                        final_result = payload
+                        # V7 비교 문맥은 프로세스 간 전송 직후 결과 mapping에서 분리한다.
+                        # RuntimeExtractionResult의 속성은 JSON/캐시/GUI 직렬화 대상이 아니다.
+                        final_result = encapsulate_runtime_result(payload)
                         break
                     elif message_type == "checkpoint" and isinstance(payload, dict):
                         last_checkpoint = {**last_checkpoint, **payload}

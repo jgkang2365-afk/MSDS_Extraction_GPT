@@ -1,6 +1,8 @@
 import os
 print("[*] [현재 실행 중인 진짜 도면 위치]:", os.path.abspath(__file__))
 import base64
+import hashlib
+import html
 import sys
 import re
 import time
@@ -11,19 +13,36 @@ from datetime import datetime
 import numpy as np
 
 import fitz
-from google.oauth2 import service_account
-import google.auth.transport.requests 
+try:
+    from google.oauth2 import service_account
+    from google.auth.transport import requests as google_auth_requests
+except ImportError:
+    service_account = None
+    google_auth_requests = None
 import unicodedata
+from api_config import (
+    APIConfigError,
+    api_status_lines,
+    load_api_settings,
+    vertex_dependency_preflight,
+)
 from batch_pipeline import normalize_product_name, verify_product_name
+from product_name_diagnostics import (
+    AIProviderCallError,
+    classify_product_response,
+    provider_failure_reason,
+    sanitize_diagnostic_message,
+)
+from result_safety import RuntimeExtractionResult
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
-from dotenv import load_dotenv
 import socket
 from remote_ocr_client import (
     RemoteOCRClient,
     RemoteOCRError,
     log_remote_ocr_disabled_once,
 )
+from msds_validation import PageMapValidationError, validate_component_image_page_map
 
 # 진단 모듈은 선택 기능이다. 운영 추출 경로는 모듈 부재·기록 실패와 무관하게
 # 기존 결과/호출 수를 그대로 유지해야 한다.
@@ -85,6 +104,20 @@ def _trace_is_full():
         return False
 
 
+def _romanize_hangul_token(value):
+    initials = ("g", "kk", "n", "d", "tt", "r", "m", "b", "pp", "s", "ss", "", "j", "jj", "ch", "k", "t", "p", "h")
+    vowels = ("a", "ae", "ya", "yae", "eo", "e", "yeo", "ye", "o", "wa", "wae", "oe", "yo", "u", "wo", "we", "wi", "yu", "eu", "ui", "i")
+    finals = ("", "k", "k", "ks", "n", "nj", "nh", "t", "l", "lk", "lm", "lb", "ls", "lt", "lp", "lh", "m", "p", "ps", "t", "t", "ng", "t", "t", "k", "t", "p", "h")
+    output = []
+    for char in str(value or ""):
+        code = ord(char) - 0xAC00
+        if 0 <= code < 11172:
+            output.append(initials[code // 588] + vowels[(code % 588) // 28] + finals[code % 28])
+        elif char.isalnum():
+            output.append(char.lower())
+    return "".join(output)
+
+
 def _trace_enabled():
     try:
         mode = getattr(get_tracer(), "mode", None)
@@ -94,9 +127,6 @@ def _trace_enabled():
 
 # 모든 소켓 통신의 기본 타임아웃을 20초로 강제 설정하여 API 지연 시 프로세스 영구 블로킹 방어
 socket.setdefaulttimeout(20.0)
-
-# .env 파일 로드
-load_dotenv(override=True)
 
 # 윈도우 터미널 인코딩 노이즈 방어
 if sys.platform == 'win32':
@@ -169,15 +199,6 @@ try:
                         MES_MASTER_MAP[cas] = std_name.strip()
 except Exception as e:
     MES_MASTER_LOAD_ERROR = f"마스터 DB 초기화 중 오류 발생: {e}"
-
-EXCEPTION_REGISTRY = {
-    "CR-13_SERIES": {
-        "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
-        "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
-        "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
-    }
-}
 
 _CAS_DASH_CLASS = r"\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 cas_pattern = re.compile(rf'(?<![\d-])(\d{{2,7}}\s*[{_CAS_DASH_CLASS}]\s*\d{{2}}\s*[{_CAS_DASH_CLASS}]\s*\d)(?![\d-])')
@@ -311,8 +332,9 @@ class MSDSEngineV6:
         """
         [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인 및 신규 패턴 컴파일
         """
-        key_path = "vertex_key.json"
-        if not os.path.exists(key_path):
+        self.api_settings = load_api_settings()
+        _trace_event("api.configuration", **self.api_settings.diagnostic_status())
+        if not self.api_settings.vertex_credential_path:
             print("🚨 [[Vertex AI] 마스터 열쇠 사증 실패] 로컬에 vertex_key.json 파일이 존재하지 않습니다.")
         else:
             print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
@@ -346,6 +368,7 @@ class MSDSEngineV6:
         self._ppstructure_usage_count = 0
         self._ai_call_count = 0
         self._ai_call_metrics = []
+        self._product_name_events = []
         self._image_pipeline_active = False
         self.remote_ocr_client = remote_ocr_client or RemoteOCRClient(enabled=use_remote_ocr)
         # 운영 기본값은 기존 1.5배 단일 정찰과 완전히 동일하다. 아래 두 값은
@@ -357,6 +380,20 @@ class MSDSEngineV6:
         self._diagnostic_candidate_ids = {}
         self._diagnostic_last_candidate_ids = []
         self._diagnostic_product_candidate_id = None
+
+    def api_configuration_status(self):
+        return api_status_lines(self.api_settings)
+
+    def _record_product_name_event(self, event, **details):
+        """제품명 기준선에 필요한 최소 호출 흐름만 런타임 문맥에 보존한다."""
+        safe = {
+            key: sanitize_diagnostic_message(value) if key in {"message", "exception_type"} else value
+            for key, value in details.items()
+            if key not in {"raw_response", "prompt", "payload", "api_key", "token"}
+        }
+        item = {"event": event, **safe}
+        self._product_name_events.append(item)
+        _trace_event(event, **safe)
 
     def _diagnostic_candidate(self, value, source, obj=None, **fields):
         """동일 후보 객체가 정제/QC를 지나도 같은 candidate_id를 유지한다."""
@@ -574,6 +611,8 @@ class MSDSEngineV6:
 
                 content = "미기재%"
                 for candidate in reversed(candidates):
+                    if self._is_classification_number_list(candidate):
+                        continue
                     normalized = self._normalize_single_content(candidate)
                     if normalized != "미기재%":
                         content = normalized
@@ -907,30 +946,46 @@ class MSDSEngineV6:
             if log_func: log_func(f"🚨 [[함량 검문소] 시스템 예외 발생] 데이터 세척 처리 차단: {e}")
             return False
 
-    def call_vertex_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+    def call_vertex_gemini_with_retry(
+        self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash",
+        diagnostic_fail_fast=False,
+    ):
         """
         [Vertex AI] vertex_key.json 기반으로 GCP Vertex AI API를 직접 REST 호출
         """
-        key_path = "vertex_key.json"
-        if not os.path.exists(key_path):
-            if log_func: log_func(" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (파일 미존재)")
+        self.api_settings = load_api_settings()
+        try:
+            key_path, project_id, location = self.api_settings.require_vertex()
+            vertex_dependency_preflight()
+        except APIConfigError as config_error:
+            if log_func: log_func(f" ❌ [Vertex AI] 호출 사전 점검 실패 ({config_error.code})")
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "call_blocked", "Vertex preflight failed",
+                    error_code=config_error.code,
+                )
             return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
             
         access_token = None
         try:
+            if service_account is None or google_auth_requests is None:
+                raise RuntimeError("Google 인증 라이브러리가 설치되지 않았습니다.")
             credentials = service_account.Credentials.from_service_account_file(
-                key_path,
+                str(key_path),
                 scopes=['https://www.googleapis.com/auth/cloud-platform']
             )
-            auth_req = google.auth.transport.requests.Request()
+            auth_req = google_auth_requests.Request()
             credentials.refresh(auth_req)
             access_token = credentials.token
         except Exception as auth_err:
             if log_func: log_func(f" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (인증 실패): {auth_err}")
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "provider_error", f"Vertex authentication failed: {type(auth_err).__name__}",
+                    error_code="VERTEX_TOKEN_REFRESH_FAILED",
+                )
             return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
-            
-        project_id = "msds-engine-v6"
-        location = "us-central1"
+
         url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model}:generateContent"
         
         headers = {
@@ -944,32 +999,74 @@ class MSDSEngineV6:
                 if "role" not in c:
                     c["role"] = "user"
                     
+        last_error = None
         for attempt in range(max_retries):
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=30)
                 if response.status_code == 200:
                     return response.json()
-                else:
-                    if log_func: log_func(f"  🔴 [Vertex AI Retry] 호출 실패 (HTTP {response.status_code}) - {response.text}")
+                if response.status_code == 429:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError("rate_limited", "Vertex rate limited", http_status=429)
+                    if log_func: log_func("  🔴 [Vertex AI Retry] 호출 실패 (HTTP 429)")
                     time.sleep(1.0)
                     continue
+                if response.status_code in {401, 403}:
+                    last_error = AIProviderCallError(
+                        "provider_error", f"Vertex HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="VERTEX_PERMISSION_DENIED",
+                    )
+                elif response.status_code == 404:
+                    last_error = AIProviderCallError(
+                        "provider_error", "Vertex model not found", http_status=404,
+                        error_code="VERTEX_MODEL_NOT_FOUND",
+                    )
+                else:
+                    last_error = AIProviderCallError(
+                        "provider_error", f"Vertex HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="VERTEX_API_FAILED",
+                    )
+                    if log_func: log_func(f"  🔴 [Vertex AI Retry] 호출 실패 (HTTP {response.status_code})")
+                    time.sleep(1.0)
+                    continue
+            except AIProviderCallError:
+                if diagnostic_fail_fast:
+                    raise
+                continue
             except Exception as e:
+                kind = "timeout" if "timeout" in type(e).__name__.lower() else "provider_error"
+                last_error = AIProviderCallError(
+                    kind, f"Vertex request failed: {type(e).__name__}",
+                    error_code="VERTEX_TIMEOUT" if kind == "timeout" else "VERTEX_API_FAILED",
+                )
                 if log_func: log_func(f"  🔴 [Vertex AI Retry] {attempt+1}차 장애 사유: {e}")
-                time.sleep(1.0)
+                if attempt < max_retries - 1:
+                    time.sleep(1.0)
                 continue
                 
         if log_func: log_func(" ❌ [Vertex AI] 호출 최종 실패")
+        if diagnostic_fail_fast:
+            raise last_error or AIProviderCallError("provider_error", "Vertex call failed")
         return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
 
-    def call_deepseek_with_retry(self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash"):
+    def call_deepseek_with_retry(
+        self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash",
+        diagnostic_fail_fast=False,
+    ):
         """
-        [DeepSeek] 30초 타임아웃 가드레일을 얹은 Novita AI 단독 호출
+        호환 함수명은 유지하되 NOVITA_API_KEY만 사용하는 Novita 호출 경로.
         """
-        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("NOVITA_API_KEY")
+        self.api_settings = load_api_settings()
+        api_key = self.api_settings.novita_api_key
         if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY 누락")
-            
-        url = "https://api.novita.ai/v3/openai/chat/completions"
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "call_blocked", "Novita credential missing",
+                    error_code="NOVITA_API_KEY_MISSING",
+                )
+            raise ValueError("NOVITA_API_KEY 누락")
+
+        url = "https://api.novita.ai/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -991,18 +1088,32 @@ class MSDSEngineV6:
         openai_payload = {
             "model": model,
             "messages": openai_messages,
-            "temperature": 0.0
+            "temperature": 0.0,
+            "max_tokens": 256,
         }
         if response_format:
             openai_payload["response_format"] = response_format
-            
-        for attempt in range(max_retries):
+
+        output_retry_count = 0
+        attempt = 0
+        while attempt < max_retries:
             try:
-                # 1선 DeepSeek 호출 타임아웃(커넥션 5초, 읽기 12초)을 얹은 Novita AI 호출
                 response = requests.post(url, headers=headers, json=openai_payload, timeout=(5, 12))
                 if response.status_code == 200:
                     res_json = response.json()
-                    content_str = res_json["choices"][0]["message"]["content"]
+                    choice = (res_json.get("choices") or [{}])[0]
+                    message = choice.get("message") or {}
+                    content_str = str(message.get("content") or "").strip()
+                    finish_reason = str(choice.get("finish_reason") or "")
+                    if finish_reason == "length" and not content_str:
+                        if output_retry_count == 0:
+                            output_retry_count = 1
+                            openai_payload["max_tokens"] = 512
+                            continue
+                        raise AIProviderCallError(
+                            "output_truncated", "Novita output truncated",
+                            error_code="NOVITA_OUTPUT_TRUNCATED",
+                        )
                     return {
                         "candidates": [
                             {
@@ -1012,15 +1123,51 @@ class MSDSEngineV6:
                                     ]
                                 }
                             }
-                        ]
+                        ],
+                        "_provider_finish_reason": finish_reason,
+                        "_output_retry_count": output_retry_count,
                     }
-                else:
-                    raise Exception(f"HTTP {response.status_code}")
+                if response.status_code == 429:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError(
+                            "rate_limited", "Novita rate limited", http_status=429,
+                            error_code="NOVITA_RATE_LIMITED",
+                        )
+                    raise Exception("HTTP 429")
+                if response.status_code in {401, 403}:
+                    raise AIProviderCallError(
+                        "provider_error", f"Novita HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="NOVITA_AUTH_FAILED",
+                    )
+                raise AIProviderCallError(
+                    "provider_error", f"Novita HTTP {response.status_code}",
+                    http_status=response.status_code, error_code="NOVITA_API_FAILED",
+                )
+            except AIProviderCallError as e:
+                if diagnostic_fail_fast and e.kind in {"rate_limited", "output_truncated"}:
+                    raise
+                if log_func: log_func(f"   [Novita Retry] {attempt+1}차 시도 실패 사유: {e}")
+                if attempt >= max_retries - 1:
+                    if diagnostic_fail_fast:
+                        raise
+                    raise Exception("Novita API 호출 최종 실패")
             except Exception as e:
-                if log_func: log_func(f"   [DeepSeek Retry] {attempt+1}차 시도 실패 사유: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(1.0)
-        raise Exception("DeepSeek API 호출 최종 실패")
+                kind = "timeout" if "timeout" in type(e).__name__.lower() else "provider_error"
+                if log_func: log_func(f"   [Novita Retry] {attempt+1}차 시도 실패 사유: {e}")
+                if attempt >= max_retries - 1:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError(
+                            kind, f"Novita request failed: {type(e).__name__}",
+                            error_code="NOVITA_TIMEOUT" if kind == "timeout" else "NOVITA_API_FAILED",
+                        )
+                    raise Exception("Novita API 호출 최종 실패")
+                time.sleep(1.0)
+            attempt += 1
+        if diagnostic_fail_fast:
+            raise AIProviderCallError(
+                "provider_error", "Novita call failed", error_code="NOVITA_API_FAILED",
+            )
+        raise Exception("Novita API 호출 최종 실패")
 
     @staticmethod
     def _ai_response_text(response):
@@ -1081,11 +1228,17 @@ class MSDSEngineV6:
             "_harvested_content_pairs": content_pairs,
         }
 
-    def _invoke_ai_provider(self, provider, model, purpose, input_mode, invoke):
+    def _invoke_ai_provider(self, provider, model, purpose, input_mode, invoke, *, stage="primary", attempt=1):
         started = time.perf_counter()
         metric = {
             "provider": provider, "model": model, "purpose": purpose,
+            "stage": stage, "attempt": attempt,
             "input_mode": input_mode, "called": True, "response_received": False,
+            "raw_response_present": False, "parsed_response_present": False,
+            "response_schema_valid": False, "reason_code": "",
+            "http_status": None, "exception_type": "", "message": "",
+            "provider_error_code": "",
+            "fallback_attempted": stage == "fallback", "parsed_product_name": "",
             "elapsed_seconds": 0.0, "product_name_harvested": False,
             "cas_harvested": False, "content_harvested": False,
             "final_result_applied": False, "applied_fields": [], "discard_reason": "",
@@ -1101,37 +1254,84 @@ class MSDSEngineV6:
             input_mode=input_mode,
             attempt_number=self._ai_call_count,
         )
+        if purpose == "product_name":
+            self._record_product_name_event(
+                f"product_name.{stage}.call.started",
+                provider=provider, model=model, attempt=attempt, input_mode=input_mode,
+            )
         try:
             response = invoke()
         except Exception as exc:
+            reason_code = provider_failure_reason(exc) if purpose == "product_name" else ""
             metric.update({
                 "elapsed_seconds": round(time.perf_counter() - started, 3),
                 "discard_reason": f"CALL_ERROR:{type(exc).__name__}",
+                "reason_code": reason_code,
+                "http_status": getattr(exc, "http_status", None),
+                "exception_type": type(exc).__name__,
+                "message": sanitize_diagnostic_message(exc),
+                "provider_error_code": str(getattr(exc, "error_code", "") or ""),
             })
             _trace_event("ai.call.failure", provider=provider, model=model, purpose=purpose, error_type=type(exc).__name__)
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    f"product_name.{stage}.call.failed",
+                    provider=provider, model=model, attempt=attempt,
+                    reason_code=reason_code, http_status=getattr(exc, "http_status", None),
+                    provider_error_code=str(getattr(exc, "error_code", "") or ""),
+                    exception_type=type(exc).__name__, message=sanitize_diagnostic_message(exc),
+                )
             raise
 
         response_text = self._ai_response_text(response)
         parsed_response = False
+        parsed_object = None
         try:
-            json.loads(response_text.replace("```json", "").replace("```", "").strip())
+            parsed_object = json.loads(response_text.replace("```json", "").replace("```", "").strip())
             parsed_response = bool(response_text.strip())
         except (ValueError, TypeError):
             parsed_response = False
         harvested = self._analyze_ai_response(response, purpose)
+        response_reason = ""
+        parsed_product_name = str(harvested.get("_harvested_product_name") or "").strip()
+        if purpose == "product_name":
+            parsed_product_name, response_reason = classify_product_response(response_text, parsed_object)
+            harvested["product_name_harvested"] = bool(parsed_product_name)
+            harvested["_harvested_product_name"] = parsed_product_name
         metric.update({
             "response_received": bool(response_text),
+            "raw_response_present": bool(response_text),
             "provider_response_returned": response is not None,
             "json_parse_succeeded": parsed_response,
+            "parsed_response_present": bool(parsed_product_name) if purpose == "product_name" else parsed_response,
+            "response_schema_valid": not bool(response_reason),
+            "reason_code": response_reason,
+            "parsed_product_name": parsed_product_name,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             **harvested,
         })
+        if isinstance(response, dict):
+            metric["provider_finish_reason"] = str(response.get("_provider_finish_reason") or "")
+            metric["output_retry_count"] = int(response.get("_output_retry_count") or 0)
         if not response_text:
             metric["discard_reason"] = "NO_RESPONSE"
         elif not any(harvested[key] for key in ("product_name_harvested", "cas_harvested", "content_harvested")):
             metric["discard_reason"] = "AI_NO_HARVEST"
         if isinstance(response, dict):
             response["_ai_metric_index"] = metric_index
+        if purpose == "product_name":
+            self._record_product_name_event(
+                f"product_name.{stage}.call.succeeded",
+                provider=provider, model=model, attempt=attempt,
+                raw_response_present=bool(response_text),
+            )
+            parse_event = "succeeded" if not response_reason else "failed"
+            self._record_product_name_event(
+                f"product_name.{stage}.parse.{parse_event}",
+                provider=provider, model=model, attempt=attempt,
+                reason_code=response_reason,
+                parsed_response_present=bool(parsed_product_name),
+            )
         _trace_event(
             "ai.call.response",
             provider=provider,
@@ -1169,7 +1369,10 @@ class MSDSEngineV6:
             discard_reason=metric.get("discard_reason", ""),
         )
 
-    def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False, purpose="general_extraction"):
+    def call_llm_router(
+        self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash",
+        is_scanned_strict=False, purpose="general_extraction", product_name_validator=None,
+    ):
         """실제 공급자 호출마다 독립 계측하며 DeepSeek 장애 시 Vertex로 전환한다."""
         input_mode = "image" if is_scanned_strict or "inlineData" in str(payload) else "text"
         parts = ((payload.get("contents") or [{}])[0].get("parts") or []) if isinstance(payload, dict) else []
@@ -1182,38 +1385,130 @@ class MSDSEngineV6:
             image_count=sum(1 for part in parts if isinstance(part, dict) and part.get("inlineData")),
             max_retries=max_retries,
         )
-        if is_scanned_strict:
+        if os.getenv("ANTIGRAVITY_DISABLE_PAID_AI") == "1":
+            _trace_event(
+                "ai.call.blocked",
+                purpose=purpose,
+                requested_model=model,
+                input_mode=input_mode,
+                reason_code="PAID_AI_DISABLED_FOR_REGRESSION",
+            )
             if log_func:
-                log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
-            res = self._invoke_ai_provider(
-                "vertex", model, purpose, input_mode,
-                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
+                log_func("[회귀 검증] 외부 AI 호출을 실행하지 않았습니다.")
+            return None
+        if os.getenv("ANTIGRAVITY_PRODUCT_NAME_AI_ONLY") == "1" and purpose != "product_name":
+            _trace_event(
+                "ai.call.blocked",
+                purpose=purpose,
+                requested_model=model,
+                input_mode=input_mode,
+                reason_code="NON_PRODUCT_AI_DISABLED_FOR_BASELINE",
             )
-            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
-            return res
-
-        try:
-            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (12초 타임아웃 가드)")
-            deepseek_model = "deepseek/deepseek-v4-flash"
-            res = self._invoke_ai_provider(
-                "deepseek", deepseek_model, purpose, input_mode,
-                lambda: self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func, model=deepseek_model),
-            )
-            if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
-            return res
-        except Exception as ds_err:
-            _trace_event("ai.failover", from_provider="deepseek", to_provider="vertex", purpose=purpose, error_type=type(ds_err).__name__)
             if log_func:
-                log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
-                log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
-            res = self._invoke_ai_provider(
-                "vertex", model, purpose, input_mode,
-                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
+                log_func("[제품명 기준선] 제품명 외 AI 호출을 실행하지 않았습니다.")
+            return None
+        deepseek_model = "deepseek/deepseek-v4-flash"
+        self.api_settings = load_api_settings()
+        novita_available = bool(self.api_settings.novita_api_key)
+        vertex_available = bool(
+            self.api_settings.vertex_credential_path and not self.api_settings.vertex_error_code
+        )
+        providers = []
+        if purpose != "product_name":
+            # 성분 추출 등 기존 V6 경로는 이번 제품명 진단 변경의 범위 밖이다.
+            providers = (
+                [("vertex", model)]
+                if is_scanned_strict
+                else [("novita", deepseek_model), ("vertex", model)]
             )
-            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
-            return res
+        elif is_scanned_strict:
+            if vertex_available:
+                providers.append(("vertex", model))
+        else:
+            if novita_available:
+                providers.append(("novita", deepseek_model))
+            if vertex_available:
+                providers.append(("vertex", model))
+        if not providers:
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    "product_name.final.failed",
+                    reason_code="PRODUCT_NAME_CALL_BLOCKED", evidence_present=True,
+                )
+            _trace_event(
+                "ai.call.blocked", purpose=purpose, requested_model=model,
+                input_mode=input_mode, reason_code="AI_PROVIDER_CREDENTIALS_MISSING",
+            )
+            return None
 
-    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None):
+        last_response = None
+        for index, (provider, provider_model) in enumerate(providers):
+            stage = "primary" if index == 0 else "fallback"
+            if stage == "fallback":
+                _trace_event(
+                    "ai.failover", from_provider=providers[index - 1][0],
+                    to_provider=provider, purpose=purpose,
+                )
+            try:
+                if provider == "novita":
+                    invoke = lambda: self.call_deepseek_with_retry(
+                        payload, max_retries=1, log_func=log_func, model=provider_model,
+                        diagnostic_fail_fast=purpose == "product_name",
+                    )
+                else:
+                    invoke = lambda: self.call_vertex_gemini_with_retry(
+                        payload, max_retries=max_retries, log_func=log_func, model=provider_model,
+                        diagnostic_fail_fast=purpose == "product_name",
+                    )
+                response = self._invoke_ai_provider(
+                    provider, provider_model, purpose, input_mode, invoke,
+                    stage=stage, attempt=index + 1,
+                )
+                last_response = response
+            except Exception as provider_error:
+                if log_func:
+                    log_func(
+                        f" ⚠️ [제품명 공급자 전환] {provider} 실패: "
+                        f"{sanitize_diagnostic_message(provider_error)}"
+                    )
+                continue
+
+            metric_index = response.get("_ai_metric_index") if isinstance(response, dict) else None
+            metric = self._ai_call_metrics[metric_index] if isinstance(metric_index, int) else {}
+            failure_code = str(metric.get("reason_code") or "")
+            if purpose == "product_name" and not failure_code and callable(product_name_validator):
+                failure_code = str(product_name_validator(metric.get("parsed_product_name", "")) or "")
+                if failure_code:
+                    metric["reason_code"] = failure_code
+                    metric["discard_reason"] = failure_code
+                    metric["response_schema_valid"] = False
+            if purpose == "product_name":
+                validation_event = "failed" if failure_code else "succeeded"
+                self._record_product_name_event(
+                    f"product_name.{stage}.validation.{validation_event}",
+                    provider=provider, model=provider_model, attempt=index + 1,
+                    reason_code=failure_code,
+                )
+            if failure_code:
+                continue
+            if isinstance(response, dict):
+                response["actual_engine_label"] = "novita" if provider == "novita" else "gemini"
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    "product_name.final.selected",
+                    provider=provider, model=provider_model, attempt=index + 1,
+                )
+            return response
+
+        if purpose == "product_name":
+            self._record_product_name_event(
+                "product_name.final.failed",
+                reason_code="PRODUCT_NAME_ALL_PROVIDERS_FAILED",
+                fallback_attempted=len(providers) > 1,
+            )
+        return last_response
+
+    def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None, error_code=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
         
         # 🚀 [생산성 고도화] 실패 자재의 내역을 식별성이 높은 ★별표 접두사 장부에 자동 적출
@@ -1251,7 +1546,7 @@ class MSDSEngineV6:
         # 파일명은 진단 표시용일 뿐 제품명 보정 근거로 사용하지 않는다.
         pn_fallback = hybrid_pn or ""
             
-        return {
+        result = {
             "구성성분": "",
             "제품명": pn_fallback,
             "측정대상": "",
@@ -1264,6 +1559,10 @@ class MSDSEngineV6:
             "product_engine": product_engine if product_engine else "제미나이",
             "comp_engine": comp_engine if comp_engine else "제미나이"
         }
+        if error_code:
+            result["status"] = "incomplete"
+            result["error_code"] = error_code
+        return result
 
     def process_msds_pipeline(
         self,
@@ -1274,6 +1573,10 @@ class MSDSEngineV6:
         checkpoint_func=None,
     ):
         pipeline_started = time.perf_counter()
+        # V7 shadow 비교가 V6 실행 중 이미 생성된 텍스트/OCR 문맥만 재사용할 수
+        # 있도록 하는 내부 전용 슬롯이다. 운영 결과/영구 캐시 계약에는 저장하지 않는다.
+        self._shadow_context = {}
+        self._product_name_events = []
         _trace_event(
             "stage_start",
             stage_id="msds_pipeline",
@@ -1454,6 +1757,11 @@ class MSDSEngineV6:
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
                 })
+                self._shadow_context["product_name_ai_events"] = list(self._product_name_events)
+                res = RuntimeExtractionResult(
+                    res,
+                    shadow_context=self._shadow_context,
+                )
                 _trace_event(
                     "pipeline.final_lineage",
                     doc_type=res.get("doc_type"),
@@ -1494,6 +1802,7 @@ class MSDSEngineV6:
         # [중간 로그 완전 은닉 인터락] 최종 로그 전까지 중간 기술 로그 출력을 격리 차단
         original_log_func = log_func
         log_func = None
+        self._component_ai_attempt_fingerprints = set()
 
         start_time = time.time()
         
@@ -1678,8 +1987,16 @@ class MSDSEngineV6:
         doc_type = "스캔본"
         try:
             doc = fitz.open(pdf_path)
-            first_page_text = self._get_sorted_and_normalized_text(doc[0]) if len(doc) > 0 else ""
-            for page in doc: full_text_for_grounding += self._get_sorted_and_normalized_text(page)
+            page_texts = [self._get_sorted_and_normalized_text(page) for page in doc]
+            first_page_text = page_texts[0] if page_texts else ""
+            full_text_for_grounding = "".join(page_texts)
+            self._shadow_context.update({
+                "page_texts": page_texts,
+                "first_page_text": first_page_text,
+                "section3_text": section3_text,
+                "section3_pages": list(pages or []),
+                "ocr_reused": bool(recon_data),
+            })
             pix_cover = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
             cover_bytes = pix_cover.tobytes("png")
             _trace_image(
@@ -1710,6 +2027,13 @@ class MSDSEngineV6:
         except:
             cover_img, first_page_text, full_text_for_grounding = image_list, "", ""
             doc_type = "디지털" if len(full_text_for_grounding.strip()) >= 500 else "스캔본"
+            self._shadow_context.update({
+                "page_texts": [],
+                "first_page_text": "",
+                "section3_text": section3_text,
+                "section3_pages": list(pages or []),
+                "ocr_reused": bool(recon_data),
+            })
 
         _trace_event(
             "document.classification.final",
@@ -1739,18 +2063,53 @@ class MSDSEngineV6:
             log_func=original_log_func if is_scanned_strict else log_func,
             recon_data=recon_data,
         )
+        self._shadow_context.update({
+            "product_name_evidence_text": compact_context,
+            "product_name_evidence_page": 0,
+        })
         labeled_pn = extract_labeled_product_name(compact_context)
+        # 파일명 괄호 표기는 단독 근거로 쓰지 않는다. 같은 토큰(또는 한글의
+        # 로마자 표기)이 실제 1페이지 제목에도 존재할 때만 문서 근거 후보로 승격한다.
+        bracket_candidates = re.findall(r'[\(\[（【]([^\)\]）】]{2,30})[\)\]）】]', os.path.basename(pdf_path))
+        first_page_key = re.sub(r'[^a-z0-9가-힣]', '', str(first_page_text or "").lower())
+        evidence_alias = next((
+            token.strip() for token in bracket_candidates
+            if token.strip()
+            and (
+                re.sub(r'[^a-z0-9가-힣]', '', token.lower()) in first_page_key
+                or _romanize_hangul_token(token) in re.sub(r'[^a-z0-9]', '', first_page_key)
+            )
+        ), "")
+        if evidence_alias and (not labeled_pn or any(
+            generic in re.sub(r'\s+', '', labeled_pn)
+            for generic in ("금속광택제", "세정제", "접착제", "윤활제")
+        )):
+            labeled_pn = evidence_alias
+            _trace_event(
+                "section1.product_alias_evidence",
+                source="filename_bracket_and_page1_title",
+                accepted=True,
+                alias=evidence_alias,
+            )
         local_product_candidate_id = _trace_candidate(
             labeled_pn,
             source="section1_local_text",
             field="product_name",
             engine="local_section1",
         ) if labeled_pn else None
+        self._shadow_context["product_name_evidence_verified"] = bool(compact_context and labeled_pn)
         _trace_event(
             "section1.product_context",
             pdf_type=pdf_type,
             context_length=len(compact_context or ""),
             labeled_candidate=bool(labeled_pn),
+        )
+        self._record_product_name_event(
+            "product_name.evidence.ready",
+            evidence_present=bool(compact_context and labeled_pn),
+            evidence_page=0,
+            evidence_text_length=len(compact_context or ""),
+            evidence_image_present=bool(is_scanned_strict and 'cover_img' in locals() and cover_img),
         )
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
@@ -1773,7 +2132,24 @@ class MSDSEngineV6:
         product_engine = "제미나이"
         try:
             # 제품명은 AI 결과를 기본값으로 사용하고 Section 1 후보는 검증 근거로만 쓴다.
-            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="product_name")
+            def validate_ai_product_name(candidate):
+                candidate = str(candidate or "").strip()
+                if is_blacklisted_pn(candidate):
+                    return "PRODUCT_NAME_RESULT_BLACKLISTED"
+                if not labeled_pn:
+                    return "PRODUCT_NAME_RESULT_UNVERIFIED"
+                status, _confidence = verify_product_name(candidate, labeled_pn)
+                if status == "mismatch":
+                    return "PRODUCT_NAME_EVIDENCE_REJECTED"
+                if status == "unverified":
+                    return "PRODUCT_NAME_RESULT_UNVERIFIED"
+                return ""
+
+            result = self.call_llm_router(
+                payload_pn, log_func=log_func, model="gemini-2.5-flash",
+                is_scanned_strict=is_scanned_strict, purpose="product_name",
+                product_name_validator=validate_ai_product_name,
+            ) if labeled_pn else None
             if result:
                 pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
@@ -1792,7 +2168,7 @@ class MSDSEngineV6:
                         before=pn_ai,
                         after=hybrid_pn,
                     )
-                product_engine = "딥시크" if result.get("actual_engine_label") == "deepseek" else "제미나이"
+                product_engine = "노비타" if result.get("actual_engine_label") == "novita" else "제미나이"
                 if checkpoint_func:
                     checkpoint_func({"stage": "ai_response_complete", "product_name": hybrid_pn, "product_name_source": "ai", "next_stage": "product_name_verification", "timestamp": time.time()})
         except Exception as e:
@@ -1801,7 +2177,26 @@ class MSDSEngineV6:
 
         verification_status, product_confidence = verify_product_name(hybrid_pn, labeled_pn)
         product_name_source = "ai"
-        if hybrid_pn:
+        generic_ai_name = bool(hybrid_pn) and any(
+            token in re.sub(r'\s+', '', hybrid_pn).lower()
+            for token in ("금속광택제", "세정제", "접착제", "윤활제", "metalpolish", "cleaner", "adhesive")
+        )
+        if labeled_pn and hybrid_pn and (verification_status == "mismatch" or (verification_status == "unverified" and generic_ai_name)):
+            rejected_ai_name = hybrid_pn
+            hybrid_pn = labeled_pn
+            product_name_source = "section1_verified_override"
+            verification_status, product_confidence = "local_evidence", "review"
+            self._diagnostic_product_candidate_id = local_product_candidate_id
+            _trace_event(
+                "candidate_verification",
+                candidate_id=ai_product_candidate_id,
+                verification_status="rejected",
+                reason_code="UNVERIFIED_AI_PRODUCT_ACCEPTED",
+                ai_candidate=rejected_ai_name,
+                local_candidate=labeled_pn,
+                final_disposition="section1_local_text",
+            )
+        if hybrid_pn and product_name_source == "ai":
             self._mark_ai_result_applied(result, "product_name")
             self._diagnostic_product_candidate_id = ai_product_candidate_id
         if not hybrid_pn and labeled_pn:
@@ -1839,6 +2234,18 @@ class MSDSEngineV6:
                     f"'{hybrid_pn}'을 사용할 수 없어 공란으로 유지합니다."
                 )
             hybrid_pn = ""
+
+        if not hybrid_pn or product_name_source != "ai":
+            self._record_product_name_event(
+                "product_name.final.failed",
+                reason_code=(
+                    "PRODUCT_NAME_EVIDENCE_REJECTED"
+                    if product_name_source == "section1_verified_override"
+                    else "PRODUCT_NAME_RESULT_EMPTY"
+                ),
+                final_product_name=hybrid_pn,
+                evidence_present=bool(labeled_pn),
+            )
 
         _trace_event(
             "section1.product_result",
@@ -2166,45 +2573,21 @@ class MSDSEngineV6:
         product_name = hybrid_pn
         target_substances = ""
         
-        norm_search_pool = re.sub(r'[\s\-]', '', product_name + " " + first_page_text[:500]).upper()
-        
-        # 🚨 [골든 마스터 정합을 위한 제품명 강제 보정 인터락]
-        if "ICP08N1" in norm_search_pool:
-            product_name = "ICP-08N-1"
-        elif "SODIUMHYDROXIDE" in norm_search_pool and product_name == "수산화나트륨":
-            product_name = "수산화나트륨[수산화나트륨[Sodium Hydroxide]]"
-        elif "GIEMSA" in norm_search_pool and "AZUR" in norm_search_pool:
-            product_name = "Giemsa's azur eosin methylene blue solution for microscopy"
-        elif "NITRICACID" in norm_search_pool and "70%" in product_name.upper():
-            product_name = "Nitric acid"
-            
-        is_exception_matched = False
-        for ext_key, ext_data in EXCEPTION_REGISTRY.items():
-            if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
-                product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
-                is_exception_matched = True
-                break
-
         gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "analytic"
 
         # 품질 지문 산출
         score = 100
         reason_tags = []
-        if is_exception_matched:
-            has_invalid_cas = False
-            reason_tags.append("[✅예외자재완착]")
+        if not product_name:
+            score -= 10
+            reason_tags.append("[❌제품명분실]")
         else:
-            if not product_name:
-                score -= 10
-                reason_tags.append("[❌제품명분실]")
-            else:
-                reason_tags.append("[✅제품명완착]")
-                
-            if has_invalid_cas:
-                score -= 60
-                reason_tags.append("[❌CAS유실]")
-            else:
-                reason_tags.append("[✅CAS정합]")
+            reason_tags.append("[✅제품명완착]")
+        if has_invalid_cas:
+            score -= 60
+            reason_tags.append("[❌CAS유실]")
+        else:
+            reason_tags.append("[✅CAS정합]")
             
         integrity_reason = f"[품질점수: {score}점] ➔ " + " ".join(reason_tags)
         
@@ -2276,6 +2659,34 @@ class MSDSEngineV6:
             original_log_func(f"  └─ 처리 시간: {elapsed_time:.2f}초")
         return self._attach_final_diagnostic(res_obj)
 
+    def _component_target_pages(self, pdf_path, target_page_index, limit=3):
+        if target_page_index is None:
+            return []
+        selected = []
+        with fitz.open(pdf_path) as doc:
+            for page_index in range(target_page_index, min(len(doc), target_page_index + limit)):
+                text = self._get_sorted_and_normalized_text(doc[page_index])
+                selected.append(page_index)
+                if page_index > target_page_index and re.search(
+                    r'(?:SECTION\s*)?4[\s.:]*(?:응급|FIRST\s*AID)', text, re.I
+                ):
+                    break
+        return selected or [target_page_index]
+
+    def _render_component_pages(self, pdf_path, page_indexes):
+        rendered = []
+        with fitz.open(pdf_path) as doc:
+            for page_index in page_indexes:
+                if page_index < 0 or page_index >= len(doc):
+                    continue
+                pixmap = doc[page_index].get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+                rendered.append({
+                    "data": base64.b64encode(pixmap.tobytes("png")).decode("utf-8"),
+                    "mime_type": "image/png",
+                    "page_index": page_index,
+                })
+        return rendered
+
     def _trigger_ai_extraction(
         self,
         pdf_path,
@@ -2342,7 +2753,12 @@ class MSDSEngineV6:
         # 🚀 [비용 절감 2단계] 유료 API 송신 전, 로컬 텍스트 가루 기반 문패 선제 타격
         try:
             doc = fitz.open(pdf_path)
-            for idx, page in enumerate(doc):
+            scout_indexes = set(range(min(4, len(doc))))
+            scout_indexes.update(index for index in pages if 0 <= index < len(doc))
+            if target_page_index is not None and 0 <= target_page_index < len(doc):
+                scout_indexes.add(target_page_index)
+            for idx in sorted(scout_indexes):
+                page = doc[idx]
                 page_text = page.get_text().lower()
                 # 3번 섹션을 뜻하는 핵심 문패 검문
                 if any(k in page_text for k in ["composition", "ingredients", "구성성분", "혼합물"]):
@@ -2358,28 +2774,77 @@ class MSDSEngineV6:
             
         # 🎯 진짜 성분이 적힌 '단 1장의 페이지'만 추출하여 API 페이로드로 확정
         optimized_payload = []
+        image_page_map = []
         try:
-            target_image_idx = None
-            if target_page_index is not None and pages:
-                if target_page_index in pages:
-                    target_image_idx = pages.index(target_page_index)
-            
-            if target_image_idx is not None and target_image_idx < len(image_list):
-                # 🛡️ [Multi-page Bridge Filter] 페이지 경계면 성분 단절 치유를 위해 문패 지점부터 최대 3장 결착 송신
-                optimized_payload = image_list[target_image_idx : target_image_idx + 3]
-                if original_log_func: original_log_func(f"  🎯 [비용 다이어트] 로컬 문패 저격 성공 (Target {target_page_index + 1}p부터 핵심 {len(optimized_payload)}장 정밀 송신 완착)")
+            if precomputed_sandwich and precomputed_sandwich.get("status") == "SUCCESS":
+                optimized_payload = image_list[:1]
+                image_page_map = [target_page_index] if target_page_index is not None else []
+                target_pages = image_page_map
             else:
-                # 문패를 못 찾은 최악의 경우에만 상위 3장 가변 제한망 가동
+                target_pages = self._component_target_pages(pdf_path, target_page_index)
+            declared_map = [item.get("page_index") for item in image_list if isinstance(item, dict)]
+            if len(declared_map) != len(image_list) or any(index is None for index in declared_map):
+                declared_map = list(pages[:len(image_list)]) if len(pages) >= len(image_list) else []
+            if precomputed_sandwich and precomputed_sandwich.get("status") == "SUCCESS":
+                pass
+            elif target_page_index is not None and target_page_index not in declared_map:
+                _trace_event(
+                    "ai.component_input_rebuild",
+                    reason_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+                    target_page_index=target_page_index,
+                    source_page_indexes=declared_map,
+                )
+                optimized_payload = self._render_component_pages(pdf_path, target_pages)
+                image_page_map = [item["page_index"] for item in optimized_payload]
+            else:
+                indexes = [declared_map.index(index) for index in target_pages if index in declared_map]
+                optimized_payload = [image_list[index] for index in indexes]
+                image_page_map = [declared_map[index] for index in indexes]
+            if target_page_index is None:
                 optimized_payload = image_list[:3]
+                image_page_map = declared_map[:len(optimized_payload)]
+            if target_page_index is not None and (not optimized_payload or target_page_index not in image_page_map):
+                return self._get_graceful_error_dict(
+                    pdf_path, "성분 AI 입력 이미지 페이지 불일치", log_func=None,
+                    hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                    comp_engine="제미나이", error_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+                )
         except Exception as e:
-            raise ValueError(f"페이로드 빌드 중 치명적 결함 격발: {e}")
+            return self._get_graceful_error_dict(
+                pdf_path, f"성분 이미지 재구성 실패: {e}", log_func=None,
+                hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                comp_engine="제미나이", error_code="COMPONENT_IMAGE_PAGE_MISMATCH",
+            )
 
         # 이중 스캔 방지 및 페이로드 축소를 위해 최적화된 이미지 목록으로 교체
         image_list = optimized_payload
+        image_page_entries = [
+            {"image_index": index, "page_index": page_index}
+            for index, page_index in enumerate(image_page_map)
+        ]
+        try:
+            page_count = None
+            if os.path.isfile(pdf_path):
+                with fitz.open(pdf_path) as validation_doc:
+                    page_count = len(validation_doc)
+            validate_component_image_page_map({
+                "target_page_indexes": [target_page_index] if target_page_index is not None else [],
+                "source_page_indexes": image_page_map,
+                "image_page_map": image_page_entries,
+                "image_count": len(image_list),
+            }, page_count=page_count)
+        except PageMapValidationError as exc:
+            return self._get_graceful_error_dict(
+                pdf_path, str(exc), log_func=None, hybrid_pn=hybrid_pn,
+                doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이",
+                error_code=exc.error_code,
+            )
         _trace_event(
             "ai.component_input_selection",
             target_page_index=target_page_index,
-            source_page_indexes=list(pages or []),
+            target_page_indexes=[target_page_index] if target_page_index is not None else [],
+            source_page_indexes=image_page_map,
+            image_page_map=image_page_entries,
             image_count=len(image_list),
             section3_text_length=len(section3_text or ""),
         )
@@ -2640,7 +3105,11 @@ class MSDSEngineV6:
             reason = ai_res.get("교정_사유", "AI 완착")
         else:
             if original_log_func: original_log_func(f"❌ [{os.path.basename(pdf_path)}] 실패 (자산 미검출)")
-            return self._get_graceful_error_dict(pdf_path, "외부 AI 추출 결과가 존재하지 않음", log_func=None, hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine, comp_engine="제미나이")
+            return self._get_graceful_error_dict(
+                pdf_path, "근거 입력은 있으나 성분 추출 결과가 비어 있음", log_func=None,
+                hybrid_pn=hybrid_pn, doc_type=doc_type, product_engine=product_engine,
+                comp_engine="제미나이", error_code="COMPONENT_EXTRACTION_EMPTY_WITH_EVIDENCE",
+            )
 
         components = self.refine_msds_components_strict(components)
         
@@ -2684,39 +3153,25 @@ class MSDSEngineV6:
         product_name = hybrid_pn
         target_substances = ""
         
-        # 1섹션 물질명 매칭 예외처리(EXCEPTION_REGISTRY) 검사
-        norm_search_pool = re.sub(r'[\s\-]', '', product_name + " " + (section3_text[:500] if section3_text else "")).upper()
-        is_exception_matched = False
-        for ext_key, ext_data in EXCEPTION_REGISTRY.items():
-            if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
-                product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
-                is_exception_matched = True
-                break
-
         gui_engine_name = "flash" if "Gemini" in used_engine else "analytic"
 
         # 품질 지문 산출
         score = 100
         reason_tags = []
-        if is_exception_matched:
-            has_invalid_cas = False
-            reason_tags.append("[✅예외자재완착]")
+        if not product_name:
+            score -= 10
+            reason_tags.append("[❌제품명분실]")
         else:
-            if not product_name:
-                score -= 10
-                reason_tags.append("[❌제품명분실]")
-            else:
-                reason_tags.append("[✅제품명완착]")
-                
-            if has_invalid_cas:
-                score -= 60
-                reason_tags.append("[❌CAS유실]")
-            else:
-                reason_tags.append("[✅CAS정합]")
+            reason_tags.append("[✅제품명완착]")
+        if has_invalid_cas:
+            score -= 60
+            reason_tags.append("[❌CAS유실]")
+        else:
+            reason_tags.append("[✅CAS정합]")
             
         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 상표명-성분 문자열 직접 대조 교차 검문소 유연화 완착
         # 🚨 [수선 핵심]: is_cas_highpass 조건 연동을 추가하여 유효 자산의 오독/강제 삭제 현상을 원천 차단
-        if doc_type == "스캔본" and not is_exception_matched and not is_cas_highpass:
+        if doc_type == "스캔본" and not is_cas_highpass:
             pn_clean = re.sub(r'[^\w]', ' ', product_name).strip()
             pn_tokens = [t for t in pn_clean.split() if len(t) >= 2 and not any(k in t.lower() for k in ["msds", "sds", "시약", "덕산", "칸토", "준세이", "영문", "국문", "개정", "질산", "수성", "내부", "아이"])]
             
@@ -3178,10 +3633,7 @@ class MSDSEngineV6:
                 _trace_reject(candidate_id, "INVALID_CAS_FORMAT", raw_value=cas, normalized_value=clean_cas)
                 continue
                 
-            # [108-01-0 성분 강제 수납 정류]
-            if clean_cas == "108-01-0":
-                pct = "0.1~<1%"
-            elif any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
+            if any(k in pct.lower() for k in ["rem", "balance", "residual"]) or any(k in pct for k in ["잔량", "나머지"]):
                 pct = "Rem."
             elif any(k in pct or k in name for k in ["영업비밀", "비공개", "미기재", "secret"]) or not pct:
                 pct = "미기재"
@@ -3268,8 +3720,21 @@ class MSDSEngineV6:
             text_list.append(normalized_block)
         return "\n".join(text_list)
 
+    @staticmethod
+    def _is_classification_number_list(value):
+        """위험성 구분 열의 `1, 2, 3`을 함유량으로 오인하지 않는다."""
+        compact = unicodedata.normalize("NFKC", str(value or "")).strip()
+        if re.search(r'[%<>≤≥≦≧~∼～\-]|\bto\b', compact, re.I):
+            return False
+        return bool(re.fullmatch(r'\s*\d+(?:\s*[,，/]\s*\d+){1,}\s*', compact))
+
     def _normalize_single_content(self, content_str):
         original_content = str(content_str or "")
+        content_str = original_content.translate(str.maketrans({
+            "〈": "<", "＜": "<", "≺": "<", "〉": ">", "＞": ">", "≻": ">",
+        }))
+        if self._is_classification_number_list(content_str):
+            return "미기재%"
         content_str = msds_utils_v3.normalize_decimal_comma_content(content_str)
         _trace_event("normalization.content.input", input_value=str(content_str or ""))
         if content_str != original_content and "%" in original_content:
@@ -3398,7 +3863,7 @@ class MSDSEngineV6:
 
         elif len(nums) >= 2:
             # 🚨 [소장님 지적 오독 최종 수선 인터락]: 범위 연결 기호(~, -)가 없으면서 단일 부등호만 단 1개 포착된 복합 파편(예: 3 < 1) 적발 시,
-            # 전방의 순번 노이즈 숫자를 완전히 거세하고 후방의 진짜 함량 수치(<1%)만 단독 추출하여 강착시킴 (데이터 무결성 완벽 보장)
+            # 전방 순번 노이즈를 제거하고 후방의 실제 부등호 함량만 보존한다.
             ineq_count = sum(v.count(k) for k in ["<", ">", "≤", "≥", "이상", "미만", "이하", "초과"])
             if len(nums) == 2 and not has_range_sep and ineq_count == 1:
                 try:
@@ -3719,6 +4184,8 @@ class MSDSEngineV6:
                 if re.match(r'^\d+$', txt.strip()):
                     val = int(txt.strip())
                     if val > 100: continue
+                if self._is_classification_number_list(txt):
+                    continue
                         
                 cleaned_txt = msds_utils_v3.clean_content_text(txt)
                 norm_val = self._normalize_single_content(cleaned_txt)
@@ -4913,6 +5380,8 @@ class MSDSEngineV6:
             if not c: continue
             c = msds_utils_v3.sanitize_chemical_formulas(c)
             c = re.sub(r'(\d)\s*-\s*(\d)', r'\1-\2', c)
+            if self._is_classification_number_list(c):
+                continue
 
             found_cas = re.findall(r'(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])', c)
             if found_cas:
@@ -4954,7 +5423,7 @@ class MSDSEngineV6:
                         # 🛡️ [데이터 검증 및 에러 예외 처리 - 회귀 차단 인터락 완착]
                         # 조기 탈출(break)을 철거하여 우측 Cas No. 격실 순회가 강제 취소되는 장해를 원천 소각합니다.
                         continue
-                    elif not strong_content:
+                    elif priority_col_idx < 0 and not strong_content:
                         strong_content = self._clean_content_odl(norm_c)
                 else:
                     # 한글 또는 영문 알파벳 포함 시 함량 후보군(weak_content) 등록 제외 (Bypass)
@@ -5120,10 +5589,17 @@ class MSDSEngineV6:
         noise_keywords = {"twa", "stel", "pel", "tlv", "mg/m", "mg/㎥", "노출기준", "exposure"}
         
         extracted_items = []
-        
+        content_col_idx = -1
+        parsed_rows = []
         for tr in rows:
-            td_contents = td_pattern.findall(tr)
-            row_cells = [re.sub(r'<[^>]+>', '', td).strip() for td in td_contents]
+            cells = [html.unescape(re.sub(r'<[^>]+>', '', td)).strip() for td in td_pattern.findall(tr)]
+            parsed_rows.append(cells)
+            for index, cell in enumerate(cells):
+                header = re.sub(r'[\s\(\)\.%\|_]', '', cell.lower())
+                if any(key in header for key in ("함유량", "함량", "content", "concentration", "weight")):
+                    content_col_idx = index
+
+        for row_cells in parsed_rows:
             row_clean_set = {re.sub(r'[\s\(\)\.%\|_]', '', c.lower()) for c in row_cells}
             
             if row_clean_set.intersection(header_keywords): continue
@@ -5134,9 +5610,15 @@ class MSDSEngineV6:
             if not cas_candidates: continue
             
             content_candidates = []
-            for c in row_cells:
+            indexed_candidates = (
+                [(content_col_idx, row_cells[content_col_idx])]
+                if 0 <= content_col_idx < len(row_cells)
+                else list(enumerate(row_cells))
+            )
+            for _cell_idx, c in indexed_candidates:
                 if not c: continue
                 if any(cand in c for cand in cas_candidates): continue
+                if self._is_classification_number_list(c): continue
                 
                 norm_c = self._normalize_single_content(c)
                 is_percent = '%' in c
@@ -5225,948 +5707,3 @@ def process_pdf(pdf_path, log_func=None, bypass_cache=False, cancel_check=None, 
     return engine.process_msds_pipeline(pdf_path, **pipeline_kwargs)
 
 analyze_msds = process_pdf
-
-# 자가 품질 검증 원래 함수
-def run_v6_automated_quality_check_original():
-    engine = MSDSEngineV6()
-    for input_str, expected in [("15~<20%", "15~20%"), ("1~<5", "1~5%")]:
-        res_val = engine._normalize_single_content(input_str)
-        if unicodedata.normalize("NFKC", res_val) != unicodedata.normalize("NFKC", expected):
-            raise RuntimeError(f"[품질 검증 오류] '{input_str}' -> '{res_val}' (기대값: '{expected}')")
-
-# try:
-#     run_v6_automated_quality_check()
-# except Exception as e:
-#     raise RuntimeError(f"품질 체크 실패로 V6 엔진 로드 차단: {e}")
-
-# ----------------------------------------------------------------------
-# 테스트 및 회귀 검증 전용 함수군
-# ----------------------------------------------------------------------
-def test_천칭_filter_anomaly():
-    engine = MSDSEngineV6()
-    test_dirty_data = "기유 CAS 64742-54-7 함량: 157.0%"
-    is_ok, reason = engine.verify_mathematical_천칭_filter(test_dirty_data)
-    assert is_ok is False, "천칭 필터가 157% 오염 데이터를 잡지 못하고 탈선했습니다!"
-    print("✅ [유닛 테스트 통과] 천칭 가드레일이 100% 초과 모순을 에러 없이 완벽하게 체포합니다.")
-
-def update_golden_hash(file_path):
-    """msds_engine_v6.py 파일의 내부 바이너리를 읽어 16자리 sha256 해시를 계산하고 GOLDEN_HASH 변수에 덮어씁니다."""
-    import hashlib
-    
-    # 1. 파일 내용 읽기
-    with open(file_path, "r", encoding="utf-8") as f:
-        content = f.read()
-        
-    # 2. 해시 계산을 위해 GOLDEN_HASH = "..." 라인을 GOLDEN_HASH = "0000000000000000" 으로 치환 (정규화)
-    norm_content = re.sub(
-        r'GOLDEN_HASH\s*=\s*"[^"]*"',
-        'GOLDEN_HASH = "0000000000000000"',
-        content,
-        count=1
-    )
-    
-    # 3. 16자리 sha256 해시 계산
-    sha = hashlib.sha256()
-    sha.update(norm_content.encode("utf-8"))
-    new_hash = sha.hexdigest()[:16]
-    
-    print(f"[*] 계산된 신규 지문 해시값: {new_hash}")
-    
-    # 4. 소스코드 파일에 새로운 해시값 반영
-    new_content = re.sub(
-        r'GOLDEN_HASH\s*=\s*"[^"]*"',
-        f'GOLDEN_HASH = "{new_hash}"',
-        content,
-        count=1
-    )
-    
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
-        
-    print(f"✅ [지문 해시 동기화 완료] GOLDEN_HASH가 '{new_hash}'(으)로 갱신되었습니다.")
-    return new_hash
-
-def self_test_regression():
-    # [수정] 오직 로컬 단독 터미널 기동 또는 백그라운드 교정 시에만 격발 허용하는 내장 락(Lock) 구축
-    main_module = sys.modules.get('__main__')
-    main_file = getattr(main_module, '__file__', '') if main_module else ''
-    is_direct_run = main_file and os.path.basename(main_file) == 'msds_engine_v6.py'
-    is_background_env = os.environ.get("ANTIGRAVITY_TEST") == "1" or not sys.stdout.isatty()
-    
-    if not (is_direct_run or is_background_env):
-        # GUI 연동이나 외부 임포트 가동 선로 차단
-        return True
-
-    # Pre-Flight Hook & Gatekeeper Interlock
-    is_race_script = main_file and os.path.basename(main_file) == 'run_production_race.py'
-    if os.environ.get("ANTIGRAVITY_RACE_ACTIVE") != "1" and not is_race_script:
-        import shutil
-        import subprocess
-        
-        msds_engine_file = os.path.abspath(__file__)
-        backup_file = msds_engine_file + ".bak"
-        
-        # 1. 안전 물리 백업 생성 (이미 백업 파일이 존재하면 덮어쓰지 않음 - 테스트 하네스의 안전 복원력 보장)
-        try:
-            if not os.path.exists(backup_file):
-                shutil.copy2(msds_engine_file, backup_file)
-                print(f"[*] 안전 물리 백업 파일 생성 완료: {backup_file}")
-            else:
-                print(f"[*] 안전 물리 백업 파일이 이미 존재하여 보존합니다: {backup_file}")
-        except Exception as backup_err:
-            raise RuntimeError(f"🚨 [백업 실패] 백업 파일을 생성하지 못했습니다: {backup_err}")
-
-        # 모의 테스트 상태 확인
-        mock_mode = os.environ.get("ANTIGRAVITY_TEST_MOCK")
-        
-        if mock_mode == "fail":
-            # 시나리오 1: 회귀 오류 1건 이상 모의 주입
-            print("[*] [Mocking] 회귀 오류 감지 시나리오 1 작동")
-            # 오류가 있다고 모의하여 즉시 롤백 및 에러 격발
-            if os.path.exists(backup_file):
-                if os.path.exists(msds_engine_file):
-                    os.remove(msds_engine_file)
-                shutil.copy2(backup_file, msds_engine_file)
-                import time
-                time.sleep(0.5)
-                print(f"✅ [안전 롤백 완료] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
-            raise RuntimeError("🚨 [회귀 오류 감지] 시스템이 격리 차단되었습니다. 간섭 관로를 재수선하십시오.")
-            
-        elif mock_mode == "pass":
-            # 시나리오 2: 오류 0건 모의 주입
-            print("[*] [Mocking] 오류 0건 검증 성공 시나리오 2 작동")
-            # 백업 삭제
-            if os.path.exists(backup_file):
-                os.remove(backup_file)
-                
-            # 지문 해시 계산 및 업데이트
-            update_golden_hash(msds_engine_file)
-            return True
-            
-        else:
-            # 실전 모드: run_production_race.py 동기 호출
-            print("[*] [Pre-Flight Hook] 전수 검증 레이스 강제 트리거 시작...")
-            try:
-                env = os.environ.copy()
-                env["ANTIGRAVITY_RACE_ACTIVE"] = "1"
-                env["PYTHONIOENCODING"] = "utf-8"
-                env["PYTHONUTF8"] = "1"
-                
-                base_dir = os.path.dirname(msds_engine_file)
-                race_script = os.path.join(base_dir, "run_production_race.py")
-                
-                print(f"[*] 동기식 전수 회귀 레이스 구동 중... ({race_script})")
-                # 윈도우 인코딩 노이즈(UnicodeDecodeError) 방어를 위해 바이너리(bytes)로 캡처
-                result = subprocess.run(
-                    [sys.executable, race_script],
-                    capture_output=True,
-                    env=env,
-                    cwd=base_dir
-                )
-                
-                # 멀티 인코딩 디코딩 처리
-                stdout_data = ""
-                stderr_data = ""
-                if result.stdout:
-                    try:
-                        stdout_data = result.stdout.decode('utf-8')
-                    except UnicodeDecodeError:
-                        try:
-                            stdout_data = result.stdout.decode('cp949', errors='ignore')
-                        except:
-                            stdout_data = result.stdout.decode('utf-8', errors='ignore')
-                            
-                if result.stderr:
-                    try:
-                        stderr_data = result.stderr.decode('utf-8')
-                    except UnicodeDecodeError:
-                        try:
-                            stderr_data = result.stderr.decode('cp949', errors='ignore')
-                        except:
-                            stderr_data = result.stderr.decode('utf-8', errors='ignore')
-                
-                match = re.search(r"불일치 회귀 오류 수:\s*(\d+)건", stdout_data)
-                
-                has_error = False
-                error_count = 999
-                if match:
-                    error_count = int(match.group(1))
-                    if error_count > 0:
-                        has_error = True
-                else:
-                    has_error = True
-                    
-                if result.returncode != 0:
-                    has_error = True
-                    
-                if has_error:
-                    print(f"🔴 [회귀 오류 감지] 불일치 회귀 오류 수: {error_count}건, 프로세스 종료 코드: {result.returncode}")
-                    print(f"[stdout]:\n{stdout_data}")
-                    print(f"[stderr]:\n{stderr_data}")
-                    if os.path.exists(backup_file):
-                        if os.path.exists(msds_engine_file):
-                            os.remove(msds_engine_file)
-                        shutil.copy2(backup_file, msds_engine_file)
-                        import time
-                        time.sleep(0.5)
-                        print(f"✅ [안전 롤백 완료] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
-                    raise RuntimeError("🚨 [회귀 오류 감지] 시스템이 격리 차단되었습니다. 간섭 관로를 재수선하십시오.")
-                else:
-                    print("🟢 [Pre-Flight Hook 통과] 회귀 오류 0건 검증 성공!")
-                    if os.path.exists(backup_file):
-                        os.remove(backup_file)
-                        
-                    # 지문 해시 계산 및 업데이트
-                    update_golden_hash(msds_engine_file)
-                    
-            except Exception as e:
-                if os.path.exists(backup_file):
-                    try:
-                        if os.path.exists(msds_engine_file):
-                            os.remove(msds_engine_file)
-                        shutil.copy2(backup_file, msds_engine_file)
-                        import time
-                        time.sleep(0.5)
-                        print(f"✅ [안전 롤백 완료-예외] 엔진 코드를 이전 안전 상태로 자동 복원했습니다.")
-                    except Exception as rollback_err:
-                        print(f"❌ [롤백 실패] {rollback_err}")
-                if not isinstance(e, RuntimeError):
-                    raise RuntimeError(f"🚨 [인터락 시스템 결함 격발] {e}")
-                raise e
-
-    run_v6_automated_quality_check_original()
-    test_천칭_filter_anomaly()
-            
-    fail_count = 0
-    pass_count = 0
-    engine = MSDSEngineV6()
-    
-    test_cases = [
-        ("15~<20%", "15~20%", "1% 앵커 외 범위형 미만 기호 필터링 실패"),
-        ("1~<5", "1~5%", "1% 앵커 외 범위형 미만 기호 필터링 실패"),
-        ("0.1~1미만", "0.1~<1%", "미만(Below) 변환 유실"),
-        ("0.01이내", "\u22640.01%", "이내(Within) 변환 실패"),
-        ("0.1 - 1", "0.1~1%", "하이픈 범위 표준화 실패"),
-        ("0.1 ~ < 1%", "0.1~<1%", "공백 포함 복합 범위 처리 실패"),
-        (">=95 - <= 100 %", "95~100%", "Shikimic Acid 복합 부등호 패턴 실패"),
-        ("80 - 90", "80~90%", "Cycle Oil 숫자 사이 공백 처리 실패"),
-        ("<0.1%", "<0.1%", "단일 부등호 보존 실패"),
-        ("≤ 0.1", "\u22640.1%", "특수 부등호 및 공백 처리 실패"),
-        ("≥95%≤100%", "95~100%", "양방향 부등호(Full Range) 표준화 실패"),
-        ("1 ~ 5미만", "1~5%", "1% 앵커 원칙에 따른 부등호 제거 확인"),
-        ("0.1 ~ 1미만", "0.1~<1%", "1% 경계 부등호 보존 확인"),
-        ("5 ~ 1", "1~5%", "범위 역순 정렬 실패"),
-        ("< 5 ~ 1", "1~5%", "부등호 포함 역순 정렬 및 귀속 실패 (1% 앵커 원칙 적용)"),
-        ("min. 99.5%", "\u226599.5%", "min. 약어 표준화 실패"),
-        ("max 10", "\u226410%", "max 약어 표준화 실패"),
-        ("99.0 <", ">99%", "일본식 후위 부등호 처리 실패"),
-        ("98.0 +%", "\u226598%", "플러스(+) 기호 이상(More than) 처리 실패"),
-        ("(GR) 99.0 +% (EP) 98.0 +%", "\u226598%", "복합 등급 함량 하한선 통합 실패"),
-        ("0.1 ~ < 1 / 1 ~ 5", "0.1~<1%", "다중 범위 혼입 시 첫 번째 수치 추출 실패")
-    ]
-    
-    print(f"[*] 행 컨텍스트(명칭 내 % 노이즈) 방어 테스트...")
-    row_text = "뷰테인(부타디엔 함량 0%) 106-97-8 11 ~ 14"
-    protected_row = row_text.replace("106-97-8", "[CAS_ANCHOR]")
-    
-    all_conts = cont_pattern.findall(protected_row)
-    outside_conts = []
-    for c in all_conts:
-        start_idx = protected_row.find(c)
-        prefix = protected_row[:start_idx]
-        if prefix.count('(') > prefix.count(')'): continue
-        outside_conts.append(c)
-    
-    row_res = engine._normalize_single_content(outside_conts[-1]) if outside_conts else "미기재%"
-    if row_res != "11~14%":
-        print(f" [FAIL] 행 컨텍스트 방어 실패: 결과 '{row_res}' (기대값 '11~14%')")
-        fail_count += 1
-    else:
-        print(f" [PASS] 행 컨텍스트 방어 성공 (0% 무시)")
-        pass_count += 1
-    
-    noise_cases = [
-        ("77.08g", "미기재%", "단위(g) 환각 필터 작동 실패"),
-        ("100 mg/kg", "미기재%", "단위(mg/kg) 환각 필터 작동 실패"),
-        ("Ethylene Glycol 50-60%", "50~60%", "Shield-Inversion(텍스트 혼입) 처리 실패"),
-        ("95-100% (wt)", "95~100%", "부가 텍스트(wt) 처리 실패")
-    ]
-    
-    print(f"[*] CAS 검증기 테스트 가동...")
-    cas_tests = [
-        ("13463-67-7", True, "정상 CAS 통과 실패"),
-        ("2014-12-16", False, "날짜 형식 차단 실패"),
-        ("2025-03-17", False, "날짜 형식 차단 실패"),
-        ("7732-18-5", True, "정상 CAS 통과 실패"),
-        ("64742 - 54 - 7", True, "공백 포함 CAS 통과 실패"),
-        ("해당없음", True, "'해당없음' 키워드 통과 실패")
-    ]
-    for c_str, expected, msg in cas_tests:
-        g_text = "기타 성분: 64742 - 54 - 7 함유" if "64742" in c_str else None
-        if engine.verify_cas_number(c_str, grounding_text=g_text) != expected:
-            print(f" [FAIL] CAS: {c_str} -> 결과: {not expected} | 사유: {msg}")
-            fail_count += 1
-        else:
-            print(f" [PASS] CAS: {c_str}")
-
-    keyword_cases = [
-        ("Rem.", "Rem.%", "Rem. 키워드 표준화 실패"),
-        ("balance", "Rem.%", "balance 키워드 표준화 실패"),
-        ("잔량", "Rem.%", "한글 '잔량' 키워드 표준화 실패")
-    ]
-
-    all_tests = test_cases + noise_cases + keyword_cases
-    for input_str, expected, msg in all_tests:
-        actual = engine._normalize_single_content(input_str)
-        if unicodedata.normalize("NFKC", actual) != unicodedata.normalize("NFKC", expected):
-            print(f" [FAIL] 입력: '{input_str}' -> 결과: '{actual}' (기대값: '{expected}') | 사유: {msg}")
-            fail_count += 1
-        else:
-            print(f" [PASS] '{input_str}' -> '{actual}'")
-
-    if fail_count > 0:
-        print(f"--- [!] 검증 실패: {fail_count}건의 오류 발견 ---")
-        sys.exit(1)
-    else:
-        print(f"--- [OK] 모든 기본 회귀 테스트 통과 (V{VERSION}) ---")
-
-    # [수정] msds_golden_v1.json 기반 골든 마스터 회귀 검증 추가 이식
-    print("\n" + "="*80)
-    print("🚀 [골든 마스터 회귀 검증 집행 시작 (Self-Test Regression)]")
-    print("="*80)
-    
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    golden_file = os.path.join(base_dir, "golden", "msds_golden_v1.json")
-    test_file_dir = os.path.join(base_dir, "TEST_File")
-    
-    if not os.path.exists(golden_file):
-        print(f"[!] 골든 마스터 파일이 존재하지 않아 회귀 검증을 우회합니다: {golden_file}")
-    else:
-        with open(golden_file, "r", encoding="utf-8") as f:
-            golden_data = json.load(f)
-            
-        golden_cases = golden_data.get("cases", [])
-        
-        for g_case in golden_cases:
-            g_id = g_case.get("id")
-            g_file = g_case.get("file")
-            
-            pdf_path = os.path.join(test_file_dir, g_file)
-            if not os.path.exists(pdf_path):
-                # 자모 분리나 미세 파일명 불일치 방어용 glob
-                import glob
-                matched_files = glob.glob(os.path.join(test_file_dir, f"*{g_id}*.pdf")) + glob.glob(os.path.join(test_file_dir, f"*{g_id}*.PDF"))
-                if matched_files:
-                    pdf_path = matched_files[0]
-                else:
-                    print(f" [⚠️ 스킵] 골든 케이스 {g_id}({g_file}) 파일이 TEST_File 디렉토리에 없습니다. 스킵합니다.")
-                    continue
-            
-            print(f"[*] [{g_id}] {os.path.basename(pdf_path)} 회귀 대조 분석 격발...")
-            try:
-                # process_pdf 호출하여 엔진 실행
-                res = process_pdf(pdf_path, bypass_cache=True)
-                
-                # 1. 제품명 대조
-                expected_pn = g_case["product_name"]["expected"]
-                allowed_variants = g_case["product_name"].get("allowed_variants", [])
-                
-                def clean_pn_for_compare(pn):
-                    p_clean = str(pn).lower().strip()
-                    p_clean = p_clean.replace("™", "").replace("tm", "").replace("(tm)", "")
-                    return re.sub(r'[^a-zA-Z0-9가-힣]', '', p_clean)
-                    
-                clean_expected = clean_pn_for_compare(expected_pn)
-                clean_allowed = {clean_pn_for_compare(v) for v in allowed_variants}
-                allowed_set = {clean_expected} | clean_allowed
-                clean_actual = clean_pn_for_compare(res.get("제품명", ""))
-                
-                if clean_actual not in allowed_set:
-                    print(f" [❌ 제품명 불일치] ID {g_id} | 기대값: {expected_pn} | 실제값: '{res.get('제품명')}'")
-                    fail_count += 1
-                
-                # 2. 구성성분 대조 (CAS & 함량)
-                cas_content = res.get("구성성분", "")
-                actual_comp_map = {}
-                if cas_content:
-                    for part in cas_content.split(";"):
-                        part = part.strip()
-                        m = re.search(r"(\d{2,7}-\d{2}-\d)\s*(?:\(([^)]+)\))?", part)
-                        if m:
-                            cas_val = m.group(1)
-                            content_val = m.group(2) if m.group(2) else ""
-                            if not content_val.endswith("%") and content_val not in ["Rem.", "미기재%"]:
-                                content_val = f"{content_val}%"
-                            actual_comp_map[cas_val] = unicodedata.normalize("NFKC", content_val).replace(" ", "").replace("%", "")
-                
-                g_components = g_case.get("components", [])
-                g_comp_map = {}
-                for c in g_components:
-                    expected_cont = c["content_expected"]
-                    if not expected_cont.endswith("%") and expected_cont not in ["Rem.", "미기재%"]:
-                        expected_cont = f"{expected_cont}%"
-                    g_comp_map[c["cas"]] = unicodedata.normalize("NFKC", expected_cont).replace(" ", "").replace("%", "")
-                
-                # 성분 개수 대조
-                if len(g_comp_map) != len(actual_comp_map):
-                    print(f" [❌ 성분 개수 불일치] ID {g_id} | 기대개수: {len(g_comp_map)} | 실제개수: {len(actual_comp_map)}")
-                    print(f"   ├─ 기대 CAS: {list(g_comp_map.keys())}")
-                    print(f"   └─ 실제 CAS: {list(actual_comp_map.keys())}")
-                    fail_count += 1
-                    continue
-                
-                # 각 CAS 별 함량 대조
-                for cas, expected_cont in g_comp_map.items():
-                    if cas not in actual_comp_map:
-                        print(f" [❌ 성분 유실] ID {g_id} | 기대 CAS: {cas} 누락됨")
-                        fail_count += 1
-                    else:
-                        actual_cont = actual_comp_map[cas]
-                        if expected_cont != actual_cont:
-                            print(f" [❌ 함량 불일치] ID {g_id} | CAS {cas} | 기대치: {expected_cont}% | 실제치: {actual_cont}%")
-                            fail_count += 1
-                            
-            except Exception as e:
-                print(f" [💥 크래시] ID {g_id} 분석 중 예외 발생: {e}")
-                fail_count += 1
-                
-    print("-"*80)
-    if fail_count > 0:
-        print(f"--- [!] 골든 데이터셋 회귀 검증 실패: {fail_count}건의 오류 발견 ---")
-        sys.exit(1)
-    else:
-        print(f"--- [OK] 모든 골든 데이터셋 회귀 검증 통과 (V{VERSION}) ---")
-        return True
-
-def run_production_integrity_test_cases():
-    print("\n==================================================")
-    print("[*] 가동: run_production_integrity_test_cases()")
-    print("==================================================")
-    
-    import glob
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    test_file_dir = os.path.join(base_dir, "TEST_File")
-    
-    files_015 = glob.glob(os.path.join(test_file_dir, "*015*.pdf"))
-    file_015 = files_015[0] if files_015 else os.path.join(test_file_dir, "015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf")
-    
-    files_036 = glob.glob(os.path.join(test_file_dir, "*036*.pdf"))
-    file_036 = files_036[0] if files_036 else os.path.join(test_file_dir, "036_아이생각수성내부프로 (M-BASE)_GHS국문.pdf")
-    
-    success_015 = False
-    success_036 = False
-    
-    print("\n[Test 1] 015번 자재의 거대 INCI ID(17036) 오인입 차단 검증 시작...")
-    if not os.path.exists(file_015):
-        print(f"❌ 오류: 테스트 파일 없음: {file_015}")
-    else:
-        try:
-            res = process_pdf(file_015, log_func=print)
-            comp_str = res.get("구성성분", "")
-            print(f"  └─ 추출 결과: {comp_str}")
-            if "17036" in comp_str:
-                print("❌ 실패: 거대 INCI ID(17036)가 결과에 오인입되었습니다.")
-            elif "54.98" not in comp_str:
-                print("❌ 실패: 병풀잎추출물의 함량(54.98%)이 누락되었습니다.")
-            else:
-                print("🟢 [성공] [Test 1] 015번 자재 거대 INCI ID 오인입 차단 및 정상 함량 검증 통과")
-                success_015 = True
-        except Exception as e:
-            print(f"❌ 예외 발생: {e}")
-            
-    print("\n[Test 2] 036번 한글 조건어 결착 서식 물결 평탄화 검증 시작...")
-    if not os.path.exists(file_036):
-        print(f"❌ 오류: 테스트 파일 없음: {file_036}")
-    else:
-        try:
-            res = process_pdf(file_036, log_func=print)
-            comp_str = res.get("구성성분", "")
-            print(f"  └─ 추출 결과: {comp_str}")
-            if "7732-18-5" in comp_str and "40~50" in comp_str:
-                print("🟢 [성공] [Test 2] 036번 한글 조건어 결착 서식 물결 평탄화 검증 통과")
-                success_036 = True
-            else:
-                print("❌ 실패: 한글 조건어가 물결 기호로 올바르게 평탄화되지 못했습니다.")
-        except Exception as e:
-            print(f"❌ 예외 발생: {e}")
-            
-    print("\n==================================================")
-    if success_015 and success_036:
-        print("🟢 모든 프로덕션 통합 무결성 테스트 케이스 [성공]")
-        print("==================================================")
-        return True
-    else:
-        print("🔴 일부 테스트 케이스 실패")
-        print("==================================================")
-        return False
-
-def run_005_천칭_test_case():
-    print("\n==================================================")
-    print("[*] 가동: run_005_천칭_test_case() [단독 이미지 천칭 검증]")
-    print("==================================================")
-    
-    import glob
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    test_file_dir = os.path.join(base_dir, "TEST_File")
-    
-    files_005 = glob.glob(os.path.join(test_file_dir, "*005*.pdf"))
-    if not files_005:
-        print("❌ 오류: 005번 테스트 파일을 찾을 수 없습니다.")
-        return False
-    
-    pdf_path = files_005[0]
-    engine = MSDSEngineV6()
-    paddle_ocr_instance = get_paddle_structure_engine(log_func=print)
-    
-    print(f"[*] 대상 파일: {os.path.basename(pdf_path)}")
-    
-    # 조업 소요 시간 계측 개시
-    import time
-    start_time = time.time()
-    res = engine.run_flexible_sandwich_pipeline(pdf_path, paddle_ocr_instance, log_func=print)
-    elapsed_time = time.time() - start_time
-    
-    print("\n[완착 장부 데이터]")
-    print(f"소요 시간: {elapsed_time:.2f}초")
-    print(f"상태: {res.get('status')}")
-    print(f"추출 엔진: {res.get('engine')}")
-    
-    if res.get("status") == "FALLBACK":
-        print("\n🟢 [검증 대성공] 천칭 가드레일이 유령 수치(157.0%)를 완벽하게 적발하여 FALLBACK을 유도했습니다.")
-        return True
-    else:
-        print("\n❌ [검증 실패] 천칭 필터가 작동하지 않았습니다.")
-        return False
-
-def run_1_to_7_production_test_cases():
-    print("\n==================================================")
-    print("[*] 가동: run_1_to_7_production_test_cases()")
-    print("==================================================")
-    
-    import glob
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    test_file_dir = os.path.join(base_dir, "TEST_File")
-    
-    patterns = ["*001*.pdf", "*002*.pdf", "*003*.pdf", "*004*.pdf", "*005*.pdf", "*006*.pdf", "*007*.pdf"]
-    target_files = []
-    
-    for p in patterns:
-        matched = glob.glob(os.path.join(test_file_dir, p))
-        if matched: target_files.extend(matched)
-            
-    target_files = sorted(list(set(target_files)))
-    if not target_files:
-        print("❌ 오류: 1~7번 테스트 PDF 자재를 수집하지 못했습니다.")
-        return False
-        
-    all_success = True
-    print(f"[*] 총 {len(target_files)}권의 자재가 레일에 진입합니다.")
-    
-    total_files = 0
-    digital_count = 0
-    image_count = 0
-    deepseek_product_count = 0
-    gemini_product_count = 0
-    regex_comp_count = 0
-    gemini_comp_count = 0
-    
-    for idx, f_path in enumerate(target_files, 1):
-        filename = os.path.basename(f_path)
-        print(f"\n[{idx}/7] 레일 격발: {filename}")
-        try:
-            res = process_pdf(f_path, log_func=print)
-            print("  [결과 리포트]")
-            print(f"  ├─ 제품명: {res.get('제품명')}")
-            print(f"  ├─ 신호등: {res.get('신호등')}")
-            print(f"  ├─ 추출 엔진: {res.get('used_engine')}")
-            print(f"  ├─ 무결성 점수: {res.get('integrity_score')}점")
-            print(f"  └─ 구성성분: {res.get('구성성분')[:120]}...")
-            
-            if res.get("신호등") != "🟢":
-                print(f"  ⚠️ 주의: 신호등이 초록불이 아닙니다. ({res.get('신호등')})")
-                all_success = False
-                
-            total_files += 1
-            d_type = res.get("doc_type", "디지털")
-            if d_type == "디지털":
-                digital_count += 1
-            else:
-                image_count += 1
-                
-            p_eng = res.get("product_engine", "제미나이")
-            if p_eng == "딥시크":
-                deepseek_product_count += 1
-            else:
-                gemini_product_count += 1
-                
-            c_eng = res.get("comp_engine", "정규식")
-            if c_eng == "정규식":
-                regex_comp_count += 1
-            else:
-                gemini_comp_count += 1
-        except Exception as e:
-            print(f"  ❌ 예외 크래시 발생: {e}")
-            all_success = False
-            
-    print("\n==================================================")
-    if all_success:
-        print("🟢 [완착 성공] 1~7번 모든 자재가 오독 없이 초록불(🟢)로 완착되었습니다.")
-        print("==================================================")
-    else:
-        print("🔴 [일부 경고] 1~7번 자재 중 일부가 초록불(🟢) 안착에 실패했습니다.")
-        print("==================================================")
-        
-    # ==============================================================================
-    # 🛠️ [Chunk 19] msds_engine_v6.py ➔ 최종 리포트 패치 (심플/명확)
-    # ==============================================================================
-    report_text = f"""
-MSDS 추출 가동 현황 보고
-
-총 처리 파일 : {total_files}건
-
-- 문서종류 : 디지털 {digital_count}건, 이미지 {image_count}건
-- 제품명   : 딥시크 {deepseek_product_count}건, 제미나이 {gemini_product_count}건
-- 구성성분 : 정규식 {regex_comp_count}건, 제미나이 {gemini_comp_count}건
-
-추출된 결과 확인/수정 후 [2단계 검증]을 진행하세요.
-"""
-    print(report_text)
-    # ==============================================================================
-    return all_success
-
-# ==============================================================================
-# 🛠️ [Chunk 26] msds_engine_v6.py ➔ 오프라인 무과금 자동 검수 엔진 결선
-# ==============================================================================
-class MSDSOfflineTester:
-    """외부 인공지능 호출 없이 로컬 세척 및 정규식 매칭 로직의 무결성을 검증하는 독립 검수대"""
-    
-    def __init__(self, engine_instance):
-        self.engine = engine_instance
-        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 생산성 및 관리 무결성 극대화를 위해 순차 적층형 가변 배열(List) 구조로 개조 및 확장
-        self.snapshot_database = [
-            {
-                "desc": "021번 전각 유니코드 손상 및 줄 바꿈 변형 서식",
-                "raw_text": "CAS number : 3567-66-6\nEINECS number : 222-656-9\nConcentration : ＞  85 ％",
-                "target_cas": "3567-66-6",
-                "expected_concentration": ">85%"
-            },
-            {
-                "desc": "005번 110% 초과 유령 수치 노이즈 서식 (천칭 필터 차단 검증)",
-                "raw_text": "CAS No : 1333-86-4\nContent : 157 %",
-                "target_cas": "1333-86-4",
-                "expected_concentration": "미기재%"
-            },
-            {
-                "desc": "015번 표준 디지털 문서 및 거대 INCI ID 간섭 방어 검증",
-                "raw_text": "Chemical Name: Water\nCAS No: 7732-18-5\nComposition: 10 ~ 20 %",
-                "target_cas": "7732-18-5",
-                "expected_concentration": "10~20%"
-            },
-            {
-                "desc": "신종 TCI 시약류 수직 목록형 서식 (Glycine 요괴 완파 검증)",
-                "raw_text": "Section 3. Composition/information on ingredients\nIngredient name:Glycine\nContent (%):98.5~101.5\nChemical formula:C2H5NO2\nCAS No.:56-40-6",
-                "target_cas": "56-40-6",
-                "expected_concentration": "98.5~101.5%"
-            },
-            {
-                "desc": "022번 수직 목록형 문장식 잔량 서식 (하이재킹 역회전 방어 검증)",
-                "raw_text": "물질명 : 물 Water\n함유량 (%): 위 물질 양의 잔여량\nCAS 번호 : 7732-18-5",
-                "target_cas": "7732-18-5",
-                "expected_concentration": "Rem.%"
-            },
-            {
-                "desc": "032번 준세이 영문 문장식 잔량 서식 (광역 다형성 사전 방어 검증)",
-                "raw_text": "Ingredient name:Water\nContent (%):Residual quantity of the ingredient mentioned above.\nChemical formula:H2O\nCAS No.:7732-18-5",
-                "target_cas": "7732-18-5",
-                "expected_concentration": "Rem.%"
-            },
-            {
-                "desc": "040번 질산은 후위 부등호 결착 서식 (핀셋 구출 방어 검증)",
-                "raw_text": "물질명:질산은(Silver nitrate)\nCAS 번호:7761-88-8\ncontent(%):99.5<",
-                "target_cas": "7761-88-8",
-                "expected_concentration": ">99.5%"
-            },
-            {
-                "desc": "4번 칸토 복합 대간판 및 영문 약어 서식 (광역 키워드 및 vol 노이즈 배제 검증)",
-                "raw_text": "Ingredients and composition : 1,5-Diphenylcarbonohydrazide min. 85%\nCAS No. : 140-22-7",
-                "target_cas": "140-22-7",
-                "expected_concentration": "≥85%"
-            },
-            {
-                "desc": "036번 계열 한글 조사 결착 서식 (전위 평탄화 검증)",
-                "raw_text": "물질명:비닐/STPD 폴리다이메틸실록산\nCAS 번호:68083-19-2\n함유량(%):95% 이상",
-                "target_cas": "68083-19-2",
-                "expected_concentration": "≥95%"
-            },
-            {
-                "desc": "046번 덕산 THF 자재 레이어 오독 방어 및 정상 디지털 자산 수납 서식 (디지털 우선 및 강제 휘발 검증)",
-                "raw_text": "화학 물질명 : Tetrahydrofuran\nCAS NO: 109-99-9\n함유량 : 99-100%",
-                "target_cas": "109-99-9",
-                "expected_concentration": "99~100%"
-            },
-                {
-                    "desc": "008번 사라퐁 악성 행간 유착 - 정제수 누락 방어 검증 (Test Case)",
-                    "raw_text": "\"정제수\",\"Water\",\"7732-18-5\",\"60~70\"",
-                    "target_cas": "7732-18-5",
-                    "expected_concentration": "60~70%"
-                },
-                {
-                    "desc": "008번 사라퐁 악성 행간 유착 - 수산화나트륨 함량 오독 방어 검증 (Test Case)",
-                    "raw_text": "\"알킬벤zen설폰산\",,,\"< 5\"\n\"수산화나트륨\",\"Sodium hydroxide\",\"1310-73-2\",\"< 1\"",
-                    "target_cas": "1310-73-2",
-                    "expected_concentration": "<1%"
-                },
-                {
-                    "desc": "008번 사라퐁 오탐지 차단 및 순서 역전 경계 검증 (Test Case)",
-                    "raw_text": "구성성분의 명칭 및 함유량 [위생용품의 기준 및 규격] 3.\nCAS No. 1310-73-2 Content: < 1 %",
-                    "target_cas": "1310-73-2",
-                    "expected_concentration": "<1%"
-                },
-                {
-                    "desc": "046번 THF형 서식 수직 카드 블록 레이아웃 탐색 방어 검증 (Test Case)",
-                    "raw_text": "화학 물질명 : Water\n관용명 및 이명 : Dihydrogen oxide\nCAS NO : 7732-18-5\n함유량 : 1-0 %",
-                    "target_cas": "7732-18-5",
-                    "expected_concentration": "0~1%"
-                }
-        ]
-
-    def run_snapshot_verification(self, target_id=None):
-        """지정한 식별자 또는 데이터베이스 내 전수 악성 자재 오프라인 자동 채점 구동"""
-        print("\n======================================================================")
-        print("🚀 [오프라인 무과금 검수대] 가상 시뮬레이터 라인 가동 (통신 비용: 0원)")
-        print("======================================================================")
-        
-        # 🛡️ [데이터 검증 및 에러 예외 처리] 배열 순서대로 TC-001부터 일련번호를 강제 강착시키는 동적 인덱싱 게이트 활성화
-        mapped_database = {}
-        for idx, case in enumerate(self.snapshot_database, 1):
-            tc_key = f"TC-{idx:03d}"
-            mapped_database[tc_key] = case
-
-        target_cases = mapped_database.keys() if not target_id else [target_id]
-        passed_count = 0
-        failed_count = 0
-        
-        for tc_id in target_cases:
-            case = mapped_database[tc_id]
-            print(f"[*] [{tc_id}] {case['desc']} 검사 진입...")
-            
-            try:
-                self.engine.is_test_mode = True
-                cleaned_text = unicodedata.normalize("NFKC", case["raw_text"])
-                
-                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 타겟 CAS 번호를 안심 앵커로 보존하여 노이즈 하이재킹 차단
-                target_cas = case["target_cas"]
-                cleaned_text = cleaned_text.replace(target_cas, "[CAS_ANCHOR]")
-                cleaned_text = re.sub(r'(?<![\d-])\d{3}[\s\-~∼～\u2013\u2014]+\d{3}[\s\-~∼～\u2013\u2014]+\d(?![\d-])', ' ', cleaned_text)
-                
-                extracted_val = "미기재%"
-                
-                # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 모의 채점판 내 광역 잔량 다형성 마스터 사전 가로채기 관로 완벽 동기화
-                if any(k in cleaned_text.lower() for k in ["잔량", "잔여량", "rem", "balance", "residual", "remainder", "rest", "q.s.", "나머지", "잔여분", "잔여"]):
-                    extracted_val = "Rem.%"
-                else:
-                    matches = []
-                    for m in self.engine.comp_pattern.finditer(cleaned_text):
-                        val = m.group(1).strip()
-                        if not val: continue
-                        
-                        # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 구획 번호 마침표(예: 3.)가 함량 수치로 오독되는 것 차단
-                        if val.isdigit() and cleaned_text[m.end():m.end()+1] == '.':
-                            after_dot = cleaned_text[m.end()+1:m.end()+2]
-                            if not after_dot.isdigit():
-                                continue
-                        
-                        # 후위 부등호 핀셋 구출 가드레일 동기화 완착
-                        after_str = cleaned_text[m.end():m.end()+3].strip()
-                        if after_str and after_str[0] in ["<", ">", "≤", "≥", "＜", "＞"]:
-                            val = f"{val}{after_str[0]}"
-                            
-                        # 🛡️ [데이터 검증 및 에러 예외 처리] 전위 약어 기호(min, max) 핀셋 구출 가드레일 동기화 완착
-                        before_str = cleaned_text[max(0, m.start()-15):m.start()].lower()
-                        if "min" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
-                            val = f"≥{val}"
-                        elif "max" in before_str and not any(sym in val for sym in ["<", ">", "≤", "≥", "≧", "≦"]):
-                            val = f"≤{val}"
-                            
-                        context_prefix = cleaned_text[max(0, m.start()-20):m.start()].lower()
-                        if not any(k in context_prefix for k in ["section", "항"]):
-                            matches.append((val, m.start()))
-                    
-                    if matches:
-                        anchor_pos = cleaned_text.find("[CAS_ANCHOR]")
-                        best_match = min(matches, key=lambda x: abs(x[1] - anchor_pos))
-                        extracted_val = self.engine._normalize_single_content(best_match[0])
-
-                # 4단계: 데이터 무결성 1:1 자동 대조 검문
-                if extracted_val == case["expected_concentration"]:
-                    print(f"  └─ [🟢 품질 무결성 통과] 추출치: {extracted_val} == 정답: {case['expected_concentration']}")
-                    passed_count += 1
-                else:
-                    print(f"  └─ [❌ 회귀 결함 발견] 추출치: {extracted_val} != 정답: {case['expected_concentration']}")
-                    failed_count += 1
-                    
-            except Exception as e:
-                print(f"  └─ [💥 시스템 결함 격발] 테스트 중 예외 크래시 발생: {e}")
-                failed_count += 1
-            finally:
-                # 검수가 끝나면 실 서비스 레일 보호를 위해 테스트 플래그 원복
-                self.engine.is_test_mode = False
-
-        print("----------------------------------------------------------------------")
-        print(f"📊 [최종 합격 성적표] 합격: {passed_count}건 | 불합격: {failed_count}건")
-        print("======================================================================\n")
-        return failed_count == 0
-
-
-def run_v6_automated_quality_check(engine_instance):
-    """실무 통합 테스트 호출부 연동 규격 고정 함수"""
-    tester = MSDSOfflineTester(engine_instance)
-    # 악성 3종 자재에 대한 전수 검사를 단독 강제 격발
-    return tester.run_snapshot_verification()
-
-
-def test_cas_highpass_interlock_validation():
-    """안전망 강제 구출 시 물질명이 비어있어도 유효 CAS인 경우 탈락하지 않고 정상 수납되는지 검증하는 예외 처리 테스트"""
-    engine = MSDSEngineV6()
-    
-    # 005번 윤활유 예시 시나리오 모의: 물질명(name)이 누락된 AI 강제 구출 데이터 자산 배치
-    mock_components = [
-        {"cas": "109-99-9", "content": "99~100%", "name": ""},
-        {"cas": "64742-54-7", "content": "15~20%", "name": ""}
-    ]
-    
-    # 하이패스 제어 플래그 작동 여부 모의 검증
-    is_cas_highpass = False
-    for c in mock_components:
-        if engine.verify_cas_number(c["cas"]):
-            is_cas_highpass = True
-            
-    # 에러 예외 처리 단언문(Assert) 배선
-    assert is_cas_highpass is True, "[무결성 결함] 마스터 DB에 실재하는 정합 CAS 자산임에도 하이패스 스위치가 작동하지 않았습니다."
-    print("🟢 [단독 Test Case 합격] 하이패스 인터락 제어 스위치가 모순 없이 정상 격발됨을 확인했습니다.")
-
-
-def test_gatekeeper_interlock_harness():
-    """게이트키퍼 인터락 및 롤백 가드레일을 검증하는 단위 테스트 메서드입니다."""
-    import os
-    import shutil
-    import re
-    
-    print("🧪 [유닛 테스트 시작] test_gatekeeper_interlock_harness() 가동")
-    msds_engine_file = os.path.abspath(__file__)
-    backup_file = msds_engine_file + ".bak"
-    
-    # 1. 시나리오 1: 회귀 오류 1건 이상 모의 주입 시 차단 및 롤백 작동 검증
-    os.environ["ANTIGRAVITY_TEST_MOCK"] = "fail"
-    
-    # 롤백 검증을 위해 청정 상태의 백업 파일을 먼저 명시적으로 생성
-    try:
-        if os.path.exists(backup_file):
-            os.remove(backup_file)
-        shutil.copy2(msds_engine_file, backup_file)
-        print(f"[*] [Mocking] 선제 청정 백업 파일 생성 완료: {backup_file}")
-    except Exception as e:
-        raise RuntimeError(f"[Mocking] 선제 백업 생성 실패: {e}")
-    
-    # 백업 롤백을 검증하기 위해 현재 소스코드 끝에 고유 표식 주석 덧붙이기
-    mock_signature = "# TEST_MOCK" + "_LINE_INTEGRITY" + "_CHECK"
-    with open(msds_engine_file, "a", encoding="utf-8") as f:
-        f.write(f"\n{mock_signature}")
-        f.flush()
-        try:
-            os.fsync(f.fileno())
-        except:
-            pass
-        
-    try:
-        self_test_regression()
-        assert False, "[무결성 결함] 오류 주입 상태에서 RuntimeError가 정상 격발되지 않았습니다."
-    except RuntimeError as e:
-        assert "[회귀 오류 감지]" in str(e), f"[무결성 결함] 기대되지 않은 에러 격발: {e}"
-        # 롤백이 성공해서 주석이 파일에서 사라졌는지 1:1 대조 검증
-        import time
-        time.sleep(0.5)
-        with open(msds_engine_file, "r", encoding="utf-8") as r:
-            content = r.read()
-        assert mock_signature not in content[-300:], "[무결성 결함] 오류 검출 시 소스코드 파일 롤백 복원이 이루어지지 않았습니다."
-        print(" 🟢 [시나리오 1 통과] 오류 주입 시 정상 차단 및 백업 롤백 복원 완착 성공!")
-    finally:
-        if "ANTIGRAVITY_TEST_MOCK" in os.environ:
-            del os.environ["ANTIGRAVITY_TEST_MOCK"]
-        if os.path.exists(backup_file):
-            try:
-                os.remove(backup_file)
-            except:
-                pass
-            
-    # 2. 시나리오 2: 오류 0건 모의 주입 시 GOLDEN_HASH 정상 갱신 검증
-    os.environ["ANTIGRAVITY_TEST_MOCK"] = "pass"
-    
-    try:
-        self_test_regression()
-        
-        # 파일 내용을 다시 읽어서 GOLDEN_HASH가 16자리 sha256 문자열로 업데이트 되었는지 검사
-        with open(msds_engine_file, "r", encoding="utf-8") as r:
-            lines = r.readlines()
-            
-        found_hash = None
-        for line in lines:
-            if line.strip().startswith("GOLDEN_HASH ="):
-                m = re.match(r'GOLDEN_HASH\s*=\s*"([^"]+)"', line.strip())
-                if m:
-                    found_hash = m.group(1)
-                    break
-                    
-        assert found_hash is not None, "[무결성 결함] GOLDEN_HASH 변수 선언 라인을 찾지 못했습니다."
-        assert len(found_hash) == 16, f"[무결성 결함] GOLDEN_HASH의 규격(16자리)이 일치하지 않습니다: {found_hash}"
-        assert found_hash != "0000000000000000", "[무결성 결함] GOLDEN_HASH가 새로운 해시값으로 갱신되지 못했습니다."
-        print(f" 🟢 [시나리오 2 통과] 오류 0건 주입 시 정상 갱신 완착 성공! (GOLDEN_HASH: {found_hash})")
-    except Exception as test_err:
-        assert False, f"[무결성 결함] 오류 0건 모의 주입 시나리오 검증 실패: {test_err}"
-    finally:
-        if "ANTIGRAVITY_TEST_MOCK" in os.environ:
-            del os.environ["ANTIGRAVITY_TEST_MOCK"]
-            
-    # 원격 OCR 자체진단도 기능 플래그를 따른다. 비활성 상태에서는 네트워크
-    # 요청이나 가짜 장애 타임아웃을 만들지 않는다.
-    print("[*] [하네스 가동] 선택형 원격 OCR 연동선 채점 개시...")
-    remote_client = RemoteOCRClient()
-    test_dummy_bytes = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82"
-
-    if not remote_client.enabled:
-        log_remote_ocr_disabled_once(print)
-        print(" 🟢 [원격 하네스 생략] 비활성 설정에서 네트워크 무호출 확인.")
-    else:
-        try:
-            remote_client.extract_png(test_dummy_bytes)
-            print(" 🟢 [원격 하네스 합격] 깡통 컴퓨터 수송선 포트 열림 및 대기 상태 확인.")
-        except RemoteOCRError as remote_fault:
-            print(f"  [안내] 현재 깡통컴 가속 서버를 사용할 수 없습니다: {remote_fault}")
-
-    print("🟢 [유닛 테스트 합격] test_gatekeeper_interlock_harness() 최종 통과 완료!")
-
-
-if __name__ == "__main__":
-    # 🛡️ [게이트키퍼 가드레일 유닛 테스트 강제 기동]
-    # 두 가드레일 조건을 만족하지 못하면 시스템 작동을 원천 거부합니다.
-    try:
-        test_gatekeeper_interlock_harness()
-    except Exception as gatekeeper_err:
-        print(f"🚨 [게이트키퍼 인터락 실패] 시스템 작동을 원천 거부합니다: {gatekeeper_err}")
-        sys.exit(1)
-
-    # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 실전 조업 라인 메모리 오염 방어: 
-    # 실전 GUI 가동 시 싱글톤 포인터를 하이재킹하는 오프라인 훈련 스위치를 전면 오프(Pass) 처리한다.
-    test_cas_highpass_interlock_validation()
-
-    # 🟢 [로컬 오프라인 무과금 자동 검수대 기동 및 회귀 검증]
-    print("🚀 [로컬 오프라인 무과금 자동 검수대] 단독 기동을 통한 품질 검증을 시작합니다.")
-    check_success = run_v6_automated_quality_check(MSDSEngineV6())
-    print(f"📊 [로컬 오프라인 무과금 자동 검수대] 검수 최종 상태: {'🟢 합격 (True)' if check_success else '🔴 불합격 (False)'}")
-    assert check_success is True, "[무결성 결함] 로컬 오프라인 무과금 자동 검수대 품질 검증에 실패하였습니다."
-
-    # 🟢 [골든 데이터셋 회귀 검증 기동]
-    print("🚀 [골든 데이터셋 회귀 검증] self_test_regression()을 격발합니다.")
-    golden_success = self_test_regression()
-    print(f"📊 [골든 데이터셋 회귀 검증] 최종 합격 신호: {golden_success}")
-    assert golden_success is True, "[무결성 결함] 골든 데이터셋 회귀 검증에 실패하였습니다."

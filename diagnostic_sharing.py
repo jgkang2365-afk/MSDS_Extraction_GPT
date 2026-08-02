@@ -14,11 +14,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from diagnostic_trace import redact
+from msds_validation import PageMapValidationError, validate_component_image_page_map
 
 
 EXPECTED_REPOSITORY = "jgkang2365-afk/MSDS_Extraction_GPT"
 MAX_IMAGES_PER_FILE = 10
-MAX_SHARE_BYTES = 50 * 1024 * 1024
+SOURCE_PDF_NOTICE_BYTES = 25 * 1024 * 1024
+SOURCE_PDF_HARD_LIMIT_BYTES = 100 * 1024 * 1024
+MAX_PACKAGE_BYTES = 500 * 1024 * 1024
 FORBIDDEN_EXPORT_KEYS = re.compile(
     r"(?:authorization|api[_-]?key|token|secret|password|private[_-]?key|"
     r"raw_response|raw_text|prompt|payload|trace_context|file_path)",
@@ -119,6 +122,182 @@ def _first_failure(diagnostic):
     return str(stage), str(reason), str(fallback)
 
 
+def _find_event(value, event_name):
+    if isinstance(value, dict):
+        if value.get("event_type") == event_name or value.get("event") == event_name:
+            return value
+        for child in value.values():
+            found = _find_event(child, event_name)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _find_event(child, event_name)
+            if found:
+                return found
+    return None
+
+
+def _parse_component_corrections(user_review):
+    structured = user_review.get("component_corrections")
+    if isinstance(structured, list):
+        return [dict(item) for item in structured if isinstance(item, dict)]
+    note = str(user_review.get("user_note") or "")
+    pattern = re.compile(
+        r"(?P<cas>\d{2,7}-\d{2}-\d)\s*\(?(?P<actual>[^()\n]*?(?:%|미기재|잔량|balance))?\)?"
+        r"\s*(?:--?>|=>|→|에서)\s*\(?(?P<expected>[^()\n]+?)\)?(?=\s*(?:;|$))",
+        re.I,
+    )
+    corrections = []
+    for match in pattern.finditer(note):
+        corrections.append({
+            "cas": match.group("cas").strip(),
+            "actual": (match.group("actual") or "").strip(),
+            "expected": match.group("expected").strip(),
+        })
+    return corrections
+
+
+def _is_number_list(value):
+    return bool(re.fullmatch(r"\s*\d+(?:\s*[,，/]\s*\d+)+\s*", str(value or "")))
+
+
+def _is_content_expression(value):
+    text = str(value or "")
+    return bool(re.search(r"[%<>≤≥≦≧~∼～]|\b(?:balance|rem\.?|잔량)\b", text, re.I))
+
+
+def _classification_pairing_evidence(value):
+    if isinstance(value, dict):
+        role = str(value.get("source_column_role") or value.get("column_role") or "").lower()
+        selected = value.get("selected_value", value.get("value", ""))
+        row_candidates = value.get("same_row_candidates") or value.get("row_candidates") or []
+        valid_content = any(
+            isinstance(item, dict)
+            and str(item.get("source_column_role") or item.get("column_role") or "").lower() in {"content", "concentration"}
+            and _is_content_expression(item.get("value"))
+            for item in row_candidates
+        )
+        if role in {"classification", "category", "type"} and _is_number_list(selected) and valid_content:
+            return value
+        for child in value.values():
+            found = _classification_pairing_evidence(child)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for child in value:
+            found = _classification_pairing_evidence(child)
+            if found:
+                return found
+    return None
+
+
+def _user_review_diagnosis(record, diagnostic, user_review):
+    """자동 성공 여부와 무관하게 사용자 지적을 재현 가능한 원인 코드로 요약한다."""
+    error_types = list(user_review.get("error_types") or [])
+    diagnosis = {"basis": "USER_REVIEW", "error_types": error_types}
+    corrections = _parse_component_corrections(user_review)
+    product_correction = user_review.get("product_name_correction")
+    evidence = _classification_pairing_evidence(diagnostic)
+    reports_content_error = "함유량 오류" in error_types
+    has_changed_value = any(item.get("actual") != item.get("expected") for item in corrections)
+    if reports_content_error and has_changed_value and evidence:
+        diagnosis.update({
+            "stage": "refine_msds_components_strict",
+            "reason_code": "CLASSIFICATION_COLUMN_MISREAD_AS_CONCENTRATION",
+            "impact": "incorrect_concentration",
+            "component_corrections": corrections,
+            "evidence": {
+                "source_column_role": evidence.get("source_column_role") or evidence.get("column_role"),
+                "selected_value": evidence.get("selected_value", evidence.get("value")),
+                "same_row_candidates": evidence.get("same_row_candidates") or evidence.get("row_candidates") or [],
+            },
+        })
+    selection = _find_event(diagnostic, "ai.component_input_selection")
+    details = selection.get("details", selection) if isinstance(selection, dict) else {}
+    try:
+        validate_component_image_page_map(details)
+    except PageMapValidationError as exc:
+        diagnosis.update({
+            "stage": "ai.component_input_selection",
+            "reason_code": exc.error_code,
+            "impact": "all_components_missing",
+            "target_page_index": details.get("target_page_index"),
+            "target_page_indexes": details.get("target_page_indexes"),
+            "source_page_indexes": details.get("source_page_indexes"),
+            "image_page_map": details.get("image_page_map"),
+        })
+    product_event = _find_event(diagnostic, "candidate_verification")
+    product_details = product_event.get("details", product_event) if isinstance(product_event, dict) else {}
+    if (
+        "제품명 오류" in error_types
+        and isinstance(product_correction, dict)
+        and product_correction.get("actual") != product_correction.get("expected")
+        and product_details.get("reason_code") == "UNVERIFIED_AI_PRODUCT_ACCEPTED"
+    ):
+        diagnosis["product_name"] = {
+            "reason_code": "UNVERIFIED_AI_PRODUCT_ACCEPTED",
+            "impact": "incorrect_product_name",
+            "correction": dict(product_correction),
+        }
+    if len(diagnosis) == 2:
+        diagnosis.update({
+            "stage": "user_review",
+            "reason_code": "USER_REPORTED_RESULT_MISMATCH",
+            "impact": "manual_review_required",
+        })
+    return diagnosis
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _copy_source_pdf(record, target_dir, package_dir):
+    source = Path(str(record.get("full_path") or ""))
+    result = {
+        "status": "PARTIAL_SOURCE_PDF_MISSING",
+        "original_name": source.name or str(record.get("filename") or ""),
+        "relative_path": "",
+        "size": 0,
+        "sha256": "",
+        "large_file_notice": False,
+        "error": "SOURCE_PDF_NOT_FOUND",
+    }
+    if not source.is_file() or source.suffix.lower() != ".pdf":
+        return result
+    try:
+        size = source.stat().st_size
+        result["size"] = size
+        if size > SOURCE_PDF_HARD_LIMIT_BYTES:
+            result.update(status="TOO_LARGE", error="SOURCE_PDF_EXCEEDS_100_MIB")
+            return result
+        source_dir = target_dir / "source"
+        source_dir.mkdir(exist_ok=True)
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]+', "_", source.name).strip(" .") or "source.pdf"
+        destination = source_dir / safe_name
+        shutil.copyfile(source, destination)
+        source_hash = _sha256_file(source)
+        destination_hash = _sha256_file(destination)
+        if source_hash != destination_hash or destination.stat().st_size != size:
+            destination.unlink(missing_ok=True)
+            raise OSError("복사본 바이트 검증 실패")
+        result.update(
+            status="FULL",
+            relative_path=destination.relative_to(package_dir).as_posix(),
+            sha256=destination_hash,
+            large_file_notice=size > SOURCE_PDF_NOTICE_BYTES,
+            error="",
+        )
+    except OSError as exc:
+        result.update(status="COPY_FAILED", relative_path="", sha256="", error=str(exc))
+    return result
+
+
 def _metric_counts(diagnostic):
     result = diagnostic.get("result") if isinstance(diagnostic.get("result"), dict) else {}
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
@@ -183,7 +362,7 @@ def _manifest_entries(package_dir, trace_by_relative):
 
 
 def build_share_package(records, repo_root, output_root=None, max_images_per_file=MAX_IMAGES_PER_FILE,
-                        max_total_bytes=MAX_SHARE_BYTES):
+                        max_total_bytes=MAX_PACKAGE_BYTES):
     selected = [record for record in records if (record.get("user_review") or {}).get("user_marked_error")]
     if not selected:
         raise DiagnosticShareError("공유할 오류 파일을 선택해 주세요.")
@@ -237,9 +416,15 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
             "auto_selected": bool((record.get("user_review") or {}).get("auto_selected")),
             "error_types": list((record.get("user_review") or {}).get("error_types") or []),
             "user_note": str((record.get("user_review") or {}).get("user_note") or ""),
+            "component_corrections": _parse_component_corrections(record.get("user_review") or {}),
+            "product_name_correction": (record.get("user_review") or {}).get("product_name_correction") or {},
             "shared_at": _utc_now(),
         }
+        diagnosis = _user_review_diagnosis(record, diagnostic, user_review)
+        user_review["diagnosis"] = diagnosis
         _write_json(target_dir / "user_review.json", _sanitize_json(user_review, root))
+
+        source_pdf = _copy_source_pdf(record, target_dir, package_dir)
 
         image_relatives = []
         images_target = target_dir / "images"
@@ -273,6 +458,8 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
             "fallback_path": fallback,
             "ai_calls": ai_calls,
             "ocr_calls": ocr_calls,
+            "diagnosis": diagnosis,
+            "source_pdf": source_pdf,
         })
         for path in target_dir.rglob("*"):
             if path.is_file():
@@ -295,7 +482,12 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
         "finished_at": run_summary_source.get("finished_at"),
         "files": summary_files,
         "images_excluded_by_policy": True,
-        "original_pdfs_included": False,
+        "original_pdfs_included": any(item["source_pdf"]["status"] == "FULL" for item in summary_files),
+        "source_pdf_counts": {
+            status: sum(item["source_pdf"]["status"] == status for item in summary_files)
+            for status in ("FULL", "PARTIAL_SOURCE_PDF_MISSING", "TOO_LARGE", "COPY_FAILED")
+        },
+        "large_source_pdf_count": sum(bool(item["source_pdf"]["large_file_notice"]) for item in summary_files),
     }
     _write_json(package_dir / "run_summary.json", _sanitize_json(summary, root))
 
@@ -316,35 +508,47 @@ def build_share_package(records, repo_root, output_root=None, max_images_per_fil
             f"- 최종 성분 수: {item['component_count']}",
             f"- 최초 실패 지점: {item['first_failure_stage']}",
             f"- 직접 실패 원인: {item['direct_failure_reason']}",
+            f"- 사용자 검토 원인 코드: {item['diagnosis'].get('reason_code', '미확인')}",
             f"- 후속 우회 경로: {item['fallback_path']}",
             f"- AI 호출 수: {item['ai_calls']}", f"- OCR 호출 수: {item['ocr_calls']}",
             f"- 상세 진단: [{item['diagnostic_path']}]({item['diagnostic_path']})",
             f"- 이미지 폴더: `{Path(item['diagnostic_path']).parent.as_posix()}/images/`",
+            f"- 원본 PDF 상태: `{item['source_pdf']['status']}`",
+            f"- 원본 PDF 경로: `{item['source_pdf']['relative_path'] or '제외됨'}`",
+            f"- 원본 PDF 제외/실패 사유: {item['source_pdf']['error'] or '없음'}",
             "",
         ])
     (package_dir / "run_summary.md").write_text(_portable_text("\n".join(lines), root) + "\n", encoding="utf-8")
     trace_by_relative["run_summary.md"] = ""
     trace_by_relative["run_summary.json"] = ""
-    _write_json(package_dir / "manifest.json", {"run_id": run_id, "files": _manifest_entries(package_dir, trace_by_relative)})
-    assert_share_is_safe(package_dir)
+    _write_json(package_dir / "manifest.json", {
+        "run_id": run_id,
+        "files": _manifest_entries(package_dir, trace_by_relative),
+        "source_pdfs": [dict(item["source_pdf"], file_trace_id=item["file_trace_id"]) for item in summary_files],
+    })
+    assert_share_is_safe(package_dir, max_total_bytes=max_total_bytes)
     return package_dir, summary
 
 
-def assert_share_is_safe(package_dir):
+def assert_share_is_safe(package_dir, max_total_bytes=MAX_PACKAGE_BYTES):
     root = Path(package_dir).resolve()
     total = 0
     for path in root.rglob("*"):
         if not path.is_file():
             continue
-        if path.suffix.lower() == ".pdf" or path.name in {"config.json", "smu_cache.json", "msds_cache_registry.json"}:
+        if path.name in {"config.json", "smu_cache.json", "msds_cache_registry.json"}:
             raise DiagnosticShareError(f"공유 금지 파일이 포함되었습니다: {path.name}")
+        if path.suffix.lower() == ".pdf":
+            relative = path.relative_to(root)
+            if len(relative.parts) < 4 or relative.parts[-2] != "source" or path.stat().st_size > SOURCE_PDF_HARD_LIMIT_BYTES:
+                raise DiagnosticShareError(f"허용되지 않은 PDF가 포함되었습니다: {path.name}")
         total += path.stat().st_size
         if path.suffix.lower() in {".json", ".md", ".jsonl", ".txt"}:
             text = path.read_text(encoding="utf-8", errors="replace")
             if any(pattern.search(text) for pattern in SECRET_PATTERNS):
                 raise DiagnosticShareError(f"민감정보 패턴이 발견되어 공유를 중단했습니다: {path.name}")
-    if total > MAX_SHARE_BYTES:
-        raise DiagnosticShareError("공유 패키지가 최대 용량 50MB를 초과했습니다.")
+    if total > max_total_bytes:
+        raise DiagnosticShareError(f"공유 패키지가 최대 용량 {max_total_bytes}바이트를 초과했습니다.")
     return total
 
 

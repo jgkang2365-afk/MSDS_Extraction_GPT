@@ -1,0 +1,9 @@
+{
+  "schema_version": "1.0",
+  "document": ["digital", "scanned", "mixed", "ocr-required", "ai-fallback", "local-only"],
+  "section": ["section1-standard", "section1-nonstandard", "section3-standard", "section3-multipage", "section3-late-page", "section3-image-table", "section3-no-cas", "section3-bilingual", "section3-heading-damaged", "section3-boundary-risk", "toc-confusion"],
+  "layout": ["table-basic", "table-multicolumn", "table-wrapped-row", "table-column-misalignment", "table-classification-column", "table-merged-cell", "table-image", "cas-first", "cas-middle", "cas-last", "cas-missing-row"],
+  "content": ["content-single", "content-range", "content-less-than", "content-greater-than", "content-less-equal", "content-greater-equal", "content-text-secret", "content-balance", "content-ppm", "content-mixed-unit", "content-missing"],
+  "failure_modes": ["product-name-wrong", "product-name-company-confusion", "product-name-unverified-ai", "product-name-filename-fallback", "cas-missing", "cas-extra", "cas-outside-section3", "cas-invalid", "cas-row-mismatch", "cas-content-pairing", "content-wrong", "content-operator-reversed", "content-column-mismatch", "content-classification-column-confusion", "content-neighbor-row-confusion", "section3-not-found", "section3-wrong-page", "section3-page-image-mismatch", "section3-truncated", "section3-boundary-overrun", "ocr-spacing-damage", "ocr-symbol-loss", "ocr-table-collapse", "duplicate-ai-retry", "all-components-missing"],
+  "product": ["product-cleaner", "product-paint", "product-solvent", "product-acid", "product-alkali", "product-metal-polish", "product-standard-solution", "product-fragrance", "product-adhesive", "product-other"]
+}

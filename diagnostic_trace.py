@@ -129,7 +129,11 @@ def redact(value: Any, key: str = "") -> Any:
     if _SENSITIVE_KEY.search(key):
         return "[REDACTED]"
     if isinstance(value, Mapping):
-        return {str(k): redact(v, str(k)) for k, v in value.items()}
+        return {
+            str(k): redact(v, str(k))
+            for k, v in value.items()
+            if str(k) != "_shadow_context"
+        }
     if isinstance(value, (list, tuple, set)):
         return [redact(v) for v in value]
     if isinstance(value, bytes):
