@@ -196,15 +196,6 @@ try:
 except Exception as e:
     MES_MASTER_LOAD_ERROR = f"마스터 DB 초기화 중 오류 발생: {e}"
 
-EXCEPTION_REGISTRY = {
-    "CR-13_SERIES": {
-        "triggers": ["연강용 피복아크 용접봉", "CS-200", "CR-13"],
-        "target_pn": "용접재료(연강용 피복아크 용접봉) CR-13",
-        "target_substances": "용접흄; 산화철(분진, 흄); 망간 및 그 무기화합물; 이산화티타늄",
-        "components": "13463-67-7(10~15%); 68476-25-5(5~10%); 7439-96-5(1~5%); 1344-09-8(1~5%); 1317-65-3(1~5%); 12001-26-2(1~5%); 7439-89-6(Rem.%)"
-    }
-}
-
 _CAS_DASH_CLASS = r"\-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 cas_pattern = re.compile(rf'(?<![\d-])(\d{{2,7}}\s*[{_CAS_DASH_CLASS}]\s*\d{{2}}\s*[{_CAS_DASH_CLASS}]\s*\d)(?![\d-])')
 cont_pattern = re.compile(r'(?<![a-zA-Z\d-])([<>≤≥= \uff1c\uff1e\uff1d~∼～\-|\u2013|\u2014]*\s*\b\d+(?:[.,]\d+)?\b(?:\s*[<>≤≥=~∼～\-|\u2013|\u2014|이상|미만|above|below|to|and|%]+\s*)*\b\d*(?:[.,]\d+)?\b\s*%?(?:\s*(?:이상|미만|above|below|%)\s*)*)(?![a-zA-Z])', re.IGNORECASE)
@@ -1223,6 +1214,17 @@ class MSDSEngineV6:
             if log_func:
                 log_func("[회귀 검증] 외부 AI 호출을 실행하지 않았습니다.")
             return None
+        if os.getenv("ANTIGRAVITY_PRODUCT_NAME_AI_ONLY") == "1" and purpose != "product_name":
+            _trace_event(
+                "ai.call.blocked",
+                purpose=purpose,
+                requested_model=model,
+                input_mode=input_mode,
+                reason_code="NON_PRODUCT_AI_DISABLED_FOR_BASELINE",
+            )
+            if log_func:
+                log_func("[제품명 기준선] 제품명 외 AI 호출을 실행하지 않았습니다.")
+            return None
         if is_scanned_strict:
             if log_func:
                 log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
@@ -1807,6 +1809,10 @@ class MSDSEngineV6:
             log_func=original_log_func if is_scanned_strict else log_func,
             recon_data=recon_data,
         )
+        self._shadow_context.update({
+            "product_name_evidence_text": compact_context,
+            "product_name_evidence_page": 0,
+        })
         labeled_pn = extract_labeled_product_name(compact_context)
         # 파일명 괄호 표기는 단독 근거로 쓰지 않는다. 같은 토큰(또는 한글의
         # 로마자 표기)이 실제 1페이지 제목에도 존재할 때만 문서 근거 후보로 승격한다.
@@ -2276,45 +2282,21 @@ class MSDSEngineV6:
         product_name = hybrid_pn
         target_substances = ""
         
-        norm_search_pool = re.sub(r'[\s\-]', '', product_name + " " + first_page_text[:500]).upper()
-        
-        # 🚨 [골든 마스터 정합을 위한 제품명 강제 보정 인터락]
-        if "ICP08N1" in norm_search_pool:
-            product_name = "ICP-08N-1"
-        elif "SODIUMHYDROXIDE" in norm_search_pool and product_name == "수산화나트륨":
-            product_name = "수산화나트륨[수산화나트륨[Sodium Hydroxide]]"
-        elif "GIEMSA" in norm_search_pool and "AZUR" in norm_search_pool:
-            product_name = "Giemsa's azur eosin methylene blue solution for microscopy"
-        elif "NITRICACID" in norm_search_pool and "70%" in product_name.upper():
-            product_name = "Nitric acid"
-            
-        is_exception_matched = False
-        for ext_key, ext_data in EXCEPTION_REGISTRY.items():
-            if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
-                product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
-                is_exception_matched = True
-                break
-
         gui_engine_name = "flash" if "Gemini" in used_engine else "bulldozer" if "GPT" in used_engine else "analytic"
 
         # 품질 지문 산출
         score = 100
         reason_tags = []
-        if is_exception_matched:
-            has_invalid_cas = False
-            reason_tags.append("[✅예외자재완착]")
+        if not product_name:
+            score -= 10
+            reason_tags.append("[❌제품명분실]")
         else:
-            if not product_name:
-                score -= 10
-                reason_tags.append("[❌제품명분실]")
-            else:
-                reason_tags.append("[✅제품명완착]")
-                
-            if has_invalid_cas:
-                score -= 60
-                reason_tags.append("[❌CAS유실]")
-            else:
-                reason_tags.append("[✅CAS정합]")
+            reason_tags.append("[✅제품명완착]")
+        if has_invalid_cas:
+            score -= 60
+            reason_tags.append("[❌CAS유실]")
+        else:
+            reason_tags.append("[✅CAS정합]")
             
         integrity_reason = f"[품질점수: {score}점] ➔ " + " ".join(reason_tags)
         
@@ -2880,39 +2862,25 @@ class MSDSEngineV6:
         product_name = hybrid_pn
         target_substances = ""
         
-        # 1섹션 물질명 매칭 예외처리(EXCEPTION_REGISTRY) 검사
-        norm_search_pool = re.sub(r'[\s\-]', '', product_name + " " + (section3_text[:500] if section3_text else "")).upper()
-        is_exception_matched = False
-        for ext_key, ext_data in EXCEPTION_REGISTRY.items():
-            if all(re.sub(r'[\s\-]', '', trigger).upper() in norm_search_pool for trigger in ext_data["triggers"]):
-                product_name, comp_str, target_substances = ext_data["target_pn"], ext_data["components"], ext_data["target_substances"]
-                is_exception_matched = True
-                break
-
         gui_engine_name = "flash" if "Gemini" in used_engine else "analytic"
 
         # 품질 지문 산출
         score = 100
         reason_tags = []
-        if is_exception_matched:
-            has_invalid_cas = False
-            reason_tags.append("[✅예외자재완착]")
+        if not product_name:
+            score -= 10
+            reason_tags.append("[❌제품명분실]")
         else:
-            if not product_name:
-                score -= 10
-                reason_tags.append("[❌제품명분실]")
-            else:
-                reason_tags.append("[✅제품명완착]")
-                
-            if has_invalid_cas:
-                score -= 60
-                reason_tags.append("[❌CAS유실]")
-            else:
-                reason_tags.append("[✅CAS정합]")
+            reason_tags.append("[✅제품명완착]")
+        if has_invalid_cas:
+            score -= 60
+            reason_tags.append("[❌CAS유실]")
+        else:
+            reason_tags.append("[✅CAS정합]")
             
         # 🛡️ [데이터 검증 및 에러 예외 처리 - Test Case] 상표명-성분 문자열 직접 대조 교차 검문소 유연화 완착
         # 🚨 [수선 핵심]: is_cas_highpass 조건 연동을 추가하여 유효 자산의 오독/강제 삭제 현상을 원천 차단
-        if doc_type == "스캔본" and not is_exception_matched and not is_cas_highpass:
+        if doc_type == "스캔본" and not is_cas_highpass:
             pn_clean = re.sub(r'[^\w]', ' ', product_name).strip()
             pn_tokens = [t for t in pn_clean.split() if len(t) >= 2 and not any(k in t.lower() for k in ["msds", "sds", "시약", "덕산", "칸토", "준세이", "영문", "국문", "개정", "질산", "수성", "내부", "아이"])]
             

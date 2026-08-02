@@ -20,11 +20,14 @@ from msds_validation import (
 )
 from run_production_race import (
     GoldenValidationError,
+    build_inventory,
     load_cases,
     normalize_content,
     normalize_product_name_for_golden,
+    parse_components_with_source,
     select_cases,
 )
+from result_safety import RuntimeExtractionResult
 from tools.classify_golden_cases import DEFAULT_OUTPUT_DIR, classify_pdf, load_taxonomy, validate_tags
 from tools.update_golden import GoldenUpdateError, apply_approved_candidate, update_golden_file
 
@@ -369,6 +372,264 @@ class GoldenComparisonTests(unittest.TestCase):
         case = self._case(name="회사명 제품A", components=[])
         result = self._result(name="회사명 제품B", components=[])
         self.assertIn("GOLDEN_PRODUCT_NAME_MISMATCH", self._reason_codes(case, result))
+
+
+class FinalInventoryTests(unittest.TestCase):
+    def _write_golden(self, root, cases):
+        path = Path(root) / "golden.json"
+        path.write_text(json.dumps({"cases": cases}), encoding="utf-8")
+        return path
+
+    def test_registered_pdf_matches_id_filename_and_hash(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            pdf = pdf_dir / "001_sample.pdf"
+            pdf.write_bytes(b"one")
+            golden = self._write_golden(tmp, [{
+                "id": "001", "file": pdf.name,
+                "source_sha256": hashlib.sha256(b"one").hexdigest(),
+            }])
+            cases, warnings, summary = build_inventory(golden, pdf_dir)
+            self.assertEqual(warnings, [])
+            self.assertTrue(cases[0]["_registered_match"])
+            self.assertEqual(summary["matched_case_count"], 1)
+
+    def test_alias_match_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            pdf = pdf_dir / "001_actual.pdf"
+            pdf.write_bytes(b"one")
+            golden = self._write_golden(tmp, [{
+                "id": "001", "file": "001_old.pdf", "aliases": [pdf.name],
+                "source_sha256": hashlib.sha256(b"one").hexdigest(),
+            }])
+            _, warnings, summary = build_inventory(golden, pdf_dir)
+            self.assertEqual(warnings, [])
+            self.assertEqual(summary["alias_match_count"], 1)
+
+    def test_missing_golden_pdf_is_not_selected_for_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            golden = self._write_golden(tmp, [{
+                "id": "001", "file": "001_missing.pdf", "source_sha256": "a" * 64,
+            }])
+            cases, warnings, _ = build_inventory(golden, pdf_dir)
+            self.assertTrue(any(item.startswith("GOLDEN_PDF_MISSING") for item in warnings))
+            self.assertEqual(select_cases(cases, select_all=True), [])
+
+    def test_registered_only_excludes_unregistered_and_hash_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            good = pdf_dir / "001_good.pdf"
+            bad = pdf_dir / "002_bad.pdf"
+            extra = pdf_dir / "003_extra.pdf"
+            good.write_bytes(b"good")
+            bad.write_bytes(b"bad")
+            extra.write_bytes(b"extra")
+            golden = self._write_golden(tmp, [
+                {"id": "001", "file": good.name, "source_sha256": hashlib.sha256(b"good").hexdigest()},
+                {"id": "002", "file": bad.name, "source_sha256": "b" * 64},
+            ])
+            cases, _, _ = build_inventory(golden, pdf_dir)
+            selected = select_cases(cases, select_all=True, registered_only=True)
+            self.assertEqual([case["id"] for case in selected], ["001"])
+
+    def test_duplicate_physical_sha_is_selected_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            first = pdf_dir / "001_a.pdf"
+            second = pdf_dir / "002_b.pdf"
+            first.write_bytes(b"same")
+            second.write_bytes(b"same")
+            digest = hashlib.sha256(b"same").hexdigest()
+            golden = self._write_golden(tmp, [
+                {"id": "001", "file": first.name, "source_sha256": digest},
+                {"id": "002", "file": second.name, "source_sha256": digest},
+            ])
+            cases, warnings, _ = build_inventory(golden, pdf_dir)
+            self.assertTrue(any(item.startswith("DUPLICATE_PHYSICAL_PDF") for item in warnings))
+            self.assertEqual(len(select_cases(cases, select_all=True)), 1)
+
+    def test_filename_mismatch_has_dedicated_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pdf_dir = Path(tmp) / "pdfs"
+            pdf_dir.mkdir()
+            (pdf_dir / "001_actual.pdf").write_bytes(b"one")
+            golden = self._write_golden(tmp, [{
+                "id": "001", "file": "001_expected.pdf",
+                "source_sha256": hashlib.sha256(b"one").hexdigest(),
+            }])
+            _, warnings, _ = build_inventory(golden, pdf_dir)
+            self.assertTrue(any(item.startswith("GOLDEN_FILENAME_MISMATCH") for item in warnings))
+
+
+class ComponentSourceSelectionTests(unittest.TestCase):
+    def test_empty_components_falls_through_to_component_string(self):
+        parsed, source = parse_components_with_source({
+            "components": [], "함유량": [], "구성성분": "64-17-5(10%)",
+        })
+        self.assertEqual(parsed, {"64-17-5": ["10%"]})
+        self.assertEqual(source, "구성성분")
+
+    def test_empty_content_list_falls_through_to_component_list(self):
+        parsed, source = parse_components_with_source({
+            "함유량": [], "구성성분": [{"cas": "64-17-5", "content": "10%"}],
+        })
+        self.assertEqual(parsed, {"64-17-5": ["10%"]})
+        self.assertEqual(source, "구성성분")
+
+    def test_first_valid_structured_field_wins_without_merging(self):
+        parsed, source = parse_components_with_source({
+            "components": [{"cas": "64-17-5", "content": "10%"}],
+            "함유량": [{"cas": "67-64-1", "content": "20%"}],
+        })
+        self.assertEqual(parsed, {"64-17-5": ["10%"]})
+        self.assertEqual(source, "components")
+
+    def test_duplicate_rows_in_selected_field_are_preserved(self):
+        parsed, source = parse_components_with_source({"components": [
+            {"cas": "64-17-5", "content": "10%"},
+            {"cas": "64-17-5", "content": "20%"},
+        ]})
+        self.assertEqual(parsed["64-17-5"], ["10%", "20%"])
+        self.assertEqual(source, "components")
+
+
+class ProductNameRegressionModeTests(unittest.TestCase):
+    def _case(self):
+        return {
+            "id": "001", "file": "001.pdf", "_pdf_path": "001.pdf",
+            "source_sha256": "a" * 64,
+            "product_name": {"expected": "Expected", "allowed_variants": []},
+            "components": [{"cas": "64-17-5", "content_expected": "10%"}],
+        }
+
+    def _result(self, product, *, calls=1, evidence="Section 1 product evidence"):
+        return RuntimeExtractionResult({
+            "제품명": product,
+            "components": [{"cas": "64-17-5", "content": "10%"}],
+            "metrics": {"ai": [
+                {"purpose": "product_name", "provider": "vertex"} for _ in range(calls)
+            ]},
+        }, shadow_context={
+            "product_name_evidence_text": evidence,
+            "product_name_evidence_page": 0,
+        })
+
+    def test_no_paid_ai_skips_product_comparison_and_records_unverified(self):
+        seen = []
+        def process_pdf(*args, **kwargs):
+            seen.append(os.environ.get("ANTIGRAVITY_DISABLE_PAID_AI"))
+            return self._result("Different", calls=0)
+        run = race.run_case(self._case(), process_pdf_func=process_pdf)
+        self.assertEqual(run["product_name_status"], "product_name_not_verified_ai_disabled")
+        self.assertNotIn("GOLDEN_PRODUCT_NAME_MISMATCH", [d.get("reason_code") for d in run["differences"]])
+        self.assertEqual(seen, ["1"])
+
+    def test_with_product_ai_compares_product_and_uses_product_only_guard(self):
+        seen = []
+        def process_pdf(*args, **kwargs):
+            seen.append((os.environ.get("ANTIGRAVITY_DISABLE_PAID_AI"), os.environ.get("ANTIGRAVITY_PRODUCT_NAME_AI_ONLY")))
+            return self._result("Different")
+        run = race.run_case(self._case(), with_product_ai=True, process_pdf_func=process_pdf)
+        self.assertEqual(run["product_name_status"], "product_name_mismatch")
+        self.assertEqual(seen, [(None, "1")])
+        self.assertEqual(run["ai_component_calls"], 0)
+
+    def test_baseline_rechecks_only_mismatch_and_second_match_is_unstable(self):
+        results = iter([self._result("Different"), self._result("Expected")])
+        run = race.run_case(
+            self._case(), with_product_ai=True, product_name_baseline=True,
+            process_pdf_func=lambda *args, **kwargs: next(results),
+        )
+        self.assertEqual(run["product_name_status"], "product_name_unstable_warning")
+        self.assertEqual(run["ai_product_name_calls"], 2)
+
+    def test_baseline_matching_first_result_is_not_repeated(self):
+        calls = []
+        def process_pdf(*args, **kwargs):
+            calls.append(1)
+            return self._result("Expected")
+        run = race.run_case(
+            self._case(), with_product_ai=True, product_name_baseline=True,
+            process_pdf_func=process_pdf,
+        )
+        self.assertEqual(run["product_name_status"], "product_name_complete")
+        self.assertEqual(len(calls), 1)
+
+    def test_second_mismatch_remains_mismatch(self):
+        results = iter([self._result("Wrong A"), self._result("Wrong B")])
+        run = race.run_case(
+            self._case(), with_product_ai=True, product_name_baseline=True,
+            process_pdf_func=lambda *args, **kwargs: next(results),
+        )
+        self.assertEqual(run["product_name_status"], "product_name_mismatch")
+        self.assertEqual(run["ai_product_name_calls"], 2)
+
+    def test_missing_evidence_is_structural_failure(self):
+        result = RuntimeExtractionResult({
+            "제품명": "Expected", "components": [{"cas": "64-17-5", "content": "10%"}],
+        })
+        run = race.run_case(self._case(), process_pdf_func=lambda *args, **kwargs: result)
+        self.assertEqual(run["product_name_status"], "product_name_evidence_missing")
+        self.assertEqual(run["status"], "extraction_failed")
+        self.assertIn("PRODUCT_NAME_EVIDENCE_MISSING", [d.get("reason_code") for d in run["differences"]])
+
+    def test_component_source_field_is_reported(self):
+        run = race.run_case(
+            self._case(), process_pdf_func=lambda *args, **kwargs: self._result("Expected", calls=0),
+        )
+        self.assertEqual(run["component_source_field"], "components")
+
+
+class ProductOnlyAIGuardTests(unittest.TestCase):
+    def test_product_only_mode_blocks_component_provider(self):
+        import msds_engine_v6
+        engine = msds_engine_v6.MSDSEngineV6()
+        with patch.dict(os.environ, {"ANTIGRAVITY_PRODUCT_NAME_AI_ONLY": "1"}, clear=False), patch.object(
+            engine, "_invoke_ai_provider", side_effect=AssertionError("provider called")
+        ):
+            self.assertIsNone(engine.call_llm_router(
+                {"contents": [{"parts": [{"text": "components"}]}]}, purpose="component_extraction",
+            ))
+
+    def test_operating_engine_has_no_case_override_registry(self):
+        source = (ROOT / "msds_engine_v6.py").read_text(encoding="utf-8")
+        self.assertNotIn("EXCEPTION_REGISTRY", source)
+        self.assertNotIn("골든 마스터 정합을 위한 제품명 강제 보정", source)
+
+    def test_cli_defaults_to_no_product_ai(self):
+        args = race.build_parser().parse_args(["--all"])
+        self.assertFalse(args.with_product_ai)
+
+    def test_baseline_requires_explicit_product_ai(self):
+        self.assertEqual(race.main(["--all", "--product-name-baseline"]), 1)
+
+    def test_baseline_artifacts_do_not_store_environment_secrets(self):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(race, "BASELINE_OUTPUT_DIR", Path(tmp)), patch.dict(
+            os.environ, {"DEEPSEEK_API_KEY": "secret-value"}, clear=False,
+        ):
+            selected = [{
+                "id": "001", "file": "001.pdf",
+                "product_name": {"expected": "Expected"},
+            }]
+            results = [{
+                "product_name_status": "product_name_complete",
+                "ai_first_result": "Expected", "ai_second_result": "",
+                "product_name_evidence_text": "Section 1 evidence",
+                "product_name_evidence_page": 0,
+                "result": {"metrics": {"ai": [{"purpose": "product_name", "provider": "vertex"}]}},
+            }]
+            json_path, csv_path = race.write_product_name_baseline(selected, results)
+            self.assertTrue(json_path.exists())
+            self.assertTrue(csv_path.exists())
+            self.assertNotIn("secret-value", json_path.read_text(encoding="utf-8"))
+            self.assertNotIn("secret-value", csv_path.read_text(encoding="utf-8-sig"))
 
 
 class GoldenUpdateTests(unittest.TestCase):

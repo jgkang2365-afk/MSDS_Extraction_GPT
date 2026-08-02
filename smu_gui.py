@@ -7383,49 +7383,9 @@ class SMUGUI(QMainWindow):
                     fn = os.path.basename(path)
                     break
         
-        # 1) CR-13 및 K-308 보정 감지
-        norm_pn = re.sub(r'[\s\-_()]', '', prod_name).upper() if prod_name else ""
-        is_cr13 = False
-        if prod_name:
-            if "CR13" in norm_pn and ("용접" in norm_pn or "WELDING" in norm_pn):
-                is_cr13 = True
-        else:
-            cas_set = {c.get("cas", "") for c in components if c.get("cas")}
-            if "7439-89-6" in cas_set and "7439-96-5" in cas_set and "13463-67-7" in cas_set and len(cas_set) == 3:
-                is_cr13 = True
-                
-        is_prod_k308 = False
-        if prod_name:
-            if "K308" in norm_pn or "K-308" in norm_pn:
-                is_prod_k308 = True
-                
-        # 2) render_components 구축
-        if is_cr13:
-            # 철 및 용접흄 잔량 표기 단위를 Rem.% 완성형으로 강제 교정 (1번 요청 반영)
-            render_components = [
-                {
-                    "cas": "7439-89-6",
-                    "name": "철",
-                    "content": "Rem.%",
-                    "selected_name": "",
-                    "osh": {"is_measured": True, "is_special": False, "is_special_mgmt": False, "is_permit": False}
-                },
-                {
-                    "cas": "7439-96-5",
-                    "name": "망간 및 그 무기화합물",
-                    "content": "1~5%",
-                    "selected_name": "",
-                    "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
-                },
-                {
-                    "cas": "13463-67-7",
-                    "name": "이산화티타늄",
-                    "content": "10~15%",
-                    "selected_name": "",
-                    "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
-                }
-            ]
-        else:
+        # 제품명·모델별 정답 강제 없이 일반 용접 구조 규칙만 적용한다.
+        render_components = []
+        if isinstance(components, list):
             is_welding = ("용접" in prod_name) or ("welding" in prod_name.lower()) if prod_name else False
             new_comps = []
             
@@ -7474,7 +7434,6 @@ class SMUGUI(QMainWindow):
                         "osh": {"is_measured": True, "is_special": True, "is_special_mgmt": False, "is_permit": False}
                     })
             
-            # K308 유령 크롬 6가크롬 강제 삽입 폐기 (2번 요청 반영)
             render_components = new_comps
 
         # 🛡️ [데이터 검증 및 예외 처리] 외부 AI의 간헐적 중복 사출(환각) 자산 격멸 가드레일 완착
