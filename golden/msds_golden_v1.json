@@ -1154,7 +1154,10 @@
     },
     {
       "id": "027",
-      "file": "027_D-GLUCONIC ACID LACTONE.PDF",
+      "file": "027_★D-GLUCONIC ACID LACTONE.PDF",
+      "aliases": [
+        "027_D-GLUCONIC ACID LACTONE.PDF"
+      ],
       "source_sha256": "f902912db319ed52a75fef2c666007ac6a3bce57b9dd052fee5a5c49e83229e5",
       "document_type": "digital",
       "product_name": {
@@ -1841,7 +1844,7 @@
     {
       "id": "047",
       "file": "047_★GL-2002.pdf",
-      "source_sha256": "0174dc703b201ff2f94f255f726e0ad9370d8545b1632f4f310826c0a774bb10",
+      "source_sha256": "9bb22dac81684b35737ee3680b626115b26b6c95e6b057cd1d5319a0b30d2e96",
       "document_type": "digital",
       "product_name": {
         "expected": "GL-2002 (지엘-2002)",
