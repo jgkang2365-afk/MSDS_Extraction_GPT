@@ -1,5 +1,6 @@
 import ast
 import io
+import os
 import hashlib
 import json
 import re
@@ -945,6 +946,14 @@ class AICallMetricsTests(unittest.TestCase):
     def _response(text):
         return {"candidates": [{"content": {"parts": [{"text": text}]}}]}
 
+    @staticmethod
+    def _settings(*, vertex=False):
+        return types.SimpleNamespace(
+            novita_api_key="test-key",
+            vertex_credential_path=Path("vertex.json") if vertex else None,
+            vertex_error_code="",
+        )
+
     def test_each_ai_response_tracks_its_own_harvest_and_final_application(self):
         engine = engine_module.MSDSEngineV6()
         responses = [
@@ -960,7 +969,9 @@ class AICallMetricsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             pdf_path = Path(temp_dir) / "metrics.pdf"
             pdf_path.write_bytes(b"metrics")
-            with patch.object(engine, "call_deepseek_with_retry", side_effect=responses), patch.object(
+            with patch.object(
+                engine_module, "load_api_settings", return_value=self._settings()
+            ), patch.object(engine, "call_deepseek_with_retry", side_effect=responses), patch.object(
                 engine, "_process_msds_pipeline_impl", side_effect=fake_pipeline
             ):
                 result = engine.process_msds_pipeline(str(pdf_path), bypass_cache=True)
@@ -979,7 +990,9 @@ class AICallMetricsTests(unittest.TestCase):
 
     def test_empty_synthetic_response_is_not_counted_as_received(self):
         engine = engine_module.MSDSEngineV6()
-        with patch.object(engine, "call_deepseek_with_retry", return_value=self._response("")):
+        with patch.object(
+            engine_module, "load_api_settings", return_value=self._settings()
+        ), patch.object(engine, "call_deepseek_with_retry", return_value=self._response("")):
             engine.call_llm_router({}, purpose="product_name")
 
         metric = engine._ai_call_metrics[0]
@@ -998,6 +1011,8 @@ class AICallMetricsTests(unittest.TestCase):
             pdf_path = Path(temp_dir) / "content-mismatch.pdf"
             pdf_path.write_bytes(b"metrics")
             with patch.object(
+                engine_module, "load_api_settings", return_value=self._settings()
+            ), patch.object(
                 engine,
                 "call_deepseek_with_retry",
                 return_value=self._response('{"components":[{"cas":"64-17-5","content":"50%"}]}'),
@@ -1010,7 +1025,9 @@ class AICallMetricsTests(unittest.TestCase):
 
     def test_failover_records_failed_and_received_calls_separately(self):
         engine = engine_module.MSDSEngineV6()
-        with patch.object(engine, "call_deepseek_with_retry", side_effect=RuntimeError("offline")), patch.object(
+        with patch.object(
+            engine_module, "load_api_settings", return_value=self._settings(vertex=True)
+        ), patch.object(engine, "call_deepseek_with_retry", side_effect=RuntimeError("offline")), patch.object(
             engine, "call_vertex_gemini_with_retry", return_value=self._response("Vertex Product")
         ):
             engine.call_llm_router({}, purpose="product_name")

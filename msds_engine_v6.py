@@ -20,15 +20,22 @@ except ImportError:
     service_account = None
     google_auth_requests = None
 import unicodedata
+from api_config import (
+    APIConfigError,
+    api_status_lines,
+    load_api_settings,
+    vertex_dependency_preflight,
+)
 from batch_pipeline import normalize_product_name, verify_product_name
+from product_name_diagnostics import (
+    AIProviderCallError,
+    classify_product_response,
+    provider_failure_reason,
+    sanitize_diagnostic_message,
+)
 from result_safety import RuntimeExtractionResult
 from opendataloader.pdf import PDFParser
 import msds_utils_v3
-try:
-    from dotenv import load_dotenv
-except ImportError:
-    def load_dotenv(*args, **kwargs):
-        return False
 import socket
 from remote_ocr_client import (
     RemoteOCRClient,
@@ -120,9 +127,6 @@ def _trace_enabled():
 
 # 모든 소켓 통신의 기본 타임아웃을 20초로 강제 설정하여 API 지연 시 프로세스 영구 블로킹 방어
 socket.setdefaulttimeout(20.0)
-
-# .env 파일 로드
-load_dotenv(override=True)
 
 # 윈도우 터미널 인코딩 노이즈 방어
 if sys.platform == 'win32':
@@ -328,8 +332,9 @@ class MSDSEngineV6:
         """
         [데이터 검증 가드레일 01] 기계 가동 전 마스터 열쇠 장착 여부 확인 및 신규 패턴 컴파일
         """
-        key_path = "vertex_key.json"
-        if not os.path.exists(key_path):
+        self.api_settings = load_api_settings()
+        _trace_event("api.configuration", **self.api_settings.diagnostic_status())
+        if not self.api_settings.vertex_credential_path:
             print("🚨 [[Vertex AI] 마스터 열쇠 사증 실패] 로컬에 vertex_key.json 파일이 존재하지 않습니다.")
         else:
             print("🟢 [[상표명 성분 감별사] 기동] 버텍스 AI 마스터 열쇠 직결 선로가 활성화되었습니다.")
@@ -363,6 +368,7 @@ class MSDSEngineV6:
         self._ppstructure_usage_count = 0
         self._ai_call_count = 0
         self._ai_call_metrics = []
+        self._product_name_events = []
         self._image_pipeline_active = False
         self.remote_ocr_client = remote_ocr_client or RemoteOCRClient(enabled=use_remote_ocr)
         # 운영 기본값은 기존 1.5배 단일 정찰과 완전히 동일하다. 아래 두 값은
@@ -374,6 +380,20 @@ class MSDSEngineV6:
         self._diagnostic_candidate_ids = {}
         self._diagnostic_last_candidate_ids = []
         self._diagnostic_product_candidate_id = None
+
+    def api_configuration_status(self):
+        return api_status_lines(self.api_settings)
+
+    def _record_product_name_event(self, event, **details):
+        """제품명 기준선에 필요한 최소 호출 흐름만 런타임 문맥에 보존한다."""
+        safe = {
+            key: sanitize_diagnostic_message(value) if key in {"message", "exception_type"} else value
+            for key, value in details.items()
+            if key not in {"raw_response", "prompt", "payload", "api_key", "token"}
+        }
+        item = {"event": event, **safe}
+        self._product_name_events.append(item)
+        _trace_event(event, **safe)
 
     def _diagnostic_candidate(self, value, source, obj=None, **fields):
         """동일 후보 객체가 정제/QC를 지나도 같은 candidate_id를 유지한다."""
@@ -926,13 +946,24 @@ class MSDSEngineV6:
             if log_func: log_func(f"🚨 [[함량 검문소] 시스템 예외 발생] 데이터 세척 처리 차단: {e}")
             return False
 
-    def call_vertex_gemini_with_retry(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash"):
+    def call_vertex_gemini_with_retry(
+        self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash",
+        diagnostic_fail_fast=False,
+    ):
         """
         [Vertex AI] vertex_key.json 기반으로 GCP Vertex AI API를 직접 REST 호출
         """
-        key_path = "vertex_key.json"
-        if not os.path.exists(key_path):
-            if log_func: log_func(" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (파일 미존재)")
+        self.api_settings = load_api_settings()
+        try:
+            key_path, project_id, location = self.api_settings.require_vertex()
+            vertex_dependency_preflight()
+        except APIConfigError as config_error:
+            if log_func: log_func(f" ❌ [Vertex AI] 호출 사전 점검 실패 ({config_error.code})")
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "call_blocked", "Vertex preflight failed",
+                    error_code=config_error.code,
+                )
             return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
             
         access_token = None
@@ -940,7 +971,7 @@ class MSDSEngineV6:
             if service_account is None or google_auth_requests is None:
                 raise RuntimeError("Google 인증 라이브러리가 설치되지 않았습니다.")
             credentials = service_account.Credentials.from_service_account_file(
-                key_path,
+                str(key_path),
                 scopes=['https://www.googleapis.com/auth/cloud-platform']
             )
             auth_req = google_auth_requests.Request()
@@ -948,10 +979,13 @@ class MSDSEngineV6:
             access_token = credentials.token
         except Exception as auth_err:
             if log_func: log_func(f" ❌ [Vertex AI] 마스터 열쇠 사증 실패 (인증 실패): {auth_err}")
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "provider_error", f"Vertex authentication failed: {type(auth_err).__name__}",
+                    error_code="VERTEX_TOKEN_REFRESH_FAILED",
+                )
             return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
-            
-        project_id = "msds-engine-v6"
-        location = "us-central1"
+
         url = f"https://{location}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{location}/publishers/google/models/{model}:generateContent"
         
         headers = {
@@ -965,32 +999,74 @@ class MSDSEngineV6:
                 if "role" not in c:
                     c["role"] = "user"
                     
+        last_error = None
         for attempt in range(max_retries):
             try:
                 response = requests.post(url, headers=headers, json=payload, timeout=30)
                 if response.status_code == 200:
                     return response.json()
-                else:
-                    if log_func: log_func(f"  🔴 [Vertex AI Retry] 호출 실패 (HTTP {response.status_code}) - {response.text}")
+                if response.status_code == 429:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError("rate_limited", "Vertex rate limited", http_status=429)
+                    if log_func: log_func("  🔴 [Vertex AI Retry] 호출 실패 (HTTP 429)")
                     time.sleep(1.0)
                     continue
+                if response.status_code in {401, 403}:
+                    last_error = AIProviderCallError(
+                        "provider_error", f"Vertex HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="VERTEX_PERMISSION_DENIED",
+                    )
+                elif response.status_code == 404:
+                    last_error = AIProviderCallError(
+                        "provider_error", "Vertex model not found", http_status=404,
+                        error_code="VERTEX_MODEL_NOT_FOUND",
+                    )
+                else:
+                    last_error = AIProviderCallError(
+                        "provider_error", f"Vertex HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="VERTEX_API_FAILED",
+                    )
+                    if log_func: log_func(f"  🔴 [Vertex AI Retry] 호출 실패 (HTTP {response.status_code})")
+                    time.sleep(1.0)
+                    continue
+            except AIProviderCallError:
+                if diagnostic_fail_fast:
+                    raise
+                continue
             except Exception as e:
+                kind = "timeout" if "timeout" in type(e).__name__.lower() else "provider_error"
+                last_error = AIProviderCallError(
+                    kind, f"Vertex request failed: {type(e).__name__}",
+                    error_code="VERTEX_TIMEOUT" if kind == "timeout" else "VERTEX_API_FAILED",
+                )
                 if log_func: log_func(f"  🔴 [Vertex AI Retry] {attempt+1}차 장애 사유: {e}")
-                time.sleep(1.0)
+                if attempt < max_retries - 1:
+                    time.sleep(1.0)
                 continue
                 
         if log_func: log_func(" ❌ [Vertex AI] 호출 최종 실패")
+        if diagnostic_fail_fast:
+            raise last_error or AIProviderCallError("provider_error", "Vertex call failed")
         return {"candidates": [{"content": {"parts": [{"text": ""}]}}]}
 
-    def call_deepseek_with_retry(self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash"):
+    def call_deepseek_with_retry(
+        self, payload, max_retries=1, log_func=None, model="deepseek/deepseek-v4-flash",
+        diagnostic_fail_fast=False,
+    ):
         """
-        [DeepSeek] 30초 타임아웃 가드레일을 얹은 Novita AI 단독 호출
+        호환 함수명은 유지하되 NOVITA_API_KEY만 사용하는 Novita 호출 경로.
         """
-        api_key = os.getenv("DEEPSEEK_API_KEY") or os.getenv("NOVITA_API_KEY")
+        self.api_settings = load_api_settings()
+        api_key = self.api_settings.novita_api_key
         if not api_key:
-            raise ValueError("DEEPSEEK_API_KEY 누락")
-            
-        url = "https://api.novita.ai/v3/openai/chat/completions"
+            if diagnostic_fail_fast:
+                raise AIProviderCallError(
+                    "call_blocked", "Novita credential missing",
+                    error_code="NOVITA_API_KEY_MISSING",
+                )
+            raise ValueError("NOVITA_API_KEY 누락")
+
+        url = "https://api.novita.ai/openai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -1012,18 +1088,32 @@ class MSDSEngineV6:
         openai_payload = {
             "model": model,
             "messages": openai_messages,
-            "temperature": 0.0
+            "temperature": 0.0,
+            "max_tokens": 256,
         }
         if response_format:
             openai_payload["response_format"] = response_format
-            
-        for attempt in range(max_retries):
+
+        output_retry_count = 0
+        attempt = 0
+        while attempt < max_retries:
             try:
-                # 1선 DeepSeek 호출 타임아웃(커넥션 5초, 읽기 12초)을 얹은 Novita AI 호출
                 response = requests.post(url, headers=headers, json=openai_payload, timeout=(5, 12))
                 if response.status_code == 200:
                     res_json = response.json()
-                    content_str = res_json["choices"][0]["message"]["content"]
+                    choice = (res_json.get("choices") or [{}])[0]
+                    message = choice.get("message") or {}
+                    content_str = str(message.get("content") or "").strip()
+                    finish_reason = str(choice.get("finish_reason") or "")
+                    if finish_reason == "length" and not content_str:
+                        if output_retry_count == 0:
+                            output_retry_count = 1
+                            openai_payload["max_tokens"] = 512
+                            continue
+                        raise AIProviderCallError(
+                            "output_truncated", "Novita output truncated",
+                            error_code="NOVITA_OUTPUT_TRUNCATED",
+                        )
                     return {
                         "candidates": [
                             {
@@ -1033,15 +1123,51 @@ class MSDSEngineV6:
                                     ]
                                 }
                             }
-                        ]
+                        ],
+                        "_provider_finish_reason": finish_reason,
+                        "_output_retry_count": output_retry_count,
                     }
-                else:
-                    raise Exception(f"HTTP {response.status_code}")
+                if response.status_code == 429:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError(
+                            "rate_limited", "Novita rate limited", http_status=429,
+                            error_code="NOVITA_RATE_LIMITED",
+                        )
+                    raise Exception("HTTP 429")
+                if response.status_code in {401, 403}:
+                    raise AIProviderCallError(
+                        "provider_error", f"Novita HTTP {response.status_code}",
+                        http_status=response.status_code, error_code="NOVITA_AUTH_FAILED",
+                    )
+                raise AIProviderCallError(
+                    "provider_error", f"Novita HTTP {response.status_code}",
+                    http_status=response.status_code, error_code="NOVITA_API_FAILED",
+                )
+            except AIProviderCallError as e:
+                if diagnostic_fail_fast and e.kind in {"rate_limited", "output_truncated"}:
+                    raise
+                if log_func: log_func(f"   [Novita Retry] {attempt+1}차 시도 실패 사유: {e}")
+                if attempt >= max_retries - 1:
+                    if diagnostic_fail_fast:
+                        raise
+                    raise Exception("Novita API 호출 최종 실패")
             except Exception as e:
-                if log_func: log_func(f"   [DeepSeek Retry] {attempt+1}차 시도 실패 사유: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(1.0)
-        raise Exception("DeepSeek API 호출 최종 실패")
+                kind = "timeout" if "timeout" in type(e).__name__.lower() else "provider_error"
+                if log_func: log_func(f"   [Novita Retry] {attempt+1}차 시도 실패 사유: {e}")
+                if attempt >= max_retries - 1:
+                    if diagnostic_fail_fast:
+                        raise AIProviderCallError(
+                            kind, f"Novita request failed: {type(e).__name__}",
+                            error_code="NOVITA_TIMEOUT" if kind == "timeout" else "NOVITA_API_FAILED",
+                        )
+                    raise Exception("Novita API 호출 최종 실패")
+                time.sleep(1.0)
+            attempt += 1
+        if diagnostic_fail_fast:
+            raise AIProviderCallError(
+                "provider_error", "Novita call failed", error_code="NOVITA_API_FAILED",
+            )
+        raise Exception("Novita API 호출 최종 실패")
 
     @staticmethod
     def _ai_response_text(response):
@@ -1102,11 +1228,17 @@ class MSDSEngineV6:
             "_harvested_content_pairs": content_pairs,
         }
 
-    def _invoke_ai_provider(self, provider, model, purpose, input_mode, invoke):
+    def _invoke_ai_provider(self, provider, model, purpose, input_mode, invoke, *, stage="primary", attempt=1):
         started = time.perf_counter()
         metric = {
             "provider": provider, "model": model, "purpose": purpose,
+            "stage": stage, "attempt": attempt,
             "input_mode": input_mode, "called": True, "response_received": False,
+            "raw_response_present": False, "parsed_response_present": False,
+            "response_schema_valid": False, "reason_code": "",
+            "http_status": None, "exception_type": "", "message": "",
+            "provider_error_code": "",
+            "fallback_attempted": stage == "fallback", "parsed_product_name": "",
             "elapsed_seconds": 0.0, "product_name_harvested": False,
             "cas_harvested": False, "content_harvested": False,
             "final_result_applied": False, "applied_fields": [], "discard_reason": "",
@@ -1122,37 +1254,84 @@ class MSDSEngineV6:
             input_mode=input_mode,
             attempt_number=self._ai_call_count,
         )
+        if purpose == "product_name":
+            self._record_product_name_event(
+                f"product_name.{stage}.call.started",
+                provider=provider, model=model, attempt=attempt, input_mode=input_mode,
+            )
         try:
             response = invoke()
         except Exception as exc:
+            reason_code = provider_failure_reason(exc) if purpose == "product_name" else ""
             metric.update({
                 "elapsed_seconds": round(time.perf_counter() - started, 3),
                 "discard_reason": f"CALL_ERROR:{type(exc).__name__}",
+                "reason_code": reason_code,
+                "http_status": getattr(exc, "http_status", None),
+                "exception_type": type(exc).__name__,
+                "message": sanitize_diagnostic_message(exc),
+                "provider_error_code": str(getattr(exc, "error_code", "") or ""),
             })
             _trace_event("ai.call.failure", provider=provider, model=model, purpose=purpose, error_type=type(exc).__name__)
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    f"product_name.{stage}.call.failed",
+                    provider=provider, model=model, attempt=attempt,
+                    reason_code=reason_code, http_status=getattr(exc, "http_status", None),
+                    provider_error_code=str(getattr(exc, "error_code", "") or ""),
+                    exception_type=type(exc).__name__, message=sanitize_diagnostic_message(exc),
+                )
             raise
 
         response_text = self._ai_response_text(response)
         parsed_response = False
+        parsed_object = None
         try:
-            json.loads(response_text.replace("```json", "").replace("```", "").strip())
+            parsed_object = json.loads(response_text.replace("```json", "").replace("```", "").strip())
             parsed_response = bool(response_text.strip())
         except (ValueError, TypeError):
             parsed_response = False
         harvested = self._analyze_ai_response(response, purpose)
+        response_reason = ""
+        parsed_product_name = str(harvested.get("_harvested_product_name") or "").strip()
+        if purpose == "product_name":
+            parsed_product_name, response_reason = classify_product_response(response_text, parsed_object)
+            harvested["product_name_harvested"] = bool(parsed_product_name)
+            harvested["_harvested_product_name"] = parsed_product_name
         metric.update({
             "response_received": bool(response_text),
+            "raw_response_present": bool(response_text),
             "provider_response_returned": response is not None,
             "json_parse_succeeded": parsed_response,
+            "parsed_response_present": bool(parsed_product_name) if purpose == "product_name" else parsed_response,
+            "response_schema_valid": not bool(response_reason),
+            "reason_code": response_reason,
+            "parsed_product_name": parsed_product_name,
             "elapsed_seconds": round(time.perf_counter() - started, 3),
             **harvested,
         })
+        if isinstance(response, dict):
+            metric["provider_finish_reason"] = str(response.get("_provider_finish_reason") or "")
+            metric["output_retry_count"] = int(response.get("_output_retry_count") or 0)
         if not response_text:
             metric["discard_reason"] = "NO_RESPONSE"
         elif not any(harvested[key] for key in ("product_name_harvested", "cas_harvested", "content_harvested")):
             metric["discard_reason"] = "AI_NO_HARVEST"
         if isinstance(response, dict):
             response["_ai_metric_index"] = metric_index
+        if purpose == "product_name":
+            self._record_product_name_event(
+                f"product_name.{stage}.call.succeeded",
+                provider=provider, model=model, attempt=attempt,
+                raw_response_present=bool(response_text),
+            )
+            parse_event = "succeeded" if not response_reason else "failed"
+            self._record_product_name_event(
+                f"product_name.{stage}.parse.{parse_event}",
+                provider=provider, model=model, attempt=attempt,
+                reason_code=response_reason,
+                parsed_response_present=bool(parsed_product_name),
+            )
         _trace_event(
             "ai.call.response",
             provider=provider,
@@ -1190,7 +1369,10 @@ class MSDSEngineV6:
             discard_reason=metric.get("discard_reason", ""),
         )
 
-    def call_llm_router(self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash", is_scanned_strict=False, purpose="general_extraction"):
+    def call_llm_router(
+        self, payload, max_retries=2, log_func=None, model="gemini-2.5-flash",
+        is_scanned_strict=False, purpose="general_extraction", product_name_validator=None,
+    ):
         """실제 공급자 호출마다 독립 계측하며 DeepSeek 장애 시 Vertex로 전환한다."""
         input_mode = "image" if is_scanned_strict or "inlineData" in str(payload) else "text"
         parts = ((payload.get("contents") or [{}])[0].get("parts") or []) if isinstance(payload, dict) else []
@@ -1225,36 +1407,106 @@ class MSDSEngineV6:
             if log_func:
                 log_func("[제품명 기준선] 제품명 외 AI 호출을 실행하지 않았습니다.")
             return None
-        if is_scanned_strict:
-            if log_func:
-                log_func(" ➔ [스캔본 감지] 1선 DeepSeek Bypass, 처음부터 곧바로 제미나이 비전 채널로 다이렉트 고속 직결 수송합니다.")
-            res = self._invoke_ai_provider(
-                "vertex", model, purpose, input_mode,
-                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
+        deepseek_model = "deepseek/deepseek-v4-flash"
+        self.api_settings = load_api_settings()
+        novita_available = bool(self.api_settings.novita_api_key)
+        vertex_available = bool(
+            self.api_settings.vertex_credential_path and not self.api_settings.vertex_error_code
+        )
+        providers = []
+        if purpose != "product_name":
+            # 성분 추출 등 기존 V6 경로는 이번 제품명 진단 변경의 범위 밖이다.
+            providers = (
+                [("vertex", model)]
+                if is_scanned_strict
+                else [("novita", deepseek_model), ("vertex", model)]
             )
-            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
-            return res
+        elif is_scanned_strict:
+            if vertex_available:
+                providers.append(("vertex", model))
+        else:
+            if novita_available:
+                providers.append(("novita", deepseek_model))
+            if vertex_available:
+                providers.append(("vertex", model))
+        if not providers:
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    "product_name.final.failed",
+                    reason_code="PRODUCT_NAME_CALL_BLOCKED", evidence_present=True,
+                )
+            _trace_event(
+                "ai.call.blocked", purpose=purpose, requested_model=model,
+                input_mode=input_mode, reason_code="AI_PROVIDER_CREDENTIALS_MISSING",
+            )
+            return None
 
-        try:
-            if log_func: log_func("🚀 [AI 통신] 1선 DeepSeek 호출을 격발합니다. (12초 타임아웃 가드)")
-            deepseek_model = "deepseek/deepseek-v4-flash"
-            res = self._invoke_ai_provider(
-                "deepseek", deepseek_model, purpose, input_mode,
-                lambda: self.call_deepseek_with_retry(payload, max_retries=1, log_func=log_func, model=deepseek_model),
+        last_response = None
+        for index, (provider, provider_model) in enumerate(providers):
+            stage = "primary" if index == 0 else "fallback"
+            if stage == "fallback":
+                _trace_event(
+                    "ai.failover", from_provider=providers[index - 1][0],
+                    to_provider=provider, purpose=purpose,
+                )
+            try:
+                if provider == "novita":
+                    invoke = lambda: self.call_deepseek_with_retry(
+                        payload, max_retries=1, log_func=log_func, model=provider_model,
+                        diagnostic_fail_fast=purpose == "product_name",
+                    )
+                else:
+                    invoke = lambda: self.call_vertex_gemini_with_retry(
+                        payload, max_retries=max_retries, log_func=log_func, model=provider_model,
+                        diagnostic_fail_fast=purpose == "product_name",
+                    )
+                response = self._invoke_ai_provider(
+                    provider, provider_model, purpose, input_mode, invoke,
+                    stage=stage, attempt=index + 1,
+                )
+                last_response = response
+            except Exception as provider_error:
+                if log_func:
+                    log_func(
+                        f" ⚠️ [제품명 공급자 전환] {provider} 실패: "
+                        f"{sanitize_diagnostic_message(provider_error)}"
+                    )
+                continue
+
+            metric_index = response.get("_ai_metric_index") if isinstance(response, dict) else None
+            metric = self._ai_call_metrics[metric_index] if isinstance(metric_index, int) else {}
+            failure_code = str(metric.get("reason_code") or "")
+            if purpose == "product_name" and not failure_code and callable(product_name_validator):
+                failure_code = str(product_name_validator(metric.get("parsed_product_name", "")) or "")
+                if failure_code:
+                    metric["reason_code"] = failure_code
+                    metric["discard_reason"] = failure_code
+                    metric["response_schema_valid"] = False
+            if purpose == "product_name":
+                validation_event = "failed" if failure_code else "succeeded"
+                self._record_product_name_event(
+                    f"product_name.{stage}.validation.{validation_event}",
+                    provider=provider, model=provider_model, attempt=index + 1,
+                    reason_code=failure_code,
+                )
+            if failure_code:
+                continue
+            if isinstance(response, dict):
+                response["actual_engine_label"] = "novita" if provider == "novita" else "gemini"
+            if purpose == "product_name":
+                self._record_product_name_event(
+                    "product_name.final.selected",
+                    provider=provider, model=provider_model, attempt=index + 1,
+                )
+            return response
+
+        if purpose == "product_name":
+            self._record_product_name_event(
+                "product_name.final.failed",
+                reason_code="PRODUCT_NAME_ALL_PROVIDERS_FAILED",
+                fallback_attempted=len(providers) > 1,
             )
-            if isinstance(res, dict): res["actual_engine_label"] = "deepseek"
-            return res
-        except Exception as ds_err:
-            _trace_event("ai.failover", from_provider="deepseek", to_provider="vertex", purpose=purpose, error_type=type(ds_err).__name__)
-            if log_func:
-                log_func(f" ⚠️ [보험 가드레일 격발] 1선 DeepSeek 장애/타임아웃 감지 (사유: {ds_err})")
-                log_func(" ➔ [Failover] 2선 Vertex Gemini 비전 채널로 즉시 이송합니다.")
-            res = self._invoke_ai_provider(
-                "vertex", model, purpose, input_mode,
-                lambda: self.call_vertex_gemini_with_retry(payload, max_retries=max_retries, log_func=log_func, model=model),
-            )
-            if isinstance(res, dict): res["actual_engine_label"] = "gemini"
-            return res
+        return last_response
 
     def _get_graceful_error_dict(self, pdf_path, reason_msg, log_func=None, hybrid_pn=None, doc_type=None, product_engine=None, comp_engine=None, error_code=None):
         if log_func: log_func(f" ⚠️ [추출 격리 수거 격발] 사유: {reason_msg}")
@@ -1324,6 +1576,7 @@ class MSDSEngineV6:
         # V7 shadow 비교가 V6 실행 중 이미 생성된 텍스트/OCR 문맥만 재사용할 수
         # 있도록 하는 내부 전용 슬롯이다. 운영 결과/영구 캐시 계약에는 저장하지 않는다.
         self._shadow_context = {}
+        self._product_name_events = []
         _trace_event(
             "stage_start",
             stage_id="msds_pipeline",
@@ -1504,6 +1757,7 @@ class MSDSEngineV6:
                     "content_match_count": len(re.findall(r"\d{2,7}-\d{2}-\d\s*\([^)]*\)", str(res.get("구성성분", "")))),
                     "ai": list(self._ai_call_metrics),
                 })
+                self._shadow_context["product_name_ai_events"] = list(self._product_name_events)
                 res = RuntimeExtractionResult(
                     res,
                     shadow_context=self._shadow_context,
@@ -1843,11 +2097,19 @@ class MSDSEngineV6:
             field="product_name",
             engine="local_section1",
         ) if labeled_pn else None
+        self._shadow_context["product_name_evidence_verified"] = bool(compact_context and labeled_pn)
         _trace_event(
             "section1.product_context",
             pdf_type=pdf_type,
             context_length=len(compact_context or ""),
             labeled_candidate=bool(labeled_pn),
+        )
+        self._record_product_name_event(
+            "product_name.evidence.ready",
+            evidence_present=bool(compact_context and labeled_pn),
+            evidence_page=0,
+            evidence_text_length=len(compact_context or ""),
+            evidence_image_present=bool(is_scanned_strict and 'cover_img' in locals() and cover_img),
         )
         combined_prompt = f"{PRODUCT_NAME_PROMPT}\n\n[1섹션 울타리 내부 텍스트]:\n{compact_context}"
         
@@ -1870,7 +2132,24 @@ class MSDSEngineV6:
         product_engine = "제미나이"
         try:
             # 제품명은 AI 결과를 기본값으로 사용하고 Section 1 후보는 검증 근거로만 쓴다.
-            result = self.call_llm_router(payload_pn, log_func=log_func, model="gemini-2.5-flash", is_scanned_strict=is_scanned_strict, purpose="product_name")
+            def validate_ai_product_name(candidate):
+                candidate = str(candidate or "").strip()
+                if is_blacklisted_pn(candidate):
+                    return "PRODUCT_NAME_RESULT_BLACKLISTED"
+                if not labeled_pn:
+                    return "PRODUCT_NAME_RESULT_UNVERIFIED"
+                status, _confidence = verify_product_name(candidate, labeled_pn)
+                if status == "mismatch":
+                    return "PRODUCT_NAME_EVIDENCE_REJECTED"
+                if status == "unverified":
+                    return "PRODUCT_NAME_RESULT_UNVERIFIED"
+                return ""
+
+            result = self.call_llm_router(
+                payload_pn, log_func=log_func, model="gemini-2.5-flash",
+                is_scanned_strict=is_scanned_strict, purpose="product_name",
+                product_name_validator=validate_ai_product_name,
+            ) if labeled_pn else None
             if result:
                 pn_ai = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
                 if pn_ai and not any(k in pn_ai for k in ["미추출", "확인"]) and len(pn_ai) < 100:
@@ -1889,7 +2168,7 @@ class MSDSEngineV6:
                         before=pn_ai,
                         after=hybrid_pn,
                     )
-                product_engine = "딥시크" if result.get("actual_engine_label") == "deepseek" else "제미나이"
+                product_engine = "노비타" if result.get("actual_engine_label") == "novita" else "제미나이"
                 if checkpoint_func:
                     checkpoint_func({"stage": "ai_response_complete", "product_name": hybrid_pn, "product_name_source": "ai", "next_stage": "product_name_verification", "timestamp": time.time()})
         except Exception as e:
@@ -1955,6 +2234,18 @@ class MSDSEngineV6:
                     f"'{hybrid_pn}'을 사용할 수 없어 공란으로 유지합니다."
                 )
             hybrid_pn = ""
+
+        if not hybrid_pn or product_name_source != "ai":
+            self._record_product_name_event(
+                "product_name.final.failed",
+                reason_code=(
+                    "PRODUCT_NAME_EVIDENCE_REJECTED"
+                    if product_name_source == "section1_verified_override"
+                    else "PRODUCT_NAME_RESULT_EMPTY"
+                ),
+                final_product_name=hybrid_pn,
+                evidence_present=bool(labeled_pn),
+            )
 
         _trace_event(
             "section1.product_result",

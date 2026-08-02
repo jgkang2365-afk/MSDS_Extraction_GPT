@@ -21,6 +21,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+from api_config import (
+    APIConfigError,
+    api_status_lines,
+    load_api_settings,
+    python_runtime_metadata,
+    vertex_dependency_preflight,
+)
+from product_name_diagnostics import (
+    PRODUCT_NAME_FAILURE_CODES,
+    classify_product_failure,
+    sanitize_diagnostic_message,
+)
+
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_GOLDEN = ROOT / "golden" / "msds_golden_v1.json"
@@ -32,6 +45,7 @@ PRODUCT_NAME_MODEL = "gemini-2.5-flash"
 PRODUCT_NAME_PROMPT_VERSION = "24.4.3.22"
 PRODUCT_NAME_RESULT_PARSER_VERSION = "1.0"
 SECTION1_EVIDENCE_BUILDER_VERSION = "v6-section1"
+FAILURE_ANALYSIS_PREFIX = "product_name_failure_analysis_"
 
 
 class GoldenValidationError(RuntimeError):
@@ -425,6 +439,100 @@ def _ai_metrics(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in (metrics or []) if isinstance(item, dict)]
 
 
+def _product_name_metrics(result: dict[str, Any]) -> list[dict[str, Any]]:
+    return [item for item in _ai_metrics(result) if item.get("purpose") == "product_name"]
+
+
+def _ai_product_name_applied(result: dict[str, Any]) -> bool:
+    metrics = _product_name_metrics(result)
+    if metrics and not any("final_result_applied" in metric for metric in metrics):
+        return bool(str(result.get("제품명") or result.get("product_name") or "").strip())
+    return any(
+        metric.get("final_result_applied") and "product_name" in (metric.get("applied_fields") or [])
+        for metric in metrics
+    )
+
+
+def _applied_ai_product_name(result: dict[str, Any]) -> str:
+    metrics = _product_name_metrics(result)
+    if metrics and not any("final_result_applied" in metric for metric in metrics):
+        return str(result.get("제품명") or result.get("product_name") or "").strip()
+    for metric in reversed(metrics):
+        if metric.get("final_result_applied") and "product_name" in (metric.get("applied_fields") or []):
+            return str(metric.get("parsed_product_name") or "").strip()
+    return ""
+
+
+def _latest_artifact(pattern: str) -> Path | None:
+    candidates = sorted(BASELINE_OUTPUT_DIR.glob(pattern), key=lambda path: (path.stat().st_mtime, path.name))
+    return candidates[-1] if candidates else None
+
+
+def _artifact_selected_ids(*, status: str = "", failure_code: str = "") -> set[str]:
+    if status:
+        source = _latest_artifact("product_name_baseline_*.json")
+        if source is None:
+            raise GoldenValidationError("PRODUCT_NAME_BASELINE_MISSING")
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        return {
+            str(item.get("id")) for item in payload.get("cases", [])
+            if item.get("status") == status
+        }
+    if failure_code:
+        source = _latest_artifact(f"{FAILURE_ANALYSIS_PREFIX}*.json")
+        if source is None:
+            raise GoldenValidationError("PRODUCT_NAME_FAILURE_ANALYSIS_MISSING")
+        payload = json.loads(source.read_text(encoding="utf-8"))
+        return {
+            str(item.get("id")) for item in payload.get("cases", [])
+            if failure_code in {item.get("reason_code"), item.get("aggregate_reason_code")}
+        }
+    return set()
+
+
+def _failure_record(case: dict[str, Any], run: dict[str, Any]) -> dict[str, Any]:
+    metrics = list(run.get("product_name_provider_metrics") or [])
+    primary = next((item for item in metrics if item.get("stage") == "primary"), {})
+    fallback = next((item for item in metrics if item.get("stage") == "fallback"), {})
+    failure = run.get("product_name_failure") or {}
+    decisive = fallback or primary
+    return {
+        "id": str(case.get("id") or ""),
+        "file": str(case.get("file") or ""),
+        "final_status": str(run.get("product_name_status") or ""),
+        "stage": str(decisive.get("stage") or "final"),
+        "reason_code": str(failure.get("reason_code") or "PRODUCT_NAME_UNKNOWN_FAILURE"),
+        "aggregate_reason_code": str(failure.get("aggregate_reason_code") or ""),
+        "provider": str(decisive.get("provider") or ""),
+        "model": str(decisive.get("model") or ""),
+        "attempt": int(decisive.get("attempt") or 0),
+        "input_mode": str(decisive.get("input_mode") or ""),
+        "http_status": decisive.get("http_status"),
+        "exception_type": sanitize_diagnostic_message(decisive.get("exception_type") or ""),
+        "message": sanitize_diagnostic_message(decisive.get("message") or ""),
+        "provider_error_code": str(decisive.get("provider_error_code") or ""),
+        "raw_response_present": bool(decisive.get("raw_response_present")),
+        "parsed_response_present": bool(decisive.get("parsed_response_present")),
+        "evidence_present": bool(run.get("product_name_evidence_verified")),
+        "evidence_page": run.get("product_name_evidence_page"),
+        "fallback_attempted": bool(fallback),
+        "final_product_name": str(run.get("ai_first_result") or ""),
+        "primary_provider": str(primary.get("provider") or ""),
+        "primary_model": str(primary.get("model") or ""),
+        "primary_result": str(primary.get("parsed_product_name") or ""),
+        "primary_parse_status": "success" if primary.get("parsed_response_present") else "failed",
+        "primary_validation_status": "failed" if primary.get("reason_code") else "success",
+        "fallback_provider": str(fallback.get("provider") or ""),
+        "fallback_model": str(fallback.get("model") or ""),
+        "fallback_result": str(fallback.get("parsed_product_name") or ""),
+        "provider_call_count": int(run.get("ai_product_name_calls") or 0),
+        "recheck_call_count": int(run.get("recheck_product_name_calls") or 0),
+        "user_review_required": run.get("product_name_status") != "product_name_complete",
+        "failure_chain": list(failure.get("failure_chain") or []),
+        "events": list(run.get("product_name_events") or []),
+    }
+
+
 def _product_name_differences(case: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         item for item in compare_case(case, result, verify_product_name=True)
@@ -468,6 +576,7 @@ def _run_engine_once(
 def run_case(
     case: dict[str, Any], *, with_product_ai: bool = False,
     product_name_baseline: bool = False,
+    product_name_only: bool = False,
     process_pdf_func: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     if case.get("_hash_mismatch"):
@@ -483,12 +592,13 @@ def run_case(
             path_value, with_product_ai=with_product_ai, process_pdf_func=process_pdf_func,
         )
         actual_components, component_source_field = parse_components_with_source(result)
-        component_differences = [
+        component_differences = [] if product_name_only else [
             item for item in compare_case(case, result, verify_product_name=False)
             if item.get("reason_code", "").startswith("GOLDEN_")
         ]
         evidence_text = str(context.get("product_name_evidence_text") or "").strip()
         evidence_page = context.get("product_name_evidence_page")
+        evidence_verified = bool(context.get("product_name_evidence_verified", evidence_text))
         evidence_error = ""
         if "product_name_evidence_text" not in context:
             evidence_error = "PRODUCT_NAME_EVIDENCE_MISSING"
@@ -499,20 +609,46 @@ def run_case(
 
         product_differences: list[dict[str, Any]] = []
         second_result: dict[str, Any] | None = None
+        second_context: dict[str, Any] = {}
+        product_failure: dict[str, Any] = {}
+        first_product_metrics = _product_name_metrics(result)
+        first_ai_result = _applied_ai_product_name(result)
         product_status = "product_name_not_verified_ai_disabled"
         if evidence_error:
             product_status = "product_name_evidence_missing"
         elif with_product_ai:
             product_differences = _product_name_differences(case, result)
-            product_calls = sum(item.get("purpose") == "product_name" for item in _ai_metrics(result))
-            if product_calls == 0 or not str(result.get("제품명") or result.get("product_name") or "").strip():
+            product_calls = len(first_product_metrics)
+            if product_calls == 0 or not _ai_product_name_applied(result):
                 product_status = "product_name_ai_failed"
+                product_failure = classify_product_failure(
+                    first_product_metrics,
+                    evidence_present=not bool(evidence_error) and evidence_verified,
+                    final_product_name=first_ai_result,
+                )
+                product_differences = [{
+                    "field": "product_name_ai",
+                    "reason_code": product_failure.get("reason_code"),
+                    "aggregate_reason_code": product_failure.get("aggregate_reason_code"),
+                }]
             elif product_differences and product_name_baseline:
                 second_result, second_context = _run_engine_once(
                     path_value, with_product_ai=True, process_pdf_func=process_pdf_func,
                 )
-                second_differences = _product_name_differences(case, second_result)
-                if not second_differences:
+                second_metrics = _product_name_metrics(second_result)
+                if not _ai_product_name_applied(second_result):
+                    product_status = "product_name_ai_failed"
+                    product_failure = classify_product_failure(
+                        second_metrics,
+                        evidence_present=bool(second_context.get("product_name_evidence_verified")),
+                        final_product_name=_applied_ai_product_name(second_result),
+                    )
+                    product_differences = [{
+                        "field": "product_name_ai",
+                        "reason_code": product_failure.get("reason_code"),
+                        "aggregate_reason_code": product_failure.get("aggregate_reason_code"),
+                    }]
+                elif not (second_differences := _product_name_differences(case, second_result)):
                     product_status = "product_name_unstable_warning"
                     product_differences = []
                 else:
@@ -528,7 +664,10 @@ def run_case(
                 "reason_code": evidence_error,
             })
         differences = component_differences + product_differences
-        components_status = "components_mismatch" if component_differences else "components_complete"
+        components_status = (
+            "components_skipped" if product_name_only
+            else ("components_mismatch" if component_differences else "components_complete")
+        )
         if case.get("_review_only"):
             status = "partial"
             components_status = "components_partial"
@@ -544,6 +683,16 @@ def run_case(
             status = "extraction_failed" if result.get("status") != "partial_timeout" else "partial"
         metric_results = [result, second_result] if second_result else [result]
         all_metrics = [metric for item in metric_results for metric in _ai_metrics(item or {})]
+        product_events = list(context.get("product_name_ai_events") or [])
+        product_events.extend(second_context.get("product_name_ai_events") or [])
+        safe_product_metrics = [
+            {
+                key: value for key, value in metric.items()
+                if key not in {"raw_response", "prompt", "payload", "api_key", "token"}
+            }
+            for metric in all_metrics if metric.get("purpose") == "product_name"
+        ]
+        first_call_count = len(first_product_metrics)
         return {
             "status": status,
             "result": result,
@@ -553,12 +702,17 @@ def run_case(
             "component_source_field": component_source_field,
             "product_name_evidence_text": evidence_text,
             "product_name_evidence_page": evidence_page,
+            "product_name_evidence_verified": evidence_verified,
             "product_name_evidence_error": evidence_error,
-            "ai_first_result": str(result.get("제품명") or result.get("product_name") or ""),
-            "ai_second_result": str((second_result or {}).get("제품명") or (second_result or {}).get("product_name") or ""),
+            "ai_first_result": first_ai_result,
+            "ai_second_result": _applied_ai_product_name(second_result or {}),
             "ai_not_run": not with_product_ai,
             "ai_product_name_calls": sum(item.get("purpose") == "product_name" for item in all_metrics),
             "ai_component_calls": sum(item.get("purpose") != "product_name" for item in all_metrics),
+            "recheck_product_name_calls": max(0, sum(item.get("purpose") == "product_name" for item in all_metrics) - first_call_count),
+            "product_name_failure": product_failure,
+            "product_name_provider_metrics": safe_product_metrics,
+            "product_name_events": product_events,
             "duplicate_ocr_calls": _metric_value(result, "duplicate_ocr_calls"),
             "duplicate_ai_calls": _metric_value(result, "duplicate_ai_calls"),
         }
@@ -571,6 +725,13 @@ def run_case(
             "product_name_status": "product_name_ai_failed" if with_product_ai else "product_name_evidence_missing",
             "components_status": "components_partial", "component_source_field": "",
             "ai_product_name_calls": 0, "ai_component_calls": 0,
+            "recheck_product_name_calls": 0,
+            "product_name_failure": {
+                "reason_code": "PRODUCT_NAME_UNKNOWN_FAILURE",
+                "aggregate_reason_code": "",
+                "failure_chain": [],
+            },
+            "product_name_provider_metrics": [], "product_name_events": [],
         }
 
 
@@ -633,6 +794,10 @@ def write_product_name_baseline(
             "prompt_version": PRODUCT_NAME_PROMPT_VERSION,
             "result_parser_version": PRODUCT_NAME_RESULT_PARSER_VERSION,
             "status": run.get("product_name_status"),
+            "reason_code": (run.get("product_name_failure") or {}).get("reason_code", ""),
+            "aggregate_reason_code": (run.get("product_name_failure") or {}).get("aggregate_reason_code", ""),
+            "provider_call_count": run.get("ai_product_name_calls", 0),
+            "recheck_call_count": run.get("recheck_product_name_calls", 0),
             "user_decision": "",
             "keep_golden": False,
             "modify_golden": False,
@@ -641,6 +806,7 @@ def write_product_name_baseline(
     payload = {
         "verified_at": datetime.now().astimezone().isoformat(),
         "engine_commit": _engine_commit(),
+        **python_runtime_metadata(),
         "engine_version": "v6",
         "model_provider": ",".join(sorted(providers)) or "unknown",
         "model_name": PRODUCT_NAME_MODEL,
@@ -659,13 +825,96 @@ def write_product_name_baseline(
         "id", "file", "golden_product_name", "ai_first_result", "ai_second_result",
         "evidence_text", "evidence_page", "model", "prompt_version",
         "result_parser_version", "status", "user_decision", "keep_golden",
-        "modify_golden", "defer_decision",
+        "modify_golden", "defer_decision", "reason_code", "aggregate_reason_code",
+        "provider_call_count", "recheck_call_count",
     ]
     with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(cases)
     return json_path, csv_path
+
+
+def write_product_name_failure_analysis(
+    selected: list[dict[str, Any]], results: list[dict[str, Any]],
+) -> tuple[Path, Path]:
+    """제품명 실패만 민감정보 없는 JSON/CSV로 분리한다."""
+    BASELINE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    json_path = BASELINE_OUTPUT_DIR / f"{FAILURE_ANALYSIS_PREFIX}{stamp}.json"
+    csv_path = BASELINE_OUTPUT_DIR / f"{FAILURE_ANALYSIS_PREFIX}{stamp}.csv"
+    cases = [
+        _failure_record(case, run)
+        for case, run in zip(selected, results)
+        if run.get("product_name_status") == "product_name_ai_failed"
+    ]
+    reason_counts = Counter(item["reason_code"] for item in cases)
+    aggregate_counts = Counter(item["aggregate_reason_code"] for item in cases if item["aggregate_reason_code"])
+    payload = {
+        "created_at": datetime.now().astimezone().isoformat(),
+        "engine_commit": _engine_commit(),
+        **python_runtime_metadata(),
+        "total_failure_count": len(cases),
+        "reason_code_counts": dict(sorted(reason_counts.items())),
+        "aggregate_reason_code_counts": dict(sorted(aggregate_counts.items())),
+        "cases": cases,
+    }
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    fieldnames = [
+        "ID", "파일명", "최종 상태", "실패 단계", "reason_code",
+        "1차 provider", "1차 model", "1차 결과", "1차 parse 상태", "1차 validation 상태",
+        "fallback 실행 여부", "fallback provider", "fallback model", "fallback 결과",
+        "최종 제품명", "Section 1 근거 존재", "근거 페이지", "공급자 호출 수",
+        "재확인 호출 수", "예외 유형", "HTTP 상태", "사용자 검토 필요",
+        "provider_error_code",
+    ]
+    with csv_path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for item in cases:
+            writer.writerow({
+                "ID": item["id"], "파일명": item["file"], "최종 상태": item["final_status"],
+                "실패 단계": item["stage"], "reason_code": item["reason_code"],
+                "1차 provider": item["primary_provider"], "1차 model": item["primary_model"],
+                "1차 결과": item["primary_result"], "1차 parse 상태": item["primary_parse_status"],
+                "1차 validation 상태": item["primary_validation_status"],
+                "fallback 실행 여부": item["fallback_attempted"],
+                "fallback provider": item["fallback_provider"], "fallback model": item["fallback_model"],
+                "fallback 결과": item["fallback_result"], "최종 제품명": item["final_product_name"],
+                "Section 1 근거 존재": item["evidence_present"], "근거 페이지": item["evidence_page"],
+                "공급자 호출 수": item["provider_call_count"], "재확인 호출 수": item["recheck_call_count"],
+                "예외 유형": item["exception_type"], "HTTP 상태": item["http_status"],
+                "사용자 검토 필요": item["user_review_required"],
+                "provider_error_code": item["provider_error_code"],
+            })
+    return json_path, csv_path
+
+
+def analyze_existing_product_name_baseline(path: Path) -> tuple[Path, Path]:
+    """과거 기준선의 원문 재호출 없이 최종 빈 결과를 우선 분류한다."""
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    selected = []
+    results = []
+    for item in payload.get("cases", []):
+        if item.get("status") != "product_name_ai_failed":
+            continue
+        selected.append({"id": item.get("id"), "file": item.get("file")})
+        results.append({
+            "product_name_status": "product_name_ai_failed",
+            "product_name_evidence_text": item.get("evidence_text", ""),
+            "product_name_evidence_page": item.get("evidence_page"),
+            "ai_first_result": item.get("ai_first_result", ""),
+            "ai_product_name_calls": 0,
+            "recheck_product_name_calls": 0,
+            "product_name_provider_metrics": [],
+            "product_name_events": [],
+            "product_name_failure": {
+                "reason_code": "PRODUCT_NAME_RESULT_EMPTY",
+                "aggregate_reason_code": "",
+                "failure_chain": ["LEGACY_BASELINE_DIAGNOSTICS_UNAVAILABLE"],
+            },
+        })
+    return write_product_name_failure_analysis(selected, results)
 
 
 def write_regression_report(
@@ -688,12 +937,15 @@ def write_regression_report(
             "differences": run.get("differences", []),
             "ai_product_name_calls": run.get("ai_product_name_calls", 0),
             "ai_component_calls": run.get("ai_component_calls", 0),
+            "recheck_product_name_calls": run.get("recheck_product_name_calls", 0),
+            "product_name_failure": run.get("product_name_failure", {}),
             "duplicate_ocr_calls": run.get("duplicate_ocr_calls", 0),
             "duplicate_ai_calls": run.get("duplicate_ai_calls", 0),
         })
     output.write_text(json.dumps({
         "created_at": datetime.now().astimezone().isoformat(),
         "engine_commit": _engine_commit(),
+        **python_runtime_metadata(),
         "mode": mode,
         "inventory": inventory,
         "warnings": warnings,
@@ -708,6 +960,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ids", help="쉼표로 구분한 골든 ID")
     parser.add_argument("--tag", action="append", default=[], help="태그(여러 번 지정 가능)")
     parser.add_argument("--failure-mode", action="append", default=[], help="failure_modes 태그")
+    parser.add_argument("--status", help="직전 제품명 기준선의 최종 상태로 선택")
+    parser.add_argument("--failure-code", help="직전 제품명 실패 분석의 reason_code로 선택")
     parser.add_argument("--tier")
     parser.add_argument("--all", action="store_true", dest="select_all")
     parser.add_argument("--match-all", action="store_true", help="여러 태그를 AND로 선택")
@@ -718,6 +972,7 @@ def build_parser() -> argparse.ArgumentParser:
     ai_group.add_argument("--no-paid-ai", action="store_true", help="외부 AI를 차단하고 제품명 비교를 미검증 처리(기본값)")
     ai_group.add_argument("--with-product-ai", action="store_true", help="제품명 AI만 명시적으로 실행")
     parser.add_argument("--product-name-baseline", action="store_true", help="제품명 불일치만 한 번 재확인하고 기준선 산출")
+    parser.add_argument("--product-name-only", action="store_true", help="CAS·함유량 비교를 생략하고 제품명만 검증")
     parser.add_argument("--write-golden-candidate", action="store_true")
     parser.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
     parser.add_argument("--pdf-dir", type=Path, default=DEFAULT_PDF_DIR)
@@ -729,10 +984,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.product_name_baseline and not args.with_product_ai:
         print("PRODUCT_NAME_BASELINE_REQUIRES_WITH_PRODUCT_AI", file=sys.stderr)
         return 1
-    if not any((args.ids, args.tag, args.failure_mode, args.tier, args.select_all)):
+    if args.product_name_only and not args.with_product_ai:
+        print("PRODUCT_NAME_ONLY_REQUIRES_WITH_PRODUCT_AI", file=sys.stderr)
+        return 1
+    if not any((args.ids, args.tag, args.failure_mode, args.status, args.failure_code, args.tier, args.select_all)):
         args.tier = "core"
     ids = {value.strip() for value in (args.ids or "").split(",") if value.strip()}
     try:
+        artifact_ids = _artifact_selected_ids(status=args.status or "", failure_code=args.failure_code or "")
+        if args.status or args.failure_code:
+            ids = (ids & artifact_ids) if ids else artifact_ids
+            if not ids:
+                raise GoldenValidationError("GOLDEN_SELECTION_EMPTY")
         cases, warnings, inventory = build_inventory(args.golden, args.pdf_dir)
         print("INVENTORY " + json.dumps(inventory, ensure_ascii=False, sort_keys=True))
         for warning in warnings:
@@ -743,15 +1006,24 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.product_name_baseline and warnings:
             raise GoldenValidationError("PRODUCT_NAME_BASELINE_INVENTORY_INVALID", f"warnings={len(warnings)}")
+        api_settings = load_api_settings(ROOT)
         if args.with_product_ai and not (
-            os.getenv("DEEPSEEK_API_KEY")
-            or os.getenv("NOVITA_API_KEY")
-            or (ROOT / "vertex_key.json").exists()
+            api_settings.novita_api_key
+            or (api_settings.vertex_credential_path and not api_settings.vertex_error_code)
         ):
             raise GoldenValidationError(
                 "PRODUCT_NAME_AI_CREDENTIALS_MISSING",
-                "DEEPSEEK_API_KEY 또는 NOVITA_API_KEY 또는 vertex_key.json 필요",
+                "NOVITA_API_KEY 또는 유효한 Vertex 자격증명 필요",
             )
+        if args.with_product_ai:
+            try:
+                imported = vertex_dependency_preflight()
+            except APIConfigError as dependency_error:
+                raise GoldenValidationError(dependency_error.code, "Vertex runtime dependency preflight failed")
+            runtime = python_runtime_metadata()
+            print(f"PYTHON_EXECUTABLE={runtime['python_executable']}")
+            print(f"PYTHON_VERSION={runtime['python_version'].splitlines()[0]}")
+            print("VERTEX_DEPENDENCY_PREFLIGHT=ok " + ",".join(imported))
         selected = select_cases(
             cases, ids=ids, tags=args.tag, failure_modes=args.failure_mode,
             tier=args.tier, select_all=args.select_all, match_all=args.match_all,
@@ -762,9 +1034,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SELECTED_COUNT={len(selected)}")
         print("REGRESSION_MODE=" + ("with_product_ai" if args.with_product_ai else "no_paid_ai"))
         if args.with_product_ai:
+            available_routes = []
+            if api_settings.novita_api_key:
+                available_routes.append("novita/deepseek-v4-flash")
+            if api_settings.vertex_credential_path and not api_settings.vertex_error_code:
+                available_routes.append("vertex/gemini-2.5-flash")
+            for status_line in api_status_lines(api_settings):
+                print("API_STATUS " + status_line)
             print(f"EXPECTED_PRODUCT_AI_CALLS={len(selected)}")
-            print(f"MAX_PRODUCT_AI_CALLS_WITH_MISMATCH_RECHECK={len(selected) * 2}")
-            print("PRODUCT_AI_ROUTING=deepseek/deepseek-v4-flash -> vertex/gemini-2.5-flash")
+            print(f"MAX_PRODUCT_AI_CALLS_WITH_FALLBACK={len(selected) * max(1, len(available_routes))}")
+            print(f"MAX_PRODUCT_AI_RECHECKS={len(selected) if args.product_name_baseline else 0}")
+            print("PRODUCT_AI_ROUTING=" + " -> ".join(available_routes))
         for case in selected:
             print(f"SELECTED {case.get('id')} {case.get('file')}")
         results = []
@@ -773,6 +1053,7 @@ def main(argv: list[str] | None = None) -> int:
             run = run_case(
                 case, with_product_ai=args.with_product_ai,
                 product_name_baseline=args.product_name_baseline,
+                product_name_only=args.product_name_only,
             )
             results.append(run)
             print(f"RESULT {case.get('id')} {run['status']}")
@@ -796,7 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
             "product_name_complete", "product_name_not_verified_ai_disabled",
             "product_name_unstable_warning", "product_name_mismatch",
             "product_name_ai_failed", "product_name_evidence_missing",
-            "components_complete", "components_mismatch", "components_partial",
+            "components_complete", "components_mismatch", "components_partial", "components_skipped",
         ):
             counts[key] = sum(run.get("product_name_status") == key or run.get("components_status") == key for run in results)
         for run in results:
@@ -813,7 +1094,7 @@ def main(argv: list[str] | None = None) -> int:
             counts.setdefault(key, 0)
         print("SUMMARY " + json.dumps(dict(counts), ensure_ascii=False, sort_keys=True))
         report_path = write_regression_report(
-            mode="with_product_ai" if args.with_product_ai else "no_paid_ai",
+            mode=("product_name_only" if args.product_name_only else ("with_product_ai" if args.with_product_ai else "no_paid_ai")),
             inventory=inventory, warnings=warnings, selected=selected, results=results, counts=counts,
         )
         print(f"REGRESSION_REPORT={report_path}")
@@ -823,6 +1104,10 @@ def main(argv: list[str] | None = None) -> int:
             baseline_path, review_path = write_product_name_baseline(selected, results)
             print(f"PRODUCT_NAME_BASELINE={baseline_path}")
             print(f"PRODUCT_NAME_REVIEW={review_path}")
+        if args.with_product_ai:
+            failure_path, failure_csv = write_product_name_failure_analysis(selected, results)
+            print(f"PRODUCT_NAME_FAILURE_ANALYSIS={failure_path}")
+            print(f"PRODUCT_NAME_FAILURE_REVIEW={failure_csv}")
         return 1 if any((
             counts["golden_mismatch"], counts["extraction_failed"], counts["pdf_missing"],
             counts["duplicate_ocr_calls"], counts["duplicate_ai_calls"],

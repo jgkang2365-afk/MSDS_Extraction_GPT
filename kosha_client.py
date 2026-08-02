@@ -9,7 +9,7 @@ from datetime import date
 from threading import RLock
 
 import requests
-from dotenv import load_dotenv
+from api_config import load_api_settings
 
 try:
     from diagnostic_trace import get_tracer
@@ -18,10 +18,9 @@ except Exception:  # 관측성 배포 전에도 API 동작을 보존한다.
         return None
 
 
-load_dotenv()
-
-SERVICE_KEY = os.getenv("SERVICE_KEY")
-BASE_URL = os.getenv("BASE_URL")
+_API_SETTINGS = load_api_settings()
+SERVICE_KEY = _API_SETTINGS.kosha_service_key
+BASE_URL = _API_SETTINGS.kosha_base_url
 _CACHE_MISS = object()
 
 
