@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from hashlib import sha256
 
 import fitz
@@ -7,6 +8,7 @@ import pytest
 
 from src.msds.models import DocumentCapability, FenceStatus, PageRegion
 from src.msds.pdf_io import FenceDescription, build_section_input, read_pdf_layout
+from src.msds.sections import locate_section
 from tests.rebaseline.pdf_helpers import make_pdf
 
 
@@ -44,9 +46,13 @@ def test_p2_07_cropbox_origin_uses_unrotated_zero_based_coordinate_space(pdf_tmp
 
 
 def test_p2_09_actual_bbox_filtering_excludes_outside_sentinel(pdf_tmp):
-    path = make_pdf(pdf_tmp / "filter.pdf", [[(72, 72, "OUTSIDE"), (72, 120, "INSIDE"), (72, 200, "OUTSIDE_TWO")]])
+    path = make_pdf(pdf_tmp / "filter.pdf", [[
+        (72, 72, "1. Chemical product and company identification"), (72, 120, "INSIDE"),
+        (72, 200, "2. Hazards identification"), (72, 230, "OUTSIDE_TWO"),
+    ]])
     layout = read_pdf_layout(path)
-    fence = FenceDescription(FenceStatus.FENCE_CONFIRMED, "1", "fence", layout.document_sha256, (PageRegion(0, ((0, 100, 595, 150),)),))
+    fence = locate_section(layout, "1").description
+    assert fence is not None
     section_input = build_section_input(layout, fence)
     text = "".join(token.text for token in section_input.tokens)
     assert text == "INSIDE"
@@ -65,6 +71,36 @@ def test_p2_11_rejects_partial_hash_mismatch_and_invalid_page(pdf_tmp, fence):
     layout = read_pdf_layout(make_pdf(pdf_tmp / "reject.pdf", [[(72, 72, "text")]]))
     with pytest.raises(ValueError):
         build_section_input(layout, fence(layout))
+
+
+def test_p2_11_rejects_correct_sha_wrong_section_page_or_rectangle(pdf_tmp):
+    layout = read_pdf_layout(make_pdf(pdf_tmp / "locator-owned.pdf", [[
+        (72, 72, "1. Chemical product and company identification"), (72, 110, "INSIDE"),
+        (72, 150, "2. Hazards identification"),
+    ]]))
+    valid = locate_section(layout, "1").description
+    assert valid is not None
+    assert build_section_input(layout, valid).tokens
+    invalid = (
+        replace(valid, section_no="3"),
+        replace(valid, fence_id="other"),
+        replace(valid, regions=(PageRegion(0, ((0, 100, 595, 120),)),)),
+    )
+    for candidate in invalid:
+        with pytest.raises(ValueError, match="FENCE_DOES_NOT_MATCH_LOCATOR"):
+            build_section_input(layout, candidate)
+
+
+@pytest.mark.parametrize("capability", [DocumentCapability.UNKNOWN, DocumentCapability.IMAGE_ONLY, DocumentCapability.OCR])
+def test_p2_11_builder_never_accepts_a_non_text_confirmed_fence(pdf_tmp, capability):
+    layout = read_pdf_layout(make_pdf(pdf_tmp / f"non-text-{capability.value}.pdf", [[
+        (72, 72, "1. Chemical product and company identification"), (72, 110, "INSIDE"),
+        (72, 150, "2. Hazards identification"),
+    ]]))
+    valid = locate_section(layout, "1").description
+    assert valid is not None
+    with pytest.raises(ValueError, match="REQUIRES_TEXT_CAPABILITY"):
+        build_section_input(layout, replace(valid, capability=capability))
 
 
 def test_p2_12_read_errors_and_cancellation_are_explicit_and_next_input_is_independent(pdf_tmp):

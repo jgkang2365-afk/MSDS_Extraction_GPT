@@ -37,6 +37,7 @@ class PdfPage:
     tokens: tuple[LayoutToken, ...]
     lines: tuple[LayoutLine, ...]
     image_count: int
+    image_rects: tuple[Rect, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -146,7 +147,13 @@ def read_pdf_layout(path: str | Path, *, cancelled: StopCheck = None, deadline: 
                                 value = char.get("c", "")
                                 if value and not value.isspace():
                                     tokens.append(LayoutToken(f"p{page_index}-b{block_id}-l{line_id}-c{char_index}-{len(tokens)}", value, page_index, tuple(float(item) for item in char["bbox"]), block_id, line_id))
-                pages.append(PdfPage(page_index, _unrotated_page_rect(page), int(page.rotation), tuple(tokens), tuple(lines), len(page.get_images(full=True))))
+                image_rects: list[Rect] = []
+                for image in page.get_images(full=True):
+                    # The xref can be placed more than once.  Keep every actual
+                    # placement: an image count alone says nothing about whether
+                    # it belongs to a fenced section.
+                    image_rects.extend(_rect(rect) for rect in page.get_image_rects(image[0]))
+                pages.append(PdfPage(page_index, _unrotated_page_rect(page), int(page.rotation), tuple(tokens), tuple(lines), len(page.get_images(full=True)), tuple(image_rects)))
     except (fitz.FileDataError, OSError, RuntimeError) as error:
         return PdfReadResult(locals().get("digest", ""), tuple(pages), DocumentCapability.UNKNOWN, (f"PDF_READ_ERROR:{type(error).__name__}",), _metrics(pages, started), "PDF_READ_ERROR")
     capability, reasons = _capability(pages)
@@ -167,16 +174,40 @@ def _inside(token: LayoutToken, rect: Rect) -> bool:
     return rx0 <= x0 and y0 >= ry0 and x1 <= rx1 and y1 <= ry1
 
 
+def _intersects(first: Rect, second: Rect) -> bool:
+    return max(first[0], second[0]) < min(first[2], second[2]) and max(first[1], second[1]) < min(first[3], second[3])
+
+
+def _validated_locator_fence(layout: PdfReadResult, fence: FenceDescription) -> FenceDescription:
+    """Re-run the locator so a caller cannot substitute a plausible rectangle.
+
+    ``FenceDescription`` is intentionally a plain immutable value for tests and
+    transport.  It is therefore not provenance by itself.  The builder compares
+    every identity and region field with fresh locator output for this exact
+    layout before accepting it.
+    """
+    from .sections import locate_section
+
+    located = locate_section(layout, fence.section_no)
+    expected = located.description
+    if expected is None or fence != expected:
+        raise ValueError("SECTION_INPUT_FENCE_DOES_NOT_MATCH_LOCATOR")
+    return expected
+
+
 def build_section_input(layout: PdfReadResult, fence: FenceDescription) -> SectionInput:
     """Validate a confirmed fence and physically filter reusable token bboxes."""
     if fence.status is not FenceStatus.FENCE_CONFIRMED:
         raise ValueError("SECTION_INPUT_REQUIRES_CONFIRMED_FENCE")
+    if fence.capability is not DocumentCapability.TEXT:
+        raise ValueError("SECTION_INPUT_REQUIRES_TEXT_CAPABILITY")
     if fence.section_no not in {"1", "3"} or not fence.fence_id:
         raise ValueError("SECTION_INPUT_INVALID_FENCE_IDENTITY")
     if not fence.document_sha256 or fence.document_sha256 != layout.document_sha256:
         raise ValueError("SECTION_INPUT_DOCUMENT_SHA256_MISMATCH")
     if not fence.regions:
         raise ValueError("SECTION_INPUT_REQUIRES_REGIONS")
+    fence = _validated_locator_fence(layout, fence)
     page_by_index = {page.page_index: page for page in layout.pages}
     selected: list[LayoutToken] = []
     previous_page = -1
@@ -190,7 +221,14 @@ def build_section_input(layout: PdfReadResult, fence: FenceDescription) -> Secti
         if any(not _valid_rect(rect, page) for rect in region.excluded_rects):
             raise ValueError("SECTION_INPUT_INVALID_EXCLUDED_REGION")
         for token in page.tokens:
-            if any(_inside(token, rect) for rect in region.allowed_rects) and not any(_inside(token, rect) for rect in region.excluded_rects):
+            allowed = [rect for rect in region.allowed_rects if _intersects(token.bbox, rect)]
+            excluded = [rect for rect in region.excluded_rects if _intersects(token.bbox, rect)]
+            # A character bbox that straddles either boundary cannot be safely
+            # classified.  Do not silently lose it or admit part of an outside
+            # token; block SectionInput construction instead.
+            if any(not _inside(token, rect) for rect in allowed) or any(not _inside(token, rect) for rect in excluded):
+                raise ValueError("SECTION_INPUT_BOUNDARY_CROSSING_TOKEN")
+            if allowed and not excluded:
                 selected.append(token)
     digest = sha256("\n".join(f"{token.token_id}|{token.text}|{token.bbox}" for token in selected).encode("utf-8")).hexdigest()
     return SectionInput(layout.document_sha256, fence.section_no, fence.fence_id, fence.regions, tuple(selected), fence.capability, fence.reasons, digest)

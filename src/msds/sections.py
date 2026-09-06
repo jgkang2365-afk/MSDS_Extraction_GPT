@@ -91,6 +91,51 @@ def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
     return len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
 
 
+def _intersects(first: tuple[float, float, float, float], second: tuple[float, float, float, float]) -> bool:
+    return max(first[0], second[0]) < min(first[2], second[2]) and max(first[1], second[1]) < min(first[3], second[3])
+
+
+def _margin_repetitions(layout: PdfReadResult) -> dict[tuple[int, int, int], tuple[float, float, float, float]]:
+    """Find exact repeated top/bottom lines, retaining their per-page boxes."""
+    occurrences: dict[str, list[LayoutLine]] = {}
+    for page in layout.pages:
+        height = page.rect[3] - page.rect[1]
+        for line in page.lines:
+            if line.bbox[1] <= page.rect[1] + height * 0.20 or line.bbox[3] >= page.rect[3] - height * 0.20:
+                normalized = re.sub(r"\s+", " ", line.text).strip().casefold()
+                if normalized:
+                    occurrences.setdefault(normalized, []).append(line)
+    repeated: dict[tuple[int, int, int], tuple[float, float, float, float]] = {}
+    for lines in occurrences.values():
+        if len({line.page_index for line in lines}) >= 2:
+            repeated.update({(line.page_index, line.block_id, line.line_id): line.bbox for line in lines})
+    return repeated
+
+
+def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tuple[float, float, float, float]]) -> tuple[PageRegion | None, str | None]:
+    """Fence one continuation page only when its readable body is unambiguous."""
+    excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
+    body_lines = [line for line in page.lines if not any(_intersects(line.bbox, rect) for rect in excluded)]
+    if not body_lines:
+        if page.image_rects:
+            # A textless continuation page can still be fenced to its known
+            # image placement, which lets capability classification block it as
+            # image-required instead of pretending it has a full-page text area.
+            return PageRegion(page.page_index, page.image_rects, excluded), None
+        if page.image_count:
+            return None, "MIDDLE_PAGE_IMAGE_PLACEMENT_UNKNOWN"
+        return None, "MIDDLE_PAGE_BODY_UNAVAILABLE"
+    starts = sorted({round(line.bbox[0], 1) for line in body_lines})
+    if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
+        return None, "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS"
+    x0, _, x1, _ = page.rect
+    top = min(line.bbox[1] for line in body_lines)
+    bottom = max(line.bbox[3] for line in body_lines)
+    if top >= bottom:
+        return None, "MIDDLE_PAGE_BODY_BOUNDS_AMBIGUOUS"
+    return PageRegion(page.page_index, ((x0, top, x1, bottom),), excluded), None
+
+
 def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple[PageRegion, ...] | None, str | None]:
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
@@ -110,9 +155,13 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     if top >= y1:
         return None, "START_BOUNDARY_OUTSIDE_PAGE"
     regions.append(PageRegion(start.page_index, ((x0, top, x1, y1),)))
+    repeated = _margin_repetitions(layout)
     for page_index in range(start.page_index + 1, end.page_index):
         page = pages[page_index]
-        regions.append(PageRegion(page_index, (page.rect,)))
+        region, failure = _safe_middle_region(page, repeated)
+        if failure:
+            return None, failure
+        regions.append(region)
     x0, y0, x1, _ = end_page.rect
     bottom = end.line.bbox[1]
     if bottom <= y0:
@@ -132,10 +181,17 @@ def _section_capability(layout: PdfReadResult, regions: tuple[PageRegion, ...] |
             for token in page.tokens
         )
 
-    if any(page.image_count > 0 and not has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
+    image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in region_pages)
+    image_in_region = any(
+        any(_intersects(image, rect) for image in page.image_rects for rect in region.allowed_rects)
+        for page, region in zip(region_pages, regions)
+    )
+    if image_coverage_unknown:
+        return DocumentCapability.UNKNOWN, ("SECTION_IMAGE_PLACEMENT_UNKNOWN",)
+    if image_in_region:
+        if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
+            return DocumentCapability.UNKNOWN, ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
         return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)
-    if any(page.image_count > 0 for page in region_pages):
-        return DocumentCapability.TEXT, ("SECTION_MIXED_TEXT_AND_IMAGE",)
     if any(not page.tokens for page in region_pages):
         return DocumentCapability.UNKNOWN, ("SECTION_DIGITAL_TEXT_UNAVAILABLE",)
     return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT",)

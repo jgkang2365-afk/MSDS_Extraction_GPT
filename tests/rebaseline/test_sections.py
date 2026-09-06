@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -57,6 +58,31 @@ def test_p2_03_section_three_has_no_page_count_cutoff(pdf_tmp):
     assert "LAST_3" in "".join(token.text for token in input3.tokens)
 
 
+def test_p2_03_middle_pages_are_fenced_body_regions_with_repeated_margins_excluded(pdf_tmp):
+    pages = [[(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")]]
+    pages += [[(72, 20, "REPEATED HEADER"), (72, 100, f"BODY_{number}"), (72, 810, "REPEATED FOOTER")] for number in range(1, 3)]
+    pages += [[(72, 100, "LAST"), (72, 150, "4. First-aid measures")]]
+    _, three, _, input3 = _inputs(make_pdf(pdf_tmp / "middle-margins.pdf", pages))
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.description is not None
+    middle = three.description.regions[1]
+    assert middle.allowed_rects != (read_pdf_layout(pdf_tmp / "middle-margins.pdf").pages[1].rect,)
+    assert middle.excluded_rects
+    text = "".join(token.text for token in input3.tokens)
+    assert "BODY_1" in text and "REPEATED" not in text
+
+
+def test_p2_05_multi_column_continuation_page_blocks_section_input(pdf_tmp):
+    path = make_pdf(pdf_tmp / "middle-columns.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        [(72, 100, "LEFT"), (360, 100, "RIGHT")],
+        [(72, 100, "LAST"), (72, 150, "4. First-aid measures")],
+    ])
+    _, three = locate_sections(read_pdf_layout(path))
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS" in three.reasons
+
+
 def test_p2_04_toc_footer_references_subsections_and_cas_numbers_are_not_headers(pdf_tmp):
     path = make_pdf(pdf_tmp / "noise.pdf", [[
         (72, 72, "1. Chemical product and company identification"), (72, 90, "2. Hazards identification"), (72, 108, "3. Composition/information on ingredients"), (72, 126, "4. First-aid measures"),
@@ -101,11 +127,54 @@ def test_p2_06_image_section_is_partial_without_loading_ocr_and_keeps_section_on
     assert "SECTION_IMAGE_READING_REQUIRED" in three.reasons
 
 
-def test_p2_08_boundary_crossing_text_is_filtered_at_character_token_granularity(pdf_tmp):
-    path = make_pdf(pdf_tmp / "boundary.pdf", [[(72, 72, "1. Chemical product and company identification"), (72, 100, "INSIDE"), (72, 130, "2. Hazards identification")]])
+def test_p2_06_same_region_text_and_image_is_blocked_but_title_only_image_is_classified(pdf_tmp):
+    mixed = make_pdf(pdf_tmp / "same-region-mixed.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"), (72, 110, "DIGITAL_BODY"),
+        (72, 180, "4. First-aid measures"),
+    ]], images={0}, image_rects={0: (300, 95, 420, 135)})
+    _, mixed_three = locate_sections(read_pdf_layout(mixed))
+    assert mixed_three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert mixed_three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+    image_only = make_pdf(pdf_tmp / "title-only-image.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"), (72, 180, "4. First-aid measures"),
+    ]], images={0}, image_rects={0: (300, 95, 420, 135)})
+    _, image_three = locate_sections(read_pdf_layout(image_only))
+    assert image_three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert image_three.reasons == ("SECTION_IMAGE_READING_REQUIRED",)
+
+
+def test_p2_06_image_count_without_observable_placement_is_partial(pdf_tmp):
+    path = make_pdf(pdf_tmp / "image-placement-unknown.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"), (72, 110, "DIGITAL_BODY"),
+        (72, 180, "4. First-aid measures"),
+    ]], images={0}, image_rects={0: (300, 95, 420, 135)})
+    layout = read_pdf_layout(path)
+    missing_placement = replace(layout, pages=(replace(layout.pages[0], image_rects=()),))
+    _, three = locate_sections(missing_placement)
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == ("SECTION_IMAGE_PLACEMENT_UNKNOWN",)
+
+
+def test_p2_08_boundary_crossing_text_blocks_input_without_silent_loss(pdf_tmp):
+    path = make_pdf(pdf_tmp / "boundary.pdf", [[(72, 72, "1. Chemical product and company identification"), (72, 125, "CROSSING"), (72, 130, "2. Hazards identification")]])
+    layout = read_pdf_layout(path)
+    one, _ = locate_sections(layout)
+    assert one.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert one.description is not None
+    with pytest.raises(ValueError, match="BOUNDARY_CROSSING_TOKEN"):
+        build_section_input(layout, one.description)
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_p2_07_rotation_and_cropbox_keep_adjacent_sentinels_outside_the_input(pdf_tmp, rotation):
+    path = make_pdf(pdf_tmp / f"crop-rotation-{rotation}.pdf", [[
+        (100, 100, "1. Chemical product and company identification"), (100, 150, "INSIDE"),
+        (100, 230, "2. Hazards identification"), (100, 260, "OUTSIDE"),
+    ]], rotations=[rotation], cropboxes=[(50, 60, 500, 700)])
     one, _, input1, _ = _inputs(path)
     assert one.fence.status is FenceStatus.FENCE_CONFIRMED
-    assert "INSIDE" in "".join(token.text for token in input1.tokens)
+    text = "".join(token.text for token in input1.tokens)
+    assert "INSIDE" in text and "OUTSIDE" not in text
 
 
 def test_p2_10_filename_and_other_section_content_do_not_change_fence_tokens(pdf_tmp):
