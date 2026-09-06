@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from golden.v2.validation import compare_ordered_rows, validate_case
 
 
@@ -62,10 +64,34 @@ def test_golden_v2_validates_schema_required_contract_fields_and_provenance():
     assert "components[0].content content_raw/content_normalized/content_status is invalid" in errors
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cas_raw", ""),
+        ("cas_normalized", "   "),
+        ("cas_status", "NOT_STATED"),
+        ("cas_status", "NOT_FOUND"),
+    ],
+)
+def test_golden_v2_component_requires_an_actual_cas(field, value):
+    case = {
+        "source_sha256": "e" * 64,
+        "product": {"raw": "P"},
+        "section_provenance": {"section_1": {"page": 1}, "section_3": {"page": 2}},
+        "components": [_row("64-17-5", "block-1")],
+    }
+    case["components"][0]["cas"][field] = value
+    assert "components[0].cas cas_raw/cas_normalized/cas_status is invalid" in validate_case(case)
+
+
 def test_golden_v2_schema_declares_section_and_component_contract_fields():
     schema_path = Path(__file__).resolve().parents[2] / "golden" / "v2" / "schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     assert schema["properties"]["section_provenance"]["required"] == ["section_1", "section_3"]
     component_properties = schema["properties"]["components"]["items"]["properties"]
     assert component_properties["cas"]["required"] == ["cas_raw", "cas_normalized", "cas_status"]
+    assert component_properties["cas"]["properties"]["cas_raw"]["minLength"] == 1
+    assert component_properties["cas"]["properties"]["cas_normalized"]["minLength"] == 1
+    assert "NOT_STATED" not in component_properties["cas"]["properties"]["cas_status"]["enum"]
+    assert "NOT_FOUND" not in component_properties["cas"]["properties"]["cas_status"]["enum"]
     assert component_properties["content"]["required"] == ["content_raw", "content_normalized", "content_status"]

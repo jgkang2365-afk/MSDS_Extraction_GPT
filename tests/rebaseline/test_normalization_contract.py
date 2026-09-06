@@ -61,3 +61,11 @@ def test_product_normalization_keeps_raw_model_grade_parentheses_concentration_a
     result = normalize_product(raw)
     assert result.raw == raw
     assert result.normalized == "miconol c2m(h) grade-a 10% #x1"
+
+
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_blank_product_is_not_found(raw):
+    result = normalize_product(raw)
+    assert result.raw == ("" if raw is None else raw)
+    assert result.normalized == ""
+    assert result.status is ResultStatus.NOT_FOUND

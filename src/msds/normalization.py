@@ -97,6 +97,6 @@ def normalize_product(value: object | None) -> ProductResult:
     """Make a comparison value while retaining every raw product identifier."""
     raw = "" if value is None else str(value)
     if not raw.strip():
-        return ProductResult(raw=raw, normalized="", status=ResultStatus.NOT_STATED)
+        return ProductResult(raw=raw, normalized="", status=ResultStatus.NOT_FOUND)
     normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", raw)).strip().casefold()
     return ProductResult(raw=raw, normalized=normalized, status=ResultStatus.FOUND)

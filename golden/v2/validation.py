@@ -7,7 +7,7 @@ from typing import Any
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_CAS_STATUSES = {"FOUND", "NOT_FOUND", "NOT_STATED", "NOT_READABLE", "REVIEW", "INVALID"}
+_COMPONENT_CAS_STATUSES = {"FOUND", "NOT_READABLE", "REVIEW", "INVALID"}
 _CONTENT_STATUSES = {"FOUND", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS"}
 _PAIR_STATUSES = {"PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"}
 
@@ -40,8 +40,10 @@ def validate_case(case: Any) -> list[str]:
         if (
             not isinstance(cas, dict)
             or not isinstance(cas.get("cas_raw"), str)
+            or not cas.get("cas_raw").strip()
             or not isinstance(cas.get("cas_normalized"), str)
-            or cas.get("cas_status") not in _CAS_STATUSES
+            or not cas.get("cas_normalized").strip()
+            or cas.get("cas_status") not in _COMPONENT_CAS_STATUSES
         ):
             errors.append(f"{prefix}.cas cas_raw/cas_normalized/cas_status is invalid")
         content = row.get("content")
