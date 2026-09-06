@@ -6,8 +6,8 @@
   "properties": {
     "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "product": {"type": "object", "required": ["raw"], "properties": {"raw": {"type": "string"}, "normalized": {"type": "string"}, "status": {"type": "string"}}, "additionalProperties": true},
-    "section_provenance": {"type": "object", "description": "Lossless Section 1/3 fence and evidence provenance.", "additionalProperties": true},
-    "components": {"type": "array", "description": "Ordered rows. Duplicate CAS rows are retained.", "items": {"type": "object", "required": ["cas", "content", "pair_status", "block_id", "evidence"], "properties": {"cas": {"type": "object", "required": ["cas_raw", "cas_normalized", "cas_status"]}, "content": {"type": "object", "required": ["content_raw", "content_normalized", "content_status"]}, "pair_status": {"enum": ["PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"]}, "block_id": {"type": "string"}, "evidence": {"type": "array"}}, "additionalProperties": true}}
+    "section_provenance": {"type": "object", "description": "Lossless Section 1/3 fence and evidence provenance.", "required": ["section_1", "section_3"], "properties": {"section_1": {"type": "object"}, "section_3": {"type": "object"}}, "additionalProperties": true},
+    "components": {"type": "array", "description": "Ordered rows. Duplicate CAS rows are retained.", "items": {"type": "object", "required": ["cas", "content", "pair_status", "block_id", "evidence"], "properties": {"cas": {"type": "object", "required": ["cas_raw", "cas_normalized", "cas_status"], "properties": {"cas_raw": {"type": "string"}, "cas_normalized": {"type": "string"}, "cas_status": {"type": "string"}}}, "content": {"type": "object", "required": ["content_raw", "content_normalized", "content_status"], "properties": {"content_raw": {"type": "string"}, "content_normalized": {"type": "string"}, "content_status": {"type": "string"}}}, "pair_status": {"enum": ["PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"]}, "block_id": {"type": "string"}, "evidence": {"type": "array"}}, "additionalProperties": true}}
   },
   "additionalProperties": true
 }

@@ -7,6 +7,7 @@ from typing import Any
 
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_CAS_STATUSES = {"FOUND", "NOT_FOUND", "NOT_STATED", "NOT_READABLE", "REVIEW", "INVALID"}
 _CONTENT_STATUSES = {"FOUND", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS"}
 _PAIR_STATUSES = {"PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"}
 
@@ -20,8 +21,13 @@ def validate_case(case: Any) -> list[str]:
         errors.append("source_sha256 must be a lowercase SHA-256")
     if not isinstance(case.get("product"), dict) or not isinstance(case["product"].get("raw"), str):
         errors.append("product.raw is required")
-    if not isinstance(case.get("section_provenance"), dict):
+    provenance = case.get("section_provenance")
+    if not isinstance(provenance, dict):
         errors.append("section_provenance is required")
+    else:
+        for section_name in ("section_1", "section_3"):
+            if not isinstance(provenance.get(section_name), dict):
+                errors.append(f"section_provenance.{section_name} is required")
     rows = case.get("components")
     if not isinstance(rows, list):
         return errors + ["components must be an ordered list, never a CAS-keyed object"]
@@ -30,11 +36,22 @@ def validate_case(case: Any) -> list[str]:
         if not isinstance(row, dict):
             errors.append(f"{prefix} must be an object")
             continue
-        if not isinstance(row.get("cas"), dict) or not isinstance(row["cas"].get("cas_raw"), str):
-            errors.append(f"{prefix}.cas.cas_raw is required")
+        cas = row.get("cas")
+        if (
+            not isinstance(cas, dict)
+            or not isinstance(cas.get("cas_raw"), str)
+            or not isinstance(cas.get("cas_normalized"), str)
+            or cas.get("cas_status") not in _CAS_STATUSES
+        ):
+            errors.append(f"{prefix}.cas cas_raw/cas_normalized/cas_status is invalid")
         content = row.get("content")
-        if not isinstance(content, dict) or not isinstance(content.get("content_raw"), str) or content.get("content_status") not in _CONTENT_STATUSES:
-            errors.append(f"{prefix}.content content_raw/content_status is invalid")
+        if (
+            not isinstance(content, dict)
+            or not isinstance(content.get("content_raw"), str)
+            or not isinstance(content.get("content_normalized"), str)
+            or content.get("content_status") not in _CONTENT_STATUSES
+        ):
+            errors.append(f"{prefix}.content content_raw/content_normalized/content_status is invalid")
         if row.get("pair_status") not in _PAIR_STATUSES:
             errors.append(f"{prefix}.pair_status is invalid")
         if not isinstance(row.get("block_id"), str):
