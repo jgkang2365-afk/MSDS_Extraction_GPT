@@ -72,6 +72,46 @@ def test_p2_03_middle_pages_are_fenced_body_regions_with_repeated_margins_exclud
     assert "BODY_1" in text and "REPEATED" not in text
 
 
+def test_p2_03_multi_page_start_and_end_use_observed_body_and_exclude_repeated_sentinels(pdf_tmp):
+    path = make_pdf(pdf_tmp / "boundary-margins.pdf", [
+        [(72, 20, "REPEATED HEADER"), (72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY"), (72, 810, "REPEATED FOOTER")],
+        [(72, 20, "REPEATED HEADER"), (72, 100, "MIDDLE_BODY"), (72, 810, "REPEATED FOOTER")],
+        [(72, 20, "REPEATED HEADER"), (72, 110, "LAST_BODY"), (72, 150, "4. First-aid measures"), (72, 810, "REPEATED FOOTER")],
+    ])
+    layout = read_pdf_layout(path)
+    _, three = locate_sections(layout)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.description is not None
+    first, _, last = three.description.regions
+    assert first.allowed_rects[0][1] > layout.pages[0].lines[1].bbox[3]
+    assert last.allowed_rects[0][3] < layout.pages[2].lines[-2].bbox[1]
+    text = "".join(token.text for token in build_section_input(layout, three.description).tokens)
+    assert "FIRST_BODY" in text and "MIDDLE_BODY" in text and "LAST_BODY" in text
+    assert "REPEATED" not in text
+
+
+@pytest.mark.parametrize(
+    ("page_entries", "reason"),
+    [
+        ([(72, 72, "3. Composition/information on ingredients"), (72, 110, "LEFT"), (360, 110, "RIGHT")], "START_PAGE_READING_ORDER_AMBIGUOUS"),
+        ([(72, 110, "LEFT"), (360, 110, "RIGHT"), (72, 150, "4. First-aid measures")], "END_PAGE_READING_ORDER_AMBIGUOUS"),
+    ],
+)
+def test_p2_03_multi_page_boundary_columns_are_rejected(pdf_tmp, page_entries, reason):
+    pages = [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        [(72, 100, "MIDDLE")],
+        [(72, 110, "LAST"), (72, 150, "4. First-aid measures")],
+    ]
+    if reason.startswith("START"):
+        pages[0] = page_entries
+    else:
+        pages[2] = page_entries
+    _, three = locate_sections(read_pdf_layout(make_pdf(pdf_tmp / f"boundary-columns-{reason}.pdf", pages)))
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == (reason,)
+
+
 def test_p2_05_multi_column_continuation_page_blocks_section_input(pdf_tmp):
     path = make_pdf(pdf_tmp / "middle-columns.pdf", [
         [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
@@ -141,6 +181,20 @@ def test_p2_06_same_region_text_and_image_is_blocked_but_title_only_image_is_cla
     _, image_three = locate_sections(read_pdf_layout(image_only))
     assert image_three.fence.status is FenceStatus.FENCE_PARTIAL
     assert image_three.reasons == ("SECTION_IMAGE_READING_REQUIRED",)
+
+
+def test_p2_06_small_margin_logo_with_sufficient_separate_digital_body_is_confirmed(pdf_tmp):
+    path = make_pdf(pdf_tmp / "decorative-logo.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 110, "DIGITAL_BODY_HAS_ENOUGH_TEXT_FOR_SAFE_TEXT_FENCE"),
+        (72, 180, "4. First-aid measures"),
+    ]], images={0}, image_rects={0: (550, 100, 570, 120)})
+    layout = read_pdf_layout(path)
+    _, three = locate_sections(layout)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.description is not None
+    assert three.reasons == ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
+    assert "DIGITAL_BODY" in "".join(token.text for token in build_section_input(layout, three.description).tokens)
 
 
 def test_p2_06_image_count_without_observable_placement_is_partial(pdf_tmp):

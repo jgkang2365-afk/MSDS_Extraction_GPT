@@ -95,6 +95,10 @@ def _intersects(first: tuple[float, float, float, float], second: tuple[float, f
     return max(first[0], second[0]) < min(first[2], second[2]) and max(first[1], second[1]) < min(first[3], second[3])
 
 
+def _inside_token(token, rect: tuple[float, float, float, float]) -> bool:
+    return rect[0] <= token.bbox[0] and token.bbox[1] >= rect[1] and token.bbox[2] <= rect[2] and token.bbox[3] <= rect[3]
+
+
 def _margin_repetitions(layout: PdfReadResult) -> dict[tuple[int, int, int], tuple[float, float, float, float]]:
     """Find exact repeated top/bottom lines, retaining their per-page boxes."""
     occurrences: dict[str, list[LayoutLine]] = {}
@@ -136,6 +140,47 @@ def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tupl
     return PageRegion(page.page_index, ((x0, top, x1, bottom),), excluded), None
 
 
+def _safe_boundary_region(
+    page: PdfPage,
+    repeated: dict[tuple[int, int, int], tuple[float, float, float, float]],
+    *,
+    top: float,
+    bottom: float,
+    failure_prefix: str,
+) -> tuple[PageRegion | None, str | None]:
+    """Fence a start/end page to its observed, single-column body only."""
+    excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
+    if bottom <= top:
+        return None, f"{failure_prefix}_BOUNDARY_ORDER_AMBIGUOUS"
+    boundary = (page.rect[0], top, page.rect[2], bottom)
+    if any(
+        _intersects(line.bbox, boundary)
+        and not (top <= line.bbox[1] and line.bbox[3] <= bottom)
+        for line in page.lines
+    ):
+        return None, f"{failure_prefix}_BOUNDARY_CROSSING_AMBIGUOUS"
+    body_lines = [
+        line for line in page.lines
+        if top <= line.bbox[1] and line.bbox[3] <= bottom
+        and not any(_intersects(line.bbox, rect) for rect in excluded)
+    ]
+    if not body_lines:
+        # A header-only boundary page contributes evidence but no admissible
+        # body rectangle.  Later observed pages may still establish that this
+        # is an image-required section; never widen it to a page-sized area.
+        return None, None
+    starts = sorted({round(line.bbox[0], 1) for line in body_lines})
+    if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
+        return None, f"{failure_prefix}_READING_ORDER_AMBIGUOUS"
+    x0 = min(line.bbox[0] for line in body_lines)
+    x1 = max(line.bbox[2] for line in body_lines)
+    body_top = min(line.bbox[1] for line in body_lines)
+    body_bottom = max(line.bbox[3] for line in body_lines)
+    if x1 <= x0 or body_bottom <= body_top:
+        return None, f"{failure_prefix}_BODY_BOUNDS_AMBIGUOUS"
+    return PageRegion(page.page_index, ((x0, body_top, x1, body_bottom),), excluded), None
+
+
 def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple[PageRegion, ...] | None, str | None]:
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
@@ -149,24 +194,30 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if bottom <= top:
             return None, "SAME_PAGE_BOUNDARY_ORDER_AMBIGUOUS"
         return (PageRegion(start.page_index, ((x0, top, x1, bottom),)),), None
-    regions: list[PageRegion] = []
-    x0, _, x1, y1 = start_page.rect
-    top = start.line.bbox[3]
-    if top >= y1:
-        return None, "START_BOUNDARY_OUTSIDE_PAGE"
-    regions.append(PageRegion(start.page_index, ((x0, top, x1, y1),)))
     repeated = _margin_repetitions(layout)
+    _, py0, _, py1 = start_page.rect
+    start_region, failure = _safe_boundary_region(
+        start_page, repeated, top=start.line.bbox[3], bottom=py1, failure_prefix="START_PAGE"
+    )
+    if failure:
+        return None, failure
+    regions: list[PageRegion] = [start_region] if start_region is not None else []
     for page_index in range(start.page_index + 1, end.page_index):
         page = pages[page_index]
         region, failure = _safe_middle_region(page, repeated)
         if failure:
             return None, failure
         regions.append(region)
-    x0, y0, x1, _ = end_page.rect
-    bottom = end.line.bbox[1]
-    if bottom <= y0:
-        return None, "END_BOUNDARY_OUTSIDE_PAGE"
-    regions.append(PageRegion(end.page_index, ((x0, y0, x1, bottom),)))
+    _, ey0, _, _ = end_page.rect
+    end_region, failure = _safe_boundary_region(
+        end_page, repeated, top=ey0, bottom=end.line.bbox[1], failure_prefix="END_PAGE"
+    )
+    if failure:
+        return None, failure
+    if end_region is not None:
+        regions.append(end_region)
+    if not regions:
+        return None, "SECTION_BODY_UNAVAILABLE"
     return tuple(regions), None
 
 
@@ -177,18 +228,42 @@ def _section_capability(layout: PdfReadResult, regions: tuple[PageRegion, ...] |
     region_pages = [pages[region.page_index] for region in regions]
     def has_text_in_region(page: PdfPage, region: PageRegion) -> bool:
         return any(
-            any(rect[0] <= token.bbox[0] and token.bbox[1] >= rect[1] and token.bbox[2] <= rect[2] and token.bbox[3] <= rect[3] for rect in region.allowed_rects)
+            any(_inside_token(token, rect) for rect in region.allowed_rects)
             for token in page.tokens
         )
 
     image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in region_pages)
-    image_in_region = any(
-        any(_intersects(image, rect) for image in page.image_rects for rect in region.allowed_rects)
+    images_in_region = [
+        (page, region, image)
         for page, region in zip(region_pages, regions)
-    )
+        for image in page.image_rects
+        if any(_intersects(image, rect) for rect in region.allowed_rects)
+    ]
     if image_coverage_unknown:
         return DocumentCapability.UNKNOWN, ("SECTION_IMAGE_PLACEMENT_UNKNOWN",)
-    if image_in_region:
+    if images_in_region:
+        digital_text = sum(
+            1 for page, region in zip(region_pages, regions) for token in page.tokens
+            if any(_inside_token(token, rect) for rect in region.allowed_rects)
+        )
+        def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
+            px0, py0, px1, py1 = page.rect
+            width, height = px1 - px0, py1 - py0
+            image_width, image_height = image[2] - image[0], image[3] - image[1]
+            margin = min(image[0] - px0, px1 - image[2], image[1] - py0, py1 - image[3])
+            return (
+                image_width > 0 and image_height > 0
+                and image_width <= width * 0.15 and image_height <= height * 0.15
+                and image_width * image_height <= width * height * 0.02
+                and margin <= min(width, height) * 0.10
+            )
+        images_are_decorative = all(
+            decorative_logo(page, image)
+            and not any(_intersects(image, token.bbox) for token in page.tokens if any(_inside_token(token, rect) for rect in region.allowed_rects))
+            for page, region, image in images_in_region
+        )
+        if images_are_decorative and digital_text >= 12:
+            return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
         if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
             return DocumentCapability.UNKNOWN, ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
         return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)
@@ -200,8 +275,12 @@ def _section_capability(layout: PdfReadResult, regions: tuple[PageRegion, ...] |
 def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopCheck = None, deadline: float | None = None) -> LocatedFence:
     """Locate one section independently; no missing sibling can erase a good fence."""
     started = monotonic()
+    metric = lambda: (("locator_ms", round((monotonic() - started) * 1000, 3)), ("headers_seen", 0), ("external_calls", 0))
     if section_no not in {"1", "3"}:
         raise ValueError("ONLY_SECTION_1_AND_3_ARE_SUPPORTED")
+    if layout.terminal_reason:
+        status = FenceStatus.FENCE_PARTIAL if layout.pages else FenceStatus.FENCE_NOT_FOUND
+        return LocatedFence(SectionFence(status, section_no, None, None), None, (layout.terminal_reason,), metric())
     headers, stop = _find_headers(layout, cancelled=cancelled, deadline=deadline)
     metric = lambda: (("locator_ms", round((monotonic() - started) * 1000, 3)), ("headers_seen", len(headers)), ("external_calls", 0))
     if stop:

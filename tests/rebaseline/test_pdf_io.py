@@ -125,3 +125,27 @@ def test_p2_12_password_required_pdf_is_not_treated_as_empty_input(pdf_tmp):
     result = read_pdf_layout(path)
     assert result.terminal_reason == "PASSWORD_REQUIRED"
     assert result.capability is DocumentCapability.UNKNOWN
+
+
+def test_p2_12_terminal_layout_never_confirms_or_builds_even_after_a_complete_first_section(pdf_tmp):
+    path = make_pdf(pdf_tmp / "terminal-after-section-one.pdf", [
+        [(72, 72, "1. Chemical product and company identification"), (72, 110, "COMPLETE_FIRST_SECTION"), (72, 150, "2. Hazards identification")],
+        [(72, 72, "3. Composition/information on ingredients")],
+    ])
+    calls = 0
+    def cancelled():
+        nonlocal calls
+        calls += 1
+        return calls > 1
+    interrupted = read_pdf_layout(path, cancelled=cancelled)
+    assert interrupted.terminal_reason == "CANCELLED" and len(interrupted.pages) == 1
+    located = locate_section(interrupted, "1")
+    assert located.fence.status is FenceStatus.FENCE_PARTIAL
+    assert located.description is None and located.reasons == ("CANCELLED",)
+    complete = read_pdf_layout(make_pdf(pdf_tmp / "complete-first-section.pdf", [
+        [(72, 72, "1. Chemical product and company identification"), (72, 110, "COMPLETE_FIRST_SECTION"), (72, 150, "2. Hazards identification")],
+    ]))
+    fence = locate_section(complete, "1").description
+    assert fence is not None
+    with pytest.raises(ValueError, match="SECTION_INPUT_TERMINAL_LAYOUT"):
+        build_section_input(replace(complete, terminal_reason="CANCELLED"), fence)

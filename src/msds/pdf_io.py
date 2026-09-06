@@ -197,6 +197,8 @@ def _validated_locator_fence(layout: PdfReadResult, fence: FenceDescription) -> 
 
 def build_section_input(layout: PdfReadResult, fence: FenceDescription) -> SectionInput:
     """Validate a confirmed fence and physically filter reusable token bboxes."""
+    if layout.terminal_reason:
+        raise ValueError("SECTION_INPUT_TERMINAL_LAYOUT")
     if fence.status is not FenceStatus.FENCE_CONFIRMED:
         raise ValueError("SECTION_INPUT_REQUIRES_CONFIRMED_FENCE")
     if fence.capability is not DocumentCapability.TEXT:
