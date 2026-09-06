@@ -132,10 +132,11 @@ def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tupl
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
     if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
         return None, "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS"
-    x0, _, x1, _ = page.rect
+    x0 = min(line.bbox[0] for line in body_lines)
+    x1 = max(line.bbox[2] for line in body_lines)
     top = min(line.bbox[1] for line in body_lines)
     bottom = max(line.bbox[3] for line in body_lines)
-    if top >= bottom:
+    if x1 <= x0 or top >= bottom:
         return None, "MIDDLE_PAGE_BODY_BOUNDS_AMBIGUOUS"
     return PageRegion(page.page_index, ((x0, top, x1, bottom),), excluded), None
 
@@ -165,9 +166,20 @@ def _safe_boundary_region(
         and not any(_intersects(line.bbox, rect) for rect in excluded)
     ]
     if not body_lines:
-        # A header-only boundary page contributes evidence but no admissible
-        # body rectangle.  Later observed pages may still establish that this
-        # is an image-required section; never widen it to a page-sized area.
+        images_in_span = tuple(
+            (max(page.rect[0], image[0]), max(top, image[1]), min(page.rect[2], image[2]), min(bottom, image[3]))
+            for image in page.image_rects
+            if _intersects(image, (page.rect[0], top, page.rect[2], bottom))
+        )
+        if images_in_span:
+            # Keep an image-only observation for a header-only boundary page.
+            # It is never used to widen text input because such a section is
+            # classified as non-text before SectionInput can be built.
+            return PageRegion(page.page_index, images_in_span, excluded), None
+        if page.image_count:
+            # Placement cannot be observed, but the bounded vertical span must
+            # still reach capability classification and block the section.
+            return PageRegion(page.page_index, ((page.rect[0], top, page.rect[2], bottom),), excluded), None
         return None, None
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
     if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
@@ -221,23 +233,41 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     return tuple(regions), None
 
 
-def _section_capability(layout: PdfReadResult, regions: tuple[PageRegion, ...] | None) -> tuple[DocumentCapability, tuple[str, ...]]:
+def _section_capability(
+    layout: PdfReadResult,
+    regions: tuple[PageRegion, ...] | None,
+    start: _Header,
+    end: _Header,
+) -> tuple[DocumentCapability, tuple[str, ...]]:
     if not regions:
         return DocumentCapability.UNKNOWN, ("NO_CONFIRMED_REGIONS",)
     pages = {page.page_index: page for page in layout.pages}
     region_pages = [pages[region.page_index] for region in regions]
+    regions_by_page = {region.page_index: region for region in regions}
     def has_text_in_region(page: PdfPage, region: PageRegion) -> bool:
         return any(
             any(_inside_token(token, rect) for rect in region.allowed_rects)
             for token in page.tokens
         )
 
-    image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in region_pages)
+    def image_span(page: PdfPage) -> tuple[float, float, float, float]:
+        if page.page_index == start.page_index:
+            top = start.line.bbox[3]
+        else:
+            top = page.rect[1]
+        if page.page_index == end.page_index:
+            bottom = end.line.bbox[1]
+        else:
+            bottom = page.rect[3]
+        return (page.rect[0], top, page.rect[2], bottom)
+
+    section_pages = [pages[index] for index in range(start.page_index, end.page_index + 1)]
+    image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in section_pages)
     images_in_region = [
-        (page, region, image)
-        for page, region in zip(region_pages, regions)
+        (page, image)
+        for page in section_pages
         for image in page.image_rects
-        if any(_intersects(image, rect) for rect in region.allowed_rects)
+        if _intersects(image, image_span(page))
     ]
     if image_coverage_unknown:
         return DocumentCapability.UNKNOWN, ("SECTION_IMAGE_PLACEMENT_UNKNOWN",)
@@ -259,8 +289,12 @@ def _section_capability(layout: PdfReadResult, regions: tuple[PageRegion, ...] |
             )
         images_are_decorative = all(
             decorative_logo(page, image)
-            and not any(_intersects(image, token.bbox) for token in page.tokens if any(_inside_token(token, rect) for rect in region.allowed_rects))
-            for page, region, image in images_in_region
+            and not any(
+                _intersects(image, token.bbox)
+                for token in page.tokens
+                if any(_inside_token(token, rect) for rect in regions_by_page[page.page_index].allowed_rects)
+            )
+            for page, image in images_in_region
         )
         if images_are_decorative and digital_text >= 12:
             return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
@@ -301,7 +335,7 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
     regions, failure = _regions(layout, start, end)
     if failure:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)), None, (failure,), metric())
-    capability, reasons = _section_capability(layout, regions)
+    capability, reasons = _section_capability(layout, regions, start, end)
     if capability is not DocumentCapability.TEXT:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)), None, reasons, metric())
     fence_id = sha256(f"{layout.document_sha256}:{section_no}:{start.page_index}:{start.line.bbox}:{end.page_index}:{end.line.bbox}".encode("utf-8")).hexdigest()

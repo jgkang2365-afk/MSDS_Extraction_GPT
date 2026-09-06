@@ -167,6 +167,45 @@ def test_p2_06_image_section_is_partial_without_loading_ocr_and_keeps_section_on
     assert "SECTION_IMAGE_READING_REQUIRED" in three.reasons
 
 
+@pytest.mark.parametrize("image_page", [0, 2])
+def test_p2_06_header_only_boundary_image_is_not_omitted_from_capability(pdf_tmp, image_page):
+    path = make_pdf(pdf_tmp / f"header-only-boundary-image-{image_page}.pdf", [
+        [(72, 72, "3. Composition/information on ingredients")],
+        [(72, 110, "DIGITAL_MIDDLE_BODY")],
+        [(72, 180, "4. First-aid measures")],
+    ], images={image_page}, image_rects={image_page: (300, 100, 420, 140)})
+    _, three = locate_sections(read_pdf_layout(path))
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+
+
+@pytest.mark.parametrize("image_page", [0, 2])
+def test_p2_06_boundary_image_outside_observed_text_x_bounds_is_classified(pdf_tmp, image_page):
+    path = make_pdf(pdf_tmp / f"boundary-outside-x-image-{image_page}.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "START_BODY")],
+        [(72, 110, "MIDDLE_BODY")],
+        [(72, 110, "END_BODY"), (72, 180, "4. First-aid measures")],
+    ], images={image_page}, image_rects={image_page: (300, 100, 420, 140)})
+    _, three = locate_sections(read_pdf_layout(path))
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+
+
+def test_p2_03_middle_page_uses_observed_text_x_body_bounds(pdf_tmp):
+    path = make_pdf(pdf_tmp / "middle-observed-x-bounds.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        [(144, 100, "MIDDLE_OBSERVED_BODY")],
+        [(72, 110, "LAST"), (72, 180, "4. First-aid measures")],
+    ])
+    layout = read_pdf_layout(path)
+    _, three = locate_sections(layout)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.description is not None
+    middle = three.description.regions[1]
+    middle_line = layout.pages[1].lines[0]
+    assert middle.allowed_rects == ((middle_line.bbox[0], middle_line.bbox[1], middle_line.bbox[2], middle_line.bbox[3]),)
+
+
 def test_p2_06_same_region_text_and_image_is_blocked_but_title_only_image_is_classified(pdf_tmp):
     mixed = make_pdf(pdf_tmp / "same-region-mixed.pdf", [[
         (72, 72, "3. Composition/information on ingredients"), (72, 110, "DIGITAL_BODY"),
