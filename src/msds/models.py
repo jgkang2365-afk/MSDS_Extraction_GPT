@@ -1,1 +1,173 @@
-"""Structured MSDS result, state, and evidence contracts."""
+"""Structured, lossless contracts for the re-baselined MSDS domain."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any
+
+
+class DocumentCapability(str, Enum):
+    TEXT = "TEXT"
+    OCR = "OCR"
+    IMAGE_ONLY = "IMAGE_ONLY"
+    UNKNOWN = "UNKNOWN"
+
+
+class DocumentType(str, Enum):
+    PDF = "PDF"
+    IMAGE = "IMAGE"
+    OTHER = "OTHER"
+
+
+class ExecutionStatus(str, Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETE = "COMPLETE"
+    FAILED = "FAILED"
+    NOT_READABLE = "NOT_READABLE"
+
+
+class EvidenceSourceType(str, Enum):
+    TEXT = "TEXT"
+    OCR = "OCR"
+    TABLE = "TABLE"
+    HUMAN = "HUMAN"
+    OTHER = "OTHER"
+
+
+class FenceStatus(str, Enum):
+    FENCE_CONFIRMED = "FENCE_CONFIRMED"
+    FENCE_PARTIAL = "FENCE_PARTIAL"
+    FENCE_NOT_FOUND = "FENCE_NOT_FOUND"
+
+
+class ResultStatus(str, Enum):
+    FOUND = "FOUND"
+    NOT_FOUND = "NOT_FOUND"
+    NOT_STATED = "NOT_STATED"
+    NOT_READABLE = "NOT_READABLE"
+    REVIEW = "REVIEW"
+    INVALID = "INVALID"
+
+
+class ContentStatus(str, Enum):
+    FOUND = "FOUND"
+    NOT_STATED = "NOT_STATED"
+    NOT_READABLE = "NOT_READABLE"
+    PAIR_AMBIGUOUS = "PAIR_AMBIGUOUS"
+
+
+class PairStatus(str, Enum):
+    PAIRED = "PAIRED"
+    NOT_STATED = "NOT_STATED"
+    NOT_READABLE = "NOT_READABLE"
+    PAIR_AMBIGUOUS = "PAIR_AMBIGUOUS"
+    REVIEW = "REVIEW"
+
+
+@dataclass(frozen=True)
+class Document:
+    """Identity and observed execution state of one source document."""
+
+    document_id: str
+    path: str
+    sha256: str
+    capability: DocumentCapability = DocumentCapability.UNKNOWN
+    document_type: DocumentType = DocumentType.PDF
+    execution_status: ExecutionStatus = ExecutionStatus.PENDING
+
+
+@dataclass(frozen=True)
+class Evidence:
+    """A lossless pointer to source material supporting a result."""
+
+    section: str | None
+    page: int | None
+    source_type: EvidenceSourceType
+    raw_fragment: str
+    document_sha256: str
+    bbox: tuple[float, float, float, float] | None = None
+
+
+@dataclass(frozen=True)
+class SectionFence:
+    status: FenceStatus
+    section: str
+    start_page: int | None
+    end_page: int | None
+    evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class ProductResult:
+    raw: str
+    normalized: str
+    status: ResultStatus
+    evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class CASResult:
+    cas_raw: str
+    cas_normalized: str
+    cas_status: ResultStatus
+    evidence: tuple[Evidence, ...] = ()
+
+    @property
+    def normalized(self) -> str:
+        """Compatibility read alias; the contract field is cas_normalized."""
+        return self.cas_normalized
+
+    @property
+    def status(self) -> ResultStatus:
+        """Compatibility read alias; the contract field is cas_status."""
+        return self.cas_status
+
+
+@dataclass(frozen=True)
+class ContentResult:
+    content_raw: str
+    content_normalized: str
+    content_status: ContentStatus
+
+    @property
+    def raw(self) -> str:
+        """Compatibility read alias; the contract field is content_raw."""
+        return self.content_raw
+
+    @property
+    def normalized(self) -> str:
+        """Compatibility read alias; the contract field is content_normalized."""
+        return self.content_normalized
+
+    @property
+    def status(self) -> ContentStatus:
+        """Compatibility read alias; the contract field is content_status."""
+        return self.content_status
+
+
+@dataclass(frozen=True)
+class ComponentPair:
+    """One Section 3 CAS-to-content relationship, never a serialized chain."""
+
+    cas: CASResult
+    content: ContentResult
+    status: PairStatus
+    evidence: tuple[Evidence, ...] = ()
+    block_id: str = ""
+    row_id: str | None = None
+
+
+@dataclass(frozen=True)
+class MachineResult:
+    """Complete machine result; component order and duplicate rows are retained."""
+
+    document: Document
+    fences: tuple[SectionFence, ...] = ()
+    product: ProductResult | None = None
+    components: tuple[ComponentPair, ...] = ()
+    validation: tuple[Any, ...] = ()
+    review: tuple[Any, ...] = ()
+    warnings: tuple[str, ...] = ()
+    reasons: tuple[str, ...] = ()
