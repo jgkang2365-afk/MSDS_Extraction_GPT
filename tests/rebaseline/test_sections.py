@@ -96,9 +96,12 @@ def test_p2_03_section_three_repeated_margin_table_headers_remain_in_section_inp
     ])
     _, three, _, input3 = _inputs(path)
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
-    text = "".join(token.text for token in input3.tokens)
-    assert text.count("CASNo.") == 2
-    assert text.count("Concentration") == 2
+    header_tokens = "".join(
+        token.text
+        for token in input3.tokens
+        if token.page_index in {1, 2} and token.bbox[1] < 50
+    )
+    assert header_tokens == "CASNo.ConcentrationCASNo.Concentration"
 
 
 def test_p2_03_multi_page_start_and_end_use_observed_body_and_exclude_repeated_sentinels(pdf_tmp):
