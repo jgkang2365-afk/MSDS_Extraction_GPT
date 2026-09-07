@@ -41,6 +41,36 @@ def test_product_absence_has_no_filename_or_other_section_fallback():
     assert collect_product_candidates(changed_elsewhere).candidates == ()
 
 
+def test_p3_fix_01_separate_cell_product_name_value():
+    result = collect_product_candidates(_input("1", (("Product name:", "ABC-100"),)))
+    assert result.candidates[0].raw == "ABC-100"
+
+
+def test_p3_fix_02_korean_label_value():
+    assert collect_product_candidates(_input("1", (("제품명 | 가나다 (Model-A)",),))).candidates[0].raw == "가나다 (Model-A)"
+
+
+def test_p3_fix_03_korean_identifier_multiline_stops_at_company():
+    result = collect_product_candidates(_input("1", (
+        ("제품 식별자:",),
+        ("ABC Resin (Model-X)",),
+        ("Grade A 75%",),
+        ("회사명:",),
+        ("Example",),
+    )))
+    assert result.candidates[0].raw == "ABC Resin (Model-X)\nGrade A 75%"
+
+
+def test_p3_fix_04_english_product_multiline_stops_at_company():
+    result = collect_product_candidates(_input("1", (
+        ("Product name:",),
+        ("ABC-100",),
+        ("Company:",),
+        ("Example Chemical",),
+    )))
+    assert result.candidates[0].raw == "ABC-100"
+
+
 def test_section3_two_and_three_column_rows_keep_only_cas_and_content_candidates():
     two = collect_section3_candidates(_input("3", (("64-17-5", "< 1 wt %"),)))
     three = collect_section3_candidates(_input("3", (("67-64-1", "Acetone ingredient name", "10 vol%"),)))
@@ -75,6 +105,54 @@ def test_section3_range_weight_and_volume_percentages_preserve_full_raw_candidat
         ("222-22-2", "10-20 vol%"),
     )))
     assert [block.content_candidates[0].raw for block in result.blocks] == ["10-20 wt%", "10-20 vol%"]
+
+
+def test_p3_fix_05_concentration_percent_header_preserves_bare_range_and_context():
+    result = collect_section3_candidates(_input("3", (("CAS", "Concentration (%)"), ("64-17-5", "10~20"))))
+    content = result.blocks[0].content_candidates[0]
+    assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("10~20", "%", "Concentration (%)")
+
+
+def test_p3_fix_06_wt_header_preserves_bare_comparator_and_context():
+    result = collect_section3_candidates(_input("3", (("CAS", "Content(wt%)"), ("64-17-5", "<1"))))
+    content = result.blocks[0].content_candidates[0]
+    assert (content.raw, content.unit_context_raw) == ("<1", "wt%")
+
+
+def test_p3_fix_07_ppm_header_preserves_bare_value_and_context():
+    result = collect_section3_candidates(_input("3", (("CAS", "Content ppm"), ("64-17-5", "50"))))
+    content = result.blocks[0].content_candidates[0]
+    assert (content.raw, content.unit_context_raw) == ("50", "ppm")
+
+
+def test_p3_fix_07_bare_ppm_header_preserves_bare_value_and_context():
+    result = collect_section3_candidates(_input("3", (("CAS", "ppm"), ("64-17-5", "50"))))
+    content = result.blocks[0].content_candidates[0]
+    assert (content.raw, content.unit_context_raw) == ("50", "ppm")
+
+
+def test_p3_fix_08_direct_ppm_stays_raw_without_header_context():
+    content = collect_section3_candidates(_input("3", (("64-17-5", "50 ppm"),))).blocks[0].content_candidates[0]
+    assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("50 ppm", "ppm", "50 ppm")
+
+
+def test_p3_fix_09_general_bare_numeric_without_header_is_not_content():
+    assert collect_section3_candidates(_input("3", (("64-17-5", "50"),))).blocks[0].content_candidates == ()
+
+
+def test_p3_fix_09_direct_unit_data_does_not_become_a_reusable_header():
+    result = collect_section3_candidates(_input("3", (("64-17-5", "10%"), ("67-64-1", "50"))))
+    assert result.blocks[1].content_candidates == ()
+
+
+def test_p3_fix_10_content_left_of_cas_has_earlier_source_order():
+    block = collect_section3_candidates(_input("3", (("10%", "64-17-5"),))).blocks[0]
+    assert block.content_candidates[0].source_order < block.cas_candidates[0].source_order
+
+
+def test_p3_fix_11_cas_left_of_content_has_earlier_source_order():
+    block = collect_section3_candidates(_input("3", (("64-17-5", "10%"),))).blocks[0]
+    assert block.cas_candidates[0].source_order < block.content_candidates[0].source_order
 
 
 def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_promoted():

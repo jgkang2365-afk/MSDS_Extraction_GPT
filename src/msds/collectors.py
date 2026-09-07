@@ -22,16 +22,17 @@ from .models import (
 from .normalization import normalize_cas, normalize_content, normalize_product
 
 
-_PRODUCT_LABEL = re.compile(r"^\s*product(?:\s+name)?\s*(?::|\|)\s*(.*)$", re.IGNORECASE)
-_FIELD_LABEL = re.compile(r"^\s*[A-Za-z][A-Za-z /()_-]{1,40}(?::|\|)\s*\S")
+_PRODUCT_LABEL = re.compile(r"^\s*(?:product(?:\s+(?:name|identifier))?|제품명|제품\s*식별자)\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
+_FIELD_LABEL = re.compile(r"^\s*(?:[A-Za-z][A-Za-z /()_-]{0,40}|[가-힣][가-힣 /()_-]{0,40})\s*(?::|\|)")
+_NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체))\b", re.IGNORECASE)
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
 _EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
-_CONTENT = re.compile(
-    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*(?:[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*)(?:wt|vol)\s*%|"
-    r"(?:[<>≤≥]\s*)?(?:\d+(?:[.,]\d+)?\s*(?:[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*)?%|"
-    r"\d+(?:[.,]\d+)?\s*(?:wt|vol)\s*%|Rem\.|Balance)",
+_DIRECT_CONTENT = re.compile(
+    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*%|%|ppm)|Rem\.|Balance",
     re.IGNORECASE,
 )
+_BARE_CONTENT = re.compile(r"^(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*$")
+_UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*%|vol\s*%|%|ppm)(?![A-Za-z])", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -77,21 +78,34 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
     _require_confirmed_text_input(section_input, "1")
     lines = _lines(section_input)
     candidates: list[ProductCandidate] = []
-    for index, line in enumerate(lines):
+    rows = _rows(section_input)
+    def line_key(item: _Line) -> tuple[int, int, int, tuple[float, float, float, float]]:
+        return item.page, item.block, item.line, item.bbox
+
+    row_for_line = {line_key(item): row for row in rows for item in row}
+    for line in lines:
         match = _PRODUCT_LABEL.match(line.text)
         if not match:
             continue
         values: list[_Line] = []
-        inline = match.group(1)
-        if inline:
+        inline = match.group(1) or ""
+        if inline.strip():
             # The raw product value excludes only the explicit label delimiter.
             value_start = line.text.find(inline)
             values.append(_Line(line.page, line.block, line.line, line.text[value_start:], line.bbox))
         else:
-            for following in lines[index + 1:]:
-                if _FIELD_LABEL.match(following.text):
+            row = row_for_line[line_key(line)]
+            label_index = row.index(line)
+            for cell in row[label_index + 1:]:
+                if _FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text):
                     break
-                values.append(following)
+                values.append(cell)
+            if not values:
+                current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
+                for candidate_row in rows[current_row_index + 1:]:
+                    if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
+                        break
+                    values.extend(candidate_row)
         if not values:
             continue
         raw = "\n".join(value.text for value in values)
@@ -114,8 +128,8 @@ def _rows(section_input: SectionInput) -> tuple[tuple[_Line, ...], ...]:
     return tuple(tuple(sorted(row, key=lambda item: (item.bbox[0], item.block, item.line))) for row in rows)
 
 
-def _cas_candidates(section_input: SectionInput, row: tuple[_Line, ...], order: int) -> tuple[CasCandidate, ...]:
-    candidates: list[CasCandidate] = []
+def _cas_matches(row: tuple[_Line, ...]) -> list[tuple[_Line, re.Match[str]]]:
+    matches: list[tuple[_Line, re.Match[str]]] = []
     for line_index, line in enumerate(row):
         for match in _CAS.finditer(line.text):
             row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line.text[:match.start()]
@@ -125,22 +139,39 @@ def _cas_candidates(section_input: SectionInput, row: tuple[_Line, ...], order: 
             result = normalize_cas(raw)
             if result.validity.value == "NOT_CANDIDATE":
                 continue
-            candidates.append(CasCandidate(raw, result.normalized, CasCandidateValidity(result.validity.value), order + len(candidates), (_evidence(section_input, line),)))
-    return tuple(candidates)
+            matches.append((line, match))
+    return matches
 
 
-def _content_candidates(section_input: SectionInput, row: tuple[_Line, ...], order: int) -> tuple[ContentCandidate, ...]:
-    candidates: list[ContentCandidate] = []
+def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput) -> list[tuple[float, str, Evidence]]:
+    return [
+        (line.bbox[0], match.group("unit"), _evidence(section_input, line))
+        for line in row
+        if (match := _UNIT_HEADER.search(line.text)) and not _DIRECT_CONTENT.search(line.text)
+    ]
+
+
+def _header_for(line: _Line, headers: list[tuple[float, str, Evidence]]) -> tuple[str, Evidence] | None:
+    if not headers:
+        return None
+    x, unit, evidence = min(headers, key=lambda header: abs(header[0] - line.bbox[0]))
+    if abs(x - line.bbox[0]) <= max(12.0, line.bbox[2] - line.bbox[0]):
+        return unit, evidence
+    return None
+
+
+def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_cas: bool, headers: list[tuple[float, str, Evidence]]) -> list[tuple[_Line, int, str, str | None, Evidence | None]]:
+    matches: list[tuple[_Line, int, str, str | None, Evidence | None]] = []
     for line in row:
-        # CAS substrings are structural keys, never concentration text.
         without_cas = _CAS.sub("", line.text)
-        for match in _CONTENT.finditer(without_cas):
+        for match in _DIRECT_CONTENT.finditer(without_cas):
             raw = match.group(0)
-            if not raw.strip():
-                continue
-            normalized = normalize_content(raw).content_normalized
-            candidates.append(ContentCandidate(raw, normalized, order + len(candidates), (_evidence(section_input, line),)))
-    return tuple(candidates)
+            unit_match = _UNIT_HEADER.search(raw)
+            matches.append((line, match.start(), raw, unit_match.group("unit") if unit_match else None, _evidence(section_input, line) if unit_match else None))
+        if has_cas and not _DIRECT_CONTENT.search(without_cas) and _BARE_CONTENT.match(line.text):
+            if header := _header_for(line, headers):
+                matches.append((line, 0, line.text, *header))
+    return matches
 
 
 def collect_section3_candidates(section_input: SectionInput) -> Section3Collection:
@@ -148,10 +179,27 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
     _require_confirmed_text_input(section_input, "3")
     blocks: list[Section3BlockCandidate] = []
     source_order = 0
+    headers: list[tuple[float, str, Evidence]] = []
     for row_number, row in enumerate(_rows(section_input)):
-        cas_candidates = _cas_candidates(section_input, row, source_order)
-        content_candidates = _content_candidates(section_input, row, source_order + len(cas_candidates))
-        source_order += len(cas_candidates) + len(content_candidates)
+        if row_headers := _unit_headers(row, section_input):
+            headers = row_headers
+        cas_matches = _cas_matches(row)
+        content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
+        occurrences = [(line, match.start(), "cas", match) for line, match in cas_matches]
+        occurrences += [(line, start, "content", (raw, unit, unit_evidence)) for line, start, raw, unit, unit_evidence in content_matches]
+        occurrences.sort(key=lambda item: (item[0].page, item[0].bbox[1], item[0].bbox[0], item[1]))
+        cas_candidates: list[CasCandidate] = []
+        content_candidates: list[ContentCandidate] = []
+        for line, _position, kind, payload in occurrences:
+            if kind == "cas":
+                match = payload
+                raw = match.group(1)
+                result = normalize_cas(raw)
+                cas_candidates.append(CasCandidate(raw, result.normalized, CasCandidateValidity(result.validity.value), source_order, (_evidence(section_input, line),)))
+            else:
+                raw, unit, unit_evidence = payload
+                content_candidates.append(ContentCandidate(raw, normalize_content(raw).content_normalized, source_order, (_evidence(section_input, line),), unit, (unit_evidence,) if unit_evidence else ()))
+            source_order += 1
         # A content-only row has no component/block candidate in this stage.
         if not cas_candidates:
             continue
@@ -160,6 +208,6 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
         blocks.append(Section3BlockCandidate(
             f"section3-page-{first.page}-block-{first.block}",
             f"section3-row-{row_number}", len(blocks), row_evidence,
-            cas_candidates, content_candidates,
+            tuple(cas_candidates), tuple(content_candidates),
         ))
     return Section3Collection(tuple(blocks))

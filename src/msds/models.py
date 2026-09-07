@@ -117,12 +117,14 @@ class CasCandidate:
 
 @dataclass(frozen=True)
 class ContentCandidate:
-    """A raw Section 3 concentration expression; no inferred percent is added."""
+    """A raw Section 3 concentration expression with separately observed unit context."""
 
     raw: str
     normalized: str
     source_order: int
     evidence: tuple[Evidence, ...]
+    unit_context_raw: str | None = None
+    unit_context_evidence: tuple[Evidence, ...] = ()
 
 
 @dataclass(frozen=True)
