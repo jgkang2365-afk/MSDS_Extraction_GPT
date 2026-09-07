@@ -171,9 +171,9 @@ def test_p2_06_image_section_is_partial_without_loading_ocr_and_keeps_section_on
 def test_p2_06_header_only_boundary_image_is_not_omitted_from_capability(pdf_tmp, image_page):
     path = make_pdf(pdf_tmp / f"header-only-boundary-image-{image_page}.pdf", [
         [(72, 72, "3. Composition/information on ingredients")],
-        [(72, 110, "DIGITAL_MIDDLE_BODY")],
+        [(72, 110, "DIGITAL MIDDLE BODY HAS SUFFICIENT SEPARATE TOKENS TO OTHERWISE ADMIT DECORATIVE LOGO")],
         [(72, 180, "4. First-aid measures")],
-    ], images={image_page}, image_rects={image_page: (300, 100, 420, 140)})
+    ], images={image_page}, image_rects={image_page: (550, 100, 570, 120)})
     _, three = locate_sections(read_pdf_layout(path))
     assert three.fence.status is FenceStatus.FENCE_PARTIAL
     assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
@@ -182,10 +182,10 @@ def test_p2_06_header_only_boundary_image_is_not_omitted_from_capability(pdf_tmp
 @pytest.mark.parametrize("image_page", [0, 2])
 def test_p2_06_boundary_image_outside_observed_text_x_bounds_is_classified(pdf_tmp, image_page):
     path = make_pdf(pdf_tmp / f"boundary-outside-x-image-{image_page}.pdf", [
-        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "START_BODY")],
-        [(72, 110, "MIDDLE_BODY")],
-        [(72, 110, "END_BODY"), (72, 180, "4. First-aid measures")],
-    ], images={image_page}, image_rects={image_page: (300, 100, 420, 140)})
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "START BODY HAS SUFFICIENT SEPARATE TOKENS")],
+        [(72, 110, "MIDDLE BODY HAS SUFFICIENT SEPARATE TOKENS")],
+        [(72, 110, "END BODY HAS SUFFICIENT SEPARATE TOKENS"), (72, 180, "4. First-aid measures")],
+    ], images={image_page}, image_rects={image_page: (550, 135, 570, 155)})
     _, three = locate_sections(read_pdf_layout(path))
     assert three.fence.status is FenceStatus.FENCE_PARTIAL
     assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
@@ -225,15 +225,15 @@ def test_p2_06_same_region_text_and_image_is_blocked_but_title_only_image_is_cla
 def test_p2_06_small_margin_logo_with_sufficient_separate_digital_body_is_confirmed(pdf_tmp):
     path = make_pdf(pdf_tmp / "decorative-logo.pdf", [[
         (72, 72, "3. Composition/information on ingredients"),
-        (72, 110, "DIGITAL_BODY_HAS_ENOUGH_TEXT_FOR_SAFE_TEXT_FENCE"),
+        (0, 110, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"),
         (72, 180, "4. First-aid measures"),
-    ]], images={0}, image_rects={0: (550, 100, 570, 120)})
+    ]], images={0}, image_rects={0: (0, 135, 20, 155)})
     layout = read_pdf_layout(path)
     _, three = locate_sections(layout)
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
     assert three.description is not None
     assert three.reasons == ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
-    assert "DIGITAL_BODY" in "".join(token.text for token in build_section_input(layout, three.description).tokens)
+    assert "DIGITAL" in "".join(token.text for token in build_section_input(layout, three.description).tokens)
 
 
 def test_p2_06_image_count_without_observable_placement_is_partial(pdf_tmp):

@@ -276,6 +276,31 @@ def _section_capability(
             1 for page, region in zip(region_pages, regions) for token in page.tokens
             if any(_inside_token(token, rect) for rect in region.allowed_rects)
         )
+        def image_is_within_observed_text_x_span(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
+            region = regions_by_page[page.page_index]
+            observed_tokens = [
+                token for token in page.tokens
+                if any(_inside_token(token, rect) for rect in region.allowed_rects)
+            ]
+            return bool(observed_tokens) and (
+                min(token.bbox[0] for token in observed_tokens) <= image[0]
+                and image[2] <= max(token.bbox[2] for token in observed_tokens)
+            )
+
+        header_only_boundary_image = any(
+            page.page_index in {start.page_index, end.page_index}
+            and not has_text_in_region(page, regions_by_page[page.page_index])
+            for page, _ in images_in_region
+        )
+        image_outside_observed_text_x_span = any(
+            not image_is_within_observed_text_x_span(page, image)
+            for page, image in images_in_region
+        )
+        if header_only_boundary_image or image_outside_observed_text_x_span:
+            if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
+                return DocumentCapability.UNKNOWN, ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+            return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)
+
         def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
             px0, py0, px1, py1 = page.rect
             width, height = px1 - px0, py1 - py0

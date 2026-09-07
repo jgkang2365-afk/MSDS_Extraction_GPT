@@ -20,7 +20,7 @@ Interpreter: `C:\Users\USER\AppData\Local\Programs\Python\Python313\python.exe`;
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline -q` | 80 passed; pytest cache write emitted one WinError 5 warning, with no test impact. |
+| `python -m pytest tests/rebaseline -q` | 85 passed; pytest cache write emitted one WinError 5 warning, with no test impact. |
 | `python -m pytest tests/test_common_normalization.py -q` | 1 failed, 5 passed. Existing `tempfile.TemporaryDirectory()` cannot create/read/clean its trace file (`WinError 5` / `FileNotFoundError`). The same failure reproduced with `TEMP`/`TMP` directed to the worktree, confirming this is the Windows sandbox ACL behavior rather than a Phase 2 change. `normalization.py` was not modified. |
 | `python -m compileall -q src/msds golden/v2` | passed |
 | import smoke for models/pdf_io/sections | passed |
