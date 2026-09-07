@@ -21,13 +21,13 @@ Interpreter: `C:\Users\USER\AppData\Local\Programs\Python\Python313\python.exe`;
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline -q` | 92 passed, 1 warning in 1.91s. The warning is a pytest cache `WinError 5` write denial and had no test impact. |
-| `python -m pytest tests/test_common_normalization.py -q` | 1 failed, 5 passed, 2 warnings in 0.67s. Existing `tempfile.TemporaryDirectory()` cannot create/read/clean its trace file (`WinError 5` / `FileNotFoundError`). `normalization.py` was not modified. |
-| `python -m compileall -q src/msds golden/v2` | passed |
-| import smoke for models/pdf_io/sections | passed |
+| `python -m pytest tests/rebaseline -q` | 92 passed in 1.90s |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed in 0.17s |
+| `python -m compileall -q src/msds golden/v2` | PASS |
+| import smoke for models/pdf_io/sections | PyMuPDF 1.27.2; imports OK |
 
 `tests/rebaseline` uses a dedicated `pdf_tmp` fixture under the worktree. Each test removes its child directory and removes the root when empty. It does not change global temp configuration, production configuration, or ignore rules.
 
 ## Field material and limits
 
-No authorized field-sample PDF set was supplied or inspected for this phase; the evidence is synthetic-PDF-only. No original PDF or ACL was modified. Final acceptance evidence is the run above. The sandbox's Windows temporary/cache ACL restrictions remain an environmental constraint; no ACL change was made.
+No authorized field-sample PDF set was supplied or inspected for this phase; the evidence is synthetic-PDF-only. No original PDF or ACL was modified. Final acceptance evidence is the run above.
