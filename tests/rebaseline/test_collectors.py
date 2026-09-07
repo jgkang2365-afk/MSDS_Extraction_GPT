@@ -354,11 +354,11 @@ def test_partial_and_not_found_fences_cannot_build_input_or_call_collectors(pdf_
     assert not called
 
 
-def test_public_collectors_reject_wrong_section_non_text_and_non_input():
+def test_public_collectors_reject_wrong_section_non_isolated_and_non_input():
     section_one = _input("1", (("Product: ABC",),))
     with pytest.raises(ValueError, match="SECTION_3"):
         collect_section3_candidates(section_one)
-    with pytest.raises(ValueError, match="TEXT"):
-        collect_product_candidates(replace(section_one, capability=DocumentCapability.OCR))
+    with pytest.raises(ValueError, match="TEXT_OR_OCR"):
+        collect_product_candidates(replace(section_one, capability=DocumentCapability.IMAGE_ONLY))
     with pytest.raises(TypeError, match="SECTION_INPUT"):
         collect_product_candidates("not an input")  # type: ignore[arg-type]

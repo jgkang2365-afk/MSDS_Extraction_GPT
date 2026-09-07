@@ -276,6 +276,8 @@ def _safe_middle_region(
         return None, "MIDDLE_PAGE_BODY_UNAVAILABLE"
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
     if (
+        not any(token.source_reading == "OCR" for token in page.tokens)
+        and
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
         and not _aligned_wide_table(body_lines, page, section_no)
@@ -337,6 +339,8 @@ def _safe_boundary_region(
         return None, None
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
     if (
+        not any(token.source_reading == "OCR" for token in page.tokens)
+        and
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
         and not _aligned_wide_table(body_lines, page, section_no)
@@ -355,7 +359,10 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
     end_page = pages[end.page_index]
-    if _has_ambiguous_columns(start_page, start, end):
+    # OCR line boxes are independently observed image regions.  The digital
+    # column heuristic relies on PyMuPDF text-flow blocks and would reject a
+    # legitimate OCR CAS|content row before it can be physically fenced.
+    if not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
         return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
     if start.page_index == end.page_index:
         x0, y0, x1, y1 = start_page.rect
@@ -487,6 +494,8 @@ def _section_capability(
         return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)
     if any(not page.tokens for page in region_pages):
         return DocumentCapability.UNKNOWN, ("SECTION_DIGITAL_TEXT_UNAVAILABLE",)
+    if any(token.source_reading == "OCR" for page in region_pages for token in page.tokens):
+        return DocumentCapability.OCR, ("SECTION_OCR_TEXT",)
     return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT",)
 
 
@@ -510,17 +519,18 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
         return LocatedFence(SectionFence(FenceStatus.FENCE_NOT_FOUND, section_no, None, None), None, ("SECTION_START_NOT_FOUND",), metric())
     start = starts[0]
     end = next((candidate for candidate in ends if (candidate.page_index, candidate.line.bbox[1]) > (start.page_index, start.line.bbox[1])), None)
-    start_evidence = Evidence(section_no, start.page_index, EvidenceSourceType.TEXT, start.line.text, layout.document_sha256, start.line.bbox)
+    source_type = EvidenceSourceType.OCR if any(token.source_reading == "OCR" for token in layout.pages[start.page_index].tokens) else EvidenceSourceType.TEXT
+    start_evidence = Evidence(section_no, start.page_index, source_type, start.line.text, layout.document_sha256, start.line.bbox)
     if end is None:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, None, (start_evidence,)), None, ("SECTION_END_NOT_FOUND",), metric())
     if any((candidate.page_index, candidate.line.bbox[1]) < (end.page_index, end.line.bbox[1]) for candidate in starts[1:]):
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence,)), None, ("SECTION_START_AMBIGUOUS",), metric())
-    end_evidence = Evidence(section_no, end.page_index, EvidenceSourceType.TEXT, end.line.text, layout.document_sha256, end.line.bbox)
+    end_evidence = Evidence(section_no, end.page_index, source_type, end.line.text, layout.document_sha256, end.line.bbox)
     regions, failure = _regions(layout, start, end)
     if failure:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)), None, (failure,), metric())
     capability, reasons = _section_capability(layout, regions, start, end)
-    if capability is not DocumentCapability.TEXT:
+    if capability not in {DocumentCapability.TEXT, DocumentCapability.OCR}:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)), None, reasons, metric())
     fence_id = sha256(f"{layout.document_sha256}:{section_no}:{start.page_index}:{start.line.bbox}:{end.page_index}:{end.line.bbox}".encode("utf-8")).hexdigest()
     description = FenceDescription(FenceStatus.FENCE_CONFIRMED, section_no, fence_id, layout.document_sha256, regions, capability, reasons)

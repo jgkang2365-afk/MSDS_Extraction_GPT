@@ -1,4 +1,4 @@
-"""Local, candidate-only collectors for confirmed digital SectionInput values."""
+"""Local, candidate-only collectors for confirmed TEXT/OCR SectionInput values."""
 
 from __future__ import annotations
 
@@ -43,6 +43,7 @@ class _Line:
     line: int
     text: str
     bbox: tuple[float, float, float, float]
+    source_type: EvidenceSourceType
 
 
 @dataclass(frozen=True)
@@ -79,11 +80,11 @@ def _is_cas_column(line: _Line, cas_x: float) -> bool:
 
 
 def _require_confirmed_text_input(section_input: SectionInput, section_no: str) -> None:
-    """Reject every non-SectionInput, unconfirmed, non-text, or wrong-section call."""
+    """Reject every non-SectionInput, non-isolated, or wrong-section call."""
     if not isinstance(section_input, SectionInput):
         raise TypeError("COLLECTOR_REQUIRES_SECTION_INPUT")
-    if section_input.capability is not DocumentCapability.TEXT:
-        raise ValueError("COLLECTOR_REQUIRES_TEXT_CAPABILITY")
+    if section_input.capability not in {DocumentCapability.TEXT, DocumentCapability.OCR}:
+        raise ValueError("COLLECTOR_REQUIRES_TEXT_OR_OCR_CAPABILITY")
     if section_input.section_no != section_no:
         raise ValueError(f"COLLECTOR_REQUIRES_SECTION_{section_no}")
 
@@ -95,16 +96,20 @@ def _lines(section_input: SectionInput) -> tuple[_Line, ...]:
     lines = []
     for (page, block, line), tokens in grouped.items():
         ordered = sorted(tokens, key=lambda token: (token.bbox[0], token.bbox[1], token.token_id))
+        source_type = EvidenceSourceType.OCR if any(token.source_reading == "OCR" for token in tokens) else EvidenceSourceType.TEXT
+        if any((token.source_reading == "OCR") != (source_type is EvidenceSourceType.OCR) for token in tokens):
+            raise ValueError("SECTION_INPUT_MIXED_LINE_SOURCE")
         lines.append(_Line(
             page, block, line, "".join(token.text for token in ordered),
             (min(token.bbox[0] for token in tokens), min(token.bbox[1] for token in tokens),
              max(token.bbox[2] for token in tokens), max(token.bbox[3] for token in tokens)),
+            source_type,
         ))
     return tuple(sorted(lines, key=lambda item: (item.page, item.bbox[1], item.bbox[0], item.block, item.line)))
 
 
 def _evidence(section_input: SectionInput, line: _Line) -> Evidence:
-    return Evidence(section_input.section_no, line.page, EvidenceSourceType.TEXT, line.text, section_input.document_sha256, line.bbox)
+    return Evidence(section_input.section_no, line.page, line.source_type, line.text, section_input.document_sha256, line.bbox)
 
 
 def collect_product_candidates(section_input: SectionInput) -> ProductCollection:
@@ -126,7 +131,7 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
         if inline.strip():
             # The raw product value excludes only the explicit label delimiter.
             value_start = line.text.find(inline)
-            values.append(_Line(line.page, line.block, line.line, line.text[value_start:], line.bbox))
+            values.append(_Line(line.page, line.block, line.line, line.text[value_start:], line.bbox, line.source_type))
         else:
             row = row_for_line[line_key(line)]
             label_index = row.index(line)
