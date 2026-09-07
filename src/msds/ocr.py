@@ -319,10 +319,13 @@ def _has_digital_target_text(layout: PdfReadResult, located: LocatedFence) -> bo
     """Return whether this target is already observed as digital text.
 
     A partial fence can retain a digital start/end observation even though it
-    cannot safely form a SectionInput.  Such an outcome is not an OCR need.
+    cannot safely form a SectionInput.  Such an outcome is not an OCR need,
+    unless the locator found that the target also requires image reading.
     For a fully digital document, an absent heading is also a digital locator
     result rather than a reason to render every page.
     """
+    if "SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED" in located.reasons:
+        return False
     if any(evidence.source_type is EvidenceSourceType.TEXT for evidence in located.fence.evidence):
         return True
     return layout.capability is DocumentCapability.TEXT and not any(page.image_count for page in layout.pages)

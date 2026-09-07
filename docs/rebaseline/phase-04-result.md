@@ -6,10 +6,12 @@
   with observed digital text, including a partial/missing digital fence,
   retains its `TEXT` route and does not initialize, render, or invoke OCR; a
   fully digital no-image document retains this route even when a blank page is
-  present. A confirmed target uses the existing Phase 2 `build_section_input()`
-  path. A target with missing digital text uses only an explicitly supplied
-  local OCR engine; no engine produces an explicit `OCR_ENGINE_NOT_SUPPLIED`
-  route outcome, not a fallback.
+  present. The locator's `SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED` outcome is
+  the exception: digital heading evidence does not satisfy that target, which
+  takes the local OCR route. A confirmed target uses the existing Phase 2
+  `build_section_input()` path. A target with missing digital text uses only an
+  explicitly supplied local OCR engine; no engine produces an explicit
+  `OCR_ENGINE_NOT_SUPPLIED` route outcome, not a fallback.
 - Recon renders/OCRs pages solely to locate the `1 → 2` or `3 → 4` heading
   boundary using the existing NFKC heading rules. Missing/ambiguous boundaries
   remain `FENCE_PARTIAL` / `FENCE_NOT_FOUND`; there is no whole-document or
@@ -43,12 +45,13 @@
 
 ## Executed verification
 
-- `python -m pytest tests/rebaseline/test_scan_ocr.py -q`: 31 passed (fake
-  engine, image-only/digital/mixed routing, partial or missing digital fences
-  including blank non-image pages with zero OCR lifecycle, S1/S3 fences,
+- `python -m pytest tests/rebaseline/test_scan_ocr.py -q`: 32 passed (fake
+  engine, image-only/digital/mixed routing including digital-heading targets
+  with `SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED`, partial or missing digital
+  fences including blank non-image pages with zero OCR lifecycle, S1/S3 fences,
   per-target input-failure isolation, external-metric preservation, no S3 cap,
   rotation/CropBox/columns, and raw candidate/evidence regressions).
-- `python -m pytest tests/rebaseline -q`: 166 passed, with one pytest cache
+- `python -m pytest tests/rebaseline -q`: 167 passed, with one pytest cache
   write warning. `python -m compileall -q src/msds golden/v2` and import smoke
   for models/normalization/pdf_io/sections/collectors/ocr: passed.
 - `python -m pytest tests/test_common_normalization.py -q`: 6 passed.

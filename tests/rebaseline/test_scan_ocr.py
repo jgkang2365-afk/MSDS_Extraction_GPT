@@ -9,6 +9,8 @@ import pytest
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
 from src.msds.models import CasCandidateValidity, DocumentCapability, EvidenceSourceType
 from src.msds.ocr import LazyPaddleOcrEngine, OcrMetrics, OcrToken, _pixel_to_pdf, scan_pdf_sections
+from src.msds.pdf_io import read_pdf_layout
+from src.msds.sections import locate_section
 import src.msds.ocr as ocr
 from tests.rebaseline.pdf_helpers import make_pdf
 
@@ -125,6 +127,24 @@ def test_p4_03_mixed_targets_route_s1_text_and_s3_ocr_independently(pdf_tmp):
     assert result.input_for("1").capability is DocumentCapability.TEXT
     assert result.input_for("3").capability is DocumentCapability.OCR
     assert fake.calls == 2  # one batch recon, never a per-target engine init
+
+
+def test_p4_mixed_text_and_image_required_target_uses_ocr_despite_digital_heading(pdf_tmp):
+    path = make_pdf(pdf_tmp / "mixed-s3-image-required.pdf", [[
+        (72, 72, S3), (72, 110, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"), (72, 180, S4),
+    ]], images={0}, image_rects={0: (300, 95, 420, 135)})
+    initial = locate_section(read_pdf_layout(path), "3")
+    fake = FakeOcr([_page(
+        (S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)),
+        ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190)),
+    )])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert initial.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+    assert result.routes[0].capability is DocumentCapability.OCR
+    assert result.input_for("3").capability is DocumentCapability.OCR
+    assert fake.calls == 1
 
 
 def test_p4_ocr_input_build_failure_isolated_per_confirmed_target(pdf_tmp, monkeypatch):
