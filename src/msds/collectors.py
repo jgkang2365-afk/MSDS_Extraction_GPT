@@ -44,6 +44,18 @@ class _Line:
     bbox: tuple[float, float, float, float]
 
 
+@dataclass(frozen=True)
+class _UnitHeader:
+    """An explicit CAS/unit table header, limited to its following table rows."""
+
+    page: int
+    row_number: int
+    cas_x: float
+    unit_x: float
+    unit: str
+    evidence: Evidence
+
+
 def _require_confirmed_text_input(section_input: SectionInput, section_no: str) -> None:
     """Reject every non-SectionInput, unconfirmed, non-text, or wrong-section call."""
     if not isinstance(section_input, SectionInput):
@@ -100,12 +112,13 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
                 if _FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text):
                     break
                 values.append(cell)
-            if not values:
-                current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
-                for candidate_row in rows[current_row_index + 1:]:
-                    if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
-                        break
-                    values.extend(candidate_row)
+            # A right-hand value cell can be the first line of a multiline
+            # product field; continue only until the next structural field.
+            current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
+            for candidate_row in rows[current_row_index + 1:]:
+                if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
+                    break
+                values.extend(candidate_row)
         if not values:
             continue
         raw = "\n".join(value.text for value in values)
@@ -143,35 +156,55 @@ def _cas_matches(row: tuple[_Line, ...]) -> list[tuple[_Line, re.Match[str]]]:
     return matches
 
 
-def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput) -> list[tuple[float, str, Evidence]]:
+def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput, row_number: int) -> list[_UnitHeader]:
+    """Observe units only in an explicit CAS table header, never explanatory prose."""
+    cas_label = next((line for line in row if re.fullmatch(r"\s*CAS(?:\s+(?:No\.?|Number))?\s*", line.text, re.IGNORECASE)), None)
+    if cas_label is None:
+        return []
     return [
-        (line.bbox[0], match.group("unit"), _evidence(section_input, line))
+        _UnitHeader(cas_label.page, row_number, cas_label.bbox[0], line.bbox[0], match.group("unit"), _evidence(section_input, line))
         for line in row
         if (match := _UNIT_HEADER.search(line.text)) and not _DIRECT_CONTENT.search(line.text)
     ]
 
 
-def _header_for(line: _Line, headers: list[tuple[float, str, Evidence]]) -> tuple[str, Evidence] | None:
+def _header_for(line: _Line, headers: list[_UnitHeader]) -> tuple[str, Evidence] | None:
     if not headers:
         return None
-    x, unit, evidence = min(headers, key=lambda header: abs(header[0] - line.bbox[0]))
-    if abs(x - line.bbox[0]) <= max(12.0, line.bbox[2] - line.bbox[0]):
-        return unit, evidence
+    header = min(headers, key=lambda candidate: abs(candidate.unit_x - line.bbox[0]))
+    if abs(header.unit_x - line.bbox[0]) <= max(12.0, line.bbox[2] - line.bbox[0]):
+        return header.unit, header.evidence
     return None
 
 
-def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_cas: bool, headers: list[tuple[float, str, Evidence]]) -> list[tuple[_Line, int, str, str | None, Evidence | None]]:
+def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_cas: bool, headers: list[_UnitHeader]) -> list[tuple[_Line, int, str, str | None, Evidence | None]]:
     matches: list[tuple[_Line, int, str, str | None, Evidence | None]] = []
     for line in row:
-        without_cas = _CAS.sub("", line.text)
+        # Retain original offsets: deleting a preceding CAS would move content
+        # left and corrupt page/y/x/subsequence source ordering.
+        without_cas = _CAS.sub(lambda candidate: " " * len(candidate.group(0)), line.text)
         for match in _DIRECT_CONTENT.finditer(without_cas):
             raw = match.group(0)
-            unit_match = _UNIT_HEADER.search(raw)
-            matches.append((line, match.start(), raw, unit_match.group("unit") if unit_match else None, _evidence(section_input, line) if unit_match else None))
+            # Direct units belong to the raw observation; they are not header
+            # context and cannot serve as unit-context evidence.
+            matches.append((line, match.start(), raw, None, None))
         if has_cas and not _DIRECT_CONTENT.search(without_cas) and _BARE_CONTENT.match(line.text):
             if header := _header_for(line, headers):
                 matches.append((line, 0, line.text, *header))
     return matches
+
+
+def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
+    """Keep header context only for the next aligned rows of the same table."""
+    if not headers or any(line.page != headers[0].page for line in row):
+        return False
+    cas_header = headers[0]
+    has_aligned_cas = any(
+        _CAS.search(line.text) and abs(line.bbox[0] - cas_header.cas_x) <= max(12.0, line.bbox[2] - line.bbox[0])
+        for line in row
+    )
+    has_aligned_unit_column = any(_header_for(line, headers) for line in row)
+    return has_aligned_cas and has_aligned_unit_column
 
 
 def collect_section3_candidates(section_input: SectionInput) -> Section3Collection:
@@ -179,10 +212,12 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
     _require_confirmed_text_input(section_input, "3")
     blocks: list[Section3BlockCandidate] = []
     source_order = 0
-    headers: list[tuple[float, str, Evidence]] = []
+    headers: list[_UnitHeader] = []
     for row_number, row in enumerate(_rows(section_input)):
-        if row_headers := _unit_headers(row, section_input):
+        if row_headers := _unit_headers(row, section_input, row_number):
             headers = row_headers
+        elif headers and not _same_table_row(row, headers):
+            headers = []
         cas_matches = _cas_matches(row)
         content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
         occurrences = [(line, match.start(), "cas", match) for line, match in cas_matches]

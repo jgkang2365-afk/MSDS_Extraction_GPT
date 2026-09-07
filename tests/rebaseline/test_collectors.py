@@ -131,9 +131,9 @@ def test_p3_fix_07_bare_ppm_header_preserves_bare_value_and_context():
     assert (content.raw, content.unit_context_raw) == ("50", "ppm")
 
 
-def test_p3_fix_08_direct_ppm_stays_raw_without_header_context():
+def test_p3_fix_08_direct_ppm_stays_raw_without_header_derived_context():
     content = collect_section3_candidates(_input("3", (("64-17-5", "50 ppm"),))).blocks[0].content_candidates[0]
-    assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("50 ppm", "ppm", "50 ppm")
+    assert (content.raw, content.unit_context_raw, content.unit_context_evidence) == ("50 ppm", None, ())
 
 
 def test_p3_fix_09_general_bare_numeric_without_header_is_not_content():
@@ -145,6 +145,15 @@ def test_p3_fix_09_direct_unit_data_does_not_become_a_reusable_header():
     assert result.blocks[1].content_candidates == ()
 
 
+def test_p3_fix_09_prior_or_explanatory_unit_text_does_not_upgrade_unrelated_bare_value():
+    result = collect_section3_candidates(_input("3", (
+        ("CAS", "Content (%)"),
+        ("Explanation: values may be reported in %",),
+        ("64-17-5", "50"),
+    )))
+    assert result.blocks[0].content_candidates == ()
+
+
 def test_p3_fix_10_content_left_of_cas_has_earlier_source_order():
     block = collect_section3_candidates(_input("3", (("10%", "64-17-5"),))).blocks[0]
     assert block.content_candidates[0].source_order < block.cas_candidates[0].source_order
@@ -153,6 +162,46 @@ def test_p3_fix_10_content_left_of_cas_has_earlier_source_order():
 def test_p3_fix_11_cas_left_of_content_has_earlier_source_order():
     block = collect_section3_candidates(_input("3", (("64-17-5", "10%"),))).blocks[0]
     assert block.cas_candidates[0].source_order < block.content_candidates[0].source_order
+
+
+def test_p3_fix_12_same_text_run_keeps_original_substring_order_after_cas_masking():
+    block = collect_section3_candidates(_input("3", (("64-17-5 67-64-1 10%",),))).blocks[0]
+    assert [candidate.raw for candidate in block.cas_candidates] == ["64-17-5", "67-64-1"]
+    assert [candidate.source_order for candidate in block.cas_candidates] == [0, 1]
+    assert block.content_candidates[0].source_order == 2
+
+
+def test_real_pdf_section3_same_visual_row_separate_cells_preserves_raw_evidence(pdf_tmp):
+    path = make_pdf(pdf_tmp / "collector-section3.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 110, "64-17-5"), (300, 110, "10%"),
+        (72, 130, "67-64-1"), (300, 130, "20%"),
+        (72, 190, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    located = locate_section(layout, "3")
+    assert located.description is not None
+    result = collect_section3_candidates(build_section_input(layout, located.description))
+    first = result.blocks[0]
+    assert (first.cas_candidates[0].raw, first.content_candidates[0].raw) == ("64-17-5", "10%")
+    assert [item.raw_fragment for item in first.content_candidates[0].evidence] == ["10%"]
+
+
+def test_real_pdf_product_multiline_stops_before_company(pdf_tmp):
+    path = make_pdf(pdf_tmp / "collector-product.pdf", [[
+        (72, 72, "1. Chemical product and company identification"),
+        (72, 110, "Product name:"), (260, 110, "ABC-100"),
+        (260, 130, "Grade A 75%"),
+        (72, 150, "Company:"), (260, 150, "Example Chemical"),
+        (72, 190, "2. Hazards identification"),
+    ]])
+    layout = read_pdf_layout(path)
+    located = locate_section(layout, "1")
+    assert located.description is not None
+    result = collect_product_candidates(build_section_input(layout, located.description))
+    candidate = result.candidates[0]
+    assert candidate.raw == "ABC-100\nGrade A 75%"
+    assert [item.raw_fragment for item in candidate.evidence] == ["ABC-100", "Grade A 75%"]
 
 
 def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_promoted():
