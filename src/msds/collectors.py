@@ -56,6 +56,16 @@ class _UnitHeader:
     evidence: Evidence
 
 
+@dataclass(frozen=True)
+class _EcHeader:
+    """An explicit EC/CAS table header, limited to its following table rows."""
+
+    page: int
+    row_number: int
+    ec_x: float
+    cas_x: float
+
+
 def _require_confirmed_text_input(section_input: SectionInput, section_no: str) -> None:
     """Reject every non-SectionInput, unconfirmed, non-text, or wrong-section call."""
     if not isinstance(section_input, SectionInput):
@@ -112,13 +122,13 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
                 if _FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text):
                     break
                 values.append(cell)
-            # A right-hand value cell can be the first line of a multiline
-            # product field; continue only until the next structural field.
-            current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
-            for candidate_row in rows[current_row_index + 1:]:
-                if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
-                    break
-                values.extend(candidate_row)
+        # Every supported label form can continue on later rows.  Inline
+        # values deliberately do not consume a same-row right-hand cell.
+        current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
+        for candidate_row in rows[current_row_index + 1:]:
+            if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
+                break
+            values.extend(candidate_row)
         if not values:
             continue
         raw = "\n".join(value.text for value in values)
@@ -141,12 +151,14 @@ def _rows(section_input: SectionInput) -> tuple[tuple[_Line, ...], ...]:
     return tuple(tuple(sorted(row, key=lambda item: (item.bbox[0], item.block, item.line))) for row in rows)
 
 
-def _cas_matches(row: tuple[_Line, ...]) -> list[tuple[_Line, re.Match[str]]]:
+def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tuple[_Line, re.Match[str]]]:
     matches: list[tuple[_Line, re.Match[str]]] = []
     for line_index, line in enumerate(row):
         for match in _CAS.finditer(line.text):
             row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line.text[:match.start()]
             if _EC_CONTEXT.search(row_prefix):
+                continue
+            if any(line.page == header.page and abs(line.bbox[0] - header.ec_x) <= max(12.0, line.bbox[2] - line.bbox[0]) for header in ec_headers):
                 continue
             raw = match.group(1)
             result = normalize_cas(raw)
@@ -166,6 +178,15 @@ def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput, row_numbe
         for line in row
         if (match := _UNIT_HEADER.search(line.text)) and not _DIRECT_CONTENT.search(line.text)
     ]
+
+
+def _ec_headers(row: tuple[_Line, ...], row_number: int) -> list[_EcHeader]:
+    """Observe an explicit EC column only when it shares a header row with CAS."""
+    ec_label = next((line for line in row if re.fullmatch(r"\s*EC\s+(?:No\.?|Number)\s*", line.text, re.IGNORECASE)), None)
+    cas_label = next((line for line in row if re.fullmatch(r"\s*CAS(?:\s+(?:No\.?|Number))?\s*", line.text, re.IGNORECASE)), None)
+    if ec_label is None or cas_label is None:
+        return []
+    return [_EcHeader(ec_label.page, row_number, ec_label.bbox[0], cas_label.bbox[0])]
 
 
 def _header_for(line: _Line, headers: list[_UnitHeader]) -> tuple[str, Evidence] | None:
@@ -207,18 +228,35 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
     return has_aligned_cas and has_aligned_unit_column
 
 
+def _same_ec_table_row(row: tuple[_Line, ...], headers: list[_EcHeader]) -> bool:
+    """Keep EC-column exclusion scoped to aligned rows of its own table."""
+    if not headers or any(line.page != headers[0].page for line in row):
+        return False
+    header = headers[0]
+    return any(
+        _CAS.search(line.text)
+        and min(abs(line.bbox[0] - header.ec_x), abs(line.bbox[0] - header.cas_x)) <= max(12.0, line.bbox[2] - line.bbox[0])
+        for line in row
+    )
+
+
 def collect_section3_candidates(section_input: SectionInput) -> Section3Collection:
     """Collect ordered Section 3 source rows without creating ComponentPair values."""
     _require_confirmed_text_input(section_input, "3")
     blocks: list[Section3BlockCandidate] = []
     source_order = 0
     headers: list[_UnitHeader] = []
+    ec_headers: list[_EcHeader] = []
     for row_number, row in enumerate(_rows(section_input)):
         if row_headers := _unit_headers(row, section_input, row_number):
             headers = row_headers
         elif headers and not _same_table_row(row, headers):
             headers = []
-        cas_matches = _cas_matches(row)
+        if row_ec_headers := _ec_headers(row, row_number):
+            ec_headers = row_ec_headers
+        elif ec_headers and not _same_ec_table_row(row, ec_headers):
+            ec_headers = []
+        cas_matches = _cas_matches(row, ec_headers)
         content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
         occurrences = [(line, match.start(), "cas", match) for line, match in cas_matches]
         occurrences += [(line, start, "content", (raw, unit, unit_evidence)) for line, start, raw, unit, unit_evidence in content_matches]

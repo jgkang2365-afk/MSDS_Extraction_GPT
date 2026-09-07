@@ -46,6 +46,17 @@ def test_p3_fix_01_separate_cell_product_name_value():
     assert result.candidates[0].raw == "ABC-100"
 
 
+def test_p3_fix_01_inline_product_name_continues_until_structural_field():
+    result = collect_product_candidates(_input("1", (
+        ("Product name: ABC-100",),
+        ("Grade A 75%",),
+        ("Company: Example Chemical",),
+    )))
+    candidate = result.candidates[0]
+    assert candidate.raw == "ABC-100\nGrade A 75%"
+    assert [item.raw_fragment for item in candidate.evidence] == ["ABC-100", "Grade A 75%"]
+
+
 def test_p3_fix_02_korean_label_value():
     assert collect_product_candidates(_input("1", (("제품명 | 가나다 (Model-A)",),))).candidates[0].raw == "가나다 (Model-A)"
 
@@ -111,6 +122,17 @@ def test_p3_fix_05_concentration_percent_header_preserves_bare_range_and_context
     result = collect_section3_candidates(_input("3", (("CAS", "Concentration (%)"), ("64-17-5", "10~20"))))
     content = result.blocks[0].content_candidates[0]
     assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("10~20", "%", "Concentration (%)")
+
+
+def test_p3_fix_05_ec_table_column_is_excluded_while_cas_and_bare_content_remain():
+    result = collect_section3_candidates(_input("3", (
+        ("EC No.", "CAS No.", "Content (%)"),
+        ("200-578-6", "64-17-5", "10"),
+        ("201-000-0", "64-17-4", "20"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5", "64-17-4"]
+    assert result.blocks[1].cas_candidates[0].validity is CasCandidateValidity.CHECK_DIGIT_INVALID
+    assert (result.blocks[0].content_candidates[0].raw, result.blocks[0].content_candidates[0].unit_context_raw) == ("10", "%")
 
 
 def test_p3_fix_06_wt_header_preserves_bare_comparator_and_context():
@@ -185,6 +207,22 @@ def test_real_pdf_section3_same_visual_row_separate_cells_preserves_raw_evidence
     first = result.blocks[0]
     assert (first.cas_candidates[0].raw, first.content_candidates[0].raw) == ("64-17-5", "10%")
     assert [item.raw_fragment for item in first.content_candidates[0].evidence] == ["10%"]
+
+
+def test_real_pdf_section3_ec_column_is_not_a_cas_candidate(pdf_tmp):
+    path = make_pdf(pdf_tmp / "collector-section3-ec-column.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 100, "EC No."), (220, 100, "CAS No."), (400, 100, "Content (%)"),
+        (72, 120, "200-578-6"), (220, 120, "64-17-5"), (400, 120, "10"),
+        (72, 180, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    located = locate_section(layout, "3")
+    assert located.description is not None
+    result = collect_section3_candidates(build_section_input(layout, located.description))
+    block = result.blocks[0]
+    assert [candidate.raw for candidate in block.cas_candidates] == ["64-17-5"]
+    assert (block.content_candidates[0].raw, block.content_candidates[0].unit_context_raw) == ("10", "%")
 
 
 def test_real_pdf_product_multiline_stops_before_company(pdf_tmp):
