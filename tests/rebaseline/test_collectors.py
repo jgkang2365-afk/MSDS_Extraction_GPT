@@ -225,6 +225,49 @@ def test_real_pdf_section3_ec_column_is_not_a_cas_candidate(pdf_tmp):
     assert (block.content_candidates[0].raw, block.content_candidates[0].unit_context_raw) == ("10", "%")
 
 
+def test_real_pdf_section3_narrow_ec_cas_gap_keeps_cas_column_candidate(pdf_tmp):
+    path = make_pdf(pdf_tmp / "collector-section3-narrow-ec-cas.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 100, "EC No."), (130, 100, "CAS No."), (300, 100, "Content (%)"),
+        # Keep extracted cells separate while making the CAS cell wider than
+        # the 58-point EC/CAS gap that previously caused false EC exclusion.
+        (72, 120, "EC ref"), (130, 120, "64-17-5 ingredient"), (300, 120, "10"),
+        (72, 180, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    # The intentionally narrow columns are ambiguous to the section locator,
+    # so exercise the collector with the real PyMuPDF text tokens in a
+    # confirmed SectionInput, as Phase 2 would provide it.
+    section_input = SectionInput(
+        layout.document_sha256,
+        "3",
+        "confirmed-by-phase-2",
+        (PageRegion(0, (layout.pages[0].rect,)),),
+        layout.pages[0].tokens,
+        DocumentCapability.TEXT,
+        input_digest="real-pdf-narrow-ec-cas",
+    )
+    result = collect_section3_candidates(section_input)
+    block = result.blocks[0]
+    assert [candidate.raw for candidate in block.cas_candidates] == ["64-17-5"]
+    assert (block.content_candidates[0].raw, block.content_candidates[0].unit_context_raw) == ("10", "%")
+
+
+def test_real_pdf_section3_unit_header_rejects_adjacent_bare_numeric_column(pdf_tmp):
+    path = make_pdf(pdf_tmp / "collector-section3-unit-header-column.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 100, "CAS"), (180, 100, "Reference number"), (300, 100, "Content (%)"),
+        (72, 120, "64-17-5"), (180, 120, "123456789"), (300, 120, "10"),
+        (72, 180, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    located = locate_section(layout, "3")
+    assert located.description is not None
+    result = collect_section3_candidates(build_section_input(layout, located.description))
+    content = result.blocks[0].content_candidates
+    assert [(candidate.raw, candidate.unit_context_raw) for candidate in content] == [("10", "%")]
+
+
 def test_real_pdf_product_multiline_stops_before_company(pdf_tmp):
     path = make_pdf(pdf_tmp / "collector-product.pdf", [[
         (72, 72, "1. Chemical product and company identification"),

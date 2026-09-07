@@ -33,6 +33,7 @@ _DIRECT_CONTENT = re.compile(
 )
 _BARE_CONTENT = re.compile(r"^(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*$")
 _UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*%|vol\s*%|%|ppm)(?![A-Za-z])", re.IGNORECASE)
+_HEADER_X_TOLERANCE = 12.0
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,17 @@ class _EcHeader:
     row_number: int
     ec_x: float
     cas_x: float
+
+
+def _is_ec_column(line: _Line, header: _EcHeader) -> bool:
+    """Match only the EC side of an explicit EC/CAS header boundary."""
+    midpoint = (header.ec_x + header.cas_x) / 2
+    return header.ec_x - _HEADER_X_TOLERANCE <= line.bbox[0] < midpoint
+
+
+def _is_cas_column(line: _Line, cas_x: float) -> bool:
+    """Allow only small start-coordinate drift from an explicit CAS header."""
+    return abs(line.bbox[0] - cas_x) <= _HEADER_X_TOLERANCE
 
 
 def _require_confirmed_text_input(section_input: SectionInput, section_no: str) -> None:
@@ -158,7 +170,7 @@ def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tu
             row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line.text[:match.start()]
             if _EC_CONTEXT.search(row_prefix):
                 continue
-            if any(line.page == header.page and abs(line.bbox[0] - header.ec_x) <= max(12.0, line.bbox[2] - line.bbox[0]) for header in ec_headers):
+            if any(line.page == header.page and _is_ec_column(line, header) for header in ec_headers):
                 continue
             raw = match.group(1)
             result = normalize_cas(raw)
@@ -193,7 +205,7 @@ def _header_for(line: _Line, headers: list[_UnitHeader]) -> tuple[str, Evidence]
     if not headers:
         return None
     header = min(headers, key=lambda candidate: abs(candidate.unit_x - line.bbox[0]))
-    if abs(header.unit_x - line.bbox[0]) <= max(12.0, line.bbox[2] - line.bbox[0]):
+    if abs(header.unit_x - line.bbox[0]) <= _HEADER_X_TOLERANCE:
         return header.unit, header.evidence
     return None
 
@@ -221,7 +233,7 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
         return False
     cas_header = headers[0]
     has_aligned_cas = any(
-        _CAS.search(line.text) and abs(line.bbox[0] - cas_header.cas_x) <= max(12.0, line.bbox[2] - line.bbox[0])
+        _CAS.search(line.text) and _is_cas_column(line, cas_header.cas_x)
         for line in row
     )
     has_aligned_unit_column = any(_header_for(line, headers) for line in row)
@@ -234,8 +246,7 @@ def _same_ec_table_row(row: tuple[_Line, ...], headers: list[_EcHeader]) -> bool
         return False
     header = headers[0]
     return any(
-        _CAS.search(line.text)
-        and min(abs(line.bbox[0] - header.ec_x), abs(line.bbox[0] - header.cas_x)) <= max(12.0, line.bbox[2] - line.bbox[0])
+        _CAS.search(line.text) and (_is_ec_column(line, header) or _is_cas_column(line, header.cas_x))
         for line in row
     )
 
