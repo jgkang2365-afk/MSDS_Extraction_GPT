@@ -9,6 +9,7 @@ import pytest
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
 from src.msds.models import CasCandidateValidity, DocumentCapability, EvidenceSourceType
 from src.msds.ocr import LazyPaddleOcrEngine, OcrMetrics, OcrToken, _pixel_to_pdf, scan_pdf_sections
+import src.msds.ocr as ocr
 from tests.rebaseline.pdf_helpers import make_pdf
 
 
@@ -60,6 +61,19 @@ def test_p4_01_digital_only_never_initializes_or_renders_ocr(pdf_tmp):
     assert not fake.released
 
 
+def test_p4_digital_partial_fence_remains_text_without_ocr(pdf_tmp):
+    path = make_pdf(pdf_tmp / "digital-partial.pdf", [[(72, 72, S1), (72, 110, "Product: Stable")]])
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.input_for("1") is None
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+    assert not fake.released
+
+
 def test_p4_02_image_only_uses_local_ocr_route_and_releases_batch_engine(pdf_tmp):
     fake = FakeOcr([
         _page((S1, (50, 70, 400, 90)), ("Product: OCR Resin", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))),
@@ -98,6 +112,43 @@ def test_p4_03_mixed_targets_route_s1_text_and_s3_ocr_independently(pdf_tmp):
     assert result.input_for("1").capability is DocumentCapability.TEXT
     assert result.input_for("3").capability is DocumentCapability.OCR
     assert fake.calls == 2  # one batch recon, never a per-target engine init
+
+
+def test_p4_ocr_input_build_failure_isolated_per_confirmed_target(pdf_tmp, monkeypatch):
+    path = _image_pdf(pdf_tmp, "isolated-build-failure.pdf", 2)
+    fake = FakeOcr([
+        _page((S1, (50, 70, 400, 90)), ("Product: OCR Resin", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))),
+        _page((S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190))),
+    ])
+    original = ocr.build_ocr_section_input
+
+    def fail_section_one(layout, fence, rendered):
+        if fence.section_no == "1":
+            raise ValueError("synthetic isolated input failure")
+        return original(layout, fence, rendered)
+
+    monkeypatch.setattr(ocr, "build_ocr_section_input", fail_section_one)
+    result = scan_pdf_sections(path, engine=fake)
+
+    assert result.input_for("1") is None
+    assert result.input_for("3") is not None
+    assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
+    assert "OCR_SECTION_INPUT_ERROR:ValueError" in result.routes[0].reasons
+
+
+def test_p4_engine_metric_preserves_observed_external_calls(pdf_tmp):
+    class NonzeroExternalMetricFake(FakeOcr):
+        @property
+        def metrics(self) -> OcrMetrics:
+            return OcrMetrics(1 if self.calls else 0, self.calls, 0, self.released, 7)
+
+    result = scan_pdf_sections(
+        _image_pdf(pdf_tmp, "external-metric.pdf"),
+        engine=NonzeroExternalMetricFake([_page((S1, (50, 70, 400, 90)), (S2, (50, 170, 260, 190)))]),
+        sections=("1",),
+    )
+
+    assert result.metrics.external_call_count == 7
 
 
 def test_p4_04_ocr_s1_to_s2_is_confirmed(pdf_tmp):

@@ -18,6 +18,7 @@ import fitz
 
 from .models import (
     DocumentCapability,
+    EvidenceSourceType,
     FenceStatus,
     IsolatedImage,
     LayoutToken,
@@ -151,7 +152,7 @@ def _engine_metrics(engine: OcrEngine | None, *, invocation_count: int, render_c
         int(getattr(observed, "invocation_count", invocation_count)),
         render_count,
         bool(getattr(observed, "released", released)),
-        0,
+        int(getattr(observed, "external_call_count", 0)),
     )
 
 
@@ -314,6 +315,22 @@ def build_ocr_section_input(recon_layout: PdfReadResult, fence: FenceDescription
     )
 
 
+def _has_digital_target_text(layout: PdfReadResult, located: LocatedFence) -> bool:
+    """Return whether this target is already observed as digital text.
+
+    A partial fence can retain a digital start/end observation even though it
+    cannot safely form a SectionInput.  Such an outcome is not an OCR need.
+    For a fully digital document, an absent heading is also a digital locator
+    result rather than a reason to render every page.
+    """
+    if any(evidence.source_type is EvidenceSourceType.TEXT for evidence in located.fence.evidence):
+        return True
+    return (
+        layout.capability is DocumentCapability.TEXT
+        and all(page.tokens and not page.image_count for page in layout.pages)
+    )
+
+
 def scan_pdf_sections(path: str | Path, *, engine: OcrEngine | None = None, sections: tuple[str, ...] = ("1", "3")) -> ScanOcrResult:
     """Route each target independently: digital TEXT first, then local OCR recon.
 
@@ -332,6 +349,8 @@ def scan_pdf_sections(path: str | Path, *, engine: OcrEngine | None = None, sect
         if located.description is not None and located.description.capability is DocumentCapability.TEXT:
             inputs[section_no] = build_section_input(layout, located.description)
             routes[section_no] = TargetRoute(section_no, DocumentCapability.TEXT, located.fence, located.reasons)
+        elif _has_digital_target_text(layout, located):
+            routes[section_no] = TargetRoute(section_no, DocumentCapability.TEXT, located.fence, located.reasons)
         else:
             ocr_targets.append(section_no)
     if not ocr_targets:
@@ -345,16 +364,25 @@ def scan_pdf_sections(path: str | Path, *, engine: OcrEngine | None = None, sect
     released = False
     try:
         recon = _reconstruct(path, layout, engine)
-        for section_no in ocr_targets:
-            located: LocatedFence = locate_section(recon.layout, section_no)
-            routes[section_no] = TargetRoute(section_no, DocumentCapability.OCR, located.fence, located.reasons)
-            if located.description is not None:
-                inputs[section_no] = build_ocr_section_input(recon.layout, located.description, recon.rendered)
     except (fitz.FileDataError, OSError, RuntimeError, ValueError) as error:
         for section_no in ocr_targets:
             prior = routes.get(section_no)
             if prior is None:
                 routes[section_no] = TargetRoute(section_no, DocumentCapability.OCR, locate_section(layout, section_no).fence, (f"OCR_RECON_ERROR:{type(error).__name__}",))
+    else:
+        for section_no in ocr_targets:
+            located: LocatedFence = locate_section(recon.layout, section_no)
+            route = TargetRoute(section_no, DocumentCapability.OCR, located.fence, located.reasons)
+            routes[section_no] = route
+            if located.description is None:
+                continue
+            try:
+                inputs[section_no] = build_ocr_section_input(recon.layout, located.description, recon.rendered)
+            except (OSError, RuntimeError, ValueError) as error:
+                routes[section_no] = TargetRoute(
+                    section_no, DocumentCapability.OCR, located.fence,
+                    located.reasons + (f"OCR_SECTION_INPUT_ERROR:{type(error).__name__}",),
+                )
     finally:
         release = getattr(engine, "release", None)
         if callable(release):

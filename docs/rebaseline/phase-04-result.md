@@ -3,10 +3,12 @@
 ## Contract and boundary
 
 - `scan_pdf_sections()` routes Section 1 and Section 3 independently. A target
-  already confirmed as `TEXT` uses the existing Phase 2 `build_section_input()`
-  path and does not initialize, render, or invoke OCR. A target with missing
-  digital text uses only an explicitly supplied local OCR engine; no engine
-  produces an explicit `OCR_ENGINE_NOT_SUPPLIED` route outcome, not a fallback.
+  with observed digital text, including a partial/missing digital fence,
+  retains its `TEXT` route and does not initialize, render, or invoke OCR; a
+  confirmed target uses the existing Phase 2 `build_section_input()` path. A
+  target with missing digital text uses only an explicitly supplied local OCR
+  engine; no engine produces an explicit `OCR_ENGINE_NOT_SUPPLIED` route
+  outcome, not a fallback.
 - Recon renders/OCRs pages solely to locate the `1 → 2` or `3 → 4` heading
   boundary using the existing NFKC heading rules. Missing/ambiguous boundaries
   remain `FENCE_PARTIAL` / `FENCE_NOT_FOUND`; there is no whole-document or
@@ -31,7 +33,8 @@
   a scan batch and released after it. The adapter passes only image bytes to
   `engine.ocr(image_bytes)`; it deliberately does **not** use legacy `cls=False`,
   automatic model download, remote fallback, or external calls. Metrics expose
-  initialization/invocation/render/release and a fixed zero external-call count.
+  initialization/invocation/render/release and preserve the engine's observed
+  external-call count; the local adapter itself always reports zero.
 - Focused tests use an injected in-memory fake engine. No real Paddle OCR smoke
   was run: local model availability was not established and model download or
   external communication is prohibited. Therefore this phase does not claim a
@@ -39,14 +42,11 @@
 
 ## Executed verification
 
-- `python -m pytest tests/rebaseline/test_scan_ocr.py -q`: 27 passed (fake
-  engine, image-only/digital/mixed routing, S1/S3 fences, no S3 cap, isolation,
-  rotation/CropBox/columns, and raw candidate/evidence regressions).
-- `python -m pytest tests/rebaseline -q`: 162 passed. `compileall` for
-  `src/msds` and `golden/v2`, import smoke for models/normalization/pdf_io/
-  sections/collectors/ocr, and `git diff --check`: passed.
-- `python -m pytest tests/test_common_normalization.py -q`: Coordinator direct
-  final environment result: 6 passed in 0.17s. The Lead managed terminal denies
-  `TemporaryDirectory` child access, so its equivalent one-shot workspace-temp
-  shim plus `--basetemp` run passed 6 in 0.25s; no common test or legacy source
-  was changed for that terminal-only restriction.
+- `python -m pytest tests/rebaseline/test_scan_ocr.py -q`: 30 passed (fake
+  engine, image-only/digital/mixed routing, partial digital no-OCR routing,
+  S1/S3 fences, per-target input-failure isolation, external-metric preservation,
+  no S3 cap, rotation/CropBox/columns, and raw candidate/evidence regressions).
+- `python -m pytest tests/rebaseline -q`: 165 passed, with one pytest cache
+  write warning. `python -m compileall -q src/msds golden/v2` and import smoke
+  for models/normalization/pdf_io/sections/collectors/ocr: passed.
+- `python -m pytest tests/test_common_normalization.py -q`: 6 passed.
