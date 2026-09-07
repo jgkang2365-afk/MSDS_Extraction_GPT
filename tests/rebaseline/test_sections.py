@@ -91,8 +91,8 @@ def test_p2_03_middle_pages_are_fenced_body_regions_with_repeated_margins_exclud
 def test_p2_03_section_three_repeated_margin_table_headers_remain_in_section_input(pdf_tmp):
     path = make_pdf(pdf_tmp / "repeated-section-three-table-header.pdf", [
         [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
-        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "111-11-1 5%")],
-        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "222-22-2 10%"), (72, 180, "4. First-aid measures")],
+        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "111-11-1"), (220, 100, "5%")],
+        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "222-22-2"), (220, 100, "10%"), (72, 180, "4. First-aid measures")],
     ])
     _, three, _, input3 = _inputs(path)
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
@@ -114,8 +114,8 @@ def test_p2_03_section_three_repeated_margin_table_headers_remain_in_section_inp
 def test_p2_03_structural_repeated_table_headers_preserve_korean_and_alternate_labels(pdf_tmp, headers):
     path = make_pdf(pdf_tmp / "structural-repeated-table-header.pdf", [
         [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
-        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "111-11-1")],
-        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "222-22-2"), (72, 180, "4. First-aid measures")],
+        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "111-11-1"), (220, 100, "Ingredient A"), (430, 100, "5%"), (72, 130, "333-33-3"), (220, 130, "Ingredient C"), (430, 130, "15%")],
+        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "222-22-2"), (220, 100, "Ingredient B"), (430, 100, "10%"), (72, 130, "444-44-4"), (220, 130, "Ingredient D"), (430, 130, "20%"), (72, 180, "4. First-aid measures")],
     ], fontfile=Path(r"C:\Windows\Fonts\malgun.ttf"))
     _, three, _, input3 = _inputs(path)
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
@@ -134,17 +134,36 @@ def test_p2_03_repeated_margin_text_without_table_structure_is_excluded(pdf_tmp)
     assert "ORDINARY MARGIN" not in "".join(token.text for token in input3.tokens)
 
 
-def test_p2_02_section_input_preserves_product_source_whitespace_exactly(pdf_tmp):
-    raw_product = "  Product (Technical Grade)  75 %  "
+def test_p2_03_repeated_two_cell_running_headers_without_aligned_body_are_excluded(pdf_tmp):
+    path = make_pdf(pdf_tmp / "running-header.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
+        [(72, 20, "Example Chemical Company"), (440, 20, "Page"), (72, 100, "111-11-1 5%")],
+        [(72, 20, "Example Chemical Company"), (440, 20, "Page"), (72, 100, "222-22-2 10%"), (72, 180, "4. First-aid measures")],
+    ])
+    _, three, _, input3 = _inputs(path)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    text = "".join(token.text for token in input3.tokens)
+    assert "Example Chemical Company" not in text and "Page" not in text
+
+
+def test_p2_02_section_input_preserves_multiline_product_source_order_and_whitespace(pdf_tmp):
+    raw_product_lines = ("  Product (Technical ", "Grade)  75 %  ")
     path = make_pdf(pdf_tmp / "product-whitespace.pdf", [[
-        (72, 72, "1. Chemical product and company identification"), (72, 110, raw_product),
-        (72, 150, "2. Hazards identification"),
+        (72, 72, "1. Chemical product and company identification"), (72, 110, raw_product_lines[0]), (72, 130, raw_product_lines[1]),
+        (72, 170, "2. Hazards identification"),
     ]])
     one, _, input1, _ = _inputs(path)
     assert one.fence.status is FenceStatus.FENCE_CONFIRMED
-    source_line = [line for line in read_pdf_layout(path).pages[0].lines if line.text == raw_product][0]
-    preserved = "".join(token.text for token in input1.tokens if token.block_id == source_line.block_id and token.line_id == source_line.line_id)
-    assert preserved == raw_product
+    lines: list[tuple[tuple[int, int], str]] = []
+    for token in input1.tokens:
+        line_key = (token.block_id, token.line_id)
+        if not lines or lines[-1][0] != line_key:
+            lines.append((line_key, token.text))
+        else:
+            lines[-1] = (line_key, lines[-1][1] + token.text)
+    product_lines = [line for line in lines if line[1] in raw_product_lines]
+    assert [line_key for line_key, _ in product_lines] == sorted(line_key for line_key, _ in product_lines)
+    assert [text for _, text in product_lines] == list(raw_product_lines)
 
 
 def test_p2_03_wide_three_column_section_table_is_not_page_multicolumn(pdf_tmp):

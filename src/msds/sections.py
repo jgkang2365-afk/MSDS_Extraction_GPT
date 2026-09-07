@@ -121,6 +121,31 @@ def _horizontal_rows(lines: list[LayoutLine]) -> list[list[LayoutLine]]:
     return rows
 
 
+def _same_column_alignment(first: list[LayoutLine], second: list[LayoutLine]) -> bool:
+    """Return whether two rows have the same observed table columns."""
+    if len(first) != len(second):
+        return False
+    first_starts = sorted(line.bbox[0] for line in first)
+    second_starts = sorted(line.bbox[0] for line in second)
+    return all(abs(left - right) <= 2 for left, right in zip(first_starts, second_starts))
+
+
+def _has_aligned_body_rows(header_rows: list[list[LayoutLine]], layout: PdfReadResult) -> bool:
+    """Require each repeated header instance to align with an observed body row."""
+    page_rows = {
+        page.page_index: _horizontal_rows(page.lines)
+        for page in layout.pages
+    }
+    return all(
+        any(
+            min(line.bbox[1] for line in body_row) >= max(line.bbox[3] for line in header_row)
+            and _same_column_alignment(header_row, body_row)
+            for body_row in page_rows[header_row[0].page_index]
+        )
+        for header_row in header_rows
+    )
+
+
 def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
     """Reject independent page columns, while allowing aligned Section 3 tables."""
     if start.page_index != end.page_index:
@@ -174,7 +199,7 @@ def _margin_repetitions(
                 rows_by_signature.setdefault(signature, []).append(ordered)
     if retain_table_headers:
         for rows in rows_by_signature.values():
-            if len({row[0].page_index for row in rows}) >= 2:
+            if len({row[0].page_index for row in rows}) >= 2 and _has_aligned_body_rows(rows, layout):
                 table_headers.update((line.page_index, line.block_id, line.line_id) for row in rows for line in row)
     repeated = {
         (line.page_index, line.block_id, line.line_id): line.bbox
