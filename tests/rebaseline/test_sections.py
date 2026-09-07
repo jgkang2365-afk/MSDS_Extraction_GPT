@@ -164,6 +164,21 @@ def test_p2_02_section_input_preserves_multiline_product_source_order_and_whites
     product_lines = [line for line in lines if line[1] in raw_product_lines]
     assert [line_key for line_key, _ in product_lines] == sorted(line_key for line_key, _ in product_lines)
     assert [text for _, text in product_lines] == list(raw_product_lines)
+    product_line_keys = {line_key for line_key, _ in product_lines}
+    product_tokens = [
+        token for token in input1.tokens
+        if (token.block_id, token.line_id) in product_line_keys
+    ]
+    product_token_numbers = [int(token.token_id.rsplit("-", 1)[1]) for token in product_tokens]
+    assert all(left < right for left, right in zip(product_token_numbers, product_token_numbers[1:]))
+    token_lines: list[tuple[tuple[int, int], str]] = []
+    for token in product_tokens:
+        line_key = (token.block_id, token.line_id)
+        if not token_lines or token_lines[-1][0] != line_key:
+            token_lines.append((line_key, token.text))
+        else:
+            token_lines[-1] = (line_key, token_lines[-1][1] + token.text)
+    assert token_lines == product_lines
 
 
 def test_p2_03_wide_three_column_section_table_is_not_page_multicolumn(pdf_tmp):

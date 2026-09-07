@@ -21,7 +21,7 @@ Interpreter: `C:\Users\USER\AppData\Local\Programs\Python\Python313\python.exe`;
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline -q` | 98 passed in 2.64s |
+| `python -m pytest tests/rebaseline -q` | 98 passed in 3.36s |
 | `python -m pytest tests/test_common_normalization.py -q` | 6 passed in 0.17s |
 | `python -m compileall -q src/msds golden/v2` | PASS |
 | import smoke for models/pdf_io/sections | PyMuPDF 1.27.2; imports OK |
