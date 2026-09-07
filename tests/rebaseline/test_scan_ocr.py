@@ -74,6 +74,19 @@ def test_p4_digital_partial_fence_remains_text_without_ocr(pdf_tmp):
     assert not fake.released
 
 
+def test_p4_digital_blank_page_missing_target_remains_text_without_ocr(pdf_tmp):
+    path = make_pdf(pdf_tmp / "digital-blank-missing-s3.pdf", [[(72, 72, S1)], []])
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.input_for("3") is None
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_NOT_FOUND"
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+    assert not fake.released
+
+
 def test_p4_02_image_only_uses_local_ocr_route_and_releases_batch_engine(pdf_tmp):
     fake = FakeOcr([
         _page((S1, (50, 70, 400, 90)), ("Product: OCR Resin", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))),

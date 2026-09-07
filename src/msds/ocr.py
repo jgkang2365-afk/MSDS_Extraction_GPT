@@ -325,10 +325,7 @@ def _has_digital_target_text(layout: PdfReadResult, located: LocatedFence) -> bo
     """
     if any(evidence.source_type is EvidenceSourceType.TEXT for evidence in located.fence.evidence):
         return True
-    return (
-        layout.capability is DocumentCapability.TEXT
-        and all(page.tokens and not page.image_count for page in layout.pages)
-    )
+    return layout.capability is DocumentCapability.TEXT and not any(page.image_count for page in layout.pages)
 
 
 def scan_pdf_sections(path: str | Path, *, engine: OcrEngine | None = None, sections: tuple[str, ...] = ("1", "3")) -> ScanOcrResult:
