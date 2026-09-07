@@ -236,8 +236,7 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
         _CAS.search(line.text) and _is_cas_column(line, cas_header.cas_x)
         for line in row
     )
-    has_aligned_unit_column = any(_header_for(line, headers) for line in row)
-    return has_aligned_cas and has_aligned_unit_column
+    return has_aligned_cas
 
 
 def _same_ec_table_row(row: tuple[_Line, ...], headers: list[_EcHeader]) -> bool:

@@ -124,6 +124,18 @@ def test_p3_fix_05_concentration_percent_header_preserves_bare_range_and_context
     assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("10~20", "%", "Concentration (%)")
 
 
+def test_p3_fix_header_context_survives_blank_unit_cell_without_creating_bare_content():
+    result = collect_section3_candidates(_input("3", (
+        ("CAS", "Concentration (%)"),
+        ("64-17-5", ""),
+        ("67-56-1", "10"),
+    )))
+    first, second = result.blocks
+    assert first.content_candidates == ()
+    content = second.content_candidates[0]
+    assert (content.raw, content.unit_context_raw) == ("10", "%")
+
+
 def test_p3_fix_05_ec_table_column_is_excluded_while_cas_and_bare_content_remain():
     result = collect_section3_candidates(_input("3", (
         ("EC No.", "CAS No.", "Content (%)"),
