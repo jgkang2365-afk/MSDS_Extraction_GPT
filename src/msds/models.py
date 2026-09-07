@@ -78,6 +78,74 @@ class SectionInput:
     input_digest: str = ""
 
 
+class CasCandidateValidity(str, Enum):
+    """Observed CAS syntax/checksum state; collection never repairs it."""
+
+    VALID = "VALID"
+    NOT_CANDIDATE = "NOT_CANDIDATE"
+    FORMAT_INVALID = "FORMAT_INVALID"
+    CHECK_DIGIT_INVALID = "CHECK_DIGIT_INVALID"
+
+
+@dataclass(frozen=True)
+class ProductCandidate:
+    """One lossless Section 1 product-name observation, before resolution."""
+
+    raw: str
+    normalized: str
+    source_order: int
+    evidence: tuple[Evidence, ...]
+
+
+@dataclass(frozen=True)
+class ProductCollection:
+    """Candidate-only Section 1 output; absence is represented by no candidates."""
+
+    candidates: tuple[ProductCandidate, ...] = ()
+
+
+@dataclass(frozen=True)
+class CasCandidate:
+    """One source occurrence, including invalid values which are never corrected."""
+
+    raw: str
+    normalized: str
+    validity: CasCandidateValidity
+    source_order: int
+    evidence: tuple[Evidence, ...]
+
+
+@dataclass(frozen=True)
+class ContentCandidate:
+    """A raw Section 3 concentration expression with separately observed unit context."""
+
+    raw: str
+    normalized: str
+    source_order: int
+    evidence: tuple[Evidence, ...]
+    unit_context_raw: str | None = None
+    unit_context_evidence: tuple[Evidence, ...] = ()
+
+
+@dataclass(frozen=True)
+class Section3BlockCandidate:
+    """A source row/block retaining CAS/content relation without pairing it."""
+
+    block_id: str
+    row_id: str
+    source_order: int
+    evidence: tuple[Evidence, ...]
+    cas_candidates: tuple[CasCandidate, ...]
+    content_candidates: tuple[ContentCandidate, ...] = ()
+
+
+@dataclass(frozen=True)
+class Section3Collection:
+    """Ordered source blocks only; no resolver/validator result is embedded."""
+
+    blocks: tuple[Section3BlockCandidate, ...] = ()
+
+
 class ResultStatus(str, Enum):
     FOUND = "FOUND"
     NOT_FOUND = "NOT_FOUND"
