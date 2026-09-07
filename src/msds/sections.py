@@ -88,12 +88,50 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
     return headers, None
 
 
+def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage) -> bool:
+    """Recognize repeated, three-cell table rows without accepting page columns."""
+    rows = _horizontal_rows(lines)
+    signatures = [
+        tuple(round(line.bbox[0], 1) for line in sorted(row, key=lambda item: item.bbox[0]))
+        for row in rows
+        if len(row) >= 3
+    ]
+    return any(
+        signature[-1] - signature[0] > (page.rect[2] - page.rect[0]) * 0.35
+        and signatures.count(signature) >= 2
+        for signature in signatures
+    )
+
+
+def _horizontal_rows(lines: list[LayoutLine]) -> list[list[LayoutLine]]:
+    """Group cells whose vertical spans overlap, preserving source order."""
+    rows: list[list[LayoutLine]] = []
+    for line in sorted(lines, key=lambda item: (item.bbox[1], item.bbox[0])):
+        row = next(
+            (
+                candidate for candidate in rows
+                if max(line.bbox[1], candidate[0].bbox[1]) < min(line.bbox[3], candidate[0].bbox[3])
+            ),
+            None,
+        )
+        if row is None:
+            rows.append([line])
+        else:
+            row.append(line)
+    return rows
+
+
 def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
-    """Reject a same-page multi-column boundary rather than joining a broad rect."""
+    """Reject independent page columns, while allowing aligned Section 3 tables."""
     if start.page_index != end.page_index:
         return False
-    starts = sorted({round(line.bbox[0], 1) for line in page.lines if line.bbox[1] >= start.line.bbox[1] and line.bbox[1] <= end.line.bbox[1]})
-    return len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
+    lines = [line for line in page.lines if start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]]
+    starts = sorted({round(line.bbox[0], 1) for line in lines})
+    return (
+        len(starts) >= 2
+        and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
+        and not (start.section_no == "3" and _aligned_wide_table(lines, page))
+    )
 
 
 def _intersects(first: tuple[float, float, float, float], second: tuple[float, float, float, float]) -> bool:
@@ -105,9 +143,12 @@ def _inside_token(token, rect: tuple[float, float, float, float]) -> bool:
 
 
 def _margin_repetitions(
-    layout: PdfReadResult, *, retain_section_three_table_headers: bool
-) -> dict[tuple[int, int, int], tuple[float, float, float, float]]:
-    """Find exact repeated top/bottom lines, retaining their per-page boxes."""
+    layout: PdfReadResult, *, retain_table_headers: bool
+) -> tuple[
+    dict[tuple[int, int, int], tuple[float, float, float, float]],
+    dict[tuple[int, int, int], tuple[float, float, float, float]],
+]:
+    """Find repeated margins, retaining only structurally repeated table headers."""
     occurrences: dict[str, list[LayoutLine]] = {}
     for page in layout.pages:
         height = page.rect[3] - page.rect[1]
@@ -116,25 +157,53 @@ def _margin_repetitions(
                 normalized = re.sub(r"\s+", " ", line.text).strip().casefold()
                 if normalized:
                     occurrences.setdefault(normalized, []).append(line)
-    repeated: dict[tuple[int, int, int], tuple[float, float, float, float]] = {}
-    for lines in occurrences.values():
-        if len({line.page_index for line in lines}) >= 2:
-            for line in lines:
-                key = re.sub(r"\s+", " ", line.text).strip().casefold()
-                is_section_three_table_header = bool(
-                    re.search(r"\bcas\s*(?:no\.?|number)\b", key)
-                    or re.search(r"\bconcentration\b", key)
-                )
-                if not (retain_section_three_table_headers and is_section_three_table_header):
-                    repeated[(line.page_index, line.block_id, line.line_id)] = line.bbox
-    return repeated
+    repeated_lines = [
+        line for lines in occurrences.values() if len({line.page_index for line in lines}) >= 2
+        for line in lines
+    ]
+    table_headers: set[tuple[int, int, int]] = set()
+    rows_by_signature: dict[tuple[str, ...], list[list[LayoutLine]]] = {}
+    by_page: dict[int, list[LayoutLine]] = {}
+    for line in repeated_lines:
+        by_page.setdefault(line.page_index, []).append(line)
+    for page_lines in by_page.values():
+        for row in _horizontal_rows(page_lines):
+            if len(row) >= 2:
+                ordered = sorted(row, key=lambda item: item.bbox[0])
+                signature = tuple(re.sub(r"\s+", " ", item.text).strip().casefold() for item in ordered)
+                rows_by_signature.setdefault(signature, []).append(ordered)
+    if retain_table_headers:
+        for rows in rows_by_signature.values():
+            if len({row[0].page_index for row in rows}) >= 2:
+                table_headers.update((line.page_index, line.block_id, line.line_id) for row in rows for line in row)
+    repeated = {
+        (line.page_index, line.block_id, line.line_id): line.bbox
+        for line in repeated_lines
+        if (line.page_index, line.block_id, line.line_id) not in table_headers
+    }
+    retained = {
+        (line.page_index, line.block_id, line.line_id): line.bbox
+        for line in repeated_lines
+        if (line.page_index, line.block_id, line.line_id) in table_headers
+    }
+    return repeated, retained
 
 
-def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tuple[float, float, float, float]]) -> tuple[PageRegion | None, str | None]:
+def _safe_middle_region(
+    page: PdfPage,
+    repeated: dict[tuple[int, int, int], tuple[float, float, float, float]],
+    retained_headers: dict[tuple[int, int, int], tuple[float, float, float, float]],
+) -> tuple[PageRegion | None, str | None]:
     """Fence one continuation page only when its readable body is unambiguous."""
     excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
-    body_lines = [line for line in page.lines if not any(_intersects(line.bbox, rect) for rect in excluded)]
+    retained = tuple(retained_headers[key] for key in retained_headers if key[0] == page.page_index)
+    body_lines = [
+        line for line in page.lines
+        if not any(_intersects(line.bbox, rect) for rect in excluded + retained)
+    ]
     if not body_lines:
+        if retained:
+            return PageRegion(page.page_index, retained, excluded), None
         if page.image_rects:
             # A textless continuation page can still be fenced to its known
             # image placement, which lets capability classification block it as
@@ -144,7 +213,11 @@ def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tupl
             return None, "MIDDLE_PAGE_IMAGE_PLACEMENT_UNKNOWN"
         return None, "MIDDLE_PAGE_BODY_UNAVAILABLE"
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
-    if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
+    if (
+        len(starts) >= 2
+        and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
+        and not _aligned_wide_table(body_lines, page)
+    ):
         return None, "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS"
     x0 = min(line.bbox[0] for line in body_lines)
     x1 = max(line.bbox[2] for line in body_lines)
@@ -152,12 +225,13 @@ def _safe_middle_region(page: PdfPage, repeated: dict[tuple[int, int, int], tupl
     bottom = max(line.bbox[3] for line in body_lines)
     if x1 <= x0 or top >= bottom:
         return None, "MIDDLE_PAGE_BODY_BOUNDS_AMBIGUOUS"
-    return PageRegion(page.page_index, ((x0, top, x1, bottom),), excluded), None
+    return PageRegion(page.page_index, retained + ((x0, top, x1, bottom),), excluded), None
 
 
 def _safe_boundary_region(
     page: PdfPage,
     repeated: dict[tuple[int, int, int], tuple[float, float, float, float]],
+    retained_headers: dict[tuple[int, int, int], tuple[float, float, float, float]],
     *,
     top: float,
     bottom: float,
@@ -165,6 +239,7 @@ def _safe_boundary_region(
 ) -> tuple[PageRegion | None, str | None]:
     """Fence a start/end page to its observed, single-column body only."""
     excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
+    retained = tuple(retained_headers[key] for key in retained_headers if key[0] == page.page_index)
     if bottom <= top:
         return None, f"{failure_prefix}_BOUNDARY_ORDER_AMBIGUOUS"
     boundary = (page.rect[0], top, page.rect[2], bottom)
@@ -177,9 +252,11 @@ def _safe_boundary_region(
     body_lines = [
         line for line in page.lines
         if top <= line.bbox[1] and line.bbox[3] <= bottom
-        and not any(_intersects(line.bbox, rect) for rect in excluded)
+        and not any(_intersects(line.bbox, rect) for rect in excluded + retained)
     ]
     if not body_lines:
+        if retained:
+            return PageRegion(page.page_index, retained, excluded), None
         images_in_span = tuple(
             (max(page.rect[0], image[0]), max(top, image[1]), min(page.rect[2], image[2]), min(bottom, image[3]))
             for image in page.image_rects
@@ -196,7 +273,11 @@ def _safe_boundary_region(
             return PageRegion(page.page_index, ((page.rect[0], top, page.rect[2], bottom),), excluded), None
         return None, None
     starts = sorted({round(line.bbox[0], 1) for line in body_lines})
-    if len(starts) >= 2 and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35:
+    if (
+        len(starts) >= 2
+        and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
+        and not _aligned_wide_table(body_lines, page)
+    ):
         return None, f"{failure_prefix}_READING_ORDER_AMBIGUOUS"
     x0 = min(line.bbox[0] for line in body_lines)
     x1 = max(line.bbox[2] for line in body_lines)
@@ -204,7 +285,7 @@ def _safe_boundary_region(
     body_bottom = max(line.bbox[3] for line in body_lines)
     if x1 <= x0 or body_bottom <= body_top:
         return None, f"{failure_prefix}_BODY_BOUNDS_AMBIGUOUS"
-    return PageRegion(page.page_index, ((x0, body_top, x1, body_bottom),), excluded), None
+    return PageRegion(page.page_index, retained + ((x0, body_top, x1, body_bottom),), excluded), None
 
 
 def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple[PageRegion, ...] | None, str | None]:
@@ -220,23 +301,23 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if bottom <= top:
             return None, "SAME_PAGE_BOUNDARY_ORDER_AMBIGUOUS"
         return (PageRegion(start.page_index, ((x0, top, x1, bottom),)),), None
-    repeated = _margin_repetitions(layout, retain_section_three_table_headers=start.section_no == "3")
+    repeated, retained_headers = _margin_repetitions(layout, retain_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
-        start_page, repeated, top=start.line.bbox[3], bottom=py1, failure_prefix="START_PAGE"
+        start_page, repeated, retained_headers, top=start.line.bbox[3], bottom=py1, failure_prefix="START_PAGE"
     )
     if failure:
         return None, failure
     regions: list[PageRegion] = [start_region] if start_region is not None else []
     for page_index in range(start.page_index + 1, end.page_index):
         page = pages[page_index]
-        region, failure = _safe_middle_region(page, repeated)
+        region, failure = _safe_middle_region(page, repeated, retained_headers)
         if failure:
             return None, failure
         regions.append(region)
     _, ey0, _, _ = end_page.rect
     end_region, failure = _safe_boundary_region(
-        end_page, repeated, top=ey0, bottom=end.line.bbox[1], failure_prefix="END_PAGE"
+        end_page, repeated, retained_headers, top=ey0, bottom=end.line.bbox[1], failure_prefix="END_PAGE"
     )
     if failure:
         return None, failure

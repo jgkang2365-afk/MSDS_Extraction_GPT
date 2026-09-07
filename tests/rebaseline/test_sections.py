@@ -61,7 +61,7 @@ def test_p2_01_heading_search_keys_accept_section_prefix_optional_separator_and_
     one, three, input1, input3 = _inputs(path)
     assert one.fence.status is FenceStatus.FENCE_CONFIRMED
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
-    assert "ＦＵＬＬＷＩＤＴＨＶＡＬＵＥ１２３％" in "".join(token.text for token in input1.tokens)
+    assert "ＦＵＬＬ　ＷＩＤＴＨ　ＶＡＬＵＥ　１２３％" in "".join(token.text for token in input1.tokens)
     assert "INSIDE_THREE" in "".join(token.text for token in input3.tokens)
 
 
@@ -101,7 +101,71 @@ def test_p2_03_section_three_repeated_margin_table_headers_remain_in_section_inp
         for token in input3.tokens
         if token.page_index in {1, 2} and token.bbox[1] < 50
     )
-    assert header_tokens == "CASNo.ConcentrationCASNo.Concentration"
+    assert header_tokens == "CAS No.ConcentrationCAS No.Concentration"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        ("CAS 번호", "성분명", "함유량"),
+        ("등록번호", "물질 이름", "농도"),
+    ],
+)
+def test_p2_03_structural_repeated_table_headers_preserve_korean_and_alternate_labels(pdf_tmp, headers):
+    path = make_pdf(pdf_tmp / "structural-repeated-table-header.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
+        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "111-11-1")],
+        [(72, 20, headers[0]), (220, 20, headers[1]), (430, 20, headers[2]), (72, 100, "222-22-2"), (72, 180, "4. First-aid measures")],
+    ], fontfile=Path(r"C:\Windows\Fonts\malgun.ttf"))
+    _, three, _, input3 = _inputs(path)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    retained = "".join(token.text for token in input3.tokens if token.page_index in {1, 2} and token.bbox[1] < 50)
+    assert retained == "".join(headers) * 2
+
+
+def test_p2_03_repeated_margin_text_without_table_structure_is_excluded(pdf_tmp):
+    path = make_pdf(pdf_tmp / "ordinary-repeated-margin.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
+        [(72, 20, "ORDINARY MARGIN"), (72, 100, "111-11-1")],
+        [(72, 20, "ORDINARY MARGIN"), (72, 100, "222-22-2"), (72, 180, "4. First-aid measures")],
+    ])
+    _, three, _, input3 = _inputs(path)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "ORDINARY MARGIN" not in "".join(token.text for token in input3.tokens)
+
+
+def test_p2_02_section_input_preserves_product_source_whitespace_exactly(pdf_tmp):
+    raw_product = "  Product (Technical Grade)  75 %  "
+    path = make_pdf(pdf_tmp / "product-whitespace.pdf", [[
+        (72, 72, "1. Chemical product and company identification"), (72, 110, raw_product),
+        (72, 150, "2. Hazards identification"),
+    ]])
+    one, _, input1, _ = _inputs(path)
+    assert one.fence.status is FenceStatus.FENCE_CONFIRMED
+    source_line = [line for line in read_pdf_layout(path).pages[0].lines if line.text == raw_product][0]
+    preserved = "".join(token.text for token in input1.tokens if token.block_id == source_line.block_id and token.line_id == source_line.line_id)
+    assert preserved == raw_product
+
+
+def test_p2_03_wide_three_column_section_table_is_not_page_multicolumn(pdf_tmp):
+    rows = [
+        (72, 110, "111-11-1"), (220, 110, "Ingredient A"), (440, 110, "5%"),
+        (72, 140, "222-22-2"), (220, 140, "Ingredient B"), (440, 140, "10%"),
+    ]
+    same_page = make_pdf(pdf_tmp / "wide-table-same-page.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"), *rows, (72, 180, "4. First-aid measures"),
+    ]])
+    _, same_page_three, _, same_page_input = _inputs(same_page)
+    assert same_page_three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "Ingredient B" in "".join(token.text for token in same_page_input.tokens)
+    continuation = make_pdf(pdf_tmp / "wide-table-continuation.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        rows,
+        [(72, 110, "LAST"), (72, 180, "4. First-aid measures")],
+    ])
+    _, continuation_three, _, continuation_input = _inputs(continuation)
+    assert continuation_three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "Ingredient B" in "".join(token.text for token in continuation_input.tokens)
 
 
 def test_p2_03_multi_page_start_and_end_use_observed_body_and_exclude_repeated_sentinels(pdf_tmp):

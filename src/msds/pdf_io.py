@@ -145,7 +145,7 @@ def read_pdf_layout(path: str | Path, *, cancelled: StopCheck = None, deadline: 
                         for span in spans:
                             for char_index, char in enumerate(span.get("chars", ())):
                                 value = char.get("c", "")
-                                if value and not value.isspace():
+                                if value:
                                     tokens.append(LayoutToken(f"p{page_index}-b{block_id}-l{line_id}-c{char_index}-{len(tokens)}", value, page_index, tuple(float(item) for item in char["bbox"]), block_id, line_id))
                 image_rects: list[Rect] = []
                 for image in page.get_images(full=True):
