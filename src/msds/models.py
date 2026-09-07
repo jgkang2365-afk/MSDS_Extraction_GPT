@@ -42,6 +42,42 @@ class FenceStatus(str, Enum):
     FENCE_NOT_FOUND = "FENCE_NOT_FOUND"
 
 
+@dataclass(frozen=True)
+class PageRegion:
+    """A 0-based, unrotated PyMuPDF top-left PDF-point safe region."""
+
+    page_index: int
+    allowed_rects: tuple[tuple[float, float, float, float], ...]
+    excluded_rects: tuple[tuple[float, float, float, float], ...] = ()
+
+
+@dataclass(frozen=True)
+class LayoutToken:
+    """One reusable digital-text token, retaining its source-page geometry."""
+
+    token_id: str
+    text: str
+    page_index: int
+    bbox: tuple[float, float, float, float]
+    block_id: int
+    line_id: int
+    source_reading: str = "TEXT"
+
+
+@dataclass(frozen=True)
+class SectionInput:
+    """The only digital collector input: confirmed regions and filtered tokens."""
+
+    document_sha256: str
+    section_no: str
+    fence_id: str
+    ordered_regions: tuple[PageRegion, ...]
+    tokens: tuple[LayoutToken, ...]
+    capability: DocumentCapability
+    reasons: tuple[str, ...] = ()
+    input_digest: str = ""
+
+
 class ResultStatus(str, Enum):
     FOUND = "FOUND"
     NOT_FOUND = "NOT_FOUND"
