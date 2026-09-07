@@ -16,8 +16,8 @@
 ## 외부 호출과 검증
 
 - Collector 모듈은 로컬 dataclass/정규식/기존 pure normalization만 사용하며 네트워크·DB·외부 API 호출 경로가 없다. synthetic `SectionInput`과 PDF fence fixtures가 이를 범위 내에서 검증한다.
-- `python -m pytest tests/rebaseline -q`: **111 passed** (pytest cache 쓰기 권한 경고 1건).
-- `python -m pytest tests/test_common_normalization.py -q`: **6 passed in 0.84s**.
+- `python -m pytest tests/rebaseline -q`: **111 passed in 7.26s**.
+- `python -m pytest tests/test_common_normalization.py -q`: **6 passed in 0.25s**.
 - `python -m compileall -q src/msds golden/v2`: **passed**.
 - 지정 import smoke test: **`PyMuPDF 1.27.2; imports OK`**.
 - `git diff --check`: **passed**. `pdf_io.py`의 source diff는 없고 (`git diff --exit-code -- src/msds/pdf_io.py`), Phase 2 보호 파일을 변경하지 않았다.
