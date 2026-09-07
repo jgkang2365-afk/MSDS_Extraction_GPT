@@ -49,6 +49,22 @@ def test_p2_01_korean_digital_headings_are_located_with_real_pdf_text(pdf_tmp):
     assert "INSIDE_THREE" in "".join(token.text for token in input3.tokens)
 
 
+@pytest.mark.parametrize("heading", ["SECTION 1 IDENTIFICATION", "1 IDENTIFICATION", "１．　ＩＤＥＮＴＩＦＩＣＡＴＩＯＮ"])
+def test_p2_01_heading_search_keys_accept_section_prefix_optional_separator_and_nfkc(pdf_tmp, heading):
+    fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
+    path = make_pdf(pdf_tmp / f"heading-{ord(heading[0])}.pdf", [[
+        (72, 72, heading), (72, 100, "ＦＵＬＬ　ＷＩＤＴＨ　ＶＡＬＵＥ　１２３％"),
+        (72, 130, "2 Hazards identification"),
+        (72, 160, "3 Composition/information on ingredients"), (72, 190, "INSIDE_THREE"),
+        (72, 220, "4 First-aid measures"),
+    ]], fontfile=fontfile)
+    one, three, input1, input3 = _inputs(path)
+    assert one.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "ＦＵＬＬＷＩＤＴＨＶＡＬＵＥ１２３％" in "".join(token.text for token in input1.tokens)
+    assert "INSIDE_THREE" in "".join(token.text for token in input3.tokens)
+
+
 def test_p2_03_section_three_has_no_page_count_cutoff(pdf_tmp):
     pages = [[(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_3")]]
     pages += [[(72, 100, f"CONTINUED_{number}")] for number in range(1, 5)]
@@ -70,6 +86,19 @@ def test_p2_03_middle_pages_are_fenced_body_regions_with_repeated_margins_exclud
     assert middle.excluded_rects
     text = "".join(token.text for token in input3.tokens)
     assert "BODY_1" in text and "REPEATED" not in text
+
+
+def test_p2_03_section_three_repeated_margin_table_headers_remain_in_section_input(pdf_tmp):
+    path = make_pdf(pdf_tmp / "repeated-section-three-table-header.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY")],
+        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "111-11-1 5%")],
+        [(72, 20, "CAS No."), (220, 20, "Concentration"), (72, 100, "222-22-2 10%"), (72, 180, "4. First-aid measures")],
+    ])
+    _, three, _, input3 = _inputs(path)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    text = "".join(token.text for token in input3.tokens)
+    assert text.count("CASNo.") == 2
+    assert text.count("Concentration") == 2
 
 
 def test_p2_03_multi_page_start_and_end_use_observed_body_and_exclude_repeated_sentinels(pdf_tmp):
@@ -175,8 +204,8 @@ def test_p2_06_header_only_boundary_image_is_not_omitted_from_capability(pdf_tmp
         [(72, 180, "4. First-aid measures")],
     ], images={image_page}, image_rects={image_page: (550, 100, 570, 120)})
     _, three = locate_sections(read_pdf_layout(path))
-    assert three.fence.status is FenceStatus.FENCE_PARTIAL
-    assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.reasons == ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
 
 
 @pytest.mark.parametrize("image_page", [0, 2])
@@ -185,7 +214,7 @@ def test_p2_06_boundary_image_outside_observed_text_x_bounds_is_classified(pdf_t
         [(72, 72, "3. Composition/information on ingredients"), (72, 110, "START BODY HAS SUFFICIENT SEPARATE TOKENS")],
         [(72, 110, "MIDDLE BODY HAS SUFFICIENT SEPARATE TOKENS")],
         [(72, 110, "END BODY HAS SUFFICIENT SEPARATE TOKENS"), (72, 180, "4. First-aid measures")],
-    ], images={image_page}, image_rects={image_page: (550, 135, 570, 155)})
+    ], images={image_page}, image_rects={image_page: (300, 135, 420, 155)})
     _, three = locate_sections(read_pdf_layout(path))
     assert three.fence.status is FenceStatus.FENCE_PARTIAL
     assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
@@ -222,18 +251,30 @@ def test_p2_06_same_region_text_and_image_is_blocked_but_title_only_image_is_cla
     assert image_three.reasons == ("SECTION_IMAGE_READING_REQUIRED",)
 
 
-def test_p2_06_small_margin_logo_with_sufficient_separate_digital_body_is_confirmed(pdf_tmp):
+def test_p2_06_small_right_margin_logo_with_normal_digital_body_is_confirmed(pdf_tmp):
     path = make_pdf(pdf_tmp / "decorative-logo.pdf", [[
         (72, 72, "3. Composition/information on ingredients"),
-        (0, 110, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"),
+        (72, 110, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"),
         (72, 180, "4. First-aid measures"),
-    ]], images={0}, image_rects={0: (0, 135, 20, 155)})
+    ]], images={0}, image_rects={0: (550, 135, 570, 155)})
     layout = read_pdf_layout(path)
     _, three = locate_sections(layout)
     assert three.fence.status is FenceStatus.FENCE_CONFIRMED
     assert three.description is not None
     assert three.reasons == ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
     assert "DIGITAL" in "".join(token.text for token in build_section_input(layout, three.description).tokens)
+
+
+@pytest.mark.parametrize("image_rect", [(300, 80, 330, 100), (500, 100, 590, 220), (72, 100, 92, 120)])
+def test_p2_06_non_decorative_central_large_or_body_overlapping_image_stays_partial(pdf_tmp, image_rect):
+    path = make_pdf(pdf_tmp / f"non-decorative-{image_rect[0]}.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"),
+        (72, 110, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"),
+        (72, 180, "4. First-aid measures"),
+    ]], images={0}, image_rects={0: image_rect})
+    _, three = locate_sections(read_pdf_layout(path))
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
 
 
 def test_p2_06_image_count_without_observable_placement_is_partial(pdf_tmp):

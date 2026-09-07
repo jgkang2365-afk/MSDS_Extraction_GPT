@@ -7,6 +7,7 @@ from hashlib import sha256
 import re
 from time import monotonic
 from typing import Callable
+from unicodedata import normalize
 
 from .models import DocumentCapability, Evidence, EvidenceSourceType, FenceStatus, PageRegion, SectionFence
 from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult
@@ -14,7 +15,7 @@ from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult
 
 StopCheck = Callable[[], bool] | None
 
-_NUMBERED_HEADING = re.compile(r"^\s*(?:section\s*)?(?P<number>[1-9]|1[0-6])\s*(?:[.)]|[-:])\s*(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
+_NUMBERED_HEADING = re.compile(r"^\s*(?:section\s+)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
 _HEADING = {
     "1": re.compile(r"(?:화학제품.*회사|chemical\s+product.*company|identification)", re.IGNORECASE),
     "2": re.compile(r"(?:유해성.*위험성|hazard(?:s)?\s+identification)", re.IGNORECASE),
@@ -40,6 +41,10 @@ class _Header:
     line: LayoutLine
 
 
+def _heading_search_key(text: str) -> str:
+    return re.sub(r"\s+", " ", normalize("NFKC", text)).strip()
+
+
 def _stop_reason(cancelled: StopCheck, deadline: float | None) -> str | None:
     if cancelled is not None and cancelled():
         return "CANCELLED"
@@ -50,7 +55,7 @@ def _stop_reason(cancelled: StopCheck, deadline: float | None) -> str | None:
 
 def _toc_line_ids(page: PdfPage) -> set[tuple[int, int]]:
     """Only a compact run of three numbered lines is a table-of-contents run."""
-    candidates = [line for line in page.lines if _NUMBERED_HEADING.match(line.text)]
+    candidates = [line for line in page.lines if _NUMBERED_HEADING.match(_heading_search_key(line.text))]
     ignored: set[tuple[int, int]] = set()
     run: list[LayoutLine] = []
     for line in candidates:
@@ -74,7 +79,7 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
         for line in page.lines:
             if (line.block_id, line.line_id) in toc_lines:
                 continue
-            match = _NUMBERED_HEADING.match(line.text)
+            match = _NUMBERED_HEADING.match(_heading_search_key(line.text))
             if not match:
                 continue
             number = match.group("number")
@@ -99,7 +104,9 @@ def _inside_token(token, rect: tuple[float, float, float, float]) -> bool:
     return rect[0] <= token.bbox[0] and token.bbox[1] >= rect[1] and token.bbox[2] <= rect[2] and token.bbox[3] <= rect[3]
 
 
-def _margin_repetitions(layout: PdfReadResult) -> dict[tuple[int, int, int], tuple[float, float, float, float]]:
+def _margin_repetitions(
+    layout: PdfReadResult, *, retain_section_three_table_headers: bool
+) -> dict[tuple[int, int, int], tuple[float, float, float, float]]:
     """Find exact repeated top/bottom lines, retaining their per-page boxes."""
     occurrences: dict[str, list[LayoutLine]] = {}
     for page in layout.pages:
@@ -112,7 +119,14 @@ def _margin_repetitions(layout: PdfReadResult) -> dict[tuple[int, int, int], tup
     repeated: dict[tuple[int, int, int], tuple[float, float, float, float]] = {}
     for lines in occurrences.values():
         if len({line.page_index for line in lines}) >= 2:
-            repeated.update({(line.page_index, line.block_id, line.line_id): line.bbox for line in lines})
+            for line in lines:
+                key = re.sub(r"\s+", " ", line.text).strip().casefold()
+                is_section_three_table_header = bool(
+                    re.search(r"\bcas\s*(?:no\.?|number)\b", key)
+                    or re.search(r"\bconcentration\b", key)
+                )
+                if not (retain_section_three_table_headers and is_section_three_table_header):
+                    repeated[(line.page_index, line.block_id, line.line_id)] = line.bbox
     return repeated
 
 
@@ -206,7 +220,7 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if bottom <= top:
             return None, "SAME_PAGE_BOUNDARY_ORDER_AMBIGUOUS"
         return (PageRegion(start.page_index, ((x0, top, x1, bottom),)),), None
-    repeated = _margin_repetitions(layout)
+    repeated = _margin_repetitions(layout, retain_section_three_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
         start_page, repeated, top=start.line.bbox[3], bottom=py1, failure_prefix="START_PAGE"
@@ -287,6 +301,28 @@ def _section_capability(
                 and image[2] <= max(token.bbox[2] for token in observed_tokens)
             )
 
+        def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
+            px0, py0, px1, py1 = page.rect
+            width, height = px1 - px0, py1 - py0
+            image_width, image_height = image[2] - image[0], image[3] - image[1]
+            right_margin = px1 - image[2]
+            return (
+                image_width > 0 and image_height > 0
+                and image_width <= width * 0.15 and image_height <= height * 0.15
+                and image_width * image_height <= width * height * 0.02
+                and right_margin <= width * 0.10
+            )
+        images_are_decorative = all(
+            decorative_logo(page, image)
+            and not any(
+                _intersects(image, token.bbox)
+                for token in page.tokens
+                if any(_inside_token(token, rect) for rect in regions_by_page[page.page_index].allowed_rects)
+            )
+            for page, image in images_in_region
+        )
+        if images_are_decorative and digital_text >= 12:
+            return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
         header_only_boundary_image = any(
             page.page_index in {start.page_index, end.page_index}
             and not has_text_in_region(page, regions_by_page[page.page_index])
@@ -300,29 +336,6 @@ def _section_capability(
             if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
                 return DocumentCapability.UNKNOWN, ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
             return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)
-
-        def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
-            px0, py0, px1, py1 = page.rect
-            width, height = px1 - px0, py1 - py0
-            image_width, image_height = image[2] - image[0], image[3] - image[1]
-            margin = min(image[0] - px0, px1 - image[2], image[1] - py0, py1 - image[3])
-            return (
-                image_width > 0 and image_height > 0
-                and image_width <= width * 0.15 and image_height <= height * 0.15
-                and image_width * image_height <= width * height * 0.02
-                and margin <= min(width, height) * 0.10
-            )
-        images_are_decorative = all(
-            decorative_logo(page, image)
-            and not any(
-                _intersects(image, token.bbox)
-                for token in page.tokens
-                if any(_inside_token(token, rect) for rect in regions_by_page[page.page_index].allowed_rects)
-            )
-            for page, image in images_in_region
-        )
-        if images_are_decorative and digital_text >= 12:
-            return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
         if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
             return DocumentCapability.UNKNOWN, ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
         return DocumentCapability.IMAGE_ONLY, ("SECTION_IMAGE_READING_REQUIRED",)

@@ -9,10 +9,11 @@
 ## Implemented behavior
 
 - Header confirmation uses section number, matching Korean/English heading text, layout, and document order. Table-of-contents runs, body references, `3.1` / `3.2`, CAS-like numbers, and repeated start headers cannot become a confirmed fence.
-- A missing ending header, conflicting repeated start, ambiguous same-page or multi-page reading order, image-reading requirement, cancellation, or deadline produces `FENCE_PARTIAL` with a reason. Start, continuation, and ending pages are never admitted as the whole `page.rect`: only an observed single-column body span is allowed, exact repeated top/bottom lines are excluded, and a line crossing a body boundary blocks the fence. Section 1 and Section 3 are located independently.
-- `PageRegion` and token coordinates are zero-based and unrotated in the CropBox coordinate space. The reader records every actual image placement. A central, unknown, image-only, or same-region text/image placement blocks an otherwise digital fence; a small margin-anchored image that does not overlap body text may be treated as a decorative logo only with sufficient digital body text. A confirmed `SectionInput` is always `TEXT` capability, and no `terminal_reason` layout can produce one.
+- A missing ending header, conflicting repeated start, ambiguous same-page or multi-page reading order, image-reading requirement, cancellation, or deadline produces `FENCE_PARTIAL` with a reason. Start, continuation, and ending pages are never admitted as the whole `page.rect`: only an observed single-column body span is allowed, exact repeated top/bottom lines are excluded except repeated Section 3 `CAS No.` and `Concentration` table headings, and a line crossing a body boundary blocks the fence. Section 1 and Section 3 are located independently.
+- Heading matching uses an NFKC-and-whitespace-normalized search key only; original layout text, tokens, and `SectionInput` values remain unchanged. It accepts `SECTION 1 IDENTIFICATION`, `1 IDENTIFICATION`, and full-width numeral/punctuation variants.
+- `PageRegion` and token coordinates are zero-based and unrotated in the CropBox coordinate space. The reader records every actual image placement. A small right-margin image that does not overlap body text is admitted before outside-body-x-span classification when sufficient digital body text is present, including on a header-only boundary page. Central, large, unknown, image-only, or same-region text/image placement blocks an otherwise digital fence. A confirmed `SectionInput` is always `TEXT` capability, and no `terminal_reason` layout can produce one.
 - The builder re-runs the locator for the exact layout and rejects a fence whose ID, section, SHA, capability/reasons, or regions do not equal locator output. It validates page bounds and rectangles, and blocks construction when a character bbox intersects but is not wholly inside an allowed/excluded boundary; no boundary-crossing token is silently dropped.
-- Synthetic real-PDF tests cover digital Korean/English headings, same-page and multi-page boundaries, repeated first/middle/last-page header/footer exclusion, multi-column rejection at each boundary, ToC/noise, four rotations with moved CropBox and adjacent sentinels, conservative decorative-logo admission plus image placement/unknown placement/same-region mixed input, bad SHA/section/rect/page/PARTIAL fence, boundary-crossing text, broken/encrypted PDFs, terminal-layout input blocking, cancellation, deadline, and no rendering.
+- Synthetic real-PDF tests cover digital Korean/English and NFKC heading keys, same-page and multi-page boundaries, repeated first/middle/last-page header/footer exclusion with retained Section 3 `CAS No.`/`Concentration` table headings, multi-column rejection at each boundary, ToC/noise, four rotations with moved CropBox and adjacent sentinels, right-margin and header-boundary decorative-logo admission plus central/large/body-overlap/unknown-placement/same-region image blocking, bad SHA/section/rect/page/PARTIAL fence, boundary-crossing text, broken/encrypted PDFs, terminal-layout input blocking, cancellation, deadline, and no rendering.
 
 ## Verification record
 
@@ -20,8 +21,8 @@ Interpreter: `C:\Users\USER\AppData\Local\Programs\Python\Python313\python.exe`;
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline -q` | 85 passed; pytest cache write emitted one WinError 5 warning, with no test impact. |
-| `python -m pytest tests/test_common_normalization.py -q` | 1 failed, 5 passed. Existing `tempfile.TemporaryDirectory()` cannot create/read/clean its trace file (`WinError 5` / `FileNotFoundError`). The same failure reproduced with `TEMP`/`TMP` directed to the worktree, confirming this is the Windows sandbox ACL behavior rather than a Phase 2 change. `normalization.py` was not modified. |
+| `python -m pytest tests/rebaseline -q` | 92 passed, 1 warning in 1.91s. The warning is a pytest cache `WinError 5` write denial and had no test impact. |
+| `python -m pytest tests/test_common_normalization.py -q` | 1 failed, 5 passed, 2 warnings in 0.67s. Existing `tempfile.TemporaryDirectory()` cannot create/read/clean its trace file (`WinError 5` / `FileNotFoundError`). `normalization.py` was not modified. |
 | `python -m compileall -q src/msds golden/v2` | passed |
 | import smoke for models/pdf_io/sections | passed |
 
@@ -29,4 +30,4 @@ Interpreter: `C:\Users\USER\AppData\Local\Programs\Python\Python313\python.exe`;
 
 ## Field material and limits
 
-No authorized field-sample PDF set was supplied or inspected for this phase; the evidence is synthetic-PDF-only. No original PDF or ACL was modified. An initial focused local run (14 passed, external calls 0) was used once to confirm the temporary-directory environmental failure, but is not final acceptance evidence. Final acceptance evidence is the sandbox run above. The sandbox's Windows temporary/cache ACL restrictions remain an environmental constraint; no ACL change was made.
+No authorized field-sample PDF set was supplied or inspected for this phase; the evidence is synthetic-PDF-only. No original PDF or ACL was modified. Final acceptance evidence is the run above. The sandbox's Windows temporary/cache ACL restrictions remain an environmental constraint; no ACL change was made.
