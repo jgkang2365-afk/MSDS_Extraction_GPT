@@ -27,6 +27,7 @@ _FIELD_LABEL = re.compile(r"^\s*[A-Za-z][A-Za-z /()_-]{1,40}(?::|\|)\s*\S")
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
 _EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
 _CONTENT = re.compile(
+    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*(?:[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*)(?:wt|vol)\s*%|"
     r"(?:[<>≤≥]\s*)?(?:\d+(?:[.,]\d+)?\s*(?:[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?\s*)?%|"
     r"\d+(?:[.,]\d+)?\s*(?:wt|vol)\s*%|Rem\.|Balance)",
     re.IGNORECASE,

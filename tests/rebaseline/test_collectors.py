@@ -69,6 +69,14 @@ def test_section3_multiple_cas_share_source_block_without_final_pairing():
     assert not hasattr(block, "components") and not hasattr(block, "pair_status")
 
 
+def test_section3_range_weight_and_volume_percentages_preserve_full_raw_candidates():
+    result = collect_section3_candidates(_input("3", (
+        ("111-11-1", "10-20 wt%"),
+        ("222-22-2", "10-20 vol%"),
+    )))
+    assert [block.content_candidates[0].raw for block in result.blocks] == ["10-20 wt%", "10-20 vol%"]
+
+
 def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_promoted():
     result = collect_section3_candidates(_input("3", (
         ("64-17-4", "< 1%"),
