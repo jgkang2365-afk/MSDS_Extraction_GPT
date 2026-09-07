@@ -202,6 +202,51 @@ def test_p2_03_wide_three_column_section_table_is_not_page_multicolumn(pdf_tmp):
     assert "Ingredient B" in "".join(token.text for token in continuation_input.tokens)
 
 
+def test_p2_03_structured_two_column_tables_are_not_page_columns(pdf_tmp):
+    section_one = make_pdf(pdf_tmp / "section-one-two-column-table.pdf", [[
+        (72, 72, "1. Chemical product and company identification"),
+        (72, 110, "Product name:"), (360, 110, "Example solvent"),
+        (76, 140, "Company:"), (356, 140, "Example Chemical"),
+        (72, 180, "2. Hazards identification"),
+    ]])
+    one, _, input1, _ = _inputs(section_one)
+    assert one.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "Example Chemical" in "".join(token.text for token in input1.tokens)
+
+    cas_rows = [
+        (72, 110, "111-11-1"), (360, 110, "5 %"),
+        (76, 140, "222-22-2"), (356, 140, "10%"),
+    ]
+    same_page = make_pdf(pdf_tmp / "section-three-two-column-table.pdf", [[
+        (72, 72, "3. Composition/information on ingredients"), *cas_rows,
+        (72, 180, "4. First-aid measures"),
+    ]])
+    _, three, _, input3 = _inputs(same_page)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "222-22-2" in "".join(token.text for token in input3.tokens)
+
+    continuation = make_pdf(pdf_tmp / "section-three-two-column-continuation.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        cas_rows,
+        [(72, 110, "LAST"), (72, 180, "4. First-aid measures")],
+    ])
+    _, continued_three, _, continued_input = _inputs(continuation)
+    assert continued_three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "222-22-2" in "".join(token.text for token in continued_input.tokens)
+
+    independent_columns = make_pdf(pdf_tmp / "independent-two-columns.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        [
+            (72, 100, "Left column narrative one"), (360, 100, "Right column narrative one"),
+            (72, 130, "Left column narrative two"), (360, 130, "Right column narrative two"),
+        ],
+        [(72, 110, "LAST"), (72, 180, "4. First-aid measures")],
+    ])
+    _, ambiguous = locate_sections(read_pdf_layout(independent_columns))
+    assert ambiguous.fence.status is FenceStatus.FENCE_PARTIAL
+    assert ambiguous.reasons == ("MIDDLE_PAGE_READING_ORDER_AMBIGUOUS",)
+
+
 def test_p2_03_multi_page_start_and_end_use_observed_body_and_exclude_repeated_sentinels(pdf_tmp):
     path = make_pdf(pdf_tmp / "boundary-margins.pdf", [
         [(72, 20, "REPEATED HEADER"), (72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST_BODY"), (72, 810, "REPEATED FOOTER")],

@@ -88,19 +88,54 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
     return headers, None
 
 
-def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage) -> bool:
-    """Recognize repeated, three-cell table rows without accepting page columns."""
-    rows = _horizontal_rows(lines)
-    signatures = [
-        tuple(round(line.bbox[0], 1) for line in sorted(row, key=lambda item: item.bbox[0]))
-        for row in rows
-        if len(row) >= 3
-    ]
-    return any(
-        signature[-1] - signature[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and signatures.count(signature) >= 2
-        for signature in signatures
+def _same_column_bands(first: list[LayoutLine], second: list[LayoutLine]) -> bool:
+    """Match table columns while tolerating small text-layout x0 differences."""
+    if len(first) != len(second):
+        return False
+    first_starts = sorted(line.bbox[0] for line in first)
+    second_starts = sorted(line.bbox[0] for line in second)
+    return all(abs(left - right) <= 12 for left, right in zip(first_starts, second_starts))
+
+
+def _section_one_label_value_row(row: list[LayoutLine]) -> bool:
+    """Keep two-cell Section 1 rows tied to recognizable field labels."""
+    label = _heading_search_key(sorted(row, key=lambda item: item.bbox[0])[0].text).casefold()
+    return label.endswith(":") or bool(re.search(
+        r"(?:product|company|supplier|manufacturer|address|telephone|phone|emergency|email|"
+        r"recommended\s+use|identifier|제품|회사|제조|공급|주소|전화|긴급|용도)",
+        label,
+    ))
+
+
+def _section_three_cas_concentration_row(row: list[LayoutLine]) -> bool:
+    """Recognize the compact CAS | concentration rows used by Section 3 tables."""
+    left, right = (line.text for line in sorted(row, key=lambda item: item.bbox[0]))
+    return bool(
+        re.search(r"\b\d{2,7}-\d{2}-\d\b", left)
+        and re.search(r"\b\d+(?:\.\d+)?\s*%", right)
     )
+
+
+def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage, section_no: str) -> bool:
+    """Recognize repeated structured table rows without admitting page columns."""
+    rows = [
+        sorted(row, key=lambda item: item.bbox[0])
+        for row in _horizontal_rows(lines)
+        if len(row) >= 2
+    ]
+    for row in rows:
+        aligned_rows = [candidate for candidate in rows if _same_column_bands(row, candidate)]
+        if len(aligned_rows) < 2:
+            continue
+        if row[-1].bbox[0] - row[0].bbox[0] <= (page.rect[2] - page.rect[0]) * 0.35:
+            continue
+        if len(row) >= 3:
+            return True
+        if section_no == "1" and all(_section_one_label_value_row(candidate) for candidate in aligned_rows):
+            return True
+        if section_no == "3" and all(_section_three_cas_concentration_row(candidate) for candidate in aligned_rows):
+            return True
+    return False
 
 
 def _horizontal_rows(lines: list[LayoutLine]) -> list[list[LayoutLine]]:
@@ -147,7 +182,7 @@ def _has_aligned_body_rows(header_rows: list[list[LayoutLine]], layout: PdfReadR
 
 
 def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
-    """Reject independent page columns, while allowing aligned Section 3 tables."""
+    """Reject independent page columns, while allowing structured Section 1/3 tables."""
     if start.page_index != end.page_index:
         return False
     lines = [line for line in page.lines if start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]]
@@ -155,7 +190,7 @@ def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
     return (
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and not (start.section_no == "3" and _aligned_wide_table(lines, page))
+        and not _aligned_wide_table(lines, page, start.section_no)
     )
 
 
@@ -218,6 +253,8 @@ def _safe_middle_region(
     page: PdfPage,
     repeated: dict[tuple[int, int, int], tuple[float, float, float, float]],
     retained_headers: dict[tuple[int, int, int], tuple[float, float, float, float]],
+    *,
+    section_no: str,
 ) -> tuple[PageRegion | None, str | None]:
     """Fence one continuation page only when its readable body is unambiguous."""
     excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
@@ -241,7 +278,7 @@ def _safe_middle_region(
     if (
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and not _aligned_wide_table(body_lines, page)
+        and not _aligned_wide_table(body_lines, page, section_no)
     ):
         return None, "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS"
     x0 = min(line.bbox[0] for line in body_lines)
@@ -261,6 +298,7 @@ def _safe_boundary_region(
     top: float,
     bottom: float,
     failure_prefix: str,
+    section_no: str,
 ) -> tuple[PageRegion | None, str | None]:
     """Fence a start/end page to its observed, single-column body only."""
     excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
@@ -301,7 +339,7 @@ def _safe_boundary_region(
     if (
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and not _aligned_wide_table(body_lines, page)
+        and not _aligned_wide_table(body_lines, page, section_no)
     ):
         return None, f"{failure_prefix}_READING_ORDER_AMBIGUOUS"
     x0 = min(line.bbox[0] for line in body_lines)
@@ -329,20 +367,22 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     repeated, retained_headers = _margin_repetitions(layout, retain_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
-        start_page, repeated, retained_headers, top=start.line.bbox[3], bottom=py1, failure_prefix="START_PAGE"
+        start_page, repeated, retained_headers, top=start.line.bbox[3], bottom=py1,
+        failure_prefix="START_PAGE", section_no=start.section_no,
     )
     if failure:
         return None, failure
     regions: list[PageRegion] = [start_region] if start_region is not None else []
     for page_index in range(start.page_index + 1, end.page_index):
         page = pages[page_index]
-        region, failure = _safe_middle_region(page, repeated, retained_headers)
+        region, failure = _safe_middle_region(page, repeated, retained_headers, section_no=start.section_no)
         if failure:
             return None, failure
         regions.append(region)
     _, ey0, _, _ = end_page.rect
     end_region, failure = _safe_boundary_region(
-        end_page, repeated, retained_headers, top=ey0, bottom=end.line.bbox[1], failure_prefix="END_PAGE"
+        end_page, repeated, retained_headers, top=ey0, bottom=end.line.bbox[1],
+        failure_prefix="END_PAGE", section_no=start.section_no,
     )
     if failure:
         return None, failure
