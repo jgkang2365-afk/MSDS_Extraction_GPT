@@ -35,7 +35,7 @@
 | --- | --- |
 | `python -m pytest tests/rebaseline/test_collectors.py tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 71 passed (CAS malformed-token collector → resolver → validator regression 포함) |
 | `python -m pytest tests/rebaseline -q` | 255 passed |
-| `python -m pytest tests/test_common_normalization.py -q` | 6 passed (managed sandbox의 TEMP trace 쓰기 차단 후, 승인된 단일 sandbox 밖 재실행) |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed (최종 managed worker 실행) |
 | `python -m compileall -q src/msds golden/v2` | PASS |
 | import smoke (`models normalization pdf_io sections collectors ocr resolver validation`) | PASS |
 | `git diff --check` | PASS |
@@ -47,8 +47,8 @@
 
 | Role | Model / effort | Runtime / orchestration |
 | --- | --- | --- |
-| Phase 5 implementation | gpt-5.6-terra / high | managed Codex terminal `term_781f2734-6bfc-4b91-ba86-afbe961fd2e6`에서 실제 TUI runtime 관측; serial 수행. |
-| Fresh Verifier | Coordinator-managed | finding 1 / reopen 1. 재검수 결과는 Coordinator가 후속 반영한다. |
+| Phase 5 implementation | gpt-5.6-terra / high | serial: 초기 구현 terminal `term_781f2734-6bfc-4b91-ba86-afbe961fd2e6`, P1 재개 terminal `term_4877099e-55df-497b-9d2d-25dd3d18611b`에서 실제 TUI runtime 관측. |
+| Fresh Verifier | gpt-5.6-sol / high | READ_ONLY terminal `term_ff0bdc73-8ed7-4960-9d0c-0d07f9e90bdb`; finding 1 / reopen 1. 재검수 결과는 Coordinator가 후속 반영한다. |
 
 외부 네트워크, API, 실제 OCR/AI, DB, Golden/legacy 또는 production route는 이
 Phase에서 실행하지 않았다.
