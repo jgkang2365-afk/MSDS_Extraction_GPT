@@ -86,6 +86,9 @@ class SectionInput:
     reasons: tuple[str, ...] = ()
     input_digest: str = ""
     isolated_images: tuple[IsolatedImage, ...] = ()
+    # This is deliberately explicit: a hand-built input is not a locator- or
+    # OCR-confirmed boundary merely because its other fields look plausible.
+    fence_status: FenceStatus | None = None
 
 
 class CasCandidateValidity(str, Enum):
@@ -278,6 +281,8 @@ class ContentResult:
     content_raw: str
     content_normalized: str
     content_status: ContentStatus
+    unit_context_raw: str | None = None
+    unit_context_evidence: tuple[Evidence, ...] = ()
 
     @property
     def raw(self) -> str:

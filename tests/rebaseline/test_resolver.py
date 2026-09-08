@@ -4,8 +4,8 @@ import pytest
 
 from src.msds.models import (
     CasCandidate, CasCandidateValidity, ContentCandidate, ContentFieldState,
-    ContentStatus, DocumentCapability, Evidence, EvidenceSourceType,
-    PairStatus, ProductCandidate, ProductCollection, ResultStatus,
+    ContentStatus, DocumentCapability, Evidence, EvidenceSourceType, FenceStatus,
+    LayoutToken, PageRegion, PairStatus, ProductCandidate, ProductCollection, ResultStatus, SectionInput,
     Section3BlockCandidate, Section3Collection,
 )
 from src.msds.resolver import resolve, resolve_candidates, resolve_components, resolve_product
@@ -115,7 +115,8 @@ def test_p5_r_16_content_range_operator_balance_and_over_100_are_raw_preserved()
 
 def test_p5_r_17_header_unit_context_stays_separate_from_raw():
     pair = resolve_components(Section3Collection((_block(0, (_cas("64-17-5", 0),), (_content("10", 1, "%"),)),)))[0]
-    assert (pair.content.content_raw, pair.content.content_normalized) == ("10", "10")
+    assert (pair.content.content_raw, pair.content.content_normalized, pair.content.unit_context_raw) == ("10", "10", "%")
+    assert pair.content.unit_context_evidence[0].raw_fragment == "%"
     assert any(item.raw_fragment == "%" for item in pair.evidence)
 
 
@@ -127,3 +128,37 @@ def test_p5_r_18_no_proximity_or_source_order_pairing_for_multiple_contents():
 def test_p5_r_19_resolution_has_no_filename_or_other_section_fallback_channel():
     result = resolve_candidates(ProductCollection(), Section3Collection())
     assert (result.product.status, result.components) == (ResultStatus.NOT_FOUND, ())
+
+
+def test_p5_fix_04_header_context_is_final_typed_data_without_raw_unit_injection():
+    pair = resolve_components(Section3Collection((_block(0, (_cas("64-17-5", 0),), (_content("10", 1, "%"),)),)))[0]
+    assert (pair.content.content_raw, pair.content.content_normalized, pair.content.unit_context_raw) == ("10", "10", "%")
+    assert pair.content.unit_context_evidence == (_evidence("%", 1),)
+
+
+@pytest.mark.parametrize("raw", ("10%", "50 ppm", "10 wt%", "10 vol%"))
+def test_p5_fix_05_direct_units_do_not_create_header_context(raw):
+    pair = resolve_components(Section3Collection((_block(0, (_cas("64-17-5", 0),), (_content(raw, 1),)),)))[0]
+    assert (pair.content.content_raw, pair.content.unit_context_raw, pair.content.unit_context_evidence) == (raw, None, ())
+
+
+def test_p5_fix_07_one_cas_multiple_contents_has_no_synthetic_joined_final_raw():
+    pair = resolve_components(Section3Collection((_block(0, (_cas("64-17-5", 0),), (_content("10%", 1), _content("20%", 2))),)))[0]
+    assert (pair.content.content_raw, pair.content.content_normalized, pair.status) == ("", "", PairStatus.PAIR_AMBIGUOUS)
+
+
+def test_p5_fix_08_two_cas_multiple_contents_are_not_source_order_paired():
+    pairs = resolve_components(Section3Collection((_block(
+        0, (_cas("64-17-5", 0), _cas("67-64-1", 1)), (_content("10%", 2), _content("20%", 3)),
+    ),)))
+    assert [(pair.cas.cas_raw, pair.content.content_raw, pair.status) for pair in pairs] == [
+        ("64-17-5", "", PairStatus.PAIR_AMBIGUOUS),
+        ("67-64-1", "", PairStatus.PAIR_AMBIGUOUS),
+    ]
+
+
+def test_p5_fix_11_resolver_convenience_route_requires_explicit_confirmed_fence():
+    input_one = SectionInput("a" * 64, "1", "fence", (PageRegion(0, ((0, 0, 1, 1),)),), (), DocumentCapability.TEXT)
+    input_three = SectionInput("a" * 64, "3", "fence", (PageRegion(0, ((0, 0, 1, 1),)),), (), DocumentCapability.TEXT)
+    with pytest.raises(ValueError, match="REQUIRES_CONFIRMED_FENCE"):
+        resolve(input_one, input_three)

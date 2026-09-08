@@ -39,7 +39,10 @@ def test_machine_contract_keeps_evidence_fences_and_duplicate_component_rows():
 
 def test_explicit_contract_field_names_are_real_dataclass_fields():
     assert [field.name for field in fields(CASResult)] == ["cas_raw", "cas_normalized", "cas_status", "evidence"]
-    assert [field.name for field in fields(ContentResult)] == ["content_raw", "content_normalized", "content_status"]
+    assert [field.name for field in fields(ContentResult)] == [
+        "content_raw", "content_normalized", "content_status",
+        "unit_context_raw", "unit_context_evidence",
+    ]
     assert [field.name for field in fields(SectionFence)] == ["status", "section", "start_page", "end_page", "evidence"]
 
 

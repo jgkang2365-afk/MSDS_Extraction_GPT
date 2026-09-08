@@ -6,8 +6,9 @@ import pytest
 
 from src.msds.models import (
     CasCandidate, CasCandidateValidity, ContentCandidate, ContentFieldState,
-    Evidence, EvidenceSourceType, FindingCode, FindingSeverity, ProductCandidate,
-    ProductCollection, QualityStatus, Section3BlockCandidate, Section3Collection,
+    ContentStatus, Evidence, EvidenceSourceType, FindingCode, FindingSeverity,
+    PairStatus, ProductCandidate, ProductCollection, QualityStatus,
+    Section3BlockCandidate, Section3Collection,
 )
 from src.msds.resolver import resolve_candidates
 from src.msds.validation import validate, validate_resolved
@@ -96,3 +97,22 @@ def test_p5_v_12_result_and_report_are_immutable_and_validate_accepts_final_valu
     with pytest.raises(FrozenInstanceError):
         report.status = QualityStatus.PASS  # type: ignore[misc]
     assert report.status is QualityStatus.PASS
+
+
+def test_p5_fix_01_ocr_missing_content_is_pair_ambiguous_and_review_required():
+    result = _resolved(section3=Section3Collection((_block(_cas("64-17-5"), state=ContentFieldState.UNKNOWN),)))
+    report = validate_resolved(result)
+    assert (result.components[0].content.content_status, result.components[0].status) == (
+        ContentStatus.PAIR_AMBIGUOUS,
+        PairStatus.PAIR_AMBIGUOUS,
+    )
+    assert report.findings[0].code is FindingCode.PAIR_AMBIGUOUS
+
+
+def test_p5_fix_09_ambiguous_findings_preserve_all_source_candidates_and_evidence():
+    first, second = _content("10%"), _content("20%")
+    result = _resolved(section3=Section3Collection((_block(_cas("64-17-5"), (first, second)),)))
+    finding = validate_resolved(result).findings[0]
+    assert (finding.code, finding.raw_candidates, tuple(item.raw_fragment for item in finding.evidence)) == (
+        FindingCode.PAIR_AMBIGUOUS, ("10%", "20%"), ("64-17-5", "10%", "20%"),
+    )

@@ -13,6 +13,7 @@ from .models import (
     DocumentCapability,
     Evidence,
     EvidenceSourceType,
+    FenceStatus,
     LayoutToken,
     ProductCandidate,
     ProductCollection,
@@ -88,6 +89,8 @@ def _require_confirmed_text_input(section_input: SectionInput, section_no: str) 
         raise TypeError("COLLECTOR_REQUIRES_SECTION_INPUT")
     if section_input.capability not in {DocumentCapability.TEXT, DocumentCapability.OCR}:
         raise ValueError("COLLECTOR_REQUIRES_TEXT_OR_OCR_CAPABILITY")
+    if section_input.fence_status is not FenceStatus.FENCE_CONFIRMED:
+        raise ValueError("COLLECTOR_REQUIRES_CONFIRMED_FENCE")
     if section_input.section_no != section_no:
         raise ValueError(f"COLLECTOR_REQUIRES_SECTION_{section_no}")
 
@@ -289,6 +292,10 @@ def _content_field_observation(section_input: SectionInput, row: tuple[_Line, ..
     if headers and _same_table_row(row, headers):
         # The header evidence establishes that this otherwise textless cell is
         # a content field, rather than merely a missing candidate.
+        # OCR absence is not a visual observation of a blank cell.  It stays
+        # unresolved even within a confirmed, unit-bearing table fence.
+        if section_input.capability is DocumentCapability.OCR:
+            return ContentFieldState.UNKNOWN, None, tuple(header.evidence for header in headers)
         return ContentFieldState.EXPLICIT_BLANK, None, tuple(header.evidence for header in headers)
     unknown = next(((line, text) for line, text in residuals if text), None)
     if unknown is not None:

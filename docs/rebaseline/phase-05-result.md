@@ -52,3 +52,46 @@
 
 외부 네트워크, API, 실제 OCR/AI, DB, Golden/legacy 또는 production route는 이
 Phase에서 실행하지 않았다.
+
+## Phase 5 v1.1 — P1/P2 boundary hardening (Implementation Lead handoff)
+
+### Implemented scope
+
+- **P1-1 OCR missing content:** a confirmed OCR `SectionInput` with a
+  unit-bearing header and CAS but no content candidate is `UNKNOWN`, never
+  `EXPLICIT_BLANK`; resolution is `PAIR_AMBIGUOUS` and validation emits
+  `FindingCode.PAIR_AMBIGUOUS`. TEXT header-derived explicit blanks still
+  resolve as `NOT_STATED`, while explicit unreadable OCR observations remain
+  `NOT_READABLE` / `CONTENT_NOT_READABLE`. No blank detector, Vision, ODL, or
+  OCR routing change was added.
+- **P1-2 typed unit context:** `ContentResult` now carries backward-compatible
+  `unit_context_raw` and `unit_context_evidence`. Header-derived bare values
+  preserve raw/normalized values without unit injection; direct `%`, `ppm`,
+  `wt%`, and `vol%` values have no header context.
+- **P1-3 ambiguous mappings:** multiple content candidates produce empty final
+  raw/normalized values with `PAIR_AMBIGUOUS`; candidate raws remain lossless
+  on `Section3Collection` and are retained in finding raw candidates/evidence.
+  No source-order one-to-one pairing was introduced for multiple CAS/content.
+- **P2 confirmed fence propagation:** `SectionInput.fence_status` defaults to
+  `None`, so hand-built inputs are rejected unless explicitly
+  `FENCE_CONFIRMED`. The Phase 2 TEXT and Phase 4 OCR builders propagate the
+  confirmed status; collectors and resolver convenience routing reject
+  partial, not-found, and unconfirmed inputs.
+
+### Implementation verification
+
+| Command | Result |
+| --- | --- |
+| `python -m pytest tests/rebaseline/test_collectors.py tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 86 passed (existing pytest cache permission warning only) |
+| `python -m pytest tests/rebaseline/test_scan_ocr.py -q` | 88 passed (same warning) |
+| `python -m pytest tests/rebaseline -q` | 273 passed (same warning) |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed |
+| `python -m compileall -q src/msds golden/v2` | PASS |
+| import smoke (`models normalization pdf_io sections collectors ocr resolver validation`) | PASS |
+
+External extraction/API/AI/DB calls: **0**. Real OCR was not run; all OCR
+tests use the injected local fake engine. Protected locator/routing algorithm,
+legacy, Golden, ODL, AI/KOSHA/MES, GUI, and main remain unchanged.
+
+**v1.1 final independent Fresh Verifier is pending Coordinator.** This
+Implementation Lead record does not claim that final independent PASS.

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from .collectors import collect_product_candidates, collect_section3_candidates
 from .models import (
     CASResult, CasCandidate, CasCandidateValidity, ComponentPair,
-    ContentFieldState, ContentResult, ContentStatus, Evidence, PairStatus,
+    ContentFieldState, ContentResult, ContentStatus, Evidence, FenceStatus, PairStatus,
     ProductCandidate, ProductCollection, ProductResult, ResultStatus,
     Section3BlockCandidate, Section3Collection, SectionInput,
 )
@@ -81,7 +81,13 @@ def _resolve_block(block: Section3BlockCandidate) -> tuple[ComponentPair, ...]:
     """Use only explicit source block relationships; never proximity/order."""
     if len(block.content_candidates) == 1:
         candidate = block.content_candidates[0]
-        content = ContentResult(candidate.raw, candidate.normalized, ContentStatus.FOUND)
+        content = ContentResult(
+            candidate.raw,
+            candidate.normalized,
+            ContentStatus.FOUND,
+            candidate.unit_context_raw,
+            candidate.unit_context_evidence,
+        )
         evidence = candidate.evidence + candidate.unit_context_evidence
         return tuple(_pair(block, cas, content, PairStatus.PAIRED, evidence) for cas in block.cas_candidates)
     if not block.content_candidates:
@@ -91,8 +97,10 @@ def _resolve_block(block: Section3BlockCandidate) -> tuple[ComponentPair, ...]:
             ContentStatus.NOT_READABLE: PairStatus.NOT_READABLE,
         }.get(content.content_status, PairStatus.PAIR_AMBIGUOUS)
         return tuple(_pair(block, cas, content, pair_status) for cas in block.cas_candidates)
-    raw = tuple(candidate.raw for candidate in block.content_candidates)
-    content = ContentResult("\n".join(raw), "", ContentStatus.PAIR_AMBIGUOUS)
+    # Candidate facts remain on Section3Collection and all their evidence is
+    # surfaced on the pair/finding.  A final content value must never invent a
+    # synthetic joined concentration when no explicit mapping exists.
+    content = ContentResult("", "", ContentStatus.PAIR_AMBIGUOUS)
     evidence = tuple(item for candidate in block.content_candidates for item in candidate.evidence + candidate.unit_context_evidence)
     return tuple(_pair(block, cas, content, PairStatus.PAIR_AMBIGUOUS, evidence) for cas in block.cas_candidates)
 
@@ -117,5 +125,10 @@ def resolve(section1_input: SectionInput, section3_input: SectionInput) -> Resol
     """Convenience route that accepts only collector-validated SectionInput values."""
     if not isinstance(section1_input, SectionInput) or not isinstance(section3_input, SectionInput):
         raise TypeError("RESOLVER_REQUIRES_SECTION_INPUT")
-    # Collectors reject non-confirmed/wrong-section/non-text-or-OCR inputs.
+    if (
+        section1_input.fence_status is not FenceStatus.FENCE_CONFIRMED
+        or section3_input.fence_status is not FenceStatus.FENCE_CONFIRMED
+    ):
+        raise ValueError("RESOLVER_REQUIRES_CONFIRMED_FENCE")
+    # Collectors also reject wrong-section and non-TEXT/OCR inputs.
     return resolve_candidates(collect_product_candidates(section1_input), collect_section3_candidates(section3_input))
