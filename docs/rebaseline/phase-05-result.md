@@ -48,7 +48,7 @@
 | Role | Model / effort | Runtime / orchestration |
 | --- | --- | --- |
 | Phase 5 implementation | gpt-5.6-terra / high | serial: 초기 구현 terminal `term_781f2734-6bfc-4b91-ba86-afbe961fd2e6`, P1 재개 terminal `term_4877099e-55df-497b-9d2d-25dd3d18611b`에서 실제 TUI runtime 관측. |
-| Fresh Verifier | gpt-5.6-sol / high | READ_ONLY terminal `term_ff0bdc73-8ed7-4960-9d0c-0d07f9e90bdb`; finding 1 / reopen 1. 재검수 결과는 Coordinator가 후속 반영한다. |
+| Fresh Verifier | gpt-5.6-sol / high | READ_ONLY: initial terminal `term_ff0bdc73-8ed7-4960-9d0c-0d07f9e90bdb`가 finding 1 / reopen 1을 반환했고, final terminal `term_08cb5f34-6f8f-426e-8e8e-3228a03f97f8`가 focused 71, rebaseline 255, common normalization 6 및 adversarial checks 후 PASS를 반환했다. |
 
 외부 네트워크, API, 실제 OCR/AI, DB, Golden/legacy 또는 production route는 이
 Phase에서 실행하지 않았다.
