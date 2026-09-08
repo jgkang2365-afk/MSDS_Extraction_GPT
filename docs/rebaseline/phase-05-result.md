@@ -93,5 +93,52 @@ External extraction/API/AI/DB calls: **0**. Real OCR was not run; all OCR
 tests use the injected local fake engine. Protected locator/routing algorithm,
 legacy, Golden, ODL, AI/KOSHA/MES, GUI, and main remain unchanged.
 
-**v1.1 final independent Fresh Verifier is pending Coordinator.** This
-Implementation Lead record does not claim that final independent PASS.
+이 Implementation Lead handoff 시점에는 v1.1 final independent Fresh
+Verifier가 Coordinator 대기 상태였다. 아래는 그 후 코드 대상 HEAD에 대해
+수행된 최종 독립 검수 기록이다.
+
+## Phase 5 v1.1 — Final independent Fresh Verifier record
+
+### Review target and verdict
+
+- Code-review target HEAD: `b7fed70abb481985766cc30d3ab24c71c3e9cb50`.
+- Fresh verdict: **PASS**; findings: **0**.
+- 이 후의 documentation-only commit은 PASS 코드 검토 이후의 기록 마감이며,
+  코드 대상은 계속 위 `b7fed70…`이다.
+
+### Independent execution evidence
+
+| Role | Model / effort | Execution / evidence |
+| --- | --- | --- |
+| Implementation Lead | gpt-5.6-terra / high | 이 Lead terminal의 실제 runtime을 Coordinator가 관측했다. |
+| Fresh Verifier | gpt-5.6-sol / high | fresh context, implementation과 분리된 READ_ONLY terminal `term_607b69bc-c976-492c-8b57-9a4e9869e78c`; direct serial terminal lifecycle. |
+| Coordinator / Orchestrator | UNVERIFIABLE | model/effort 관측 근거 없음. |
+
+Supervised Orca DAG/dispatch는 사용하지 않았다. Fresh Verifier는 구현에
+참여하지 않은 독립 context에서 READ_ONLY 검수를 수행했다.
+
+### Final verification evidence
+
+| Check | Result |
+| --- | --- |
+| independent focused 5 files | 191 passed |
+| `python -m pytest tests/rebaseline -q` | 273 passed |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed |
+| adversarial contract probe | PASS |
+| `git diff --check` | PASS |
+| protected-scope diff | 0 changed protected paths |
+| worktree | clean |
+
+`common_normalization` 첫 실행은 managed-sandbox temporary-directory trace
+permission issue가 있었고 assertion failure는 아니었다. 이후 normal temp
+context에서 재확인하여 **6 passed**를 얻었다.
+
+The independent probe verified all of the following: OCR absence follows
+`UNKNOWN → PAIR_AMBIGUOUS → REVIEW_REQUIRED`; TEXT explicit blanks remain
+`NOT_STATED`; unreadable observations remain `NOT_READABLE`; header-unit raw
+preservation has no unit injection; multiple candidates create no synthetic
+joined raw; partial/not-found/`None` fences are rejected; invalid and duplicate
+CAS facts are retained; validator immutability holds; and no external-truth
+fallback exists.
+
+Actual external extraction/API/AI/DB/real-OCR calls: **0**.
