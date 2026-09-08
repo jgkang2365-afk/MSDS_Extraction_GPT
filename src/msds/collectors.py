@@ -9,6 +9,7 @@ from .models import (
     CasCandidate,
     CasCandidateValidity,
     ContentCandidate,
+    ContentFieldState,
     DocumentCapability,
     Evidence,
     EvidenceSourceType,
@@ -33,6 +34,7 @@ _DIRECT_CONTENT = re.compile(
 )
 _BARE_CONTENT = re.compile(r"^(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*$")
 _UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*%|vol\s*%|%|ppm)(?![A-Za-z])", re.IGNORECASE)
+_UNREADABLE_CONTENT = re.compile(r"^\s*\[?(?:unreadable|illegible|not\s+readable|판독\s*불가|식별\s*불가)\]?\s*$", re.IGNORECASE)
 _HEADER_X_TOLERANCE = 12.0
 
 
@@ -255,6 +257,26 @@ def _same_ec_table_row(row: tuple[_Line, ...], headers: list[_EcHeader]) -> bool
     )
 
 
+def _content_field_observation(section_input: SectionInput, row: tuple[_Line, ...], has_content: bool, headers: list[_UnitHeader]) -> tuple[ContentFieldState, str | None, tuple[Evidence, ...]]:
+    """Retain explicit blank, unreadable, unknown, and absent field states."""
+    if has_content:
+        return ContentFieldState.UNKNOWN, None, ()
+    residuals = tuple((line, _CAS.sub("", line.text).strip()) for line in row)
+    unreadable = next(((line, text) for line, text in residuals if _UNREADABLE_CONTENT.fullmatch(text)), None)
+    if unreadable is not None:
+        line, raw = unreadable
+        return ContentFieldState.UNREADABLE, raw, (_evidence(section_input, line),)
+    if headers and _same_table_row(row, headers):
+        # The header evidence establishes that this otherwise textless cell is
+        # a content field, rather than merely a missing candidate.
+        return ContentFieldState.EXPLICIT_BLANK, None, tuple(header.evidence for header in headers)
+    unknown = next(((line, text) for line, text in residuals if text), None)
+    if unknown is not None:
+        line, raw = unknown
+        return ContentFieldState.UNKNOWN, raw, (_evidence(section_input, line),)
+    return ContentFieldState.ABSENT, None, ()
+
+
 def collect_section3_candidates(section_input: SectionInput) -> Section3Collection:
     """Collect ordered Section 3 source rows without creating ComponentPair values."""
     _require_confirmed_text_input(section_input, "3")
@@ -293,9 +315,17 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
             continue
         row_evidence = tuple(_evidence(section_input, line) for line in row)
         first = row[0]
+        # A bare aligned table cell is source-proven blank only when an
+        # explicit content header established that cell's meaning.  In every
+        # other case no candidate is simply absent; resolver must not turn it
+        # into NOT_STATED.
+        field_state, field_raw, field_evidence = _content_field_observation(
+            section_input, row, bool(content_candidates), headers,
+        )
         blocks.append(Section3BlockCandidate(
             f"section3-page-{first.page}-block-{first.block}",
             f"section3-row-{row_number}", len(blocks), row_evidence,
-            tuple(cas_candidates), tuple(content_candidates),
+            tuple(cas_candidates), tuple(content_candidates), field_state,
+            field_raw, field_evidence,
         ))
     return Section3Collection(tuple(blocks))
