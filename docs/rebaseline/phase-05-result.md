@@ -142,3 +142,27 @@ CAS facts are retained; validator immutability holds; and no external-truth
 fallback exists.
 
 Actual external extraction/API/AI/DB/real-OCR calls: **0**.
+
+## Phase 5 v1.1 — PRD/TRD documentation synchronization (2026-09-09)
+
+### Canonical document provenance
+
+| Document | Before → after | Canonical repository path | Provided ZIP source SHA-256 | Change required |
+| --- | --- | --- | --- | --- |
+| PRD | v1.1 → v1.1 | `docs/rebaseline/MSDS_Extraction_PRD_v1.1.md` | `b0a26d180c62233af0bbf13d72d5dfbd94f87c71f2c4062e9d16a21ca79987fe` | NO — product-policy difference 없음; source-derived 문서의 Markdown hard-break 공백만 정리 |
+| TRD | v1.1 → v1.1 | `docs/rebaseline/MSDS_Extraction_TRD_v1.1.md` | `2d3ae302f55af8828519f00303a37933b5c734882a3e4553aa671adac3339e03` | YES — source v1.1에 2026-09-09 Phase 5 기술 동기화만 최소 추가 |
+
+사용자 제공 ZIP source는 `C:\Users\USER\Downloads\MSDS_Rebaseline_Phase2_v1.0_Package.zip`의
+동명 Markdown assets다. 두 문서는 원문 의미를 유지한 채 repository diff hygiene를
+위해 Markdown hard-break 공백만 정리했으며, TRD는 그 source를 기준으로 §21.4의
+구현 사실만 보완했다. TRD 버전은 v1.1로 유지했고 v1.2를 만들지 않았다.
+
+### Technical-sync record
+
+- Code-review target: `b7fed70abb481985766cc30d3ab24c71c3e9cb50`.
+- TRD sync는 collector/evidence-only 경계, Resolver 단일 최종 선택 권한,
+  Validator의 immutable PASS/REVIEW 판정, confirmed fence 전파, content
+  field/result 상태, unit context, ambiguous content, invalid/duplicate CAS,
+  zero Section 3 및 exact finding/quality vocabulary를 현재 코드에 맞춰 기록한다.
+- 이 documentation-only stage의 code/tests/Golden/Legacy diff는 **0**이다.
+- 독립 최종 문서 일관성 검토의 실제 runtime evidence와 최종 판정은 PR #8 closeout에 기록한다.
