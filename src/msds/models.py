@@ -53,7 +53,7 @@ class PageRegion:
 
 @dataclass(frozen=True)
 class LayoutToken:
-    """One reusable digital-text token, retaining its source-page geometry."""
+    """One isolated TEXT/OCR token, retaining its source-page geometry."""
 
     token_id: str
     text: str
@@ -65,8 +65,18 @@ class LayoutToken:
 
 
 @dataclass(frozen=True)
+class IsolatedImage:
+    """A cropped fence image only; no page/document handle is retained."""
+
+    page_index: int
+    bbox: tuple[float, float, float, float]
+    png_bytes: bytes
+    sha256: str
+
+
+@dataclass(frozen=True)
 class SectionInput:
-    """The only digital collector input: confirmed regions and filtered tokens."""
+    """The only collector input: confirmed regions and physically filtered data."""
 
     document_sha256: str
     section_no: str
@@ -76,6 +86,7 @@ class SectionInput:
     capability: DocumentCapability
     reasons: tuple[str, ...] = ()
     input_digest: str = ""
+    isolated_images: tuple[IsolatedImage, ...] = ()
 
 
 class CasCandidateValidity(str, Enum):
