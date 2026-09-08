@@ -72,6 +72,8 @@ def _content_result(state: ContentFieldState, raw: str | None) -> ContentResult:
 
 def _pair(block: Section3BlockCandidate, cas: CasCandidate, content: ContentResult, status: PairStatus, extra: tuple[Evidence, ...] = ()) -> ComponentPair:
     evidence = _unique_evidence(cas.evidence + extra + block.content_field_evidence)
+    if cas.validity is not CasCandidateValidity.VALID:
+        status = PairStatus.REVIEW
     return ComponentPair(_cas_result(cas), content, status, evidence, block.block_id, block.row_id)
 
 

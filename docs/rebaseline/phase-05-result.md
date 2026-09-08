@@ -22,15 +22,20 @@
   `FindingContext`, `QualityFinding`, `QualityReport`)을 추가했다. Validator는
   immutable final result를 바꾸지 않고 `PASS` 또는 `REVIEW_REQUIRED`와
   finding만 반환한다.
+- Fresh Verifier finding 1건으로 CAS 정규식이 `64-17-5X`, `X64-17-5`,
+  `64-17-5-99`에서 유효 접두사를 절단하는 문제가 reopen 1건으로 수정됐다.
+  collector는 인접 영숫자/하이픈을 포함한 전체 source token을
+  `FORMAT_INVALID` 후보와 evidence로 보존한다. resolver는 invalid CAS pair를
+  `REVIEW`로, validator는 `CAS_READ_UNCERTAIN`으로 남기며 단독
+  `64-17-5`는 계속 `VALID`/`PASS`다.
 
 ## 검증 결과
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 31 passed (P5-R-01~19, P5-V-01~12) |
-| `python -m pytest tests/rebaseline/test_collectors.py tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 67 passed |
-| `python -m pytest tests/rebaseline -q` | 251 passed |
-| `python -m pytest tests/test_common_normalization.py -q` (managed terminal) | 6 passed |
+| `python -m pytest tests/rebaseline/test_collectors.py tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 71 passed (CAS malformed-token collector → resolver → validator regression 포함) |
+| `python -m pytest tests/rebaseline -q` | 255 passed |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed (managed sandbox의 TEMP trace 쓰기 차단 후, 승인된 단일 sandbox 밖 재실행) |
 | `python -m compileall -q src/msds golden/v2` | PASS |
 | import smoke (`models normalization pdf_io sections collectors ocr resolver validation`) | PASS |
 | `git diff --check` | PASS |
@@ -43,7 +48,7 @@
 | Role | Model / effort | Runtime / orchestration |
 | --- | --- | --- |
 | Phase 5 implementation | gpt-5.6-terra / high | managed Codex terminal `term_781f2734-6bfc-4b91-ba86-afbe961fd2e6`에서 실제 TUI runtime 관측; serial 수행. |
-| Fresh Verifier | Not run | 사용자 지시에 따라 Coordinator가 후속 처리한다. |
+| Fresh Verifier | Coordinator-managed | finding 1 / reopen 1. 재검수 결과는 Coordinator가 후속 반영한다. |
 
 외부 네트워크, API, 실제 OCR/AI, DB, Golden/legacy 또는 production route는 이
 Phase에서 실행하지 않았다.

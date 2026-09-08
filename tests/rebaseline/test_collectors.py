@@ -6,9 +6,14 @@ import pytest
 
 import src.msds.collectors as collectors
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
-from src.msds.models import CasCandidateValidity, DocumentCapability, FenceStatus, LayoutToken, PageRegion, SectionInput
+from src.msds.models import (
+    CasCandidateValidity, DocumentCapability, FenceStatus, FindingCode, LayoutToken,
+    PageRegion, PairStatus, QualityStatus, ResultStatus, SectionInput,
+)
 from src.msds.pdf_io import FenceDescription, build_section_input, read_pdf_layout
+from src.msds.resolver import resolve
 from src.msds.sections import locate_section
+from src.msds.validation import validate_resolved
 from tests.rebaseline.pdf_helpers import make_pdf
 
 
@@ -313,6 +318,45 @@ def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_
     assert (first.raw, first.normalized, first.validity) == ("64-17-4", "64-17-4", CasCandidateValidity.CHECK_DIGIT_INVALID)
     assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-4", "111-11-1", "222-22-2", "333-33-3", "444-44-4", "555-55-5", "666-66-6"]
     assert [block.content_candidates[0].raw for block in result.blocks] == ["< 1%", "≥4%", "10-20%", "Rem.", "Balance", "5 wt%", "6 vol%"]
+
+
+@pytest.mark.parametrize("source_token", ("64-17-5X", "X64-17-5", "64-17-5-99"))
+def test_malformed_cas_tokens_preserve_the_whole_source_token_through_review(source_token):
+    result = resolve(
+        _input("1", (("Product: CAS boundary regression",),)),
+        _input("3", ((source_token, "10%"),)),
+    )
+    candidate = result.section3.blocks[0].cas_candidates[0]
+    pair = result.components[0]
+    report = validate_resolved(result)
+
+    assert (candidate.raw, candidate.normalized, candidate.validity) == (
+        source_token, source_token, CasCandidateValidity.FORMAT_INVALID,
+    )
+    assert candidate.evidence[0].raw_fragment == source_token
+    assert (pair.cas.cas_raw, pair.cas.cas_status, pair.status) == (
+        source_token, ResultStatus.INVALID, PairStatus.REVIEW,
+    )
+    assert (report.status, [finding.code for finding in report.findings]) == (
+        QualityStatus.REVIEW_REQUIRED, [FindingCode.CAS_READ_UNCERTAIN],
+    )
+
+
+def test_standalone_valid_cas_remains_valid_through_resolution_and_validation():
+    result = resolve(
+        _input("1", (("Product: CAS boundary regression",),)),
+        _input("3", (("64-17-5", "10%"),)),
+    )
+    candidate = result.section3.blocks[0].cas_candidates[0]
+    pair = result.components[0]
+
+    assert (candidate.raw, candidate.normalized, candidate.validity) == (
+        "64-17-5", "64-17-5", CasCandidateValidity.VALID,
+    )
+    assert (pair.cas.cas_raw, pair.cas.cas_status, pair.status) == (
+        "64-17-5", ResultStatus.FOUND, PairStatus.PAIRED,
+    )
+    assert validate_resolved(result).status is QualityStatus.PASS
 
 
 def test_collectors_are_isolated_to_their_confirmed_section_inputs():

@@ -104,7 +104,7 @@ def test_p5_r_14_content_only_source_never_creates_a_component():
 
 def test_p5_r_15_invalid_cas_checksum_is_not_corrected():
     pair = resolve_components(Section3Collection((_block(0, (_cas("64-17-4", 0, CasCandidateValidity.CHECK_DIGIT_INVALID),), (_content("10%", 1),)),)))[0]
-    assert (pair.cas.cas_raw, pair.cas.cas_normalized, pair.cas.cas_status) == ("64-17-4", "64-17-4", ResultStatus.INVALID)
+    assert (pair.cas.cas_raw, pair.cas.cas_normalized, pair.cas.cas_status, pair.status) == ("64-17-4", "64-17-4", ResultStatus.INVALID, PairStatus.REVIEW)
 
 
 def test_p5_r_16_content_range_operator_balance_and_over_100_are_raw_preserved():

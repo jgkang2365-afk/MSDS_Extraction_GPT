@@ -27,6 +27,7 @@ _PRODUCT_LABEL = re.compile(r"^\s*(?:product(?:\s+(?:name|identifier))?|제품�
 _FIELD_LABEL = re.compile(r"^\s*(?:[A-Za-z][A-Za-z /()_-]{0,40}|[가-힣][가-힣 /()_-]{0,40})\s*(?::|\|)")
 _NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체))\b", re.IGNORECASE)
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
+_CAS_TOKEN_PUNCTUATION = frozenset("_-\u2010\u2011\u2012\u2013\u2014\u2015\u2212")
 _EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
 _DIRECT_CONTENT = re.compile(
     r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*%|%|ppm)|Rem\.|Balance",
@@ -170,20 +171,39 @@ def _rows(section_input: SectionInput) -> tuple[tuple[_Line, ...], ...]:
     return tuple(tuple(sorted(row, key=lambda item: (item.bbox[0], item.block, item.line))) for row in rows)
 
 
-def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tuple[_Line, re.Match[str]]]:
-    matches: list[tuple[_Line, re.Match[str]]] = []
+def _is_cas_token_character(character: str) -> bool:
+    return character.isalnum() or character in _CAS_TOKEN_PUNCTUATION
+
+
+def _cas_token_span(text: str, match: re.Match[str]) -> tuple[int, int]:
+    """Expand a CAS-shaped substring to its unbroken source token."""
+    start, end = match.span(1)
+    while start and _is_cas_token_character(text[start - 1]):
+        start -= 1
+    while end < len(text) and _is_cas_token_character(text[end]):
+        end += 1
+    return start, end
+
+
+def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tuple[_Line, int, str]]:
+    matches: list[tuple[_Line, int, str]] = []
     for line_index, line in enumerate(row):
+        seen_token_spans: set[tuple[int, int]] = set()
         for match in _CAS.finditer(line.text):
             row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line.text[:match.start()]
             if _EC_CONTEXT.search(row_prefix):
                 continue
             if any(line.page == header.page and _is_ec_column(line, header) for header in ec_headers):
                 continue
-            raw = match.group(1)
+            start, end = _cas_token_span(line.text, match)
+            if (start, end) in seen_token_spans:
+                continue
+            seen_token_spans.add((start, end))
+            raw = line.text[start:end]
             result = normalize_cas(raw)
             if result.validity.value == "NOT_CANDIDATE":
                 continue
-            matches.append((line, match))
+            matches.append((line, start, raw))
     return matches
 
 
@@ -295,15 +315,14 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
             ec_headers = []
         cas_matches = _cas_matches(row, ec_headers)
         content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
-        occurrences = [(line, match.start(), "cas", match) for line, match in cas_matches]
+        occurrences = [(line, start, "cas", raw) for line, start, raw in cas_matches]
         occurrences += [(line, start, "content", (raw, unit, unit_evidence)) for line, start, raw, unit, unit_evidence in content_matches]
         occurrences.sort(key=lambda item: (item[0].page, item[0].bbox[1], item[0].bbox[0], item[1]))
         cas_candidates: list[CasCandidate] = []
         content_candidates: list[ContentCandidate] = []
         for line, _position, kind, payload in occurrences:
             if kind == "cas":
-                match = payload
-                raw = match.group(1)
+                raw = payload
                 result = normalize_cas(raw)
                 cas_candidates.append(CasCandidate(raw, result.normalized, CasCandidateValidity(result.validity.value), source_order, (_evidence(section_input, line),)))
             else:
