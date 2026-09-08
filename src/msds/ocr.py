@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from math import ceil, floor
 from pathlib import Path
+import re
 from typing import Protocol, Sequence
 
 import fitz
@@ -27,7 +28,7 @@ from .models import (
     SectionInput,
 )
 from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult, build_section_input, read_pdf_layout
-from .sections import LocatedFence, _NUMBERED_HEADING, _heading_search_key, locate_section
+from .sections import LocatedFence, _HEADING, _NUMBERED_HEADING, _heading_search_key, locate_section
 
 
 Rect = tuple[float, float, float, float]
@@ -333,8 +334,24 @@ def _decorative_margin_image(page: PdfPage, image: Rect) -> bool:
     )
 
 
+_SECTION_FIVE_FIRE_FIGHTING = re.compile(r"fire\s*[- ]?fighting\s+measures", re.IGNORECASE)
+_CANONICAL_NEXT_SECTION = {"1": "2", "3": "4"}
+
+
+def _is_semantic_msds_heading(number: str, heading: str) -> bool:
+    """Accept only the narrow numbered headings relevant to partial fences."""
+    if number in _HEADING:
+        return bool(_HEADING[number].search(heading))
+    return number == "5" and bool(_SECTION_FIVE_FIRE_FIGHTING.search(heading))
+
+
 def _next_digital_section_boundary(layout: PdfReadResult, located: LocatedFence) -> tuple[int, float] | None:
-    """Find the first explicit non-target digital heading after a partial start."""
+    """Find the next semantic digital heading after a partial start.
+
+    A numbered composition row is not a section boundary.  Prefer the target's
+    canonical next heading when it is present; a semantic Section 5
+    Fire-fighting heading remains a narrow fallback when Section 4 is absent.
+    """
     fence = located.fence
     if fence.start_page is None or not fence.evidence:
         return None
@@ -347,10 +364,18 @@ def _next_digital_section_boundary(layout: PdfReadResult, located: LocatedFence)
             if page.page_index == fence.start_page and line.bbox[1] < start.bbox[3]:
                 continue
             match = _NUMBERED_HEADING.match(_heading_search_key(line.text))
-            if match is not None and match.group("number") != fence.section:
+            if (
+                match is not None
+                and match.group("number") != fence.section
+                and _is_semantic_msds_heading(match.group("number"), match.group("heading"))
+            ):
                 candidates.append((page.page_index, line))
     if not candidates:
         return None
+    canonical_number = _CANONICAL_NEXT_SECTION.get(fence.section)
+    canonical_candidates = [item for item in candidates if _NUMBERED_HEADING.match(_heading_search_key(item[1].text)).group("number") == canonical_number]
+    if canonical_candidates:
+        candidates = canonical_candidates
     page_index, line = min(
         candidates,
         key=lambda item: (

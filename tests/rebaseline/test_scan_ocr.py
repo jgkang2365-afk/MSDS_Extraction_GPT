@@ -297,7 +297,7 @@ def test_p4_fix_14_partial_digital_s3_continuation_image_routes_to_confirmed_ocr
 def test_p4_fix_15_partial_digital_next_explicit_section_blocks_later_image(pdf_tmp):
     path = make_pdf(
         pdf_tmp / "partial-digital-s3-next-section.pdf",
-        [[(72, 72, S3)], [(72, 72, "5. Regulatory information")], []], images={2},
+        [[(72, 72, S3)], [(72, 72, "5. Fire-fighting measures")], []], images={2},
         image_rects={2: (72, 110, 430, 250)},
     )
     fake = FakeOcr([])
@@ -307,6 +307,128 @@ def test_p4_fix_15_partial_digital_next_explicit_section_blocks_later_image(pdf_
     assert result.routes[0].capability is DocumentCapability.TEXT
     assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
     assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+def test_p4_fix_28_partial_s3_false_section_five_acetone_keeps_image_continuation(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-false-s5-acetone.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Acetone")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("5. Acetone", (50, 70, 180, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert fake.calls == 3
+
+
+def test_p4_fix_29_partial_s3_numbered_component_rows_keep_image_continuation(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-numbered-components.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Acetone"), (72, 96, "4. Acetone"), (72, 120, "2. Methanol")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("5. Acetone", (50, 70, 180, 90)), ("4. Acetone", (50, 96, 180, 116)), ("2. Methanol", (50, 120, 180, 140))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert fake.calls == 3
+
+
+def test_p4_fix_30_partial_s3_true_section_five_fire_fighting_blocks_unrelated_image(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-true-s5-fire-fighting.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Fire-fighting measures")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+def test_p4_fix_31_partial_target_canonical_next_section_wins_over_later_semantic_section(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-canonical-s4-wins.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Fire-fighting measures")], [], [(72, 72, S4)]], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("5. Fire-fighting measures", (50, 70, 260, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130))),
+        _page((S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert fake.calls == 4
+
+    s1_path = make_pdf(
+        pdf_tmp / "partial-s1-canonical-s2-wins.pdf",
+        [[(72, 72, S1)], [(72, 72, S3)], [], [(72, 72, S2)]], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    s1_fake = FakeOcr([
+        _page((S1, (50, 70, 400, 90))),
+        _page((S3, (50, 70, 400, 90))),
+        _page(("Product: OCR Resin", (50, 110, 240, 130))),
+        _page((S2, (50, 170, 260, 190))),
+    ])
+
+    s1_result = scan_pdf_sections(s1_path, engine=s1_fake, sections=("1",))
+
+    assert collect_product_candidates(s1_result.input_for("1")).candidates[0].raw == "OCR Resin"
+    assert s1_fake.calls == 4
+
+
+def test_p4_fix_32_partial_s3_false_section_four_acetone_keeps_image_continuation(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-false-s4-acetone.pdf",
+        [[(72, 72, S3)], [(72, 72, "4. Acetone")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("4. Acetone", (50, 70, 180, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert fake.calls == 3
+
+
+def test_p4_fix_33_partial_s3_korean_numbered_component_row_keeps_image_continuation(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-korean-numbered-component.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. 아세톤")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("5. 아세톤", (50, 70, 180, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert fake.calls == 3
 
 
 def test_p4_fix_27_partial_digital_boundary_uses_visual_not_stored_line_order(pdf_tmp, monkeypatch):
@@ -320,7 +442,7 @@ def test_p4_fix_27_partial_digital_boundary_uses_visual_not_stored_line_order(pd
         layout = original(*args, **kwargs)
         page = layout.pages[0]
         later_heading = LayoutLine(0, 2, 0, "6. Accidental release measures", (72, 180, 360, 195), 12)
-        earlier_heading = LayoutLine(0, 1, 0, "5. Regulatory information", (72, 140, 330, 150), 12)
+        earlier_heading = LayoutLine(0, 1, 0, "5. Fire-fighting measures", (72, 140, 330, 150), 12)
         return replace(layout, pages=(replace(page, lines=page.lines + (later_heading, earlier_heading)),))
 
     monkeypatch.setattr(ocr, "read_pdf_layout", read_with_reversed_headings)

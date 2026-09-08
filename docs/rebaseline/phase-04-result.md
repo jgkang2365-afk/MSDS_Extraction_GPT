@@ -8,9 +8,13 @@
   its target span has no relevant image. For a partial heading, image relevance
   is limited to the observed heading-to-boundary span; when no end boundary
   Evidence exists, it continues from the observed start through the next
-  explicit digital heading for a different section (or document end when none
-  is observed). That next heading is selected in physical page/y/x order, not
-  raw PDF line storage order. Images after that boundary and small
+  semantic digital MSDS heading for a different section (or document end when
+  none is observed). Numbered body rows are never sufficient: the section
+  number and heading semantics must both match. For Section 1, canonical
+  Section 2 wins; for Section 3, canonical Section 4 wins. A true `5.
+  Fire-fighting measures` is the only narrow later fallback (for Section 3,
+  when canonical Section 4 is absent). That next heading is selected in physical page/y/x
+  order, not raw PDF line storage order. Images after that boundary and small
   header/footer/side-margin decoration cannot trigger OCR. A relevant body/boundary image
   or the locator's `SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED` outcome routes that
   target through local OCR. A fully digital no-image document retains the text
@@ -66,7 +70,7 @@
 ## Executed verification
 
 - Lead standard validation: `python -m pytest tests/rebaseline/test_scan_ocr.py -q`:
-  79 passed. This
+  85 passed. This
   includes P4-FIX-01~05 (partial digital target image relevance and independent
   S1 text/S3 OCR routing) and P4-FIX-06~13 (structured OCR rows, safe/partial
   independent columns, including P4-FIX-13 two-Evidence partial-fence public
@@ -78,13 +82,18 @@
   handling for an unproven far-right column, and P4-FIX-25~26 colonless and
   terminal-pipe strong Product labels with same-row raw/evidence preservation;
   P4-FIX-27 verifies that reversed raw line storage cannot extend a partial
-  target past a visually earlier next-section heading.
+  target past a visually earlier next-section heading. P4-FIX-28~33 verify
+  false numbered `5. Acetone`, multiple `5./4./2.` component rows, false
+  `4. Acetone`, and Korean `5. 아세톤` retain the S3 image continuation to
+  fake OCR `64-17-5` / `10%`; a true Section 5 Fire-fighting boundary blocks
+  an unrelated image when S4 is absent; and canonical S4 (and S2 for S1) wins
+  over a later semantic noncanonical section.
   Existing foreign S1 product exclusion across
   0/90/180/270-degree rotations and S3 CAS exclusion, CropBox geometry, and
   ambiguous-end/later-image and top-left-logo OCR guards).
   The pytest cache-write warning is an existing `.pytest_cache` environment
   permission warning and is separate from the PASS result.
-- `python -m pytest tests/rebaseline -q`: 214 passed, with the same one pytest
+- `python -m pytest tests/rebaseline -q`: 220 passed, with the same one pytest
   cache-write warning. `python -m pytest tests/test_common_normalization.py -q`:
   6 passed. `python -m compileall -q src/msds golden/v2`, import smoke for
   models/normalization/pdf_io/sections/collectors/ocr, and diff check: PASS.
