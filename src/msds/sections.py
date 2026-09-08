@@ -101,41 +101,98 @@ def _section_one_label_value_row(row: list[LayoutLine]) -> bool:
     """Keep two-cell Section 1 rows tied to recognizable field labels."""
     label = _heading_search_key(sorted(row, key=lambda item: item.bbox[0])[0].text).casefold()
     return label.endswith(":") or bool(re.search(
-        r"(?:product|company|supplier|manufacturer|address|telephone|phone|emergency|email|"
+        r"^(?:product|company|supplier|manufacturer|address|telephone|phone|emergency|email|"
         r"recommended\s+use|identifier|제품|회사|제조|공급|주소|전화|긴급|용도)",
         label,
     ))
 
 
-def _section_three_cas_concentration_row(row: list[LayoutLine]) -> bool:
+def _section_three_cas_concentration_row(row: list[LayoutLine], *, allow_plain_content: bool) -> bool:
     """Recognize the compact CAS | concentration rows used by Section 3 tables."""
-    left, right = (line.text for line in sorted(row, key=lambda item: item.bbox[0]))
-    return bool(
-        re.search(r"\b\d{2,7}-\d{2}-\d\b", left)
-        and re.search(r"\b\d+(?:\.\d+)?\s*%", right)
+    if len(row) not in {2, 3}:
+        return False
+    values = [line.text for line in sorted(row, key=lambda item: item.bbox[0])]
+    cas_count = sum(bool(re.search(r"\b\d{2,7}-\d{2}-\d\b", value)) for value in values)
+    content_count = sum(bool(re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", value)) for value in values)
+    return cas_count == 1 and content_count == 1 and (allow_plain_content or any("%" in value for value in values))
+
+
+def _structured_row_segments(
+    row: list[LayoutLine], section_no: str, *, allow_plain_content: bool,
+) -> list[list[LayoutLine]]:
+    """Split side-by-side structured rows into their individual table bands."""
+    cells = sorted(row, key=lambda item: item.bbox[0])
+    if section_no == "1":
+        return [
+            [cell, cells[index + 1]]
+            for index, cell in enumerate(cells[:-1])
+            if _section_one_label_value_row([cell, cells[index + 1]])
+            and not _section_one_label_value_row([cells[index + 1], cells[index + 1]])
+        ]
+    segments: list[list[LayoutLine]] = []
+    for index, cell in enumerate(cells):
+        if not re.search(r"\b\d{2,7}-\d{2}-\d\b", cell.text):
+            continue
+        content = next(
+            (
+                candidate for candidate in cells[index + 1:]
+                if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", candidate.text)
+                and (allow_plain_content or "%" in candidate.text)
+            ),
+            None,
+        )
+        if content is not None:
+            segments.append([cell, content])
+    return segments
+
+
+def _structured_table_bands(
+    lines: list[LayoutLine], section_no: str,
+) -> list[list[list[LayoutLine]]]:
+    """Group only repeated same-column table rows; never combine table bands."""
+    allow_plain_content = any(
+        re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
+        for line in lines
+    )
+    bands: list[list[list[LayoutLine]]] = []
+    for row in _horizontal_rows(lines):
+        for segment in _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content):
+            existing = next((band for band in bands if _same_column_bands(band[0], segment)), None)
+            if existing is None:
+                bands.append([segment])
+            else:
+                existing.append(segment)
+    return [band for band in bands if section_no == "3" or len(band) >= 2]
+
+
+def _band_bounds(band: list[list[LayoutLine]]) -> tuple[float, float]:
+    return (
+        min(line.bbox[0] for row in band for line in row),
+        max(line.bbox[2] for row in band for line in row),
     )
 
 
+def _band_lines(lines: list[LayoutLine], band: list[list[LayoutLine]]) -> list[LayoutLine]:
+    """Keep headers and values that share the proven band column starts."""
+    starts = [line.bbox[0] for row in band for line in row]
+    return [line for line in lines if any(abs(line.bbox[0] - start) <= 12 for start in starts)]
+
+
 def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage, section_no: str) -> bool:
-    """Recognize repeated structured table rows without admitting page columns."""
-    rows = [
-        sorted(row, key=lambda item: item.bbox[0])
+    """Recognize one structured table band, never two independent columns."""
+    bands = _structured_table_bands(lines, section_no)
+    if len(bands) != 1:
+        return False
+    allow_plain_content = any(
+        re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
+        for line in lines
+    )
+    return any(
+        row[-1].bbox[0] - row[0].bbox[0] > (page.rect[2] - page.rect[0]) * 0.35
+        and len(_structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)) == 1
         for row in _horizontal_rows(lines)
         if len(row) >= 2
-    ]
-    for row in rows:
-        aligned_rows = [candidate for candidate in rows if _same_column_bands(row, candidate)]
-        if len(aligned_rows) < 2:
-            continue
-        if row[-1].bbox[0] - row[0].bbox[0] <= (page.rect[2] - page.rect[0]) * 0.35:
-            continue
-        if len(row) >= 3:
-            return True
-        if section_no == "1" and all(_section_one_label_value_row(candidate) for candidate in aligned_rows):
-            return True
-        if section_no == "3" and all(_section_three_cas_concentration_row(candidate) for candidate in aligned_rows):
-            return True
-    return False
+    )
 
 
 def _horizontal_rows(lines: list[LayoutLine]) -> list[list[LayoutLine]]:
@@ -191,6 +248,65 @@ def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
         len(starts) >= 2
         and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
         and not _aligned_wide_table(lines, page, start.section_no)
+    )
+
+
+def _safe_body_x_bounds(
+    lines: list[LayoutLine], page: PdfPage, section_no: str, *, anchor_x: float | None
+) -> tuple[float, float] | None:
+    """Return table-wide bounds or one anchored column; never combine columns."""
+    padding = 0.01 if any(token.source_reading == "OCR" for token in page.tokens) else 0.0
+    bands = _structured_table_bands(lines, section_no)
+    if bands:
+        if len(bands) == 1:
+            selected = _band_lines(lines, bands[0])
+            return (
+                max(page.rect[0], min(line.bbox[0] for line in selected) - padding),
+                min(page.rect[2], max(line.bbox[2] for line in selected) + padding),
+            )
+        if anchor_x is None:
+            return None
+        anchored = [
+            band for band in bands
+            if any(abs(line.bbox[0] - anchor_x) <= 12 for row in band for line in row)
+        ]
+        if len(anchored) != 1:
+            return None
+        selected = _band_lines(lines, anchored[0])
+        x0 = min(line.bbox[0] for line in selected)
+        x1 = max(line.bbox[2] for line in selected)
+        if any(
+            other is not anchored[0]
+            and not (
+                x1 <= min(line.bbox[0] for line in _band_lines(lines, other))
+                or max(line.bbox[2] for line in _band_lines(lines, other)) <= x0
+            )
+            for other in bands
+        ):
+            return None
+        return (max(page.rect[0], x0 - padding), min(page.rect[2], x1 + padding))
+    starts = sorted({round(line.bbox[0], 1) for line in lines})
+    x0 = min(line.bbox[0] for line in lines)
+    x1 = max(line.bbox[2] for line in lines)
+    page_width = page.rect[2] - page.rect[0]
+    if len(starts) < 2 or starts[-1] - starts[0] <= page_width * 0.35 or _aligned_wide_table(lines, page, section_no):
+        return (max(page.rect[0], x0 - padding), min(page.rect[2], x1 + padding))
+    if anchor_x is None:
+        return None
+    gaps = [(right - left, left, right) for left, right in zip(starts, starts[1:])]
+    widest, left, right = max(gaps)
+    if widest <= page_width * 0.20:
+        return None
+    split = (left + right) / 2
+    selected = [line for line in lines if (line.bbox[0] <= split if anchor_x <= split else line.bbox[0] >= split)]
+    if not selected or any(
+        line.bbox[2] > split if anchor_x <= split else line.bbox[0] < split
+        for line in selected
+    ):
+        return None
+    return (
+        max(page.rect[0], min(line.bbox[0] for line in selected) - padding),
+        min(page.rect[2], max(line.bbox[2] for line in selected) + padding),
     )
 
 
@@ -274,17 +390,10 @@ def _safe_middle_region(
         if page.image_count:
             return None, "MIDDLE_PAGE_IMAGE_PLACEMENT_UNKNOWN"
         return None, "MIDDLE_PAGE_BODY_UNAVAILABLE"
-    starts = sorted({round(line.bbox[0], 1) for line in body_lines})
-    if (
-        not any(token.source_reading == "OCR" for token in page.tokens)
-        and
-        len(starts) >= 2
-        and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and not _aligned_wide_table(body_lines, page, section_no)
-    ):
+    x_bounds = _safe_body_x_bounds(body_lines, page, section_no, anchor_x=None)
+    if x_bounds is None:
         return None, "MIDDLE_PAGE_READING_ORDER_AMBIGUOUS"
-    x0 = min(line.bbox[0] for line in body_lines)
-    x1 = max(line.bbox[2] for line in body_lines)
+    x0, x1 = x_bounds
     top = min(line.bbox[1] for line in body_lines)
     bottom = max(line.bbox[3] for line in body_lines)
     if x1 <= x0 or top >= bottom:
@@ -301,6 +410,7 @@ def _safe_boundary_region(
     bottom: float,
     failure_prefix: str,
     section_no: str,
+    anchor_x: float | None,
 ) -> tuple[PageRegion | None, str | None]:
     """Fence a start/end page to its observed, single-column body only."""
     excluded = tuple(repeated[key] for key in repeated if key[0] == page.page_index)
@@ -337,17 +447,10 @@ def _safe_boundary_region(
             # still reach capability classification and block the section.
             return PageRegion(page.page_index, ((page.rect[0], top, page.rect[2], bottom),), excluded), None
         return None, None
-    starts = sorted({round(line.bbox[0], 1) for line in body_lines})
-    if (
-        not any(token.source_reading == "OCR" for token in page.tokens)
-        and
-        len(starts) >= 2
-        and starts[-1] - starts[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and not _aligned_wide_table(body_lines, page, section_no)
-    ):
+    x_bounds = _safe_body_x_bounds(body_lines, page, section_no, anchor_x=anchor_x)
+    if x_bounds is None:
         return None, f"{failure_prefix}_READING_ORDER_AMBIGUOUS"
-    x0 = min(line.bbox[0] for line in body_lines)
-    x1 = max(line.bbox[2] for line in body_lines)
+    x0, x1 = x_bounds
     body_top = min(line.bbox[1] for line in body_lines)
     body_bottom = max(line.bbox[3] for line in body_lines)
     if x1 <= x0 or body_bottom <= body_top:
@@ -359,23 +462,29 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
     end_page = pages[end.page_index]
-    # OCR line boxes are independently observed image regions.  The digital
-    # column heuristic relies on PyMuPDF text-flow blocks and would reject a
-    # legitimate OCR CAS|content row before it can be physically fenced.
+    # Digital text-flow columns remain unsafe. OCR geometry uses the same
+    # structure/column proof below, rather than admitting a full-width region.
     if not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
         return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
     if start.page_index == end.page_index:
-        x0, y0, x1, y1 = start_page.rect
-        top = start.line.bbox[3]
-        bottom = end.line.bbox[1]
-        if bottom <= top:
-            return None, "SAME_PAGE_BOUNDARY_ORDER_AMBIGUOUS"
-        return (PageRegion(start.page_index, ((x0, top, x1, bottom),)),), None
+        if not any(token.source_reading == "OCR" for token in start_page.tokens):
+            x0, _, x1, _ = start_page.rect
+            return (PageRegion(start.page_index, ((x0, start.line.bbox[3], x1, end.line.bbox[1]),)),), None
+        region, failure = _safe_boundary_region(
+            start_page, {}, {}, top=start.line.bbox[3], bottom=end.line.bbox[1],
+            failure_prefix="SAME_PAGE", section_no=start.section_no, anchor_x=start.line.bbox[0],
+        )
+        if failure:
+            return None, failure
+        if region is None:
+            return None, "SECTION_BODY_UNAVAILABLE"
+        return (region,), None
     repeated, retained_headers = _margin_repetitions(layout, retain_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
         start_page, repeated, retained_headers, top=start.line.bbox[3], bottom=py1,
         failure_prefix="START_PAGE", section_no=start.section_no,
+        anchor_x=start.line.bbox[0] if any(token.source_reading == "OCR" for token in start_page.tokens) else None,
     )
     if failure:
         return None, failure
@@ -390,6 +499,7 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     end_region, failure = _safe_boundary_region(
         end_page, repeated, retained_headers, top=ey0, bottom=end.line.bbox[1],
         failure_prefix="END_PAGE", section_no=start.section_no,
+        anchor_x=end.line.bbox[0] if any(token.source_reading == "OCR" for token in end_page.tokens) else None,
     )
     if failure:
         return None, failure

@@ -315,6 +315,55 @@ def build_ocr_section_input(recon_layout: PdfReadResult, fence: FenceDescription
     )
 
 
+def _decorative_margin_image(page: PdfPage, image: Rect) -> bool:
+    """Recognize small top/right margin logos, not possible body images."""
+    px0, py0, px1, py1 = page.rect
+    width, height = px1 - px0, py1 - py0
+    image_width, image_height = image[2] - image[0], image[3] - image[1]
+    return (
+        image_width > 0 and image_height > 0
+        and image_width <= width * 0.15 and image_height <= height * 0.15
+        and image_width * image_height <= width * height * 0.02
+        and (
+            image[1] - py0 <= height * 0.10
+            or px1 - image[2] <= width * 0.10
+        )
+    )
+
+
+def _partial_target_has_relevant_image(layout: PdfReadResult, located: LocatedFence) -> bool:
+    """Return whether a partial target's observed body span contains an image.
+
+    A partial digital heading alone is insufficient reason to OCR.  Limit the
+    check to the target's bounded heading-to-boundary span: an image elsewhere
+    in the document cannot turn this target into an OCR route.  Unknown image
+    placement is also deliberately not guessed at.
+    """
+    fence = located.fence
+    if fence.status is not FenceStatus.FENCE_PARTIAL or fence.start_page is None or not fence.evidence:
+        return False
+    pages = {page.page_index: page for page in layout.pages}
+    start_page = fence.start_page
+    start_evidence = fence.evidence[0]
+    # A partial fence can carry the *candidate* end page while retaining only
+    # start evidence (for example, when the start or body order is ambiguous).
+    # That page is not an observed bound.  In that case only an image below the
+    # observed heading on its own page can justify OCR; do not inspect later
+    # pages or guess a bottom boundary.
+    end_evidence = fence.evidence[1] if len(fence.evidence) == 2 else None
+    end_page = end_evidence.page if end_evidence is not None else start_page
+    for page_index in range(start_page, end_page + 1):
+        page = pages.get(page_index)
+        if page is None:
+            continue
+        top = start_evidence.bbox[3] if page_index == start_page else page.rect[1]
+        bottom = end_evidence.bbox[1] if end_evidence is not None and page_index == end_page else page.rect[3]
+        span = (page.rect[0], top, page.rect[2], bottom)
+        if any(_intersects(image, span) and not _decorative_margin_image(page, image) for image in page.image_rects):
+            return True
+    return False
+
+
 def _has_digital_target_text(layout: PdfReadResult, located: LocatedFence) -> bool:
     """Return whether this target is already observed as digital text.
 
@@ -324,7 +373,7 @@ def _has_digital_target_text(layout: PdfReadResult, located: LocatedFence) -> bo
     For a fully digital document, an absent heading is also a digital locator
     result rather than a reason to render every page.
     """
-    if "SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED" in located.reasons:
+    if "SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED" in located.reasons or _partial_target_has_relevant_image(layout, located):
         return False
     if any(evidence.source_type is EvidenceSourceType.TEXT for evidence in located.fence.evidence):
         return True

@@ -54,6 +54,27 @@ def _scan_s1(pdf_tmp, rows, *, name="s1.pdf", **kwargs):
     return scan_pdf_sections(_image_pdf(pdf_tmp, name, **kwargs), engine=FakeOcr([_page(*rows)]), sections=("1",))
 
 
+def _rotated_ocr_rows(rows, rotation):
+    """Convert fixed unrotated test geometry into the rendered OCR coordinate space."""
+    page_width, page_height = 595, 842
+
+    def forward(point):
+        x, y = point
+        if rotation == 0:
+            return x, y
+        if rotation == 90:
+            return page_height - y, x
+        if rotation == 180:
+            return page_width - x, page_height - y
+        return y, page_width - x
+
+    converted = []
+    for text, bbox in rows:
+        corners = [forward(point) for point in ((bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[0], bbox[3]), (bbox[2], bbox[3]))]
+        converted.append((text, (min(x for x, _ in corners), min(y for _, y in corners), max(x for x, _ in corners), max(y for _, y in corners))))
+    return converted
+
+
 def test_p4_01_digital_only_never_initializes_or_renders_ocr(pdf_tmp):
     path = make_pdf(pdf_tmp / "digital.pdf", [[(72, 72, S1), (72, 110, "Product: Stable"), (72, 160, S2)]])
     fake = FakeOcr([])
@@ -147,6 +168,108 @@ def test_p4_mixed_text_and_image_required_target_uses_ocr_despite_digital_headin
     assert fake.calls == 1
 
 
+def test_p4_fix_01_partial_digital_s1_body_image_uses_ocr_recon(pdf_tmp):
+    path = make_pdf(pdf_tmp / "partial-s1-body-image.pdf", [[(72, 72, S1)]], images={0}, image_rects={0: (72, 110, 430, 250)})
+    fake = FakeOcr([_page((S1, (50, 70, 400, 90)), ("Product: OCR body", (50, 110, 240, 130)), (S2, (50, 280, 260, 300)))])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.input_for("1").capability is DocumentCapability.OCR
+    assert fake.calls == 1
+
+
+def test_p4_fix_02_partial_digital_target_ignores_unrelated_page_image(pdf_tmp):
+    path = make_pdf(pdf_tmp / "partial-s1-unrelated-image.pdf", [[(72, 72, S1)], []], images={1}, image_rects={1: (72, 110, 430, 250)})
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert fake.calls == 0
+
+
+def test_p4_fix_02_partial_ambiguous_end_ignores_later_section_image(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s1-ambiguous-end-image.pdf",
+        [[(72, 72, S1)], [(72, 72, S1)], [(72, 72, S2)]],
+        images={2}, image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert result.routes[0].reasons == ("SECTION_START_AMBIGUOUS",)
+    assert fake.calls == 0
+
+
+def test_p4_fix_03_partial_digital_target_ignores_top_left_decorative_logo(pdf_tmp):
+    path = make_pdf(pdf_tmp / "partial-s1-logo.pdf", [[(72, 72, S1)]], images={0}, image_rects={0: (12, 76, 62, 82)})
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert fake.calls == 0
+
+
+def test_p4_fix_04_partial_digital_s3_boundary_image_uses_ocr_recon(pdf_tmp):
+    path = make_pdf(pdf_tmp / "partial-s3-boundary-image.pdf", [[(72, 72, S3)]], images={0}, image_rects={0: (72, 105, 430, 250)})
+    fake = FakeOcr([_page((S3, (50, 70, 400, 90)), ("64-17-5", (50, 120, 110, 140)), ("10%", (300, 120, 330, 140)), (S4, (50, 280, 260, 300)))])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.input_for("3").capability is DocumentCapability.OCR
+    assert fake.calls == 1
+
+
+def test_p4_fix_05_partial_s3_image_keeps_confirmed_s1_text(pdf_tmp):
+    path = make_pdf(pdf_tmp / "mixed-partial-s3-image.pdf", [[(72, 72, S1), (72, 110, "Product: Digital"), (72, 170, S2)], [(72, 72, S3)]], images={1}, image_rects={1: (72, 110, 430, 250)})
+    fake = FakeOcr([
+        _page((S1, (50, 70, 400, 90)), ("Product: Digital", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))),
+        _page((S3, (50, 70, 400, 90)), ("64-17-5", (50, 120, 110, 140)), ("10%", (300, 120, 330, 140)), (S4, (50, 280, 260, 300))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake)
+
+    assert result.input_for("1").capability is DocumentCapability.TEXT
+    assert result.input_for("3").capability is DocumentCapability.OCR
+    assert fake.calls == 2
+
+
+@pytest.mark.parametrize(
+    ("name", "pages", "images", "image_rects", "expects_ocr"),
+    [
+        ("no-image", [[(72, 72, S1), (72, 110, "Product: Digital"), (400, 115, "Other column"), (72, 220, S2)]], set(), {}, False),
+        ("body-image", [[(72, 72, S1), (72, 110, "Product: Digital"), (400, 115, "Other column"), (72, 220, S2)]], {0}, {0: (72, 145, 430, 180)}, True),
+        ("decorative-logo", [[(72, 72, S1), (72, 110, "Product: Digital"), (400, 115, "Other column"), (72, 220, S2)]], {0}, {0: (540, 110, 550, 120)}, False),
+        ("later-unrelated-image", [[(72, 72, S1), (72, 110, "Product: Digital"), (400, 115, "Other column"), (72, 220, S2)], [(72, 72, S3)]], {1}, {1: (72, 110, 430, 250)}, False),
+    ],
+)
+def test_p4_fix_13_partial_digital_start_end_evidence_image_route_is_bounded(
+    pdf_tmp, name, pages, images, image_rects, expects_ocr,
+):
+    path = make_pdf(pdf_tmp / f"partial-start-end-{name}.pdf", pages, images=images, image_rects=image_rects)
+    initial = locate_section(read_pdf_layout(path), "1")
+    fake = FakeOcr([_page(
+        (S1, (50, 70, 400, 90)), ("Product: OCR body", (50, 110, 240, 130)), (S2, (50, 220, 260, 240)),
+    )])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert initial.fence.status.value == "FENCE_PARTIAL"
+    assert initial.reasons == ("MULTI_COLUMN_BOUNDARY_AMBIGUOUS",)
+    assert tuple(evidence.page for evidence in initial.fence.evidence) == (0, 0)
+    if expects_ocr:
+        assert result.routes[0].capability is DocumentCapability.OCR
+        assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count) == (1, 1, 1)
+    else:
+        assert result.routes[0].capability is DocumentCapability.TEXT
+        assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count) == (0, 0, 0)
+
+
 def test_p4_ocr_input_build_failure_isolated_per_confirmed_target(pdf_tmp, monkeypatch):
     path = _image_pdf(pdf_tmp, "isolated-build-failure.pdf", 2)
     fake = FakeOcr([
@@ -195,6 +318,125 @@ def test_p4_05_ocr_s3_to_s4_is_confirmed(pdf_tmp):
     result = scan_pdf_sections(path, engine=FakeOcr([_page((S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)), (S4, (50, 170, 240, 190)))]), sections=("3",))
     assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
     assert collect_section3_candidates(result.input_for("3")).blocks[0].cas_candidates[0].raw == "64-17-5"
+
+
+def test_p4_fix_06_ocr_s1_repeated_label_value_rows_are_safe(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("Target resin", (300, 110, 390, 130)),
+        ("Company:", (50, 145, 130, 165)), ("Example", (300, 145, 370, 165)), (S2, (50, 210, 260, 230)),
+    ))
+
+    assert collect_product_candidates(result.input_for("1")).candidates[0].raw == "Target resin"
+
+
+def test_p4_fix_07_ocr_s3_repeated_cas_content_rows_are_safe(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "safe-s3-table.pdf")
+    result = scan_pdf_sections(path, engine=FakeOcr([_page(
+        (S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130)),
+        ("67-64-1", (50, 145, 110, 165)), ("20%", (300, 145, 330, 165)), (S4, (50, 210, 240, 230)),
+    )]), sections=("3",))
+
+    assert [block.cas_candidates[0].raw for block in collect_section3_candidates(result.input_for("3")).blocks] == ["64-17-5", "67-64-1"]
+
+
+def test_p4_fix_08_ocr_same_page_independent_column_is_x_bounded(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("Target resin", (260, 110, 350, 130)),
+        ("Product:", (390, 110, 460, 130)), ("Foreign resin", (530, 110, 590, 130)),
+        ("Company:", (50, 145, 130, 165)), ("Target Co.", (260, 145, 350, 165)),
+        ("Company:", (390, 145, 470, 165)), ("Foreign Co.", (530, 145, 590, 165)),
+        (S2, (50, 210, 260, 230)),
+    ))
+    section_input = result.input_for("1")
+
+    assert collect_product_candidates(section_input).candidates[0].raw == "Target resin"
+    assert "Foreign" not in "".join(token.text for token in section_input.tokens)
+
+
+@pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+def test_p4_fix_12_ocr_s1_independent_value_product_columns_are_x_bounded(pdf_tmp, rotation):
+    result = _scan_s1(pdf_tmp, _rotated_ocr_rows(_page(
+        (S1, (50, 70, 400, 90)), ("Product", (50, 110, 120, 130)), ("Target Product", (260, 110, 390, 130)),
+        ("Product", (390, 110, 460, 130)), ("Foreign Product", (530, 110, 650, 130)),
+        ("Company", (50, 145, 130, 165)), ("Target Co.", (260, 145, 350, 165)),
+        ("Company", (390, 145, 470, 165)), ("Foreign Co.", (530, 145, 620, 165)),
+        (S2, (50, 210, 260, 230)),
+    ), rotation), name=f"independent-value-product-{rotation}.pdf", rotations=[rotation])
+    section_input = result.input_for("1")
+    candidates = collect_product_candidates(section_input).candidates
+    token_text = "".join(token.text for token in section_input.tokens)
+
+    assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
+    assert [candidate.raw for candidate in candidates] == ["Target Product"]
+    assert "Foreign Product" not in token_text
+    assert all(candidate.raw != "Foreign Product" for candidate in candidates)
+
+
+def test_p4_fix_09_ocr_same_page_crossing_column_is_partial(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("Target resin", (300, 110, 400, 130)),
+        ("Product:", (360, 110, 430, 130)), ("Foreign resin", (520, 110, 590, 130)),
+        ("Company:", (50, 145, 130, 165)), ("Target Co.", (300, 145, 400, 165)),
+        ("Company:", (360, 145, 440, 165)), ("Foreign Co.", (520, 145, 590, 165)),
+        (S2, (50, 210, 260, 230)),
+    ))
+
+    assert result.input_for("1") is None
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert result.routes[0].reasons == ("SAME_PAGE_READING_ORDER_AMBIGUOUS",)
+
+
+def test_p4_fix_09_ocr_s3_independent_table_excludes_foreign_cas(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "independent-s3-columns.pdf")
+    result = scan_pdf_sections(path, engine=FakeOcr([_page(
+        (S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)), ("10%", (200, 110, 230, 130)),
+        ("67-64-1", (360, 110, 420, 130)), ("20%", (510, 110, 540, 130)),
+        ("71-43-2", (50, 145, 110, 165)), ("30%", (200, 145, 230, 165)),
+        ("75-07-0", (360, 145, 420, 165)), ("40%", (510, 145, 540, 165)),
+        (S4, (50, 210, 240, 230)),
+    )]), sections=("3",))
+    section_input = result.input_for("3")
+
+    assert [block.cas_candidates[0].raw for block in collect_section3_candidates(section_input).blocks] == ["64-17-5", "71-43-2"]
+    assert "67-64-1" not in "".join(token.text for token in section_input.tokens)
+
+
+def test_p4_fix_09_cropbox_s3_independent_table_excludes_foreign_cas(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "independent-s3-columns-crop.pdf", cropboxes=[(50, 60, 500, 700)])
+    result = scan_pdf_sections(path, engine=FakeOcr([_page(
+        (S3, (30, 30, 300, 50)), ("64-17-5", (30, 70, 90, 90)), ("10%", (180, 70, 210, 90)),
+        ("67-64-1", (290, 70, 350, 90)), ("20%", (400, 70, 430, 90)),
+        ("71-43-2", (30, 105, 90, 125)), ("30%", (180, 105, 210, 125)),
+        ("75-07-0", (290, 105, 350, 125)), ("40%", (400, 105, 430, 125)),
+        (S4, (30, 170, 220, 190)),
+    )]), sections=("3",))
+
+    assert [block.cas_candidates[0].raw for block in collect_section3_candidates(result.input_for("3")).blocks] == ["64-17-5", "71-43-2"]
+
+
+def test_p4_fix_10_ocr_middle_independent_column_is_partial(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "middle-independent-columns.pdf", 3)
+    result = scan_pdf_sections(path, engine=FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("Target narrative", (50, 110, 180, 130)), ("67-64-1", (360, 110, 420, 130))),
+        _page((S4, (50, 170, 240, 190))),
+    ]), sections=("3",))
+
+    assert result.input_for("3") is None
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert result.routes[0].reasons == ("MIDDLE_PAGE_READING_ORDER_AMBIGUOUS",)
+
+
+def test_p4_fix_11_ocr_three_page_s3_table_remains_confirmed(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "three-page-s3-table.pdf", 4)
+    result = scan_pdf_sections(path, engine=FakeOcr([
+        _page((S3, (50, 70, 400, 90)), ("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130))),
+        _page(("67-64-1", (50, 110, 110, 130)), ("20%", (300, 110, 330, 130))),
+        _page(("71-43-2", (50, 110, 110, 130)), ("30%", (300, 110, 330, 130))),
+        _page((S4, (50, 170, 240, 190))),
+    ]), sections=("3",))
+
+    assert [block.cas_candidates[0].raw for block in collect_section3_candidates(result.input_for("3")).blocks] == ["64-17-5", "67-64-1", "71-43-2"]
 
 
 def test_p4_06_ocr_s3_multi_page_has_no_fixed_page_cutoff(pdf_tmp):
