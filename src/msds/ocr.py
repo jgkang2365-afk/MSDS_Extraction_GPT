@@ -27,7 +27,7 @@ from .models import (
     SectionInput,
 )
 from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult, build_section_input, read_pdf_layout
-from .sections import LocatedFence, locate_section
+from .sections import LocatedFence, _NUMBERED_HEADING, _heading_search_key, locate_section
 
 
 Rect = tuple[float, float, float, float]
@@ -316,7 +316,7 @@ def build_ocr_section_input(recon_layout: PdfReadResult, fence: FenceDescription
 
 
 def _decorative_margin_image(page: PdfPage, image: Rect) -> bool:
-    """Recognize small top/right margin logos, not possible body images."""
+    """Recognize small header, footer, or side-margin decoration."""
     px0, py0, px1, py1 = page.rect
     width, height = px1 - px0, py1 - py0
     image_width, image_height = image[2] - image[0], image[3] - image[1]
@@ -326,9 +326,39 @@ def _decorative_margin_image(page: PdfPage, image: Rect) -> bool:
         and image_width * image_height <= width * height * 0.02
         and (
             image[1] - py0 <= height * 0.10
+            or py1 - image[3] <= height * 0.10
+            or image[0] - px0 <= width * 0.10
             or px1 - image[2] <= width * 0.10
         )
     )
+
+
+def _next_digital_section_boundary(layout: PdfReadResult, located: LocatedFence) -> tuple[int, float] | None:
+    """Find the first explicit non-target digital heading after a partial start."""
+    fence = located.fence
+    if fence.start_page is None or not fence.evidence:
+        return None
+    start = fence.evidence[0]
+    candidates: list[tuple[int, LayoutLine]] = []
+    for page in layout.pages:
+        if page.page_index < fence.start_page:
+            continue
+        for line in page.lines:
+            if page.page_index == fence.start_page and line.bbox[1] < start.bbox[3]:
+                continue
+            match = _NUMBERED_HEADING.match(_heading_search_key(line.text))
+            if match is not None and match.group("number") != fence.section:
+                candidates.append((page.page_index, line))
+    if not candidates:
+        return None
+    page_index, line = min(
+        candidates,
+        key=lambda item: (
+            item[0], item[1].bbox[1], item[1].bbox[0], item[1].bbox[3], item[1].bbox[2],
+            item[1].block_id, item[1].line_id,
+        ),
+    )
+    return page_index, line.bbox[1]
 
 
 def _partial_target_has_relevant_image(layout: PdfReadResult, located: LocatedFence) -> bool:
@@ -347,17 +377,25 @@ def _partial_target_has_relevant_image(layout: PdfReadResult, located: LocatedFe
     start_evidence = fence.evidence[0]
     # A partial fence can carry the *candidate* end page while retaining only
     # start evidence (for example, when the start or body order is ambiguous).
-    # That page is not an observed bound.  In that case only an image below the
-    # observed heading on its own page can justify OCR; do not inspect later
-    # pages or guess a bottom boundary.
+    # That page is not an observed bound.  Continue from the observed start
+    # only until a later explicit digital heading for a different section.  It
+    # is conservative for an image body continuation, while a later unrelated
+    # section cannot trigger OCR for this target.
     end_evidence = fence.evidence[1] if len(fence.evidence) == 2 else None
-    end_page = end_evidence.page if end_evidence is not None else start_page
+    boundary = None if end_evidence is not None else _next_digital_section_boundary(layout, located)
+    end_page = end_evidence.page if end_evidence is not None else (boundary[0] if boundary is not None else max(pages, default=start_page))
     for page_index in range(start_page, end_page + 1):
         page = pages.get(page_index)
         if page is None:
             continue
         top = start_evidence.bbox[3] if page_index == start_page else page.rect[1]
-        bottom = end_evidence.bbox[1] if end_evidence is not None and page_index == end_page else page.rect[3]
+        bottom = (
+            end_evidence.bbox[1]
+            if end_evidence is not None and page_index == end_page
+            else boundary[1]
+            if boundary is not None and page_index == boundary[0]
+            else page.rect[3]
+        )
         span = (page.rect[0], top, page.rect[2], bottom)
         if any(_intersects(image, span) and not _decorative_margin_image(page, image) for image in page.image_rects):
             return True

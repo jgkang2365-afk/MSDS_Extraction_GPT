@@ -9,7 +9,7 @@ import pytest
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
 from src.msds.models import CasCandidateValidity, DocumentCapability, EvidenceSourceType
 from src.msds.ocr import LazyPaddleOcrEngine, OcrMetrics, OcrToken, _pixel_to_pdf, scan_pdf_sections
-from src.msds.pdf_io import read_pdf_layout
+from src.msds.pdf_io import LayoutLine, read_pdf_layout
 from src.msds.sections import locate_section
 import src.msds.ocr as ocr
 from tests.rebaseline.pdf_helpers import make_pdf
@@ -179,7 +179,10 @@ def test_p4_fix_01_partial_digital_s1_body_image_uses_ocr_recon(pdf_tmp):
 
 
 def test_p4_fix_02_partial_digital_target_ignores_unrelated_page_image(pdf_tmp):
-    path = make_pdf(pdf_tmp / "partial-s1-unrelated-image.pdf", [[(72, 72, S1)], []], images={1}, image_rects={1: (72, 110, 430, 250)})
+    path = make_pdf(
+        pdf_tmp / "partial-s1-unrelated-image.pdf", [[(72, 72, S1)], [(72, 72, S2)], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
     fake = FakeOcr([])
 
     result = scan_pdf_sections(path, engine=fake, sections=("1",))
@@ -268,6 +271,235 @@ def test_p4_fix_13_partial_digital_start_end_evidence_image_route_is_bounded(
     else:
         assert result.routes[0].capability is DocumentCapability.TEXT
         assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count) == (0, 0, 0)
+
+
+def test_p4_fix_14_partial_digital_s3_continuation_image_routes_to_confirmed_ocr(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-digital-s3-continuation.pdf",
+        [[(72, 72, S3)], [], []], images={1, 2},
+        image_rects={1: (72, 110, 430, 250), 2: (72, 110, 430, 250)},
+    )
+    initial = locate_section(read_pdf_layout(path), "3")
+    fake = FakeOcr([
+        _page((S3, (50, 70, 400, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130))),
+        _page((S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert initial.fence.status.value == "FENCE_PARTIAL" and len(initial.fence.evidence) == 1
+    assert result.input_for("3").capability is DocumentCapability.OCR
+    assert [(block.cas_candidates[0].raw, block.content_candidates[0].raw) for block in collect_section3_candidates(result.input_for("3")).blocks] == [("64-17-5", "10%")]
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count) == (3, 1, 3)
+
+
+def test_p4_fix_15_partial_digital_next_explicit_section_blocks_later_image(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-digital-s3-next-section.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Regulatory information")], []], images={2},
+        image_rects={2: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+def test_p4_fix_27_partial_digital_boundary_uses_visual_not_stored_line_order(pdf_tmp, monkeypatch):
+    path = make_pdf(
+        pdf_tmp / "partial-digital-s3-visual-boundary.pdf",
+        [[(72, 72, S3)]], images={0}, image_rects={0: (72, 155, 430, 190)},
+    )
+    original = ocr.read_pdf_layout
+
+    def read_with_reversed_headings(*args, **kwargs):
+        layout = original(*args, **kwargs)
+        page = layout.pages[0]
+        later_heading = LayoutLine(0, 2, 0, "6. Accidental release measures", (72, 180, 360, 195), 12)
+        earlier_heading = LayoutLine(0, 1, 0, "5. Regulatory information", (72, 140, 330, 150), 12)
+        return replace(layout, pages=(replace(page, lines=page.lines + (later_heading, earlier_heading)),))
+
+    monkeypatch.setattr(ocr, "read_pdf_layout", read_with_reversed_headings)
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+@pytest.mark.parametrize("rect", [(12, 76, 62, 82), (12, 810, 62, 820), (540, 410, 550, 420)])
+def test_p4_fix_16_partial_digital_margin_images_never_start_ocr(pdf_tmp, rect):
+    path = make_pdf(pdf_tmp / f"partial-margin-{rect[1]}.pdf", [[(72, 72, S1)]], images={0}, image_rects={0: rect})
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+def test_p4_fix_16_partial_digital_unknown_image_placement_never_starts_ocr(pdf_tmp, monkeypatch):
+    path = make_pdf(pdf_tmp / "partial-unknown-image.pdf", [[(72, 72, S1)]])
+    original = ocr.read_pdf_layout
+
+    def read_with_unknown_image(*args, **kwargs):
+        layout = original(*args, **kwargs)
+        return replace(layout, pages=(replace(layout.pages[0], image_count=1, image_rects=()),))
+
+    monkeypatch.setattr(ocr, "read_pdf_layout", read_with_unknown_image)
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("1",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
+
+
+def test_p4_fix_17_partial_s3_ocr_keeps_confirmed_s1_text_route(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-with-confirmed-s1.pdf",
+        [[(72, 72, S1), (72, 110, "Product: Digital"), (72, 170, S2)], [(72, 72, S3)], [], []],
+        images={2, 3}, image_rects={2: (72, 110, 430, 250), 3: (72, 110, 430, 250)},
+    )
+    fake = FakeOcr([
+        _page((S1, (50, 70, 400, 90)), ("Product: Digital", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))),
+        _page((S3, (50, 70, 400, 90))),
+        _page(("64-17-5", (50, 110, 110, 130)), ("10%", (300, 110, 330, 130))),
+        _page((S4, (50, 170, 240, 190))),
+    ])
+
+    result = scan_pdf_sections(path, engine=fake)
+
+    assert result.input_for("1").capability is DocumentCapability.TEXT
+    assert result.input_for("3").capability is DocumentCapability.OCR
+    assert fake.calls == 4
+
+
+def test_p4_fix_18_single_strong_product_row_keeps_right_value_and_ocr_evidence(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("OCR Resin", (300, 110, 390, 130)),
+        (S2, (50, 170, 260, 190)),
+    ))
+    candidate = collect_product_candidates(result.input_for("1")).candidates[0]
+
+    assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
+    assert (candidate.raw, candidate.evidence[0].source_type) == ("OCR Resin", EvidenceSourceType.OCR)
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Product:", "Product"),
+        ("Product name:", "Product Model (Grade A)"),
+        ("Product identifier:", "ABC-100 (10%)"),
+        ("제품명:", "제품명"),
+        ("제품 식별자:", "제품 Grade A 농도 10%"),
+    ],
+)
+def test_p4_fix_19_strong_product_values_preserve_raw_product_korean_and_detail(pdf_tmp, label, value):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), (label, (50, 110, 170, 130)), (value, (300, 110, 520, 130)),
+        (S2, (50, 170, 260, 190)),
+    ), name=f"strong-product-{label.encode('utf-8').hex()}.pdf")
+    candidate = collect_product_candidates(result.input_for("1")).candidates[0]
+
+    assert (candidate.raw, candidate.evidence[0].source_type) == (value, EvidenceSourceType.OCR)
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Product", "Target Product"),
+        ("Product name", "Product Model (Grade A)"),
+        ("Product identifier", "ABC-100 (10%)"),
+        ("제품명", "제품명 Product"),
+        ("제품 식별자", "제품 Grade A 농도 10%"),
+    ],
+)
+def test_p4_fix_25_colonless_strong_product_label_keeps_same_row_raw_and_evidence(pdf_tmp, label, value):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), (label, (50, 110, 170, 130)), (value, (300, 110, 520, 130)),
+        (S2, (50, 170, 260, 190)),
+    ), name=f"colonless-strong-product-{label.encode('utf-8').hex()}.pdf")
+    section_input = result.input_for("1")
+    candidate = collect_product_candidates(section_input).candidates[0]
+
+    assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
+    assert (candidate.raw, candidate.evidence[0].source_type) == (value, EvidenceSourceType.OCR)
+    assert value in "".join(token.text for token in section_input.tokens)
+
+
+def test_p4_fix_26_strong_product_pipe_label_keeps_same_row_value(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product |", (50, 110, 170, 130)), ("Target Product", (300, 110, 520, 130)),
+        (S2, (50, 170, 260, 190)),
+    ))
+    candidate = collect_product_candidates(result.input_for("1")).candidates[0]
+
+    assert (candidate.raw, candidate.evidence[0].source_type) == ("Target Product", EvidenceSourceType.OCR)
+
+
+def test_p4_fix_20_two_independent_product_columns_keep_only_target_band(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("Target Product", (260, 110, 390, 130)),
+        ("Product:", (410, 110, 480, 130)), ("Foreign Product", (510, 110, 590, 130)),
+        (S2, (50, 170, 260, 190)),
+    ))
+    section_input = result.input_for("1")
+
+    assert result.routes[0].fence.status.value == "FENCE_CONFIRMED"
+    assert [candidate.raw for candidate in collect_product_candidates(section_input).candidates] == ["Target Product"]
+    assert "Foreign Product" not in "".join(token.text for token in section_input.tokens)
+
+
+def test_p4_fix_21_strong_product_with_unproven_far_right_column_is_partial(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("Target resin", (260, 110, 350, 130)),
+        ("Foreign column", (440, 110, 570, 130)), (S2, (50, 170, 260, 190)),
+    ))
+
+    assert result.input_for("1") is None
+    assert result.routes[0].fence.status.value == "FENCE_PARTIAL"
+    assert result.routes[0].reasons == ("SAME_PAGE_READING_ORDER_AMBIGUOUS",)
+
+
+def test_p4_fix_22_multiline_product_and_company_boundary_keep_collector_semantics(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product:", (50, 110, 120, 130)), ("ABC-100", (50, 140, 150, 160)),
+        ("Company: Example", (50, 170, 200, 190)), (S2, (50, 220, 260, 240)),
+    ))
+
+    assert [candidate.raw for candidate in collect_product_candidates(result.input_for("1")).candidates] == ["ABC-100"]
+
+
+def test_p4_fix_23_inline_product_value_stays_collector_owned(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page(
+        (S1, (50, 70, 400, 90)), ("Product: ABC-100 (Model A, Grade 2, 10%)", (50, 110, 360, 130)),
+        (S2, (50, 170, 260, 190)),
+    ))
+    candidate = collect_product_candidates(result.input_for("1")).candidates[0]
+
+    assert (candidate.raw, candidate.evidence[0].source_type) == ("ABC-100 (Model A, Grade 2, 10%)", EvidenceSourceType.OCR)
+
+
+def test_p4_fix_24_partial_s3_next_section_then_margin_image_stays_text(pdf_tmp):
+    path = make_pdf(
+        pdf_tmp / "partial-s3-next-section-margin.pdf",
+        [[(72, 72, S3)], [(72, 72, "5. Regulatory information")], []], images={2},
+        image_rects={2: (12, 810, 62, 820)},
+    )
+    fake = FakeOcr([])
+
+    result = scan_pdf_sections(path, engine=fake, sections=("3",))
+
+    assert result.routes[0].capability is DocumentCapability.TEXT
+    assert (fake.calls, result.metrics.initialization_count, result.metrics.invocation_count, result.metrics.render_count) == (0, 0, 0, 0)
 
 
 def test_p4_ocr_input_build_failure_isolated_per_confirmed_target(pdf_tmp, monkeypatch):

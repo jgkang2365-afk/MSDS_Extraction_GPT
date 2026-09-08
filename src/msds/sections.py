@@ -23,6 +23,10 @@ _HEADING = {
     "4": re.compile(r"(?:응급|first\s*[- ]?aid)", re.IGNORECASE),
 }
 
+_STRONG_SECTION_ONE_PRODUCT_LABELS = frozenset({
+    "product", "product name", "product identifier", "제품명", "제품 식별자",
+})
+
 
 @dataclass(frozen=True)
 class LocatedFence:
@@ -107,6 +111,56 @@ def _section_one_label_value_row(row: list[LayoutLine]) -> bool:
     ))
 
 
+def _strong_section_one_product_label(line: LayoutLine) -> bool:
+    """Match only an explicit Product field label, never a Product-like value."""
+    label = re.sub(r"\s*[:|]\s*$", "", _heading_search_key(line.text)).casefold()
+    return label in _STRONG_SECTION_ONE_PRODUCT_LABELS
+
+
+def _section_one_safe_single_product_segments(row: list[LayoutLine]) -> list[list[LayoutLine]]:
+    """Prove a one-row Product label/value relation without widening columns."""
+    cells = sorted(row, key=lambda item: item.bbox[0])
+    if len(cells) < 2 or len(cells) % 2:
+        return []
+    pairs = [cells[index:index + 2] for index in range(0, len(cells), 2)]
+    if not any(_strong_section_one_product_label(pair[0]) for pair in pairs):
+        return []
+    # A multi-pair row needs a terminal separator or another exact strong
+    # Product label for every pair. This rejects a far-right bare value/foreign
+    # column instead of silently retaining the left label while dropping its
+    # uncertain value.
+    if len(pairs) > 1 and not all(
+        _strong_section_one_product_label(pair[0])
+        or _heading_search_key(pair[0].text).endswith((":", "|"))
+        for pair in pairs
+    ):
+        return []
+    if any(
+        not _section_one_label_value_row(pair)
+        or (_heading_search_key(pair[1].text).endswith(":") and not _strong_section_one_product_label(pair[1]))
+        for pair in pairs
+    ):
+        return []
+    return [pair for pair in pairs if _strong_section_one_product_label(pair[0])]
+
+
+def _segment_key(segment: list[LayoutLine]) -> tuple[tuple[int, int, int], ...]:
+    return tuple((line.page_index, line.block_id, line.line_id) for line in segment)
+
+
+def _section_one_has_unresolved_strong_product_relation(lines: list[LayoutLine]) -> bool:
+    """Detect a strong Product label whose same-row relation is not proven."""
+    for row in _horizontal_rows(lines):
+        cells = sorted(row, key=lambda item: item.bbox[0])
+        has_right_hand_cell = any(
+            _strong_section_one_product_label(line) and index + 1 < len(cells)
+            for index, line in enumerate(cells)
+        )
+        if has_right_hand_cell and not _section_one_safe_single_product_segments(row):
+            return True
+    return False
+
+
 def _section_three_cas_concentration_row(row: list[LayoutLine], *, allow_plain_content: bool) -> bool:
     """Recognize the compact CAS | concentration rows used by Section 3 tables."""
     if len(row) not in {2, 3}:
@@ -155,14 +209,24 @@ def _structured_table_bands(
         for line in lines
     )
     bands: list[list[list[LayoutLine]]] = []
+    safe_single_product_segments: set[tuple[tuple[int, int, int], ...]] = set()
     for row in _horizontal_rows(lines):
-        for segment in _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content):
+        segments = _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)
+        if section_no == "1":
+            safe_segments = _section_one_safe_single_product_segments(row)
+            safe_single_product_segments.update(_segment_key(segment) for segment in safe_segments)
+            known_segments = {_segment_key(segment) for segment in segments}
+            segments.extend(segment for segment in safe_segments if _segment_key(segment) not in known_segments)
+        for segment in segments:
             existing = next((band for band in bands if _same_column_bands(band[0], segment)), None)
             if existing is None:
                 bands.append([segment])
             else:
                 existing.append(segment)
-    return [band for band in bands if section_no == "3" or len(band) >= 2]
+    return [
+        band for band in bands
+        if section_no == "3" or len(band) >= 2 or _segment_key(band[0]) in safe_single_product_segments
+    ]
 
 
 def _band_bounds(band: list[list[LayoutLine]]) -> tuple[float, float]:
@@ -285,6 +349,8 @@ def _safe_body_x_bounds(
         ):
             return None
         return (max(page.rect[0], x0 - padding), min(page.rect[2], x1 + padding))
+    if section_no == "1" and _section_one_has_unresolved_strong_product_relation(lines):
+        return None
     starts = sorted({round(line.bbox[0], 1) for line in lines})
     x0 = min(line.bbox[0] for line in lines)
     x1 = max(line.bbox[2] for line in lines)
