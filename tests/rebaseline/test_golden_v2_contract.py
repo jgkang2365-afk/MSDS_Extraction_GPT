@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
-from golden.v2.validation import compare_ordered_rows, select_approved_cases, validate_case
+from golden.v2.validation import compare_ordered_rows, select_approved_cases, validate_case, validate_dataset
 
 
 def _human_evidence(page, **extra):
@@ -97,8 +97,11 @@ def test_g6_02_human_reviewed_is_not_approved_truth():
 def test_g6_03_approved_only_selector_keeps_only_asset_valid_approved_cases(pdf_tmp):
     approved, root = _approved_with_source(pdf_tmp)
     assert select_approved_cases([approved]) == ()
+    candidate, reviewed = _case(), _case(lifecycle="HUMAN_REVIEWED")
+    candidate["case_id"] = "g6-case-002"
+    reviewed["case_id"] = "g6-case-003"
     assert select_approved_cases(
-        [_case(), _case(lifecycle="HUMAN_REVIEWED"), approved], source_roots={"reviewed-pdfs": root}
+        [candidate, reviewed, approved], source_roots={"reviewed-pdfs": root}
     ) == (approved,)
 
 
@@ -183,6 +186,61 @@ def test_g6_12_content_statuses_remain_distinct():
     assert validate_case(case) == []
 
 
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda row: row["content"].update(content_raw="not stated", content_normalized="not stated"),
+        lambda row: row.__setitem__("pair_status", "PAIRED"),
+    ],
+)
+def test_g6_f3_not_stated_rejects_content_or_paired_contradictions(mutate):
+    case = _case()
+    row = case["components"][0]
+    row["content"].update(content_raw="", content_normalized="", content_status="NOT_STATED")
+    row["pair_status"] = "NOT_STATED"
+    mutate(row)
+    assert "components[0].content NOT_STATED requires empty raw/normalized and non-PAIRED pair_status" in validate_case(case)
+    assert _schema_errors(case)
+
+
+@pytest.mark.parametrize(
+    ("content_status", "pair_status", "content_raw"),
+    [
+        ("FOUND", "PAIRED", "50%"),
+        ("NOT_STATED", "NOT_STATED", ""),
+        ("NOT_READABLE", "NOT_READABLE", "?"),
+        ("PAIR_AMBIGUOUS", "PAIR_AMBIGUOUS", ""),
+    ],
+)
+def test_g6_r2_content_and_pair_status_mapping_accepts_only_exact_pairs(content_status, pair_status, content_raw):
+    case = _case()
+    case["components"][0]["content"].update(
+        content_raw=content_raw, content_normalized=content_raw, content_status=content_status
+    )
+    case["components"][0]["pair_status"] = pair_status
+    assert validate_case(case) == []
+    assert _schema_errors(case) == []
+
+
+@pytest.mark.parametrize(
+    ("content_status", "pair_status", "content_raw"),
+    [
+        ("FOUND", "NOT_STATED", "50%"),
+        ("NOT_STATED", "PAIRED", ""),
+        ("NOT_READABLE", "REVIEW", "?"),
+        ("PAIR_AMBIGUOUS", "PAIRED", ""),
+    ],
+)
+def test_g6_r2_content_and_pair_status_mapping_rejects_mismatches(content_status, pair_status, content_raw):
+    case = _case()
+    case["components"][0]["content"].update(
+        content_raw=content_raw, content_normalized=content_raw, content_status=content_status
+    )
+    case["components"][0]["pair_status"] = pair_status
+    assert f"components[0].pair_status must match content_status {content_status}" in "\n".join(validate_case(case))
+    assert _schema_errors(case)
+
+
 def test_g6_13_pair_status_and_source_relation_are_required():
     case = _case()
     case["components"][0].pop("source_relation")
@@ -198,6 +256,51 @@ def test_g6_14_shared_content_relation_is_retained_per_source_row():
     for row in (first, second):
         row["source_relation"] = {"row_id": "row-shared", "shared_content_id": "content-7", "relation_reason": "one source content shared by two CAS"}
     case["components"] = [first, second]
+    assert validate_case(case) == []
+
+
+def test_g6_r3_shared_content_requires_matching_content_and_blocks_approved_selector(pdf_tmp):
+    case, root = _approved_with_source(pdf_tmp)
+    first = case["components"][0]
+    first["source_relation"] = {
+        "row_id": "row-shared-1",
+        "shared_content_id": "content-7",
+        "relation_reason": "one source content shared by two CAS",
+    }
+    second = copy.deepcopy(first)
+    second["block_id"] = "block-2"
+    second["cas"].update(cas_raw="67-64-1", cas_normalized="67-64-1")
+    second["source_relation"]["row_id"] = "row-shared-2"
+    case["components"].append(second)
+    case["source_transcription"]["component_rows"].append(
+        {"block_id": "block-2", "cas_raw": "67-64-1", "content_raw": "50%", "evidence": copy.deepcopy(second["evidence"])}
+    )
+    assert validate_case(case) == []
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == (case,)
+    second["content"]["content_normalized"] = "fifty percent"
+    assert "components[1].source_relation.shared_content_id 'content-7' must match components[0] content raw/normalized/status/unit context" in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+def test_g6_r3_shared_content_requires_matching_header_unit_evidence_locators():
+    case = _case()
+    first, second = case["components"][0], _row("67-64-1", "block-2", "10")
+    for row in (first, second):
+        row["content"].update(content_raw="10", content_normalized="10", unit_context_raw="%", unit_context_evidence=[_human_evidence(2)])
+        row["source_relation"] = {
+            "row_id": f"row-{row['block_id']}",
+            "shared_content_id": "content-7",
+            "relation_reason": "one source content shared by two CAS",
+        }
+    case["components"] = [first, second]
+    assert validate_case(case) == []
+    second["content"]["unit_context_evidence"] = [_human_evidence(3)]
+    assert "components[1].source_relation.shared_content_id 'content-7' must match components[0] unit_context_evidence source locators" in validate_case(case)
+
+
+def test_g6_r3_null_shared_content_id_does_not_create_a_cross_row_constraint():
+    case = _case()
+    case["components"].append(_row("67-64-1", "block-2", "40%"))
     assert validate_case(case) == []
 
 
@@ -281,6 +384,54 @@ def test_g6_f5_timestamp_requires_a_real_calendar_date_and_offset():
     case = _case(lifecycle="HUMAN_REVIEWED")
     case["review_history"][-1]["timestamp"] = "2026-02-30T10:30:00+25:00"
     assert "review_history[1].timestamp must be an ISO-8601 timestamp with timezone" in validate_case(case)
+
+
+def test_g6_r3_review_history_timestamps_must_not_move_backward_and_block_selector(pdf_tmp):
+    case, root = _approved_with_source(pdf_tmp)
+    case["review_history"][-1]["timestamp"] = "2026-09-09T09:30:00+09:00"
+    assert _schema_errors(case) == []
+    assert "review_history[2].timestamp must be nondecreasing across review_history" in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+@pytest.mark.parametrize("components", [None, 7, {}])
+def test_g6_r4_non_list_components_fail_closed_without_validation_exceptions(components):
+    case = _case(lifecycle="APPROVED")
+    case["components"] = components
+    assert _schema_errors(case)
+    errors = validate_case(case)
+    assert "components must be an ordered list, never a CAS-keyed object" in errors
+    assert "APPROVED source_transcription requires components to be an ordered list" in errors
+    assert validate_dataset([case]).errors
+    assert select_approved_cases([case]) == ()
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda case: case.__setitem__("case_kind", []),
+        lambda case: case.__setitem__("lifecycle", {}),
+        lambda case: case["product"].__setitem__("status", []),
+        lambda case: case["components"][0]["cas"].__setitem__("cas_status", {}),
+        lambda case: case["components"][0]["content"].__setitem__("content_status", []),
+        lambda case: case["components"][0].__setitem__("pair_status", []),
+        lambda case: case["review_history"][0].__setitem__("action", []),
+        lambda case: case.__setitem__("review_history", 7),
+        lambda case: case.update(case_kind="FAILURE_BEHAVIOR", expected={"safe_outcome": []}),
+    ],
+)
+def test_g6_r5_public_validation_apis_fail_closed_for_malformed_enums_and_containers(mutate):
+    case = _case(lifecycle="APPROVED")
+    mutate(case)
+    assert validate_case(case)
+    assert validate_dataset([case]).errors
+    assert select_approved_cases([case]) == ()
+
+
+def test_g6_r5_source_roots_invalid_container_fails_closed_for_dataset_and_selector(pdf_tmp):
+    case, _root = _approved_with_source(pdf_tmp)
+    assert validate_dataset([case], source_roots=7).errors
+    assert select_approved_cases([case], source_roots=7) == ()
 
 
 def test_g6_f6_header_context_requires_nonempty_evidence_and_direct_units_remain_raw_only():
@@ -519,6 +670,99 @@ def test_g6_r5_schema_rejects_ocr_raw_reading_anywhere_in_approved_source_transc
     mutate(case["source_transcription"])
     assert _schema_errors(case)
     assert "APPROVED source_transcription must not contain OCR raw_reading" in validate_case(case)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        (
+            lambda case: case["source_transcription"].__setitem__("product_raw", "different product"),
+            "APPROVED source_transcription.product_raw must match product.raw",
+        ),
+        (
+            lambda case: case["product"]["provenance"][0].__setitem__("page", 1),
+            "APPROVED source_transcription.product_evidence must match product.provenance locator order",
+        ),
+    ],
+)
+def test_g6_r4_approved_transcription_product_must_match_product_fact_and_locator_order(pdf_tmp, mutate, expected_error):
+    case, root = _approved_with_source(pdf_tmp)
+    mutate(case)
+    assert _schema_errors(case) == []
+    assert expected_error in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+def test_g6_r4_candidate_history_prohibits_optional_timestamp():
+    case = _case()
+    case["review_history"][0]["timestamp"] = "2026-09-09T10:30:00+09:00"
+    assert _schema_errors(case)
+    assert "review_history[0].timestamp is not permitted for CANDIDATE" in validate_case(case)
+
+
+def test_g6_r4_timestamp_rejects_invalid_timezone_offset_minutes():
+    case = _case(lifecycle="HUMAN_REVIEWED")
+    case["review_history"][-1]["timestamp"] = "2026-09-09T10:30:00+09:60"
+    assert "review_history[1].timestamp must be an ISO-8601 timestamp with timezone" in validate_case(case)
+
+
+def test_g6_r4_schema_rejects_raw_reading_in_nested_approved_transcription_annotations(pdf_tmp):
+    case, root = _approved_with_source(pdf_tmp)
+    case["source_transcription"]["reviewer_annotations"] = [{"nested": {"raw_reading": "50%"}}]
+    assert _schema_errors(case)
+    assert "APPROVED source_transcription must not contain OCR raw_reading" in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected_error"),
+    [
+        (
+            lambda case: (
+                case["product"]["provenance"][0].__setitem__("bbox", [1, 10, 20, 30]),
+                case["source_transcription"]["product_evidence"][0].__setitem__("bbox", [True, 10, 20, 30]),
+            ),
+            "APPROVED source_transcription.product_evidence must match product.provenance locator order",
+        ),
+        (
+            lambda case: (
+                case["components"][0]["evidence"][0].__setitem__("bbox", [1, 10, 20, 30]),
+                case["source_transcription"]["component_rows"][0]["evidence"][0].__setitem__("bbox", [True, 10, 20, 30]),
+            ),
+            "source_transcription.component_rows[0] must correspond to components[0] source order, raw values, and evidence",
+        ),
+    ],
+)
+def test_g6_r5_locator_comparison_preserves_json_boolean_integer_distinction(pdf_tmp, mutate, expected_error):
+    case, root = _approved_with_source(pdf_tmp)
+    mutate(case)
+    assert _schema_errors(case)
+    assert expected_error in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+def test_g6_f1_selector_rejects_schema_invalid_approved_human_evidence(pdf_tmp):
+    case, root = _approved_with_source(pdf_tmp)
+    case["components"][0]["evidence"][0]["raw_reading"] = "50%"
+    assert _schema_errors(case)
+    assert "components[0].evidence[0] must not contain OCR raw_reading for APPROVED" in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+def test_g6_r2_approved_human_evidence_rejects_nested_raw_reading(pdf_tmp):
+    case, root = _approved_with_source(pdf_tmp)
+    case["components"][0]["evidence"][0]["annotation"] = {"raw_reading": "50%"}
+    assert _schema_errors(case)
+    assert "components[0].evidence[0] must not contain OCR raw_reading for APPROVED" in validate_case(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+def test_g6_r2_schema_rejects_uppercase_ppm_header_context():
+    case = _case()
+    content = case["components"][0]["content"]
+    content.update(content_raw="500 PPM", content_normalized="500 PPM", unit_context_raw="%", unit_context_evidence=[_human_evidence(2)])
+    assert "components[0].content direct unit must not carry header unit context" in validate_case(case)
+    assert _schema_errors(case)
 
 
 def test_g6_r4_transcription_evidence_rejects_same_page_reversed_bbox_locators():

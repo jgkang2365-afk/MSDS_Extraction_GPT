@@ -4,7 +4,7 @@ from hashlib import sha256
 import pytest
 
 from golden.v2 import validation
-from golden.v2.validation import select_approved_cases, validate_dataset
+from golden.v2.validation import select_approved_cases, validate_case, validate_dataset
 
 from test_golden_v2_contract import _case
 
@@ -71,6 +71,36 @@ def test_b03_duplicate_case_id_and_malformed_case_are_errors_without_mutation():
     assert dataset == before
 
 
+def test_b03_selector_rejects_the_entire_dataset_when_case_ids_are_duplicated(pdf_tmp):
+    sources = (pdf_tmp / "first.pdf", pdf_tmp / "second.pdf")
+    for source in sources:
+        source.write_bytes(b"%PDF-1.4\nfixture\n%%EOF\n")
+    first, second = (_approved_case(source) for source in sources)
+    for case, source in zip((first, second), sources):
+        case["source"] = {"source_root": "reviewed-pdfs", "relative_path": source.name}
+    assert validate_dataset([first, second], source_roots={"reviewed-pdfs": pdf_tmp}).errors
+    assert select_approved_cases([first, second], source_roots={"reviewed-pdfs": pdf_tmp}) == ()
+
+
+def test_b03_selector_rejects_any_schema_invalid_case_even_when_semantic_validation_passes(pdf_tmp):
+    root = pdf_tmp / "reviewed"
+    source = root / "supplier" / "example.pdf"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"%PDF-1.4\nfixture\n%%EOF\n")
+    approved = _approved_case(source)
+    candidate = _case()
+    candidate["case_id"] = "g6-case-schema-invalid"
+    candidate["source_transcription"] = {
+        "product_raw": "candidate transcription",
+        "product_evidence": [],
+        "component_rows": [],
+        "transcription_method": "OCR",
+    }
+    assert validate_case(candidate) == []
+    assert validate_dataset([candidate, approved], source_roots={"reviewed-pdfs": root}).valid
+    assert select_approved_cases([candidate, approved], source_roots={"reviewed-pdfs": root}) == ()
+
+
 def test_b04_safe_review_and_failure_expectations_are_dataset_errors_when_missing():
     safe = _case(kind="SAFE_REVIEW")
     failure = _case(kind="FAILURE_BEHAVIOR")
@@ -105,3 +135,21 @@ def test_b06_source_asset_oserror_is_returned_without_propagating(pdf_tmp, monke
     monkeypatch.setattr(validation.Path, operation, denied)
     result = validate_dataset([case], source_roots={"reviewed-pdfs": root})
     assert getattr(result, target) == ("cases[0]: source asset is unavailable: could not resolve or read file",)
+
+
+@pytest.mark.parametrize("invalid_root", [False, 0, [], {}])
+@pytest.mark.parametrize(("lifecycle", "target"), [("APPROVED", "errors"), ("CANDIDATE", "findings")])
+def test_b06_invalid_mapped_source_root_value_fails_closed_without_path_typeerror(invalid_root, lifecycle, target):
+    case = _case(lifecycle=lifecycle)
+    result = validate_dataset([case], source_roots={"reviewed-pdfs": invalid_root})
+    assert getattr(result, target) == ("cases[0]: source asset is unavailable: could not resolve or read file",)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": invalid_root}) == ()
+
+
+@pytest.mark.parametrize("empty_root", ["", " \t "])
+@pytest.mark.parametrize(("lifecycle", "target"), [("APPROVED", "errors"), ("CANDIDATE", "findings")])
+def test_b06_empty_mapped_source_root_string_never_resolves_to_the_working_directory(empty_root, lifecycle, target):
+    case = _case(lifecycle=lifecycle)
+    result = validate_dataset([case], source_roots={"reviewed-pdfs": empty_root})
+    assert getattr(result, target) == ("cases[0]: source asset is unavailable: source root is not mapped",)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": empty_root}) == ()

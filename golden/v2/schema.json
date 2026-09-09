@@ -36,18 +36,62 @@
       }
     },
     {"if": {"properties": {"case_kind": {"const": "SAFE_REVIEW"}}}, "then": {"required": ["expected"], "properties": {"expected": {"type": "object", "required": ["quality_status", "finding_codes"], "properties": {"quality_status": {"const": "REVIEW_REQUIRED"}, "finding_codes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}}}}},
+    {
+      "properties": {
+        "components": {
+          "items": {
+            "if": {
+              "properties": {
+                "content": {
+                  "properties": {
+                    "content_status": {"const": "NOT_STATED"}
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "content": {
+                  "properties": {
+                    "content_raw": {"const": ""},
+                    "content_normalized": {"const": ""}
+                  }
+                },
+                "pair_status": {"not": {"const": "PAIRED"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "components": {
+          "items": {
+            "allOf": [
+              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "FOUND"}}}}}, "then": {"properties": {"pair_status": {"const": "PAIRED"}}}},
+              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "NOT_STATED"}}}}}, "then": {"properties": {"pair_status": {"const": "NOT_STATED"}}}},
+              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "NOT_READABLE"}}}}}, "then": {"properties": {"pair_status": {"const": "NOT_READABLE"}}}},
+              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "PAIR_AMBIGUOUS"}}}}}, "then": {"properties": {"pair_status": {"const": "PAIR_AMBIGUOUS"}}}},
+              {"if": {"properties": {"content": {"properties": {"content_raw": {"pattern": "(?:%|(?<![A-Za-z])[Pp][Pp][Mm]\\b)"}}}}}, "then": {"properties": {"content": {"properties": {"unit_context_raw": {"const": null}, "unit_context_evidence": {"maxItems": 0}}}}}}
+            ]
+          }
+        }
+      }
+    },
     {"if": {"properties": {"case_kind": {"const": "FAILURE_BEHAVIOR"}}}, "then": {"required": ["expected"], "properties": {"expected": {"type": "object", "required": ["safe_outcome"], "properties": {"safe_outcome": {"enum": ["REJECT", "REVIEW_REQUIRED", "NO_OUTPUT", "FENCE_BLOCKED"]}}}}}}
   ],
   "$defs": {
-    "evidence_item": {"type": "object", "minProperties": 1, "properties": {"provenance_type": {"type": "string"}, "page": {"type": "integer", "minimum": 0}}, "additionalProperties": true},
-    "approved_human_source_evidence": {"type": "object", "required": ["provenance_type", "page"], "properties": {"provenance_type": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "page": {"type": "integer", "minimum": 0}}, "not": {"required": ["raw_reading"]}, "additionalProperties": true},
+    "evidence_item": {"type": "object", "minProperties": 1, "properties": {"provenance_type": {"type": "string"}, "page": {"type": "integer", "minimum": 0}, "bbox": {"type": "array", "items": {"type": "number"}}}, "additionalProperties": true},
+    "no_raw_reading_anywhere": {"not": {"type": "object", "required": ["raw_reading"]}, "additionalProperties": {"$ref": "#/$defs/no_raw_reading_anywhere"}, "items": {"$ref": "#/$defs/no_raw_reading_anywhere"}},
+    "approved_human_source_evidence": {"type": "object", "required": ["provenance_type", "page"], "properties": {"provenance_type": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "page": {"type": "integer", "minimum": 0}}, "allOf": [{"$ref": "#/$defs/no_raw_reading_anywhere"}], "additionalProperties": true},
     "transcription_component_row": {"type": "object", "required": ["block_id", "cas_raw", "content_raw", "evidence"], "properties": {"block_id": {"type": "string", "minLength": 1}, "cas_raw": {"type": "string", "minLength": 1}, "content_raw": {"type": "string"}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "not": {"required": ["raw_reading"]}, "additionalProperties": true},
     "source_transcription": {"type": "object", "required": ["product_raw", "product_evidence", "component_rows"], "properties": {"product_raw": {"type": "string"}, "product_evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}, "transcription_method": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"type": "boolean"}, "component_rows": {"type": "array", "items": {"$ref": "#/$defs/transcription_component_row"}}}, "not": {"required": ["raw_reading"]}, "additionalProperties": true},
     "approved_transcription_component_row": {"allOf": [{"$ref": "#/$defs/transcription_component_row"}, {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}]},
-    "approved_source_transcription": {"type": "object", "required": ["transcription_method", "source_pdf_directly_confirmed"], "properties": {"transcription_method": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "product_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}, "component_rows": {"type": "array", "items": {"$ref": "#/$defs/approved_transcription_component_row"}}}, "not": {"required": ["raw_reading"]}},
+    "approved_source_transcription": {"type": "object", "required": ["transcription_method", "source_pdf_directly_confirmed"], "properties": {"transcription_method": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "product_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}, "component_rows": {"type": "array", "items": {"$ref": "#/$defs/approved_transcription_component_row"}}}, "allOf": [{"$ref": "#/$defs/no_raw_reading_anywhere"}]},
     "review_event": {"type": "object", "required": ["action", "status"], "properties": {"action": {"enum": ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"]}, "status": {"enum": ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"]}, "reason": {"type": "string"}}, "additionalProperties": true},
     "review_timestamp": {"type": "string", "pattern": "^(?:(?:\\d{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12]\\d|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8])))|(?:(?:(?:\\d{2}(?:0[48]|[2468][048]|[13579][26]))|(?:[02468][048]00|[13579][26]00))-02-29))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$", "format": "date-time"},
-    "candidate_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"properties": {"action": {"const": "CANDIDATE"}, "status": {"const": "CANDIDATE"}}}]},
+    "candidate_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"properties": {"action": {"const": "CANDIDATE"}, "status": {"const": "CANDIDATE"}}, "not": {"required": ["timestamp"]}}]},
     "human_review_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"required": ["reviewer_ref", "timestamp", "review_method", "source_pdf_directly_confirmed", "section_1_confirmed", "section_3_confirmed"], "properties": {"action": {"const": "HUMAN_REVIEWED"}, "status": {"const": "HUMAN_REVIEWED"}, "reviewer_ref": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}, "timestamp": {"$ref": "#/$defs/review_timestamp"}, "review_method": {"const": "DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "section_1_confirmed": {"const": true}, "section_3_confirmed": {"const": true}}}]},
     "approved_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"required": ["reviewer_ref", "timestamp", "review_method", "source_pdf_directly_confirmed", "section_1_confirmed", "section_3_confirmed"], "properties": {"action": {"const": "APPROVED"}, "status": {"const": "APPROVED"}, "reviewer_ref": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}, "timestamp": {"$ref": "#/$defs/review_timestamp"}, "review_method": {"const": "DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "section_1_confirmed": {"const": true}, "section_3_confirmed": {"const": true}}}]},
     "candidate_history": {"type": "array", "prefixItems": [{"$ref": "#/$defs/candidate_event"}], "items": false, "minItems": 1, "maxItems": 1},
