@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
-from src.msds.models import CasCandidateValidity, DocumentCapability, EvidenceSourceType
+from src.msds.models import CasCandidateValidity, DocumentCapability, EvidenceSourceType, FenceStatus
 from src.msds.ocr import LazyPaddleOcrEngine, OcrMetrics, OcrToken, _pixel_to_pdf, scan_pdf_sections
 from src.msds.pdf_io import LayoutLine, read_pdf_layout
 from src.msds.sections import locate_section
@@ -884,6 +884,33 @@ def test_p4_18_ocr_percent_header_keeps_raw_10_and_unit_context(pdf_tmp):
     block = _s3_collected(pdf_tmp, (("CAS", (50, 100, 80, 120)), ("Content (%)", (300, 100, 390, 120)), ("64-17-5", (50, 140, 110, 160)), ("10", (300, 140, 320, 160)))).blocks[0]
     content = block.content_candidates[0]
     assert (content.raw, content.unit_context_raw) == ("10", "%")
+
+
+def test_p5_fix_02_ocr_header_and_cas_without_content_stays_unknown_not_explicit_blank(pdf_tmp):
+    path = _image_pdf(pdf_tmp, "p5-ocr-missing-content.pdf")
+    result = scan_pdf_sections(path, engine=FakeOcr([_page(
+        (S3, (50, 70, 400, 90)), ("CAS", (50, 100, 80, 120)), ("Content (%)", (300, 100, 390, 120)),
+        ("64-17-5", (50, 140, 110, 160)), ("10", (300, 140, 320, 160)), (S4, (50, 180, 240, 200)),
+    )]), sections=("3",))
+    section_input = replace(result.input_for("3"), tokens=tuple(
+        token for token in result.input_for("3").tokens
+        if not (token.bbox[0] >= 300 and token.bbox[1] >= 140)
+    ))
+    block = collect_section3_candidates(section_input).blocks[0]
+    assert (block.content_field_state.value, block.content_candidates) == ("UNKNOWN", ())
+
+
+def test_p5_fix_06_ocr_header_ppm_propagates_typed_context(pdf_tmp):
+    block = _s3_collected(pdf_tmp, (
+        ("CAS", (50, 100, 80, 120)), ("Content ppm", (300, 100, 390, 120)),
+        ("64-17-5", (50, 140, 110, 160)), ("500", (300, 140, 330, 160)),
+    )).blocks[0]
+    assert (block.content_candidates[0].raw, block.content_candidates[0].unit_context_raw) == ("500", "ppm")
+
+
+def test_p5_fix_13_phase4_confirmed_ocr_input_propagates_fence_status(pdf_tmp):
+    result = _scan_s1(pdf_tmp, _page((S1, (50, 70, 400, 90)), ("Product: OCR Resin", (50, 110, 240, 130)), (S2, (50, 170, 260, 190))))
+    assert result.input_for("1").fence_status is FenceStatus.FENCE_CONFIRMED
 
 
 def test_p4_19_ocr_duplicate_cas_occurrences_are_retained(pdf_tmp):

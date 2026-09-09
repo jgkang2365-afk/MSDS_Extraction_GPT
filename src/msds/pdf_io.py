@@ -233,4 +233,8 @@ def build_section_input(layout: PdfReadResult, fence: FenceDescription) -> Secti
             if allowed and not excluded:
                 selected.append(token)
     digest = sha256("\n".join(f"{token.token_id}|{token.text}|{token.bbox}" for token in selected).encode("utf-8")).hexdigest()
-    return SectionInput(layout.document_sha256, fence.section_no, fence.fence_id, fence.regions, tuple(selected), fence.capability, fence.reasons, digest)
+    return SectionInput(
+        layout.document_sha256, fence.section_no, fence.fence_id, fence.regions,
+        tuple(selected), fence.capability, fence.reasons, digest,
+        fence_status=FenceStatus.FENCE_CONFIRMED,
+    )

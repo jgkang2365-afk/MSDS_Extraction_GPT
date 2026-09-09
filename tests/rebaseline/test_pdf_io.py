@@ -54,6 +54,7 @@ def test_p2_09_actual_bbox_filtering_excludes_outside_sentinel(pdf_tmp):
     fence = locate_section(layout, "1").description
     assert fence is not None
     section_input = build_section_input(layout, fence)
+    assert section_input.fence_status is FenceStatus.FENCE_CONFIRMED
     text = "".join(token.text for token in section_input.tokens)
     assert text == "INSIDE"
     assert "OUTSIDE" not in text

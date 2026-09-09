@@ -313,6 +313,7 @@ def build_ocr_section_input(recon_layout: PdfReadResult, fence: FenceDescription
     return SectionInput(
         recon_layout.document_sha256, fence.section_no, fence.fence_id, fence.regions, tuple(selected),
         DocumentCapability.OCR, fence.reasons, sha256(digest_material.encode("utf-8")).hexdigest(), images,
+        FenceStatus.FENCE_CONFIRMED,
     )
 
 

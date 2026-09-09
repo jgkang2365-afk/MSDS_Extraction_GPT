@@ -6,22 +6,42 @@ import pytest
 
 import src.msds.collectors as collectors
 from src.msds.collectors import collect_product_candidates, collect_section3_candidates
-from src.msds.models import CasCandidateValidity, DocumentCapability, FenceStatus, LayoutToken, PageRegion, SectionInput
+from src.msds.models import (
+    CasCandidateValidity, ContentStatus, DocumentCapability, FenceStatus, FindingCode,
+    LayoutToken, PageRegion, PairStatus, QualityStatus, ResultStatus, SectionInput,
+)
 from src.msds.pdf_io import FenceDescription, build_section_input, read_pdf_layout
+from src.msds.resolver import resolve
 from src.msds.sections import locate_section
+from src.msds.validation import validate_resolved
 from tests.rebaseline.pdf_helpers import make_pdf
 
 
-def _input(section: str, rows: tuple[tuple[str, ...], ...]) -> SectionInput:
+def _input(
+    section: str,
+    rows: tuple[tuple[str, ...], ...],
+    *,
+    capability: DocumentCapability = DocumentCapability.TEXT,
+    fence_status: FenceStatus | None = FenceStatus.FENCE_CONFIRMED,
+) -> SectionInput:
     tokens: list[LayoutToken] = []
     serial = 0
     for row_number, cells in enumerate(rows):
         for cell_number, text in enumerate(cells):
             for character_number, character in enumerate(text):
                 x = 72.0 + cell_number * 180.0 + character_number
-                tokens.append(LayoutToken(f"t-{serial}", character, 0, (x, 100.0 + row_number * 20, x + 1, 110.0 + row_number * 20), cell_number, row_number))
+                tokens.append(LayoutToken(
+                    f"t-{serial}", character, 0,
+                    (x, 100.0 + row_number * 20, x + 1, 110.0 + row_number * 20),
+                    cell_number, row_number,
+                    "OCR" if capability is DocumentCapability.OCR else "TEXT",
+                ))
                 serial += 1
-    return SectionInput("a" * 64, section, "confirmed-by-phase-2", (PageRegion(0, ((0, 0, 600, 800),)),), tuple(tokens), DocumentCapability.TEXT, input_digest="synthetic")
+    return SectionInput(
+        "a" * 64, section, "confirmed-by-phase-2",
+        (PageRegion(0, ((0, 0, 600, 800),)),), tuple(tokens), capability,
+        input_digest="synthetic", fence_status=fence_status,
+    )
 
 
 def test_product_label_pipe_and_multiline_raw_preserve_source_order_and_formatting():
@@ -134,6 +154,29 @@ def test_p3_fix_header_context_survives_blank_unit_cell_without_creating_bare_co
     assert first.content_candidates == ()
     content = second.content_candidates[0]
     assert (content.raw, content.unit_context_raw) == ("10", "%")
+
+
+def test_p5_fix_12_text_header_derived_blank_remains_explicit_blank():
+    section3 = _input("3", (
+        ("CAS", "Content (%)"),
+        ("64-17-5", ""),
+    ))
+    block = collect_section3_candidates(section3).blocks[0]
+    assert block.content_field_state.value == "EXPLICIT_BLANK"
+    resolved = resolve(_input("1", (("Product: Text blank",),)), section3)
+    assert (resolved.components[0].content.content_status, resolved.components[0].status) == (
+        ContentStatus.NOT_STATED, PairStatus.NOT_STATED,
+    )
+
+
+def test_p5_fix_03_ocr_explicit_unreadable_content_is_preserved():
+    section3 = _input("3", (("64-17-5", "[unreadable]"),), capability=DocumentCapability.OCR)
+    resolved = resolve(_input("1", (("Product: OCR unreadable",),)), section3)
+    report = validate_resolved(resolved)
+    assert (resolved.components[0].content.content_raw, resolved.components[0].content.content_status) == (
+        "[unreadable]", ContentStatus.NOT_READABLE,
+    )
+    assert report.findings[0].code is FindingCode.CONTENT_NOT_READABLE
 
 
 def test_p3_fix_05_ec_table_column_is_excluded_while_cas_and_bare_content_remain():
@@ -258,6 +301,7 @@ def test_real_pdf_section3_narrow_ec_cas_gap_keeps_cas_column_candidate(pdf_tmp)
         layout.pages[0].tokens,
         DocumentCapability.TEXT,
         input_digest="real-pdf-narrow-ec-cas",
+        fence_status=FenceStatus.FENCE_CONFIRMED,
     )
     result = collect_section3_candidates(section_input)
     block = result.blocks[0]
@@ -315,6 +359,45 @@ def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_
     assert [block.content_candidates[0].raw for block in result.blocks] == ["< 1%", "≥4%", "10-20%", "Rem.", "Balance", "5 wt%", "6 vol%"]
 
 
+@pytest.mark.parametrize("source_token", ("64-17-5X", "X64-17-5", "64-17-5-99"))
+def test_malformed_cas_tokens_preserve_the_whole_source_token_through_review(source_token):
+    result = resolve(
+        _input("1", (("Product: CAS boundary regression",),)),
+        _input("3", ((source_token, "10%"),)),
+    )
+    candidate = result.section3.blocks[0].cas_candidates[0]
+    pair = result.components[0]
+    report = validate_resolved(result)
+
+    assert (candidate.raw, candidate.normalized, candidate.validity) == (
+        source_token, source_token, CasCandidateValidity.FORMAT_INVALID,
+    )
+    assert candidate.evidence[0].raw_fragment == source_token
+    assert (pair.cas.cas_raw, pair.cas.cas_status, pair.status) == (
+        source_token, ResultStatus.INVALID, PairStatus.REVIEW,
+    )
+    assert (report.status, [finding.code for finding in report.findings]) == (
+        QualityStatus.REVIEW_REQUIRED, [FindingCode.CAS_READ_UNCERTAIN],
+    )
+
+
+def test_standalone_valid_cas_remains_valid_through_resolution_and_validation():
+    result = resolve(
+        _input("1", (("Product: CAS boundary regression",),)),
+        _input("3", (("64-17-5", "10%"),)),
+    )
+    candidate = result.section3.blocks[0].cas_candidates[0]
+    pair = result.components[0]
+
+    assert (candidate.raw, candidate.normalized, candidate.validity) == (
+        "64-17-5", "64-17-5", CasCandidateValidity.VALID,
+    )
+    assert (pair.cas.cas_raw, pair.cas.cas_status, pair.status) == (
+        "64-17-5", ResultStatus.FOUND, PairStatus.PAIRED,
+    )
+    assert validate_resolved(result).status is QualityStatus.PASS
+
+
 def test_collectors_are_isolated_to_their_confirmed_section_inputs():
     product_one = _input("1", (("Product: Stable-1",),))
     product_changed = _input("1", (("Product: Stable-1",),))
@@ -362,3 +445,13 @@ def test_public_collectors_reject_wrong_section_non_isolated_and_non_input():
         collect_product_candidates(replace(section_one, capability=DocumentCapability.IMAGE_ONLY))
     with pytest.raises(TypeError, match="SECTION_INPUT"):
         collect_product_candidates("not an input")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("fence_status", (FenceStatus.FENCE_PARTIAL, FenceStatus.FENCE_NOT_FOUND, None))
+def test_p5_fix_10_collectors_reject_partial_not_found_and_unconfirmed_inputs(fence_status):
+    product = _input("1", (("Product: A",),), fence_status=fence_status)
+    section3 = _input("3", (("64-17-5", "10%"),), fence_status=fence_status)
+    with pytest.raises(ValueError, match="REQUIRES_CONFIRMED_FENCE"):
+        collect_product_candidates(product)
+    with pytest.raises(ValueError, match="REQUIRES_CONFIRMED_FENCE"):
+        collect_section3_candidates(section3)
