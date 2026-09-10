@@ -8,7 +8,7 @@ source bytes와 그 hash를 비교한다. portable corpus에는 source root 이�
 기록했다. 세 canonical file은 모두 `VALUE_TRUTH`/`CANDIDATE`이고 human provenance,
 `source_transcription`, `HUMAN_REVIEWED`, `APPROVED`는 없다.
 
-| Candidate | Portable source / user-supplied SHA-256 | v1.0 fence 결과 | v1.1 core 결과 |
+| Candidate | Portable source / locally computed SHA-256 | v1.0 fence 결과 | v1.1 core 결과 |
 | --- | --- | --- | --- |
 | `008-sarapong.candidate.json` | `phase7-test-file/008_★msds_사라퐁.pdf` / `2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d` | S1/S3 start 미검출 | S1/S3 confirmed; 제품 `사라퐁`; CAS-bearing 2행은 `INVALID/REVIEW`, CAS-less 행은 미승격 |
 | `015-teca-biome.candidate.json` | `phase7-test-file/015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf` / `88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b` | S3 mixed fence partial | S1/S3 confirmed; 제품 `TECA-BIOME™`; 12 component source relations (11 `PAIRED`, 1 `INVALID/REVIEW`) |
