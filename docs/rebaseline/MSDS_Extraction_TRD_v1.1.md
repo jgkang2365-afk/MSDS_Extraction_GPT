@@ -418,9 +418,45 @@ KOSHA/MES 보강은 제품명·CAS·함유량을 수정할 수 없다. MES의 �
 
 ### 16.2 Golden v2
 
-Golden에는 case_id, source_sha256, 실제 원본 경로, 승인 상태·시점·근거, 값 기대 결과 또는 REVIEW 기대 동작을 둔다. 성분 기대값은 원문 기재 순서가 있는 배열이고 공유 함유량 관계와 단위·상태·근거 위치를 포함한다. `chemical_name`은 필수 정답값이 아니다.
+Golden v2에는 case_id, source_sha256, portable `source_root`+`relative_path`,
+승인 상태·시점·근거, 값 기대 결과 또는 REVIEW/실패 기대 동작을 둔다. 절대
+원본 경로는 저장하지 않고, 검증 실행 시에만 local source-root mapping으로 파일
+존재와 hash를 확인한다. 성분 기대값은 원문 기재 순서가 있는 배열이고 공유
+함유량 관계와 단위·상태·근거 위치를 포함한다. `chemical_name`은 필수 정답값이
+아니다.
 
-Golden의 사람이 읽은 원문 표기는 `source_transcription`으로 구분한다. 실행 중 OCR이 반환한 `raw_reading`과 문자 단위로 무조건 같아야 한다고 요구하지 않는다. 정확한 결과·의미·출처를 비교하고 최초 판독 이력이 보존되는지는 별도 검사한다. 입력 문자열을 고정한 정규화 테스트에서는 raw 보존을 정확히 검사한다.
+Golden v2 lifecycle은 `CANDIDATE → HUMAN_REVIEWED → APPROVED`다. history의 최종
+stage는 case lifecycle과 정확히 일치해야 하며 APPROVED는 세 stage를 그 순서로
+모두 가진다. CANDIDATE와 HUMAN_REVIEWED는 approved truth selector에서 제외하고,
+형식이 깨진 APPROVED도 truth set에 넣지 않는다. APPROVED에는 reviewer
+reference(개인 실명 필수 아님), 실제 calendar/offset을 갖는 timezone timestamp,
+`DIRECT_SOURCE_PDF_REVIEW`, 원본 PDF 직접 확인 및 Section 1/3 확인이 있어야 한다.
+승인 source asset은 portable `.pdf` reference, PDF signature, hash 일치가 모두
+필요하며 불일치는 오류다. candidate의 미가용 asset은 검토 blocker로 남긴다. 자동
+실행 또는 agent 판단은 사람 검토·승인으로 기록하지 않는다.
+
+Golden의 사람이 읽은 원문 표기는 `source_transcription`으로 구분한다. 이는
+product raw와 순서 있는 component-row raw 및 각각의 evidence를 가진 별도 lossless
+구조이며, OCR이 반환한 `raw_reading`을 자동 복사하거나 문자 단위로 무조건 같게
+요구하지 않는다. APPROVED의 transcription은 직접 human source-PDF review와 PDF
+확인을 기록하고, component row와 source order의 `block_id`·CAS raw·content raw 및
+source locator evidence가 1:1로 대응해야 한다. APPROVED의 transcription과
+product·S1/S3·CAS·content·row evidence는 모두 `provenance_type`
+`HUMAN_DIRECT_SOURCE_PDF_REVIEW`와 음수가 아닌 `page`를 가진 의미 있는 사람 원본
+근거 object여야 한다. 빈 object, `null`, OCR-only `raw_reading`은 근거가 아니다.
+이 승인 gate는 CANDIDATE/HUMAN_REVIEWED에 transcription을 강제하지 않는다. 정확한
+결과·의미·출처를 비교하고 최초 판독 이력이 보존되는지는 별도 검사한다. 입력
+문자열을 고정한 정규화 테스트에서는 raw 보존을 정확히 검사한다.
+
+`schema.json`은 APPROVED 전사의 local shape와 locally expressible promotion gate,
+즉 직접 human source 확인·method, non-empty human evidence, transcription row의
+필드 형태, component가 있으면 non-empty `component_rows`를 검사한다. 허용 locator
+(`page`/`bbox`/`region`)와 reviewer annotation은 보존하되 approved human evidence에는
+OCR `raw_reading`을 둘 수 없다. JSON Schema Draft 2020-12는 서로 다른 두 배열의
+임의 원소에 대한 exact equality를 표현할 수 없으므로, source transcription과
+component의 순서·row coverage·raw value·locator exact match는 `validate_case`와
+`validate_dataset` helper가 authoritative하게 검사한다. 이는 schema-expressible
+constraint를 넘는 schema/Python 완전 동치 주장 없이 경계를 명시한 것이다.
 
 ID 중복·해시 불일치·필수 원본 또는 fixture 누락·승인 미완료는 검증 미완료/실패로 처리한다. dict(CAS→함유량)로 축약하거나 테스트가 Golden·운영 코드·원본을 바꾸는 것은 금지한다. 실제 페이지와 허용 근거를 검사하되 엔진별 작은 bbox 차이를 모두 실패시키는 pixel-perfect 비교는 기본이 아니다.
 
@@ -650,7 +686,7 @@ KOSHA/MES, 사용자 교정·승인 결과, Legacy 이중 실행·cutover가 구
 - `ContentResult`의 계약 필드는 정확히 `content_raw`, `content_normalized`,
   `content_status`, `unit_context_raw`, `unit_context_evidence`다. header `%`의
   bare `10`은 raw `10`과 context `%`를 유지한다. 직접 기재된 `10%`, `500 ppm`,
-  `10 wt%`, `10 vol%`는 `unit_context_raw=None`이다.
+  `500ppm`, `10 wt%`, `10wt%`, `10 vol%`, `20vol%`는 `unit_context_raw=None`이다.
 - 한 block에 content 후보가 여러 개면 `ContentStatus.PAIR_AMBIGUOUS` 및
   `PairStatus.PAIR_AMBIGUOUS`로 확정하고 최종 raw는 빈 값으로 둔다. synthetic
   join은 만들지 않는다. 후보 fact와 evidence는 `Section3Collection` 및
@@ -671,3 +707,32 @@ KOSHA/MES, 사용자 교정·승인 결과, Legacy 이중 실행·cutover가 구
 위 사실은 Phase 5 resolver/validator foundation의 현재 경계만 설명한다.
 선택·보류 기능과 실제 corpus/외부 연동의 효과 검증은 기존 TRD의 향후 Gate에
 남아 있다.
+
+### 21.5 2026-09-09 Phase 6 Golden v2 계약 기반
+
+본 절은 TRD 버전을 v1.1로 유지하는 최소 기술 동기화이며 PRD 제품 정책을
+바꾸지 않는다. `golden/v2`에는 dependency-free schema/validator와 계약 테스트만
+추가했다. `VALUE_TRUTH`, `SAFE_REVIEW`, `FAILURE_BEHAVIOR` case kind와 portable
+source reference, lifecycle/approval history, approved-only selector를 정의했다.
+Product raw/normalized/status/provenance, ordered duplicate-CAS component rows,
+CAS/content/pair status, block/source relation, evidence, unit context를 Phase 5의
+lossless result 계약에 맞춰 보존한다. 사람 원문 표기 `source_transcription`은 OCR
+raw와 별도이며 승인본에서 direct human source-PDF review, 자체 evidence, component
+source-order 1:1 raw/evidence 대응을 갖는 product/component-row 구조다. 승인본의
+모든 evidence는 `HUMAN_DIRECT_SOURCE_PDF_REVIEW`와 page를 갖는 human provenance여야
+하며 OCR-only/empty evidence는 승격할 수 없다. 직접 단위는 header unit context를 받지 않고, header-derived bare raw 및
+`NOT_STATED`/`NOT_READABLE`/`PAIR_AMBIGUOUS`의 구분을 유지한다. PAIR_AMBIGUOUS
+final raw/normalized는 빈 값이고 후보 원문은 evidence/transcription/finding에
+보존한다.
+
+`schema.json`은 local JSON 구조와 locally expressible promotion gate만 담당한다.
+Draft 2020-12로 source transcription/component 두 배열의 임의 순서·row coverage·raw
+value·locator가 정확히 일치하는지를 선언할 수 없으므로, 그 semantic cross-row
+relation은 `validate_case`/`validate_dataset` helper가 authoritative하게 검사한다.
+이는 schema-expressible 범위를 넘는 schema/Python 완전 동치 주장이 아니다.
+
+이 단계는 사람 승인 corpus나 pilot PDF를 만들거나 승인하지 않았다. 승인 가능한
+local source PDF가 이 worktree에 명확히 제공되지 않아 pilot CANDIDATE 생성도
+보류했다. Golden v1 import/copy path, 운영 코드, OCR/AI/ODL/KOSHA/MES/DB/외부 호출,
+배포는 이 단계 범위가 아니다. 실제 corpus 평가와 Gate 3 통과 주장은 후속의
+사람 원본 검토와 승인 자료로만 가능하다.

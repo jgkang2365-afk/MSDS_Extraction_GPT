@@ -2,12 +2,103 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MSDS Golden v2 case",
   "type": "object",
-  "required": ["source_sha256", "product", "section_provenance", "components"],
+  "required": ["case_id", "case_kind", "lifecycle", "source_sha256", "source", "product", "section_provenance", "components", "review_history"],
   "properties": {
+    "case_id": {"type": "string", "minLength": 1},
+    "case_kind": {"enum": ["VALUE_TRUTH", "SAFE_REVIEW", "FAILURE_BEHAVIOR"]},
+    "lifecycle": {"enum": ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"]},
     "source_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "product": {"type": "object", "required": ["raw"], "properties": {"raw": {"type": "string"}, "normalized": {"type": "string"}, "status": {"type": "string"}}, "additionalProperties": true},
-    "section_provenance": {"type": "object", "description": "Lossless Section 1/3 fence and evidence provenance.", "required": ["section_1", "section_3"], "properties": {"section_1": {"type": "object"}, "section_3": {"type": "object"}}, "additionalProperties": true},
-    "components": {"type": "array", "description": "Ordered rows. Duplicate CAS rows are retained.", "items": {"type": "object", "required": ["cas", "content", "pair_status", "block_id", "evidence"], "properties": {"cas": {"type": "object", "required": ["cas_raw", "cas_normalized", "cas_status"], "properties": {"cas_raw": {"type": "string", "minLength": 1}, "cas_normalized": {"type": "string", "minLength": 1}, "cas_status": {"enum": ["FOUND", "NOT_READABLE", "REVIEW", "INVALID"]}}}, "content": {"type": "object", "required": ["content_raw", "content_normalized", "content_status"], "properties": {"content_raw": {"type": "string"}, "content_normalized": {"type": "string"}, "content_status": {"type": "string"}}}, "pair_status": {"enum": ["PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"]}, "block_id": {"type": "string"}, "evidence": {"type": "array"}}, "additionalProperties": true}}
+    "source": {"type": "object", "required": ["source_root", "relative_path"], "properties": {"source_root": {"type": "string", "minLength": 1}, "relative_path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"}}, "additionalProperties": false},
+    "product": {"type": "object", "required": ["raw", "normalized", "status", "provenance"], "properties": {"raw": {"type": "string"}, "normalized": {"type": "string"}, "status": {"enum": ["FOUND", "NOT_FOUND", "NOT_STATED", "NOT_READABLE", "REVIEW", "INVALID"]}, "provenance": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "additionalProperties": true},
+    "section_provenance": {"type": "object", "required": ["section_1", "section_3"], "properties": {"section_1": {"type": "object", "required": ["evidence"], "properties": {"evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "additionalProperties": true}, "section_3": {"type": "object", "required": ["evidence"], "properties": {"evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "additionalProperties": true}}, "additionalProperties": true},
+    "source_transcription": {"$ref": "#/$defs/source_transcription", "type": "object", "required": ["product_raw", "product_evidence", "component_rows"]},
+    "components": {"type": "array", "description": "Ordered rows; duplicate CAS rows are material.", "items": {"$ref": "#/$defs/component"}},
+    "review_history": {"type": "array", "items": {"$ref": "#/$defs/review_event"}},
+    "expected": {"type": "object", "additionalProperties": true},
+    "blockers": {"type": "array", "items": {"type": "string"}}
+  },
+  "allOf": [
+    {"if": {"properties": {"lifecycle": {"const": "CANDIDATE"}}}, "then": {"properties": {"review_history": {"$ref": "#/$defs/candidate_history"}}}},
+    {"if": {"properties": {"lifecycle": {"const": "HUMAN_REVIEWED"}}}, "then": {"properties": {"review_history": {"$ref": "#/$defs/human_reviewed_history"}}}},
+    {
+      "if": {"properties": {"lifecycle": {"const": "APPROVED"}}},
+      "then": {
+        "required": ["source_transcription"],
+        "properties": {
+          "source": {"properties": {"relative_path": {"pattern": ".*\\.[Pp][Dd][Ff]$"}}},
+          "review_history": {"$ref": "#/$defs/approved_history"},
+          "product": {"properties": {"provenance": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}},
+          "section_provenance": {"properties": {"section_1": {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}, "section_3": {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}}},
+          "components": {"items": {"allOf": [{"$ref": "#/$defs/component"}, {"properties": {"cas": {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}, "content": {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}, "unit_context_evidence": {"type": "array", "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}, "evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}]}},
+          "source_transcription": {"$ref": "#/$defs/approved_source_transcription"}
+        },
+        "allOf": [{"if": {"properties": {"components": {"minItems": 1}}}, "then": {"properties": {"source_transcription": {"properties": {"component_rows": {"minItems": 1}}}}}}]
+      }
+    },
+    {"if": {"properties": {"case_kind": {"const": "SAFE_REVIEW"}}}, "then": {"required": ["expected"], "properties": {"expected": {"type": "object", "required": ["quality_status", "finding_codes"], "properties": {"quality_status": {"const": "REVIEW_REQUIRED"}, "finding_codes": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}}}}}},
+    {
+      "properties": {
+        "components": {
+          "items": {
+            "if": {
+              "properties": {
+                "content": {
+                  "properties": {
+                    "content_status": {"const": "NOT_STATED"}
+                  }
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "content": {
+                  "properties": {
+                    "content_raw": {"const": ""},
+                    "content_normalized": {"const": ""}
+                  }
+                },
+                "pair_status": {"not": {"const": "PAIRED"}}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "properties": {
+        "components": {
+          "items": {
+            "allOf": [
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "FOUND"}}}}}]}, "then": {"properties": {"pair_status": {"const": "PAIRED"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "NOT_STATED"}}}}}]}, "then": {"properties": {"pair_status": {"const": "NOT_STATED"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "NOT_READABLE"}}}}}]}, "then": {"properties": {"pair_status": {"const": "NOT_READABLE"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "PAIR_AMBIGUOUS"}}}}}]}, "then": {"properties": {"pair_status": {"const": "PAIR_AMBIGUOUS"}}}},
+              {"if": {"properties": {"cas": {"properties": {"cas_status": {"enum": ["INVALID", "NOT_READABLE", "REVIEW"]}}}}}, "then": {"properties": {"pair_status": {"const": "REVIEW"}}}},
+              {"if": {"properties": {"content": {"properties": {"content_raw": {"pattern": "(?:%|(?<![A-Za-z])[Pp][Pp][Mm]\\b)"}}}}}, "then": {"properties": {"content": {"properties": {"unit_context_raw": {"const": null}, "unit_context_evidence": {"maxItems": 0}}}}}}
+            ]
+          }
+        }
+      }
+    },
+    {"if": {"properties": {"case_kind": {"const": "FAILURE_BEHAVIOR"}}}, "then": {"required": ["expected"], "properties": {"expected": {"type": "object", "required": ["safe_outcome"], "properties": {"safe_outcome": {"enum": ["REJECT", "REVIEW_REQUIRED", "NO_OUTPUT", "FENCE_BLOCKED"]}}}}}}
+  ],
+  "$defs": {
+    "evidence_item": {"type": "object", "minProperties": 1, "properties": {"provenance_type": {"type": "string"}, "page": {"type": "integer", "minimum": 0}, "bbox": {"type": "array", "items": {"type": "number"}}}, "additionalProperties": true},
+    "no_raw_reading_anywhere": {"not": {"type": "object", "required": ["raw_reading"]}, "additionalProperties": {"$ref": "#/$defs/no_raw_reading_anywhere"}, "items": {"$ref": "#/$defs/no_raw_reading_anywhere"}},
+    "approved_human_source_evidence": {"type": "object", "required": ["provenance_type", "page"], "properties": {"provenance_type": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "page": {"type": "integer", "minimum": 0}}, "allOf": [{"$ref": "#/$defs/no_raw_reading_anywhere"}], "additionalProperties": true},
+    "transcription_component_row": {"type": "object", "required": ["block_id", "cas_raw", "content_raw", "evidence"], "properties": {"block_id": {"type": "string", "minLength": 1}, "cas_raw": {"type": "string", "minLength": 1}, "content_raw": {"type": "string"}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "not": {"required": ["raw_reading"]}, "additionalProperties": true},
+    "source_transcription": {"type": "object", "required": ["product_raw", "product_evidence", "component_rows"], "properties": {"product_raw": {"type": "string"}, "product_evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}, "transcription_method": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"type": "boolean"}, "component_rows": {"type": "array", "items": {"$ref": "#/$defs/transcription_component_row"}}}, "not": {"required": ["raw_reading"]}, "additionalProperties": true},
+    "approved_transcription_component_row": {"allOf": [{"$ref": "#/$defs/transcription_component_row"}, {"properties": {"evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}}}]},
+    "approved_source_transcription": {"type": "object", "required": ["transcription_method", "source_pdf_directly_confirmed"], "properties": {"transcription_method": {"const": "HUMAN_DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "product_evidence": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/approved_human_source_evidence"}}, "component_rows": {"type": "array", "items": {"$ref": "#/$defs/approved_transcription_component_row"}}}, "allOf": [{"$ref": "#/$defs/no_raw_reading_anywhere"}]},
+    "review_event": {"type": "object", "required": ["action", "status"], "properties": {"action": {"enum": ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"]}, "status": {"enum": ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"]}, "reason": {"type": "string"}}, "additionalProperties": true},
+    "review_timestamp": {"type": "string", "pattern": "^(?:(?:\\d{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12]\\d|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12]\\d|30)|02-(?:0[1-9]|1\\d|2[0-8])))|(?:(?:(?:\\d{2}(?:0[48]|[2468][048]|[13579][26]))|(?:[02468][048]00|[13579][26]00))-02-29))T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:[01]\\d|2[0-3]):[0-5]\\d)$", "format": "date-time"},
+    "candidate_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"properties": {"action": {"const": "CANDIDATE"}, "status": {"const": "CANDIDATE"}}, "not": {"required": ["timestamp"]}}]},
+    "human_review_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"required": ["reviewer_ref", "timestamp", "review_method", "source_pdf_directly_confirmed", "section_1_confirmed", "section_3_confirmed"], "properties": {"action": {"const": "HUMAN_REVIEWED"}, "status": {"const": "HUMAN_REVIEWED"}, "reviewer_ref": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}, "timestamp": {"$ref": "#/$defs/review_timestamp"}, "review_method": {"const": "DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "section_1_confirmed": {"const": true}, "section_3_confirmed": {"const": true}}}]},
+    "approved_event": {"allOf": [{"$ref": "#/$defs/review_event"}, {"required": ["reviewer_ref", "timestamp", "review_method", "source_pdf_directly_confirmed", "section_1_confirmed", "section_3_confirmed"], "properties": {"action": {"const": "APPROVED"}, "status": {"const": "APPROVED"}, "reviewer_ref": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"}, "timestamp": {"$ref": "#/$defs/review_timestamp"}, "review_method": {"const": "DIRECT_SOURCE_PDF_REVIEW"}, "source_pdf_directly_confirmed": {"const": true}, "section_1_confirmed": {"const": true}, "section_3_confirmed": {"const": true}}}]},
+    "candidate_history": {"type": "array", "prefixItems": [{"$ref": "#/$defs/candidate_event"}], "items": false, "minItems": 1, "maxItems": 1},
+    "human_reviewed_history": {"type": "array", "prefixItems": [{"$ref": "#/$defs/candidate_event"}, {"$ref": "#/$defs/human_review_event"}], "items": false, "minItems": 2, "maxItems": 2},
+    "approved_history": {"type": "array", "prefixItems": [{"$ref": "#/$defs/candidate_event"}, {"$ref": "#/$defs/human_review_event"}, {"$ref": "#/$defs/approved_event"}], "items": false, "minItems": 3, "maxItems": 3},
+    "component": {"type": "object", "required": ["cas", "content", "pair_status", "block_id", "source_relation", "evidence"], "properties": {"cas": {"type": "object", "required": ["cas_raw", "cas_normalized", "cas_status", "evidence"], "properties": {"cas_raw": {"type": "string", "minLength": 1}, "cas_normalized": {"type": "string"}, "cas_status": {"enum": ["FOUND", "NOT_READABLE", "REVIEW", "INVALID"]}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "additionalProperties": true}, "content": {"type": "object", "required": ["content_raw", "content_normalized", "content_status", "unit_context_raw", "unit_context_evidence", "evidence"], "properties": {"content_raw": {"type": "string"}, "content_normalized": {"type": "string"}, "content_status": {"enum": ["FOUND", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS"]}, "unit_context_raw": {"type": ["string", "null"]}, "unit_context_evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "allOf": [{"if": {"properties": {"unit_context_raw": {"type": "null"}}}, "then": {"properties": {"unit_context_evidence": {"maxItems": 0}}}}, {"if": {"properties": {"unit_context_raw": {"type": "string"}}}, "then": {"properties": {"unit_context_raw": {"minLength": 1}, "unit_context_evidence": {"minItems": 1}}}}, {"if": {"properties": {"content_raw": {"pattern": "(?:%|(?<![A-Za-z])ppm\\b)"}}}, "then": {"properties": {"unit_context_raw": {"const": null}, "unit_context_evidence": {"maxItems": 0}}}}]}, "pair_status": {"enum": ["PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"]}, "block_id": {"type": "string", "minLength": 1}, "source_relation": {"type": "object", "required": ["relation_reason"], "properties": {"row_id": {"type": ["string", "null"]}, "shared_content_id": {"type": ["string", "null"]}, "relation_reason": {"type": "string", "minLength": 1}}, "additionalProperties": true}, "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence_item"}}}, "allOf": [{"if": {"anyOf": [{"properties": {"pair_status": {"const": "PAIR_AMBIGUOUS"}}}, {"properties": {"content": {"properties": {"content_status": {"const": "PAIR_AMBIGUOUS"}}}}}]}, "then": {"properties": {"content": {"properties": {"content_raw": {"const": ""}, "content_normalized": {"const": ""}}}}}}], "additionalProperties": true}
   },
   "additionalProperties": true
 }
