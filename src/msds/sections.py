@@ -16,9 +16,10 @@ from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult
 StopCheck = Callable[[], bool] | None
 
 _NUMBERED_HEADING = re.compile(r"^\s*(?:section\s+)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
+_TABLE_CONTENT = re.compile(r"\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*[%％]?\s*$")
 _HEADING = {
     "1": re.compile(r"(?:화학제품.*회사|chemical\s+product.*company|identification)", re.IGNORECASE),
-    "2": re.compile(r"(?:유해성.*위험성|hazard(?:s)?\s+identification)", re.IGNORECASE),
+    "2": re.compile(r"(?:유해성.*위험성|유해\s*위험성|위험.*유해성|hazard(?:s)?\s+identification)", re.IGNORECASE),
     "3": re.compile(r"(?:구성성분|성분.*정보|composition|information\s+on\s+ingredients)", re.IGNORECASE),
     "4": re.compile(r"(?:응급|first\s*[- ]?aid)", re.IGNORECASE),
 }
@@ -89,6 +90,33 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
             number = match.group("number")
             if number in _HEADING and _HEADING[number].search(match.group("heading")):
                 headers.append(_Header(number, page.page_index, line))
+        # Some PDFs emit the section number and its semantic title as distinct
+        # lines on one visual baseline.  Admit only an immediately right-hand
+        # title whose heading semantics independently prove the numbered pair.
+        for number_line in page.lines:
+            number_match = re.fullmatch(r"\s*(?P<number>[1-9]|1[0-6])\s*[.)]\s*", _heading_search_key(number_line.text))
+            if number_match is None:
+                continue
+            number = number_match.group("number")
+            if number not in _HEADING:
+                continue
+            titles = sorted([
+                title for title in page.lines
+                if title.bbox[0] >= number_line.bbox[2]
+                and abs(title.bbox[1] - number_line.bbox[1]) <= 1.0
+            ], key=lambda item: item.bbox[0])
+            title_text = " ".join(_heading_search_key(title.text) for title in titles)
+            semantic_title_text = re.sub(r"[·•]", "", title_text)
+            if not titles or not _HEADING[number].search(semantic_title_text):
+                continue
+            title = titles[-1]
+            combined = LayoutLine(
+                number_line.page_index, number_line.block_id, number_line.line_id,
+                f"{number_line.text} {title_text}",
+                (number_line.bbox[0], min(number_line.bbox[1], title.bbox[1]), title.bbox[2], max(number_line.bbox[3], title.bbox[3])),
+                max(number_line.font_size, title.font_size),
+            )
+            headers.append(_Header(number, page.page_index, combined))
     return headers, None
 
 
@@ -167,12 +195,13 @@ def _section_three_cas_concentration_row(row: list[LayoutLine], *, allow_plain_c
         return False
     values = [line.text for line in sorted(row, key=lambda item: item.bbox[0])]
     cas_count = sum(bool(re.search(r"\b\d{2,7}-\d{2}-\d\b", value)) for value in values)
-    content_count = sum(bool(re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", value)) for value in values)
-    return cas_count == 1 and content_count == 1 and (allow_plain_content or any("%" in value for value in values))
+    content_count = sum(bool(_TABLE_CONTENT.fullmatch(value)) for value in values)
+    return cas_count == 1 and content_count == 1 and (allow_plain_content or any("%" in value or "％" in value for value in values))
 
 
 def _structured_row_segments(
     row: list[LayoutLine], section_no: str, *, allow_plain_content: bool,
+    left_content_columns: tuple[tuple[float, float], ...] = (),
 ) -> list[list[LayoutLine]]:
     """Split side-by-side structured rows into their individual table bands."""
     cells = sorted(row, key=lambda item: item.bbox[0])
@@ -187,17 +216,43 @@ def _structured_row_segments(
     for index, cell in enumerate(cells):
         if not re.search(r"\b\d{2,7}-\d{2}-\d\b", cell.text):
             continue
-        content = next(
-            (
-                candidate for candidate in cells[index + 1:]
-                if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", candidate.text)
-                and (allow_plain_content or "%" in candidate.text)
-            ),
-            None,
+        candidates = [
+            candidate for candidate in cells[index + 1:]
+            if candidate is not cell and _TABLE_CONTENT.fullmatch(candidate.text)
+            and (allow_plain_content or "%" in candidate.text or "％" in candidate.text)
+        ]
+        candidates.extend(
+            candidate for candidate in cells[:index]
+            if _TABLE_CONTENT.fullmatch(candidate.text)
+            and any(
+                abs(candidate.bbox[0] - content_x) <= 12 and abs(cell.bbox[0] - cas_x) <= 12
+                for content_x, cas_x in left_content_columns
+            )
+        )
+        content = min(
+            candidates,
+            key=lambda candidate: abs(candidate.bbox[0] - cell.bbox[0]),
+            default=None,
         )
         if content is not None:
             segments.append([cell, content])
     return segments
+
+
+def _left_content_columns(lines: list[LayoutLine], section_no: str) -> tuple[tuple[float, float], ...]:
+    """Prove a reversed content/CAS order from explicit table headers only."""
+    if section_no != "3":
+        return ()
+    cas_headers = [line for line in lines if re.search(r"\bcas(?:\s*(?:no\.?|number))?\b", line.text, re.IGNORECASE)]
+    content_headers = [
+        line for line in lines
+        if re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
+    ]
+    return tuple(
+        (content.bbox[0], cas.bbox[0])
+        for content in content_headers for cas in cas_headers
+        if content.bbox[0] < cas.bbox[0] and cas.bbox[0] - content.bbox[0] <= 160
+    )
 
 
 def _structured_table_bands(
@@ -208,10 +263,11 @@ def _structured_table_bands(
         re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
         for line in lines
     )
+    left_content_columns = _left_content_columns(lines, section_no)
     bands: list[list[list[LayoutLine]]] = []
     safe_single_product_segments: set[tuple[tuple[int, int, int], ...]] = set()
     for row in _horizontal_rows(lines):
-        segments = _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)
+        segments = _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content, left_content_columns=left_content_columns)
         if section_no == "1":
             safe_segments = _section_one_safe_single_product_segments(row)
             safe_single_product_segments.update(_segment_key(segment) for segment in safe_segments)
@@ -247,13 +303,21 @@ def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage, section_no: str)
     bands = _structured_table_bands(lines, section_no)
     if len(bands) != 1:
         return False
+    if section_no == "1":
+        # The sole Section 1 band can only be a repeated label/value table or
+        # the separately proven exact Product-label pair.
+        return True
     allow_plain_content = any(
         re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
         for line in lines
     )
+    left_content_columns = _left_content_columns(lines, section_no)
     return any(
         row[-1].bbox[0] - row[0].bbox[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and len(_structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)) == 1
+        and len(_structured_row_segments(
+            row, section_no, allow_plain_content=allow_plain_content,
+            left_content_columns=left_content_columns,
+        )) == 1
         for row in _horizontal_rows(lines)
         if len(row) >= 2
     )
@@ -607,9 +671,9 @@ def _section_capability(
     section_pages = [pages[index] for index in range(start.page_index, end.page_index + 1)]
     image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in section_pages)
     images_in_region = [
-        (page, image)
+        (page, image, page.image_xrefs[index] if index < len(page.image_xrefs) else None)
         for page in section_pages
-        for image in page.image_rects
+        for index, image in enumerate(page.image_rects)
         if _intersects(image, image_span(page))
     ]
     if image_coverage_unknown:
@@ -630,36 +694,81 @@ def _section_capability(
                 and image[2] <= max(token.bbox[2] for token in observed_tokens)
             )
 
-        def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
+        def decorative_logo(
+            page: PdfPage, image: tuple[float, float, float, float], image_xref: int | None,
+        ) -> bool:
             px0, py0, px1, py1 = page.rect
             width, height = px1 - px0, py1 - py0
             image_width, image_height = image[2] - image[0], image[3] - image[1]
             right_margin = px1 - image[2]
-            return (
+            compact_right_logo = (
                 image_width > 0 and image_height > 0
                 and image_width <= width * 0.15 and image_height <= height * 0.15
                 and image_width * image_height <= width * height * 0.02
                 and right_margin <= width * 0.10
             )
+            def same_geometry(candidate: tuple[float, float, float, float]) -> bool:
+                return (
+                    abs(candidate[0] - image[0]) <= 2 and abs(candidate[1] - image[1]) <= 2
+                    and abs(candidate[2] - image[2]) <= 2 and abs(candidate[3] - image[3]) <= 2
+                )
+
+            repeated_header_geometry = (
+                len(layout.pages) >= 2
+                and all(
+                    any(same_geometry(candidate) for candidate in candidate_page.image_rects)
+                    # PDF text and image boxes may differ by sub-point
+                    # rounding at a shared header boundary.
+                    and (not candidate_page.lines or image[3] <= min(line.bbox[1] for line in candidate_page.lines) + 1.0)
+                    for candidate_page in layout.pages
+                )
+            )
+            repeated_top_right_logo = (
+                image_width > 0 and image_height > 0
+                and image[1] <= py0 + height * 0.12
+                and image_width <= width * 0.25 and image_height <= height * 0.12
+                and image_width * image_height <= width * height * 0.03
+                and right_margin <= width * 0.10
+                # A repeated top-right raster is decorative only when it is
+                # a document-wide header, wholly above each page's observed
+                # text, and is the same embedded image on every page.
+                # Repetition within the section alone, or matching geometry
+                # with a different raster, is not proof.
+                and repeated_header_geometry
+                and image_xref is not None
+                and all(
+                    any(
+                        same_geometry(candidate)
+                        and candidate_index < len(candidate_page.image_xrefs)
+                        and candidate_page.image_xrefs[candidate_index] == image_xref
+                        for candidate_index, candidate in enumerate(candidate_page.image_rects)
+                    )
+                    for candidate_page in layout.pages
+                )
+            )
+            # A compact, one-off margin logo remains safe. Once the same
+            # placement repeats document-wide, however, even this small-logo
+            # shortcut requires the identical embedded image.
+            return (compact_right_logo and not repeated_header_geometry) or repeated_top_right_logo
         images_are_decorative = all(
-            decorative_logo(page, image)
+            decorative_logo(page, image, image_xref)
             and not any(
                 _intersects(image, token.bbox)
                 for token in page.tokens
                 if any(_inside_token(token, rect) for rect in regions_by_page[page.page_index].allowed_rects)
             )
-            for page, image in images_in_region
+            for page, image, image_xref in images_in_region
         )
         if images_are_decorative and digital_text >= 12:
             return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
         header_only_boundary_image = any(
             page.page_index in {start.page_index, end.page_index}
             and not has_text_in_region(page, regions_by_page[page.page_index])
-            for page, _ in images_in_region
+            for page, _, _ in images_in_region
         )
         image_outside_observed_text_x_span = any(
             not image_is_within_observed_text_x_span(page, image)
-            for page, image in images_in_region
+            for page, image, _ in images_in_region
         )
         if header_only_boundary_image or image_outside_observed_text_x_span:
             if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):

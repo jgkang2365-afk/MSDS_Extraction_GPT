@@ -341,6 +341,31 @@ def test_real_pdf_product_multiline_stops_before_company(pdf_tmp):
     assert [item.raw_fragment for item in candidate.evidence] == ["ABC-100", "Grade A 75%"]
 
 
+def test_korean_material_name_label_and_fullwidth_percent_content_preserve_raw_source_value():
+    product = collect_product_candidates(_input("1", (("물질명 : 수산화나트륨",),)))
+    section3 = collect_section3_candidates(_input("3", (("64-17-5", "함유량 : 8-0％"),)))
+    assert [(candidate.raw, candidate.normalized) for candidate in product.candidates] == [("수산화나트륨", "수산화나트륨")]
+    assert [(candidate.raw, candidate.normalized) for candidate in section3.blocks[0].content_candidates] == [("8-0％", "8~0%")]
+
+
+def test_named_korean_component_cas_and_content_groups_preserve_fullwidth_values_for_review():
+    result = resolve(
+        _input("1", (("제품명 : NaOH",),)),
+        _input("3", (
+            ("성   분 : 수산화나트륨",),
+            (" C A S : 1310-73-2",),
+            ("함유량 : 92-100％",),
+            ("성   분 : 물",),
+            (" C A S : 7732-18-5",),
+            ("함유량 : 8-0％",),
+        )),
+    )
+    assert [(pair.cas.cas_raw, pair.cas.cas_status, pair.content.content_raw, pair.content.content_normalized, pair.status) for pair in result.components] == [
+        ("1310-73-2", ResultStatus.INVALID, "92-100％", "92~100%", PairStatus.REVIEW),
+        ("7732-18-5", ResultStatus.INVALID, "8-0％", "8~0%", PairStatus.REVIEW),
+    ]
+
+
 def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_promoted():
     result = collect_section3_candidates(_input("3", (
         ("64-17-4", "< 1%"),

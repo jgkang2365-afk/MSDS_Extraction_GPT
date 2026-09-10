@@ -7,7 +7,7 @@ from pathlib import Path
 import fitz
 
 
-def make_pdf(path: Path, pages: list[list[tuple[float, float, str]]], *, rotations: list[int] | None = None, cropboxes: list[tuple[float, float, float, float] | None] | None = None, images: set[int] | None = None, image_rects: dict[int, tuple[float, float, float, float]] | None = None, fontfile: Path | None = None) -> Path:
+def make_pdf(path: Path, pages: list[list[tuple[float, float, str]]], *, rotations: list[int] | None = None, cropboxes: list[tuple[float, float, float, float] | None] | None = None, images: set[int] | None = None, image_rects: dict[int, tuple[float, float, float, float]] | None = None, image_colors: dict[int, tuple[int, int, int]] | None = None, fontfile: Path | None = None) -> Path:
     document = fitz.open()
     image_pages = images or set()
     for index, entries in enumerate(pages):
@@ -21,8 +21,11 @@ def make_pdf(path: Path, pages: list[list[tuple[float, float, str]]], *, rotatio
         if cropboxes and cropboxes[index] is not None:
             page.set_cropbox(fitz.Rect(cropboxes[index]))
         if index in image_pages:
+            rect = fitz.Rect((image_rects or {}).get(index, (500, 10, 510, 20)))
             pixmap = fitz.Pixmap(fitz.csRGB, (0, 0, 10, 10), False)
-            page.insert_image(fitz.Rect((image_rects or {}).get(index, (500, 10, 510, 20))), pixmap=pixmap)
+            if image_colors and index in image_colors:
+                pixmap.set_pixel(0, 0, image_colors[index])
+            page.insert_image(rect, pixmap=pixmap)
     document.save(path)
     document.close()
     return path

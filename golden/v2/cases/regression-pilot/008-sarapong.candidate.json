@@ -1,6 +1,6 @@
 {
   "case_id": "phase7-regression-pilot-008-sarapong",
-  "case_kind": "FAILURE_BEHAVIOR",
+  "case_kind": "VALUE_TRUTH",
   "lifecycle": "CANDIDATE",
   "source_sha256": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
   "source": {
@@ -8,28 +8,39 @@
     "relative_path": "008_★msds_사라퐁.pdf"
   },
   "product": {
-    "raw": "",
-    "normalized": "",
-    "status": "REVIEW",
+    "raw": "사라퐁",
+    "normalized": "사라퐁",
+    "status": "FOUND",
     "provenance": []
   },
   "section_provenance": {
     "section_1": {"evidence": []},
     "section_3": {"evidence": []}
   },
-  "components": [],
+  "components": [
+    {
+      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "INVALID", "evidence": []},
+      "content": {"content_raw": "60 ~ 70", "content_normalized": "60~70", "content_status": "FOUND", "unit_context_raw": "%", "unit_context_evidence": [{"provenance_type": "PIPELINE_TEXT", "page": 1}], "evidence": []},
+      "pair_status": "REVIEW", "block_id": "section3-page-1-block-10",
+      "source_relation": {"row_id": "section3-row-1", "shared_content_id": null, "relation_reason": "same source row"}, "evidence": []
+    },
+    {
+      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "INVALID", "evidence": []},
+      "content": {"content_raw": "< 1", "content_normalized": "<1", "content_status": "FOUND", "unit_context_raw": "%", "unit_context_evidence": [{"provenance_type": "PIPELINE_TEXT", "page": 1}], "evidence": []},
+      "pair_status": "REVIEW", "block_id": "section3-page-1-block-13",
+      "source_relation": {"row_id": "section3-row-4", "shared_content_id": null, "relation_reason": "same source row"}, "evidence": []
+    }
+  ],
   "review_history": [
     {
       "action": "CANDIDATE",
       "status": "CANDIDATE",
-      "reason": "Phase 1/3 confirmed TEXT fences were not found; no value proposal was produced."
+      "reason": "Current local TEXT core proposal; only explicit CAS-bearing rows were retained for review."
     }
   ],
-  "expected": {
-    "safe_outcome": "FENCE_BLOCKED"
-  },
   "blockers": [
-    "SECTION_1_FENCE_NOT_FOUND:SECTION_START_NOT_FOUND",
-    "SECTION_3_FENCE_NOT_FOUND:SECTION_START_NOT_FOUND"
+    "CAS_READ_UNCERTAIN:7732-18-5",
+    "CAS_READ_UNCERTAIN:1310-73-2",
+    "CAS_LESS_CONTENT_NOT_PROMOTED"
   ]
 }

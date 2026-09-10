@@ -38,6 +38,9 @@ class PdfPage:
     lines: tuple[LayoutLine, ...]
     image_count: int
     image_rects: tuple[Rect, ...] = ()
+    # Parallel to ``image_rects``. An xref is document-local, but stable for a
+    # single embedded image while this layout is used.
+    image_xrefs: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -148,12 +151,18 @@ def read_pdf_layout(path: str | Path, *, cancelled: StopCheck = None, deadline: 
                                 if value:
                                     tokens.append(LayoutToken(f"p{page_index}-b{block_id}-l{line_id}-c{char_index}-{len(tokens)}", value, page_index, tuple(float(item) for item in char["bbox"]), block_id, line_id))
                 image_rects: list[Rect] = []
-                for image in page.get_images(full=True):
+                image_xrefs: list[int] = []
+                images = page.get_images(full=True)
+                for image in images:
                     # The xref can be placed more than once.  Keep every actual
-                    # placement: an image count alone says nothing about whether
-                    # it belongs to a fenced section.
-                    image_rects.extend(_rect(rect) for rect in page.get_image_rects(image[0]))
-                pages.append(PdfPage(page_index, _unrotated_page_rect(page), int(page.rotation), tuple(tokens), tuple(lines), len(page.get_images(full=True)), tuple(image_rects)))
+                    # placement and its document-local identity: an image count
+                    # alone says nothing about whether it belongs to a fenced
+                    # section or is a repeating decorative header.
+                    xref = int(image[0])
+                    placements = tuple(_rect(rect) for rect in page.get_image_rects(xref))
+                    image_rects.extend(placements)
+                    image_xrefs.extend(xref for _ in placements)
+                pages.append(PdfPage(page_index, _unrotated_page_rect(page), int(page.rotation), tuple(tokens), tuple(lines), len(images), tuple(image_rects), tuple(image_xrefs)))
     except (fitz.FileDataError, OSError, RuntimeError) as error:
         return PdfReadResult(locals().get("digest", ""), tuple(pages), DocumentCapability.UNKNOWN, (f"PDF_READ_ERROR:{type(error).__name__}",), _metrics(pages, started), "PDF_READ_ERROR")
     capability, reasons = _capability(pages)
