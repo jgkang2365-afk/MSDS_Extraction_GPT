@@ -7,6 +7,18 @@ import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 from golden.v2.validation import compare_ordered_rows, select_approved_cases, validate_case, validate_dataset
+from src.msds.models import (
+    CasCandidate,
+    CasCandidateValidity,
+    ContentCandidate,
+    Evidence,
+    EvidenceSourceType,
+    PairStatus,
+    ResultStatus,
+    Section3BlockCandidate,
+    Section3Collection,
+)
+from src.msds.resolver import resolve_components
 
 
 def _human_evidence(page, **extra):
@@ -239,6 +251,104 @@ def test_g6_r2_content_and_pair_status_mapping_rejects_mismatches(content_status
     case["components"][0]["pair_status"] = pair_status
     assert f"components[0].pair_status must match content_status {content_status}" in "\n".join(validate_case(case))
     assert _schema_errors(case)
+
+
+_P1_CONTENT_PAIR_MATRIX = (
+    ("FOUND", "PAIRED", "50%"),
+    ("NOT_STATED", "NOT_STATED", ""),
+    ("NOT_READABLE", "NOT_READABLE", "?"),
+    ("PAIR_AMBIGUOUS", "PAIR_AMBIGUOUS", ""),
+)
+
+
+@pytest.mark.parametrize(("content_status", "pair_status", "content_raw"), _P1_CONTENT_PAIR_MATRIX)
+def test_g6_p1_found_cas_retains_exact_content_pair_matrix(pdf_tmp, content_status, pair_status, content_raw):
+    case, root = _approved_with_source(pdf_tmp)
+    row = case["components"][0]
+    row["content"].update(
+        content_raw=content_raw, content_normalized=content_raw, content_status=content_status
+    )
+    row["pair_status"] = pair_status
+    case["source_transcription"]["component_rows"][0]["content_raw"] = content_raw
+
+    assert validate_case(case) == []
+    assert _schema_errors(case) == []
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == (case,)
+
+    row["pair_status"] = "REVIEW"
+    assert f"components[0].pair_status must match content_status {content_status} ({pair_status})" in validate_case(case)
+    assert _schema_errors(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+@pytest.mark.parametrize(("content_status", "normal_pair_status", "content_raw"), _P1_CONTENT_PAIR_MATRIX)
+def test_g6_p1_invalid_cas_overrides_every_content_state_to_review(pdf_tmp, content_status, normal_pair_status, content_raw):
+    case, root = _approved_with_source(pdf_tmp)
+    row = case["components"][0]
+    row["cas"]["cas_status"] = "INVALID"
+    row["content"].update(
+        content_raw=content_raw, content_normalized=content_raw, content_status=content_status
+    )
+    row["pair_status"] = "REVIEW"
+    case["source_transcription"]["component_rows"][0]["content_raw"] = content_raw
+
+    assert validate_case(case) == []
+    assert _schema_errors(case) == []
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == (case,)
+
+    row["pair_status"] = normal_pair_status
+    assert "components[0].pair_status must be REVIEW when cas.cas_status is INVALID" in validate_case(case)
+    assert _schema_errors(case)
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == ()
+
+
+@pytest.mark.parametrize("cas_status", ("NOT_READABLE", "REVIEW"))
+def test_g6_p1_review_only_extended_cas_statuses_require_review_pair(cas_status):
+    # Phase 5 emits only FOUND/INVALID; these Golden v2 values remain review-only extensions.
+    case = _case()
+    case["components"][0]["cas"]["cas_status"] = cas_status
+    case["components"][0]["pair_status"] = "REVIEW"
+    assert validate_case(case) == []
+    assert _schema_errors(case) == []
+
+    case["components"][0]["pair_status"] = "PAIRED"
+    assert f"components[0].pair_status must be REVIEW when cas.cas_status is {cas_status}" in validate_case(case)
+    assert _schema_errors(case)
+
+
+def test_g6_p1_phase5_invalid_cas_fixture_matches_golden_review_contract(pdf_tmp):
+    evidence = Evidence("3", 2, EvidenceSourceType.TEXT, "64-17-4 10%", "a" * 64, (1.0, 2.0, 3.0, 4.0))
+    block = Section3BlockCandidate(
+        "block-1",
+        "row-1",
+        0,
+        (evidence,),
+        (CasCandidate("64-17-4", "64-17-4", CasCandidateValidity.CHECK_DIGIT_INVALID, 0, (evidence,)),),
+        (ContentCandidate("10%", "10%", 0, (evidence,)),),
+    )
+    pair = resolve_components(Section3Collection((block,)))[0]
+    assert (pair.cas.cas_status, pair.content.content_status, pair.status) == (
+        ResultStatus.INVALID,
+        ResultStatus.FOUND,
+        PairStatus.REVIEW,
+    )
+
+    case, root = _approved_with_source(pdf_tmp)
+    row = case["components"][0]
+    row["cas"].update(cas_raw=pair.cas.cas_raw, cas_normalized=pair.cas.cas_normalized, cas_status=pair.cas.cas_status.value)
+    row["content"].update(
+        content_raw=pair.content.content_raw,
+        content_normalized=pair.content.content_normalized,
+        content_status=pair.content.content_status.value,
+    )
+    row["pair_status"] = pair.status.value
+    case["source_transcription"]["component_rows"][0].update(
+        cas_raw=pair.cas.cas_raw, content_raw=pair.content.content_raw
+    )
+
+    assert validate_case(case) == []
+    assert _schema_errors(case) == []
+    assert select_approved_cases([case], source_roots={"reviewed-pdfs": root}) == (case,)
 
 
 def test_g6_13_pair_status_and_source_relation_are_required():

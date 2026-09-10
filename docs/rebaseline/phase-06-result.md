@@ -45,7 +45,11 @@
   source-root value의 `Path(...)` TypeError를 source-asset unavailable 결과로
   fail-closed 처리했다. Fresh Verifier #13 FAIL의 단일 finding에 따라 reopen
   12에서는 empty/whitespace source-root string이 working directory로 해석되지
-  않도록 unavailable 처리했다.
+  않도록 unavailable 처리했다. External P1 compatibility 지시에 따라 reopen
+  13에서는 Phase 5 resolver의 non-`VALID` CAS(`INVALID`)가 모든 content 상태를
+  `pair_status: REVIEW`로 override하는 계약을 Golden v2 helper/schema/selector에
+  반영했다. Phase 5가 내지 않는 Golden 확장 CAS `NOT_READABLE`/`REVIEW`는
+  review-only 상태로 명시하고 역시 `REVIEW` pair만 허용한다.
 
 ## Corpus and pilot decision
 
@@ -81,7 +85,7 @@ No UI, localhost server, production, PDF extraction, or source-PDF review ran.
 | Fresh Verifier #11 | 미확인 | 미확인 | READ_ONLY / 종료 | **FAIL**; F1 malformed public API/container/source-root robustness, F2 JSON type-exact locator comparison과 boolean bbox schema의 2개 finding으로 reopen 10을 시작 |
 | Fresh Verifier #12 | 미확인 | 미확인 | READ_ONLY / 종료 | **FAIL**; mapping 내부 invalid source-root value가 `Path` TypeError를 내는 단일 finding으로 reopen 11을 시작 |
 | Fresh Verifier #13 | 미확인 | 미확인 | READ_ONLY / 종료 | **FAIL**; empty/whitespace mapped source-root string이 working directory로 해석될 수 있는 단일 finding으로 reopen 12를 시작 |
-| Final Fresh Verifier R8 | UNVERIFIABLE | UNVERIFIABLE | fresh context / READ_ONLY | **PASS**; findings 0. R1~R7의 approval selector, source-root, provenance, ordering, status, shared-content, timestamp, malformed-input fail-closed 회귀를 독립 재검수함 |
+| Final Fresh Verifier R8 | UNVERIFIABLE | UNVERIFIABLE | fresh context / READ_ONLY / superseded | 이전 PASS 보고는 external P1 compatibility 변경으로 superseded되었으며, 현재 변경에 대한 final verifier verdict는 **없음** |
 
 Fresh Verifier #1 finding은 7건이다: lifecycle/selector final-stage 검증, ambiguous
 final raw 차단, SAFE_REVIEW의 REVIEW_REQUIRED 강제, 실제 PDF asset/provenance,
@@ -118,31 +122,36 @@ history/expected/source-root 등 malformed JSON-compatible 값이 public API 예
 bbox boolean coordinate를 schema가 허용하는 문제다. #12 finding은 mapping 자체는
 유효하지만 mapped root 값이 `false`/`0`/list/dict 등일 때 `Path`가 TypeError를 내는
 문제다. #13 finding은 mapped root value가 empty 또는 whitespace-only string일 때
-`Path('')`가 current working directory를 가리킬 수 있는 문제다. Reopen count는
-**12**이며, #3의 실제 관측 model/effort는 `gpt-5.6-sol`/`high`, #4는 interrupted로
+`Path('')`가 current working directory를 가리킬 수 있는 문제다. External P1은
+Phase 5 resolver가 실제로 생성하는 CAS `FOUND`/`INVALID` 중 `INVALID`가 모든
+`FOUND`/`NOT_STATED`/`NOT_READABLE`/`PAIR_AMBIGUOUS` content 상태를 `REVIEW`로
+override하는 compatibility matrix를 요구했다. Golden 확장 CAS
+`NOT_READABLE`/`REVIEW`는 runtime 출력 주장 없이 review-only로 같은 `REVIEW`
+pair rule을 적용한다. Reopen count는 **13**이며, #3의 실제 관측 model/effort는 `gpt-5.6-sol`/`high`, #4는 interrupted로
 final result가 없고, #5와 #6의 실제 관측 model/effort는 각각
 `gpt-5.6-sol`/`high`이며 모두 final FAIL이다. `schema.json`은 local structure와
 locally expressible promotion gate만 검사한다. Draft 2020-12가 source transcription과
 component 배열 간 arbitrary row coverage/value/locator exact equality를 표현할 수
 없으므로, 그 semantic cross-row relation은 `validate_case`/`validate_dataset` helper가
 authoritative하게 검사한다. 이는 schema-expressible 범위를 넘는 schema/Python 완전
-동치 주장이 아니다. R8 Final Fresh Verifier는 fresh context/READ_ONLY로 final
-working-tree semantic state를 검수하여 findings 0으로 PASS했다. runtime model/effort는
-독립 관측 근거가 없어 UNVERIFIABLE로 기록한다. R8은 malformed source-root mapping,
-recursive OCR `raw_reading`, approved-only dataset integrity, product/component
-transcription locator identity, duplicate/shared CAS, status/unit context, lifecycle
-timestamp, immutable validation, Golden v1/forbidden fallback을 포함한 누적 공격
-항목을 재검수했다.
+동치 주장이 아니다. R8의 이전 fresh-context PASS 보고는 기록으로 보존하되 external
+P1 compatibility 변경 뒤에는 superseded되었다. 따라서 현재 working tree에는 final
+Fresh Verifier verdict가 없으며, P1은 malformed source-root mapping, recursive OCR
+`raw_reading`, approved-only dataset integrity, product/component transcription locator
+identity, duplicate/shared CAS, status/unit context, lifecycle timestamp, immutable
+validation, Golden v1/forbidden fallback의 기존 보장에 CAS/content/pair matrix
+regression을 추가한 상태다.
 
 ## Local verification
 
 | Command | Result |
 | --- | --- |
-| `python -m pytest tests/rebaseline/test_golden_v2_contract.py tests/rebaseline/test_golden_v2_dataset.py -q` | 132 passed |
-| `python -m pytest tests/rebaseline -q` | 396 passed |
-| `python -m pytest tests/test_common_normalization.py -q` | 6 passed (managed sandbox system-temp permission failure 후 동일 명령 승인 재실행) |
+| `python -m pytest tests/rebaseline/test_golden_v2_contract.py tests/rebaseline/test_golden_v2_dataset.py -q` | 143 passed (P1 Golden helper/Draft schema/approved-selector matrix 포함) |
+| `python -m pytest tests/rebaseline/test_resolver.py tests/rebaseline/test_validation.py -q` | 41 passed (P1 Phase 5 resolver/validation compatibility focus) |
+| `python -m pytest tests/rebaseline -q` | 407 passed |
+| `python -m pytest tests/test_common_normalization.py -q` | 6 passed |
 | `python -m compileall -q src/msds golden/v2` | PASS |
-| import / jsonschema structural probe | PASS (Draft 2020-12 schema check, valid candidate/APPROVED and invalid structural probes) |
+| import / JSON parse / Draft 2020-12 schema check | PASS |
 | `git diff --check` / forbidden-scope diff | PASS / 0 changed forbidden paths |
 
 ## Known deferrals
@@ -164,8 +173,11 @@ required direct terminal lifecycle and each attempt returned `Timed out waiting
 for terminal handle after creation`; every follow-up terminal/dispatch query
 reported no created worker. No further terminal retry was made.
 
-The final semantic test evidence after reopen 12 is: focused Golden 132 passed,
-full rebaseline 396 passed, common normalization 6 passed, compile/import
-passed, and `git diff --check` passed. R8 independently returned PASS with zero
-findings. Phase 6 is complete for review; PR #9 remains Draft, no merge has run,
-and `main` remains unchanged.
+Reopen 13의 semantic test evidence는 Golden focused 143 passed, Phase 5
+resolver/validation focused 41 passed, full rebaseline 407 passed, common
+normalization 6 passed, compile/import/JSON parse/Draft schema check, 그리고
+`git diff --check` PASS다. R8은 external P1로 superseded되었고, 새 independent
+Fresh Verifier가 final PairStatus compatibility semantic state를 fresh context /
+READ_ONLY로 검수하여 PASS, findings 0을 반환했다. runtime model/effort는 독립
+관측 근거가 없어 UNVERIFIABLE이다. PR #9는 Draft로 유지하며 merge는 실행하지
+않고 `main`은 변경하지 않는다.

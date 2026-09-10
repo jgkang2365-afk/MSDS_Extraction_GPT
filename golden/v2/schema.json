@@ -69,10 +69,11 @@
         "components": {
           "items": {
             "allOf": [
-              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "FOUND"}}}}}, "then": {"properties": {"pair_status": {"const": "PAIRED"}}}},
-              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "NOT_STATED"}}}}}, "then": {"properties": {"pair_status": {"const": "NOT_STATED"}}}},
-              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "NOT_READABLE"}}}}}, "then": {"properties": {"pair_status": {"const": "NOT_READABLE"}}}},
-              {"if": {"properties": {"content": {"properties": {"content_status": {"const": "PAIR_AMBIGUOUS"}}}}}, "then": {"properties": {"pair_status": {"const": "PAIR_AMBIGUOUS"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "FOUND"}}}}}]}, "then": {"properties": {"pair_status": {"const": "PAIRED"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "NOT_STATED"}}}}}]}, "then": {"properties": {"pair_status": {"const": "NOT_STATED"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "NOT_READABLE"}}}}}]}, "then": {"properties": {"pair_status": {"const": "NOT_READABLE"}}}},
+              {"if": {"allOf": [{"properties": {"cas": {"properties": {"cas_status": {"const": "FOUND"}}}}}, {"properties": {"content": {"properties": {"content_status": {"const": "PAIR_AMBIGUOUS"}}}}}]}, "then": {"properties": {"pair_status": {"const": "PAIR_AMBIGUOUS"}}}},
+              {"if": {"properties": {"cas": {"properties": {"cas_status": {"enum": ["INVALID", "NOT_READABLE", "REVIEW"]}}}}}, "then": {"properties": {"pair_status": {"const": "REVIEW"}}}},
               {"if": {"properties": {"content": {"properties": {"content_raw": {"pattern": "(?:%|(?<![A-Za-z])[Pp][Pp][Mm]\\b)"}}}}}, "then": {"properties": {"content": {"properties": {"unit_context_raw": {"const": null}, "unit_context_evidence": {"maxItems": 0}}}}}}
             ]
           }

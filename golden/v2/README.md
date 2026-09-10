@@ -83,9 +83,14 @@ status; `block_id`; source relation; and pair evidence. A header-derived unit
 keeps the bare raw value unchanged (for example raw `"10"`, context `"%"`). A
 direct `"10%"`, `"500 ppm"`, `"500ppm"`, `"10 wt%"`, `"10wt%"`, `"10 vol%"`,
 or `"20vol%"` has no header unit context. Direct `ppm` recognition is
-case-insensitive, including `PPM`. `content_status` and `pair_status` are an
-exact mapping: `FOUND`/`PAIRED`, `NOT_STATED`/`NOT_STATED`,
-`NOT_READABLE`/`NOT_READABLE`, and `PAIR_AMBIGUOUS`/`PAIR_AMBIGUOUS`.
+case-insensitive, including `PPM`. Phase 5 runtime emits component CAS status
+only as `FOUND` or `INVALID`: `FOUND` requires the exact content/pair mapping
+`FOUND`/`PAIRED`, `NOT_STATED`/`NOT_STATED`,
+`NOT_READABLE`/`NOT_READABLE`, and `PAIR_AMBIGUOUS`/`PAIR_AMBIGUOUS`; runtime
+`INVALID` overrides every one of those content states to `REVIEW`. Golden v2
+also permits `NOT_READABLE` and `REVIEW` CAS statuses as review-only corpus
+extensions, not as claims about Phase 5 resolver output; they likewise require
+`pair_status: REVIEW`.
 When `content_status` or `pair_status` is `PAIR_AMBIGUOUS`, final content raw
 and normalized values must be empty strings; a synthetic joined value is
 prohibited. Candidate raw values belong in evidence, transcription, or finding

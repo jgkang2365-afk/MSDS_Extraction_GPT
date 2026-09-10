@@ -21,6 +21,7 @@ CASE_KINDS = frozenset({"VALUE_TRUTH", "SAFE_REVIEW", "FAILURE_BEHAVIOR"})
 LIFECYCLES = frozenset({"CANDIDATE", "HUMAN_REVIEWED", "APPROVED"})
 PRODUCT_STATUSES = frozenset({"FOUND", "NOT_FOUND", "NOT_STATED", "NOT_READABLE", "REVIEW", "INVALID"})
 _COMPONENT_CAS_STATUSES = frozenset({"FOUND", "NOT_READABLE", "REVIEW", "INVALID"})
+_RUNTIME_INVALID_OR_REVIEW_ONLY_CAS_STATUSES = frozenset({"INVALID", "NOT_READABLE", "REVIEW"})
 _CONTENT_STATUSES = frozenset({"FOUND", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS"})
 _PAIR_STATUSES = frozenset({"PAIRED", "NOT_STATED", "NOT_READABLE", "PAIR_AMBIGUOUS", "REVIEW"})
 _CONTENT_TO_PAIR_STATUS = {
@@ -427,11 +428,19 @@ def validate_case(case: Any) -> list[str]:
             if isinstance(content, dict) and content.get("content_status") == "NOT_STATED":
                 if content.get("content_raw") != "" or content.get("content_normalized") != "" or row.get("pair_status") == "PAIRED":
                     errors.append(f"{prefix}.content NOT_STATED requires empty raw/normalized and non-PAIRED pair_status")
-            if isinstance(content, dict):
+            if isinstance(content, dict) and isinstance(cas, dict):
                 content_status = content.get("content_status")
-                expected_pair_status = _CONTENT_TO_PAIR_STATUS.get(content_status) if isinstance(content_status, str) else None
+                cas_status = cas.get("cas_status")
+                expected_pair_status = (
+                    _CONTENT_TO_PAIR_STATUS.get(content_status)
+                    if cas_status == "FOUND" and isinstance(content_status, str)
+                    else "REVIEW" if isinstance(cas_status, str) and cas_status in _RUNTIME_INVALID_OR_REVIEW_ONLY_CAS_STATUSES else None
+                )
                 if expected_pair_status is not None and row.get("pair_status") != expected_pair_status:
-                    errors.append(f"{prefix}.pair_status must match content_status {content.get('content_status')} ({expected_pair_status})")
+                    if expected_pair_status == "REVIEW":
+                        errors.append(f"{prefix}.pair_status must be REVIEW when cas.cas_status is {cas_status}")
+                    else:
+                        errors.append(f"{prefix}.pair_status must match content_status {content.get('content_status')} ({expected_pair_status})")
             if not _enum_member(row.get("pair_status"), _PAIR_STATUSES):
                 errors.append(f"{prefix}.pair_status is invalid")
             if not _nonempty(row.get("block_id")):
