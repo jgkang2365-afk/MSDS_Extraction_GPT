@@ -1,9 +1,12 @@
 # Golden v2 approval contract
 
 Golden v2 is an independent, review-governed corpus. It is not an import,
-copy, or automatic migration path for Golden v1. This directory currently
-contains only the contract and its tests: it contains no candidate, human
-reviewed, or approved source-PDF case data.
+copy, or automatic migration path for Golden v1. This directory contains the
+contract and its tests, plus three Phase 07 regression-pilot
+`CANDIDATE`/`FAILURE_BEHAVIOR` cases under `cases/regression-pilot/`. Those
+cases record fence-blocked safe behavior only; they contain no value truth,
+human-review provenance, or source transcription. There is no
+`HUMAN_REVIEWED` or `APPROVED` source-PDF case data.
 
 ## Case lifecycle and kinds
 

@@ -1,0 +1,35 @@
+{
+  "case_id": "phase7-regression-pilot-008-sarapong",
+  "case_kind": "FAILURE_BEHAVIOR",
+  "lifecycle": "CANDIDATE",
+  "source_sha256": "2e684040b696104a85d5368adb528e4f0a2468472daaac51a4c62e18fe1eee2d",
+  "source": {
+    "source_root": "phase7-test-file",
+    "relative_path": "008_★msds_사라퐁.pdf"
+  },
+  "product": {
+    "raw": "",
+    "normalized": "",
+    "status": "REVIEW",
+    "provenance": []
+  },
+  "section_provenance": {
+    "section_1": {"evidence": []},
+    "section_3": {"evidence": []}
+  },
+  "components": [],
+  "review_history": [
+    {
+      "action": "CANDIDATE",
+      "status": "CANDIDATE",
+      "reason": "Phase 1/3 confirmed TEXT fences were not found; no value proposal was produced."
+    }
+  ],
+  "expected": {
+    "safe_outcome": "FENCE_BLOCKED"
+  },
+  "blockers": [
+    "SECTION_1_FENCE_NOT_FOUND:SECTION_START_NOT_FOUND",
+    "SECTION_3_FENCE_NOT_FOUND:SECTION_START_NOT_FOUND"
+  ]
+}

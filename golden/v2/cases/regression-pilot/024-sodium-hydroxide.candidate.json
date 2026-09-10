@@ -1,0 +1,34 @@
+{
+  "case_id": "phase7-regression-pilot-024-sodium-hydroxide",
+  "case_kind": "FAILURE_BEHAVIOR",
+  "lifecycle": "CANDIDATE",
+  "source_sha256": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
+  "source": {
+    "source_root": "phase7-test-file",
+    "relative_path": "024_★Sodium Hydroxide(NaOH).pdf"
+  },
+  "product": {
+    "raw": "",
+    "normalized": "",
+    "status": "REVIEW",
+    "provenance": []
+  },
+  "section_provenance": {
+    "section_1": {"evidence": []},
+    "section_3": {"evidence": []}
+  },
+  "components": [],
+  "review_history": [
+    {
+      "action": "CANDIDATE",
+      "status": "CANDIDATE",
+      "reason": "Section 1 fence has no confirmed end boundary; no value proposal was produced."
+    }
+  ],
+  "expected": {
+    "safe_outcome": "FENCE_BLOCKED"
+  },
+  "blockers": [
+    "SECTION_1_FENCE_PARTIAL:SECTION_END_NOT_FOUND"
+  ]
+}

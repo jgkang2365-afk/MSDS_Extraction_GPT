@@ -1,0 +1,10 @@
+{
+  "pilot_id": "phase-07-golden-v2-regression-pilot",
+  "source_root": "phase7-test-file",
+  "case_files": [
+    "008-sarapong.candidate.json",
+    "015-teca-biome.candidate.json",
+    "024-sodium-hydroxide.candidate.json"
+  ],
+  "selection_contract": "CANDIDATE cases are never selected as approved truth."
+}

@@ -1,0 +1,35 @@
+{
+  "case_id": "phase7-regression-pilot-015-teca-biome",
+  "case_kind": "FAILURE_BEHAVIOR",
+  "lifecycle": "CANDIDATE",
+  "source_sha256": "88fe15b8c8f6741905543af9523ab902bb4b4f1727e8479a191835a0a9e4ed0b",
+  "source": {
+    "source_root": "phase7-test-file",
+    "relative_path": "015_★1005_TECA-BIOME™_GHS_MSDS개정_(KOR)_ICBIO.pdf"
+  },
+  "product": {
+    "raw": "",
+    "normalized": "",
+    "status": "REVIEW",
+    "provenance": []
+  },
+  "section_provenance": {
+    "section_1": {"evidence": []},
+    "section_3": {"evidence": []}
+  },
+  "components": [],
+  "review_history": [
+    {
+      "action": "CANDIDATE",
+      "status": "CANDIDATE",
+      "reason": "Section 3 fence requires mixed text/image handling; this TEXT-only pilot did not invoke OCR."
+    }
+  ],
+  "expected": {
+    "safe_outcome": "FENCE_BLOCKED"
+  },
+  "blockers": [
+    "SECTION_3_FENCE_PARTIAL:SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",
+    "OCR_NOT_RUN_BY_PHASE_07_TEXT_ONLY_PILOT"
+  ]
+}
