@@ -2,10 +2,11 @@
 
 ## 결과
 
-세 authorized local PDF를 외부 전송 없이 현재 Phase 1--5 TEXT core로만 처리했다.
-SHA-256은 작업지시서가 직접 제공한 값이며, portable corpus에는 source root 이름과
-파일명만 기록했다. 세 canonical file은 모두 `VALUE_TRUTH`/`CANDIDATE`이고 human
-provenance, `source_transcription`, `HUMAN_REVIEWED`, `APPROVED`는 없다.
+사용자가 제공한 세 authorized local PDF를 외부 전송 없이 현재 Phase 1--5 TEXT core로만
+처리했다. 로컬 처리에서 SHA-256을 계산해 candidate/manifest 값으로 기록했으며, 테스트는
+source bytes와 그 hash를 비교한다. portable corpus에는 source root 이름과 파일명만
+기록했다. 세 canonical file은 모두 `VALUE_TRUTH`/`CANDIDATE`이고 human provenance,
+`source_transcription`, `HUMAN_REVIEWED`, `APPROVED`는 없다.
 
 | Candidate | Portable source / user-supplied SHA-256 | v1.0 fence 결과 | v1.1 core 결과 |
 | --- | --- | --- | --- |
