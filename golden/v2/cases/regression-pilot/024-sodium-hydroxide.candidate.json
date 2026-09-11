@@ -19,15 +19,15 @@
   },
   "components": [
     {
-      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "INVALID", "evidence": []},
+      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "FOUND", "evidence": []},
       "content": {"content_raw": "92-100％", "content_normalized": "92~100%", "content_status": "FOUND", "unit_context_raw": null, "unit_context_evidence": [], "evidence": []},
-      "pair_status": "REVIEW", "block_id": "section3-page-1-block-37",
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-37",
       "source_relation": {"row_id": "section3-named-row-0", "shared_content_id": null, "relation_reason": "explicit named source fields"}, "evidence": []
     },
     {
-      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "INVALID", "evidence": []},
+      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "FOUND", "evidence": []},
       "content": {"content_raw": "8-0％", "content_normalized": "8~0%", "content_status": "FOUND", "unit_context_raw": null, "unit_context_evidence": [], "evidence": []},
-      "pair_status": "REVIEW", "block_id": "section3-page-1-block-42",
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-42",
       "source_relation": {"row_id": "section3-named-row-1", "shared_content_id": null, "relation_reason": "explicit named source fields"}, "evidence": []
     }
   ],
@@ -38,8 +38,5 @@
       "reason": "Current local TEXT core proposal retained the explicit named CAS/content fields, including raw 8-0％, for review."
     }
   ],
-  "blockers": [
-    "CAS_READ_UNCERTAIN:1310-73-2",
-    "CAS_READ_UNCERTAIN:7732-18-5"
-  ]
+  "blockers": []
 }

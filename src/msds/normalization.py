@@ -13,7 +13,6 @@ from .models import CASResult, ContentResult, ContentStatus, ProductResult, Resu
 _DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 _DASH_TRANSLATION = str.maketrans({dash: "-" for dash in _DASHES})
 _CAS_SHAPE = re.compile(r"^\d{2,7}-\d{2}-\d$")
-_ISO_DATE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
 _DECIMAL_COMMA = re.compile(r"(?<!\d)(\d+),(\d{1,2})(?!\d)")
 
 
@@ -46,13 +45,15 @@ def normalize_cas_value(value: object | None) -> str:
 
 
 def normalize_cas(value: object | None) -> CasNormalization:
-    """Return a CAS result without fuzzy or catalogue-driven correction."""
+    """Apply only lexical CAS normalization, shape, and checksum validation.
+
+    Whether a lexical CAS occurs in a date, EC, or other metadata context is
+    a collector responsibility.  This pure function intentionally has no
+    document-layout or vocabulary semantics.
+    """
     raw = "" if value is None else str(value)
     normalized = normalize_cas_value(raw)
     if not normalized:
-        return CasNormalization(raw, normalized, CasValidity.NOT_CANDIDATE)
-    # Dates can satisfy the syntactic CAS shape by chance (for example 2024-01-1).
-    if _ISO_DATE.fullmatch(normalized):
         return CasNormalization(raw, normalized, CasValidity.NOT_CANDIDATE)
     if not _CAS_SHAPE.fullmatch(normalized):
         return CasNormalization(raw, normalized, CasValidity.FORMAT_INVALID)

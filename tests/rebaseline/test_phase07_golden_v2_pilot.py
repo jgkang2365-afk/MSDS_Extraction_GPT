@@ -95,6 +95,7 @@ def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
     assert all(case["review_history"][0]["action"] == case["review_history"][0]["status"] == "CANDIDATE" for case in cases)
     assert all("timestamp" not in case["review_history"][0] for case in cases)
     assert sum(event["status"] in {"HUMAN_REVIEWED", "APPROVED"} for case in cases for event in case["review_history"]) == 0
+    assert all(case["blockers"] == [] for case in cases)
 
     actual = {}
     for case in cases:
@@ -113,20 +114,32 @@ def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
     sarapong = actual["phase7-regression-pilot-008-sarapong"]
     assert [component.cas.cas_raw for component in sarapong[2].components] == ["7732-18-5", "1310-73-2"]
     assert [component.content.content_raw for component in sarapong[2].components] == ["60 ~ 70", "< 1"]
-    assert [finding.code.value for finding in sarapong[3].findings] == ["CAS_READ_UNCERTAIN", "CAS_READ_UNCERTAIN"]
+    assert [(component.cas.cas_status.value, component.status.value) for component in sarapong[2].components] == [("FOUND", "PAIRED"), ("FOUND", "PAIRED")]
+    assert sarapong[3].status.value == "PASS"
+    assert [finding.code.value for finding in sarapong[3].findings] == []
 
     teca = actual["phase7-regression-pilot-015-teca-biome"]
     assert len(teca[0].pages) == 5
     assert all(len(page.image_xrefs) == 1 for page in teca[0].pages)
     assert len({page.image_xrefs for page in teca[0].pages}) == 1
     assert len(teca[2].components) == 12
-    assert [component.cas.cas_raw for component in teca[2].components if component.cas.cas_status.value == "INVALID"] == ["6920-22-5"]
-    assert [finding.code.value for finding in teca[3].findings] == ["CAS_READ_UNCERTAIN"]
+    assert [(component.cas.cas_status.value, component.status.value) for component in teca[2].components] == [("FOUND", "PAIRED")] * 12
+    assert [component.content.content_raw for component in teca[2].components if component.cas.cas_raw in {"92128-87-5", "308068-11-3"}] == ["1.00", "1.00"]
+    teca_case = next(case for case in cases if case["case_id"] == "phase7-regression-pilot-015-teca-biome")
+    shared_rows = [component["source_relation"] for component in teca_case["components"] if component["cas"]["cas_raw"] in {"92128-87-5", "308068-11-3"}]
+    assert shared_rows == [
+        {"row_id": "section3-row-9", "shared_content_id": "section3-page-0-block-15:content", "relation_reason": "shared source row content"},
+        {"row_id": "section3-row-9", "shared_content_id": "section3-page-0-block-15:content", "relation_reason": "shared source row content"},
+    ]
+    assert teca[3].status.value == "PASS"
+    assert [finding.code.value for finding in teca[3].findings] == []
 
     sodium = actual["phase7-regression-pilot-024-sodium-hydroxide"]
     assert [component.cas.cas_raw for component in sodium[2].components] == ["1310-73-2", "7732-18-5"]
     assert [component.content.content_raw for component in sodium[2].components] == ["92-100％", "8-0％"]
-    assert [finding.code.value for finding in sodium[3].findings] == ["CAS_READ_UNCERTAIN", "CAS_READ_UNCERTAIN"]
+    assert [(component.cas.cas_status.value, component.status.value) for component in sodium[2].components] == [("FOUND", "PAIRED"), ("FOUND", "PAIRED")]
+    assert sodium[3].status.value == "PASS"
+    assert [finding.code.value for finding in sodium[3].findings] == []
 
     result = validate_dataset(cases, source_roots={MANIFEST["source_root"]: source_root})
     assert result.errors == ()

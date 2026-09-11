@@ -19,15 +19,15 @@
   },
   "components": [
     {
-      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "INVALID", "evidence": []},
+      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "FOUND", "evidence": []},
       "content": {"content_raw": "60 ~ 70", "content_normalized": "60~70", "content_status": "FOUND", "unit_context_raw": "%", "unit_context_evidence": [{"provenance_type": "PIPELINE_TEXT", "page": 1}], "evidence": []},
-      "pair_status": "REVIEW", "block_id": "section3-page-1-block-10",
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-10",
       "source_relation": {"row_id": "section3-row-1", "shared_content_id": null, "relation_reason": "same source row"}, "evidence": []
     },
     {
-      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "INVALID", "evidence": []},
+      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "FOUND", "evidence": []},
       "content": {"content_raw": "< 1", "content_normalized": "<1", "content_status": "FOUND", "unit_context_raw": "%", "unit_context_evidence": [{"provenance_type": "PIPELINE_TEXT", "page": 1}], "evidence": []},
-      "pair_status": "REVIEW", "block_id": "section3-page-1-block-13",
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-13",
       "source_relation": {"row_id": "section3-row-4", "shared_content_id": null, "relation_reason": "same source row"}, "evidence": []
     }
   ],
@@ -35,12 +35,8 @@
     {
       "action": "CANDIDATE",
       "status": "CANDIDATE",
-      "reason": "Current local TEXT core proposal; only explicit CAS-bearing rows were retained for review."
+      "reason": "Current local TEXT core proposal; only explicit CAS-bearing rows were retained."
     }
   ],
-  "blockers": [
-    "CAS_READ_UNCERTAIN:7732-18-5",
-    "CAS_READ_UNCERTAIN:1310-73-2",
-    "CAS_LESS_CONTENT_NOT_PROMOTED"
-  ]
+  "blockers": []
 }
