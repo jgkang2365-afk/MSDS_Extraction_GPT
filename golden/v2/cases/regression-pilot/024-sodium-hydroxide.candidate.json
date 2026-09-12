@@ -8,7 +8,7 @@
     "relative_path": "024_★Sodium Hydroxide(NaOH).pdf"
   },
   "product": {
-    "raw": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]\n ",
+    "raw": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
     "normalized": "수산화나트륨[수산화나트륨[sodium hydroxide]]",
     "status": "FOUND",
     "provenance": []

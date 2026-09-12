@@ -145,3 +145,26 @@ def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
     assert result.errors == ()
     assert result.findings == ()
     assert select_approved_cases(cases, source_roots={MANIFEST["source_root"]: source_root}) == ()
+
+
+@pytest.mark.skipif(not SOURCE_ROOT, reason="PHASE7_TEST_FILE_ROOT is required for the local-only Phase 07 PDF pilot")
+def test_phase07_extension_tables_use_explicit_korean_cas_identifier_and_concentration_columns():
+    source_root = Path(SOURCE_ROOT)
+    expected = {
+        "011_★GHS MK WD-40 (REV30, 240722)(O).pdf": [
+            ("64742-47-8", "40 ~ 50"),
+            ("64742-54-7", "10 ~ 25"),
+            ("74-98-6", "16 ~ 21"),
+            ("106-97-8", "11 ~ 14"),
+        ],
+        "020_★[SFG] Suncide EPH MSDS Kor. (Rev.04) 2025-05-13.pdf": [
+            ("122-99-6", "100.0"),
+        ],
+    }
+    for filename, expected_components in expected.items():
+        _layout, _section_3, resolved, report = _actual_core(source_root / filename)
+        assert [(component.cas.cas_raw, component.content.content_raw) for component in resolved.components] == expected_components
+        assert [(component.cas.cas_status.value, component.status.value) for component in resolved.components] == [
+            ("FOUND", "PAIRED"),
+        ] * len(expected_components)
+        assert report.status.value == "PASS"

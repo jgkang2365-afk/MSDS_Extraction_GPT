@@ -1,5 +1,62 @@
 # Phase 07 — Golden v2 regression pilot v1.3
 
+## v1.3.1 product raw boundary + extension pilot
+
+`024_★Sodium Hydroxide(NaOH).pdf`의 Section 1 제품명 뒤에 있던
+whitespace-only visual continuation 한 건이 collector에 의해 product raw/evidence에
+포함되는 결함을 확인했다. 이는 source value correction이 아니라
+**COLLECTOR_BOUNDARY_FIX**다. collector는 이제 whitespace-only cell을 raw join과
+provenance에서 함께 제외하며, non-empty multiline product line의 raw whitespace와
+source order는 보존한다. Sodium machine proposal의 product raw는
+`수산화나트륨[수산화나트륨[Sodium Hydroxide]]`이며 trailing continuation은 없다.
+
+동일 audit에서 `CAS 번호 또는 식별번호` + `함유량(%)` 표 header가 기존 English-only
+CAS header contract에 걸려, aligned bare concentration 대신 ingredient-name 내부 `%`를
+관측할 수 있는 일반 table-context gap도 발견했다. collector는 explicit Korean CAS
+identifier header를 같은 CAS/unit table header로 인식하고, 그런 table row에서는
+unit-aligned concentration cell만 채택하도록 보완했다. 따라서 `011`의 `40 ~ 50`,
+`10 ~ 25`, `16 ~ 21`, `11 ~ 14`와 `020`의 `100.0`은 source row/column evidence로
+각 CAS에 paired된다. 이 역시 document/CAS/product exception이 아니다.
+
+adversarial collector contract는 inline/separate-cell product, meaningful multiline,
+whitespace-only trailing/empty visual row, 다음 company field, 괄호·농도·Unicode를
+포함한다. 이 변경은 product 전체에 `.strip()`을 적용하지 않는다.
+
+추가 authorized local source 10건(`005`, `007`, `011`, `020`, `027`, `030`, `032`,
+`036`, `040`, `043`)은 OCR/AI/외부 호출 없이 layout, capability, Section 1/3 fence,
+local TEXT core를 감사했다. 전체 SHA·page 수·machine proposal/evidence는 ignored
+local review packet에만 기록했다. 이 결과는 Golden truth나 human review가 아닌
+`MACHINE_DIAGNOSTIC_ONLY`다.
+
+| ID | Capability / route | Section 1 | Section 3 | 결과 |
+| --- | --- | --- | --- | --- |
+| 005 | `IMAGE_ONLY`, OCR deferred | NOT_FOUND | NOT_FOUND | `DEFERRED_OCR_REQUIRED` |
+| 007 | digital text, multi-SDS | CONFIRMED | PARTIAL | `MULTI_SDS_POLICY_REQUIRED` |
+| 011 | TEXT core | CONFIRMED | CONFIRMED | 4 components, `PASS` |
+| 020 | TEXT core | CONFIRMED | CONFIRMED | 1 component, `PASS` |
+| 027 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading / `a.` label grammar |
+| 030 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading, split CAS header, concentration-limit context |
+| 032 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading, split CAS header, concentration-limit context |
+| 036 | digital text | PARTIAL | PARTIAL | fail-closed deferred |
+| 040 | digital text | CONFIRMED | PARTIAL | fail-closed deferred |
+| 043 | digital text | PARTIAL | PARTIAL | fail-closed deferred |
+
+`007`은 page 0/18/39에서 독립 Section 1이, page 1/19/40에서 독립 Section 3이
+반복되어 하나의 PDF에 최소 세 SDS sequence가 존재한다. 대표 product 선택, first/last
+selection, sequence merge는 현 canonical policy에 없으므로 수행하지 않았다.
+
+추가 10개 중 confirmed Section 1/3 TEXT core complete route는 2건뿐이다. `027`/`030`/`032`는
+digital text지만 `항 N:` heading을 인식하지 못한다. `030`/`032`에는 split CAS header와
+본 함유량과 농도 한계 문구를 분리해야 하는 추가 context contract도 있다. 부분 heading
+인식만으로 product continuation 또는 concentration을 추측하지 않았고, 이는 후속
+`GENERALIZATION_GAP`으로 남겼다. OCR로 표본을 보충하지 않았으므로 5개 TEXT corpus gate는
+충족하지 못했다. 따라서 이 extension은 다형식 일반화 완료 증거나 merge/freeze-ready 판정이
+아니며, `MULTI_SDS_POLICY_REQUIRED`, `GENERALIZATION_GAP`, `INSUFFICIENT_TEXT_CORPUS`를 남긴다.
+
+Human direct-source review 사실은 보존하되 Golden promotion은 의도적으로 연기했다.
+세 Golden v2 case는 계속 `VALUE_TRUTH` / `CANDIDATE`이며
+`source_transcription`, `HUMAN_REVIEWED`, `APPROVED`는 모두 0이다.
+
 ## 결과
 
 사용자가 제공한 세 authorized local PDF를 외부 전송 없이 현재 Phase 1--5 TEXT

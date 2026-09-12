@@ -49,6 +49,10 @@ _PEER_METADATA_LABEL = re.compile(
     re.IGNORECASE,
 )
 _CAS_CONTEXT = re.compile(r"\s*C\s*A\s*S\s*(?:(?:No\.?|Number)\s*)?[:|]?\s*$", re.IGNORECASE)
+_CAS_TABLE_HEADER = re.compile(
+    r"^\s*C\s*A\s*S\s*(?:(?:No\.?|Number)|(?:번호(?:\s*또는\s*식별번호)?)|식별번호)?\s*$",
+    re.IGNORECASE,
+)
 _DATE_METADATA_ADJACENCY_Y_TOLERANCE = 36.0
 _DIRECT_CONTENT = re.compile(
     r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*[%％]|[%％]|ppm)|Rem\.|Balance",
@@ -175,6 +179,11 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
             if any(_FIELD_LABEL.match(cell.text) or _PRODUCT_CONTINUATION_BOUNDARY.match(cell.text) for cell in candidate_row):
                 break
             values.extend(candidate_row)
+        # A visual continuation made only of whitespace is not a product
+        # value.  Exclude that source cell before raw joining so the product
+        # fact and its provenance identify the same meaningful source span.
+        # Do not trim non-empty cells: their raw source text remains lossless.
+        values = [value for value in values if value.text.strip()]
         if not values:
             continue
         raw = "\n".join(value.text for value in values)
@@ -296,7 +305,7 @@ def _is_immediately_related_date_value_line(
 
 def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput, row_number: int) -> list[_UnitHeader]:
     """Observe units only in an explicit CAS table header, never explanatory prose."""
-    cas_label = next((line for line in row if re.fullmatch(r"\s*CAS(?:\s+(?:No\.?|Number))?\s*", line.text, re.IGNORECASE)), None)
+    cas_label = next((line for line in row if _CAS_TABLE_HEADER.fullmatch(line.text)), None)
     if cas_label is None:
         return []
     return [
@@ -327,6 +336,18 @@ def _header_for(line: _Line, headers: list[_UnitHeader]) -> tuple[str, Evidence]
 def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_cas: bool, headers: list[_UnitHeader]) -> list[tuple[_Line, int, str, str | None, Evidence | None]]:
     matches: list[tuple[_Line, int, str, str | None, Evidence | None]] = []
     for line in row:
+        header = _header_for(line, headers) if has_cas and headers else None
+        if headers and has_cas:
+            # Within an explicit CAS/unit table, only the unit-aligned cell can
+            # establish the row concentration.  A percentage embedded in an
+            # ingredient or synonym cell is not a concentration observation.
+            if header is None:
+                continue
+            if _BARE_CONTENT.fullmatch(line.text):
+                matches.append((line, 0, line.text, *header))
+            elif _DIRECT_CONTENT.fullmatch(line.text):
+                matches.append((line, 0, line.text, None, None))
+            continue
         # Retain original offsets: deleting a preceding CAS would move content
         # left and corrupt page/y/x/subsequence source ordering.
         without_cas = _CAS.sub(lambda candidate: " " * len(candidate.group(0)), line.text)

@@ -54,6 +54,21 @@ def test_product_label_pipe_and_multiline_raw_preserve_source_order_and_formatti
     assert [item.raw_fragment for item in candidate.evidence] == ["  Resin (Model-X) Grade A 75%  ", "  Lot-B  "]
 
 
+def test_product_ignores_whitespace_only_visual_continuation_without_trimming_meaningful_lines():
+    result = collect_product_candidates(_input("1", (
+        ("Product:",),
+        ("ABC Resin",),
+        ("   ",),
+        ("Grade A (50%)",),
+        ("\t",),
+        ("Company: Example",),
+    )))
+    candidate = result.candidates[0]
+    assert candidate.raw == "ABC Resin\nGrade A (50%)"
+    assert candidate.normalized == "abc resin grade a (50%)"
+    assert [item.raw_fragment for item in candidate.evidence] == ["ABC Resin", "Grade A (50%)"]
+
+
 def test_product_absence_has_no_filename_or_other_section_fallback():
     empty = _input("1", (("Company: not a product",),))
     changed_elsewhere = _input("1", (("Company: a filename-like ABC-100.pdf",),))
@@ -142,6 +157,19 @@ def test_p3_fix_05_concentration_percent_header_preserves_bare_range_and_context
     result = collect_section3_candidates(_input("3", (("CAS", "Concentration (%)"), ("64-17-5", "10~20"))))
     content = result.blocks[0].content_candidates[0]
     assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("10~20", "%", "Concentration (%)")
+
+
+def test_korean_cas_identifier_table_header_selects_only_the_aligned_concentration_cell():
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Butane (butadiene content 0%)", "106-97-8", "11 ~ 14"),
+    ))
+    block = collect_section3_candidates(section3).blocks[0]
+    assert [(candidate.raw, candidate.unit_context_raw) for candidate in block.content_candidates] == [("11 ~ 14", "%")]
+    resolved = resolve(_input("1", (("Product: table context",),)), section3)
+    assert [(pair.content.content_raw, pair.content.content_status, pair.status) for pair in resolved.components] == [
+        ("11 ~ 14", ContentStatus.FOUND, PairStatus.PAIRED),
+    ]
 
 
 def test_p3_fix_header_context_survives_blank_unit_cell_without_creating_bare_content():
