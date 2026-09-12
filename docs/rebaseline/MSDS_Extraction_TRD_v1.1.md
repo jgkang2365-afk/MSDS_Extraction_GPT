@@ -736,3 +736,25 @@ local source PDF가 이 worktree에 명확히 제공되지 않아 pilot CANDIDAT
 보류했다. Golden v1 import/copy path, 운영 코드, OCR/AI/ODL/KOSHA/MES/DB/외부 호출,
 배포는 이 단계 범위가 아니다. 실제 corpus 평가와 Gate 3 통과 주장은 후속의
 사람 원본 검토와 승인 자료로만 가능하다.
+
+### 21.6 2026-09-11 Phase 7 v1.3 CAS 문맥 분리 동기화
+
+PRD v1.1의 정책을 변경하지 않는 최소 기술 동기화다. CAS 정규화는 dash 및
+separator-adjacent whitespace 정리, shape, checksum만 수행하는 순수 어휘 계약으로
+유지한다. ISO처럼 보이는 숫자열이라는 이유만으로 정규화 단계에서 배제하지 않는다.
+날짜 메타데이터(`Revision`, `Issue`, `Prepared Date`, 작성일·개정일·제조일 등)와
+명시 EC 열/접두어의 배제는 layout·row 문맥을 보유한 Collector가 수행한다. split
+label/value는 바로 다음 aligned value cell까지만 date 문맥으로 취급하며, 이후
+CAS row에 상태를 전파하지 않는다. 명시 CAS label의 우선권도 해당 후보의 local
+field에 한정하며, 같은 row의 뒤따르는 date field에는 전파하지 않는다. label row가
+자체 date value를 이미 소비했으면 다음 row에 date 문맥을 전파하지 않는다. 같은 row의
+여러 date label은 각자의 value cell로 완료 여부를 독립 판단한다. 따라서
+명시 Section 3 `CAS No` 필드의 checksum-valid `2000-01-3`은 후보가 되며, 같은
+문자열이 날짜 메타데이터 문맥에 있으면 후보가 되지 않는다. 이는 특정 CAS
+whitelist, fuzzy correction, 외부 조회를 추가하는 변경이 아니다.
+
+이 동기화의 실제 근거는 사용자 제공 Korean digital PDF 3개와 local TEXT core에
+한정된다. 다국어·전 세계 양식·스캔/OCR 자료군 일반화 또는 사람 승인 corpus를
+완료했다고 주장하지 않는다. 상세한 확장 불변식과 corpus matrix는
+`multiformat-msds-generalization-guideline-v1.md`를 따르며, 해당 guideline은
+PRD/TRD보다 낮은 권위를 가진다.

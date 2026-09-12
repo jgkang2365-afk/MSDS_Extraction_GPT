@@ -1,0 +1,42 @@
+{
+  "case_id": "phase7-regression-pilot-024-sodium-hydroxide",
+  "case_kind": "VALUE_TRUTH",
+  "lifecycle": "CANDIDATE",
+  "source_sha256": "25811ad3e84472d9f8b244a8e391ca66af2714d24a8021efb1e3908b290780c6",
+  "source": {
+    "source_root": "phase7-test-file",
+    "relative_path": "024_★Sodium Hydroxide(NaOH).pdf"
+  },
+  "product": {
+    "raw": "수산화나트륨[수산화나트륨[Sodium Hydroxide]]",
+    "normalized": "수산화나트륨[수산화나트륨[sodium hydroxide]]",
+    "status": "FOUND",
+    "provenance": []
+  },
+  "section_provenance": {
+    "section_1": {"evidence": []},
+    "section_3": {"evidence": []}
+  },
+  "components": [
+    {
+      "cas": {"cas_raw": "1310-73-2", "cas_normalized": "1310-73-2", "cas_status": "FOUND", "evidence": []},
+      "content": {"content_raw": "92-100％", "content_normalized": "92~100%", "content_status": "FOUND", "unit_context_raw": null, "unit_context_evidence": [], "evidence": []},
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-37",
+      "source_relation": {"row_id": "section3-named-row-0", "shared_content_id": null, "relation_reason": "explicit named source fields"}, "evidence": []
+    },
+    {
+      "cas": {"cas_raw": "7732-18-5", "cas_normalized": "7732-18-5", "cas_status": "FOUND", "evidence": []},
+      "content": {"content_raw": "8-0％", "content_normalized": "8~0%", "content_status": "FOUND", "unit_context_raw": null, "unit_context_evidence": [], "evidence": []},
+      "pair_status": "PAIRED", "block_id": "section3-page-1-block-42",
+      "source_relation": {"row_id": "section3-named-row-1", "shared_content_id": null, "relation_reason": "explicit named source fields"}, "evidence": []
+    }
+  ],
+  "review_history": [
+    {
+      "action": "CANDIDATE",
+      "status": "CANDIDATE",
+      "reason": "Current local TEXT core proposal retained the explicit named CAS/content fields, including raw 8-0％, for review."
+    }
+  ],
+  "blockers": []
+}

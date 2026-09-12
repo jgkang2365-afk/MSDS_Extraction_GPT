@@ -54,6 +54,21 @@ def test_product_label_pipe_and_multiline_raw_preserve_source_order_and_formatti
     assert [item.raw_fragment for item in candidate.evidence] == ["  Resin (Model-X) Grade A 75%  ", "  Lot-B  "]
 
 
+def test_product_ignores_whitespace_only_visual_continuation_without_trimming_meaningful_lines():
+    result = collect_product_candidates(_input("1", (
+        ("Product:",),
+        ("ABC Resin",),
+        ("   ",),
+        ("Grade A (50%)",),
+        ("\t",),
+        ("Company: Example",),
+    )))
+    candidate = result.candidates[0]
+    assert candidate.raw == "ABC Resin\nGrade A (50%)"
+    assert candidate.normalized == "abc resin grade a (50%)"
+    assert [item.raw_fragment for item in candidate.evidence] == ["ABC Resin", "Grade A (50%)"]
+
+
 def test_product_absence_has_no_filename_or_other_section_fallback():
     empty = _input("1", (("Company: not a product",),))
     changed_elsewhere = _input("1", (("Company: a filename-like ABC-100.pdf",),))
@@ -144,6 +159,19 @@ def test_p3_fix_05_concentration_percent_header_preserves_bare_range_and_context
     assert (content.raw, content.unit_context_raw, content.unit_context_evidence[0].raw_fragment) == ("10~20", "%", "Concentration (%)")
 
 
+def test_korean_cas_identifier_table_header_selects_only_the_aligned_concentration_cell():
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Butane (butadiene content 0%)", "106-97-8", "11 ~ 14"),
+    ))
+    block = collect_section3_candidates(section3).blocks[0]
+    assert [(candidate.raw, candidate.unit_context_raw) for candidate in block.content_candidates] == [("11 ~ 14", "%")]
+    resolved = resolve(_input("1", (("Product: table context",),)), section3)
+    assert [(pair.content.content_raw, pair.content.content_status, pair.status) for pair in resolved.components] == [
+        ("11 ~ 14", ContentStatus.FOUND, PairStatus.PAIRED),
+    ]
+
+
 def test_p3_fix_header_context_survives_blank_unit_cell_without_creating_bare_content():
     result = collect_section3_candidates(_input("3", (
         ("CAS", "Concentration (%)"),
@@ -182,7 +210,7 @@ def test_p5_fix_03_ocr_explicit_unreadable_content_is_preserved():
 def test_p3_fix_05_ec_table_column_is_excluded_while_cas_and_bare_content_remain():
     result = collect_section3_candidates(_input("3", (
         ("EC No.", "CAS No.", "Content (%)"),
-        ("200-578-6", "64-17-5", "10"),
+        ("2000-01-3", "64-17-5", "10"),
         ("201-000-0", "64-17-4", "20"),
     )))
     assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5", "64-17-4"]
@@ -341,10 +369,35 @@ def test_real_pdf_product_multiline_stops_before_company(pdf_tmp):
     assert [item.raw_fragment for item in candidate.evidence] == ["ABC-100", "Grade A 75%"]
 
 
+def test_korean_material_name_label_and_fullwidth_percent_content_preserve_raw_source_value():
+    product = collect_product_candidates(_input("1", (("물질명 : 수산화나트륨",),)))
+    section3 = collect_section3_candidates(_input("3", (("64-17-5", "함유량 : 8-0％"),)))
+    assert [(candidate.raw, candidate.normalized) for candidate in product.candidates] == [("수산화나트륨", "수산화나트륨")]
+    assert [(candidate.raw, candidate.normalized) for candidate in section3.blocks[0].content_candidates] == [("8-0％", "8~0%")]
+
+
+def test_named_korean_component_cas_and_content_groups_preserve_fullwidth_values_for_review():
+    result = resolve(
+        _input("1", (("제품명 : NaOH",),)),
+        _input("3", (
+            ("성   분 : 수산화나트륨",),
+            (" C A S : 1310-73-2",),
+            ("함유량 : 92-100％",),
+            ("성   분 : 물",),
+            (" C A S : 7732-18-5",),
+            ("함유량 : 8-0％",),
+        )),
+    )
+    assert [(pair.cas.cas_raw, pair.cas.cas_status, pair.content.content_raw, pair.content.content_normalized, pair.status) for pair in result.components] == [
+        ("1310-73-2", ResultStatus.FOUND, "92-100％", "92~100%", PairStatus.PAIRED),
+        ("7732-18-5", ResultStatus.FOUND, "8-0％", "8~0%", PairStatus.PAIRED),
+    ]
+
+
 def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_promoted():
     result = collect_section3_candidates(_input("3", (
         ("64-17-4", "< 1%"),
-        ("Date: 2024-01-1", "> 2%"),
+        ("Revision Date: 2000-01-3", "> 2%"),
         ("EC No.", "205-399-7", "≤ 3%"),
         ("111-11-1", "≥4%"),
         ("222-22-2", "10-20%"),
@@ -357,6 +410,124 @@ def test_section3_invalid_cas_date_ec_and_content_semantics_are_not_repaired_or_
     assert (first.raw, first.normalized, first.validity) == ("64-17-4", "64-17-4", CasCandidateValidity.CHECK_DIGIT_INVALID)
     assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-4", "111-11-1", "222-22-2", "333-33-3", "444-44-4", "555-55-5", "666-66-6"]
     assert [block.content_candidates[0].raw for block in result.blocks] == ["< 1%", "≥4%", "10-20%", "Rem.", "Balance", "5 wt%", "6 vol%"]
+
+
+@pytest.mark.parametrize(
+    "date_label",
+    ["Revision Date", "Issue", "Prepared Date", "작성일", "작성일자", "개정일", "개정일자", "제조일", "제조일자", "작성 날짜", "개정 날짜", "제조 날짜", "날짜"],
+)
+def test_date_metadata_context_never_admits_an_otherwise_valid_cas(date_label):
+    result = collect_section3_candidates(_input("3", ((f"{date_label}: 2000-01-3", "10%"),)))
+    assert result.blocks == ()
+
+
+@pytest.mark.parametrize("date_label", ["Revision Date", "작성일자", "개정일자", "제조일자", "작성 날짜", "날짜"])
+def test_only_the_immediately_related_date_value_row_is_excluded(date_label):
+    result = collect_section3_candidates(_input("3", (
+        (date_label,),
+        ("2000-01-3",),
+        ("64-17-5", "10%"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+@pytest.mark.parametrize(
+    "date_row",
+    [
+        ("문서정보", "작성일자", "2000-01-3"),
+        ("문서정보", "날짜: 2000-01-3"),
+        ("문서정보", "작성일자 | 2000-01-3"),
+    ],
+)
+def test_date_metadata_peer_cells_and_inline_pipe_never_admit_a_valid_cas(date_row):
+    assert collect_section3_candidates(_input("3", (date_row,))).blocks == ()
+
+
+def test_split_date_label_among_peer_cells_excludes_only_aligned_date_value_cell():
+    result = collect_section3_candidates(_input("3", (
+        ("문서정보", "작성일자", "작성부서"),
+        ("other", "2000-01-3", "other"),
+        ("64-17-5", "10%"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_split_date_value_with_whitespace_and_peer_content_is_excluded():
+    result = collect_section3_candidates(_input("3", (
+        ("문서정보", "작성일자", "작성부서"),
+        ("other", " 2000-01-3 ", "10%"),
+        ("64-17-5", "10%"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_same_row_date_label_and_value_do_not_block_the_next_genuine_cas():
+    result = collect_section3_candidates(_input("3", (
+        ("작성일자", "2000-01-3"),
+        ("64-17-5", "10%"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_peer_row_date_label_and_value_do_not_block_the_next_aligned_genuine_cas():
+    result = collect_section3_candidates(_input("3", (
+        ("문서정보", "작성일자", "2000-01-3", "작성부서"),
+        ("other", "64-17-5", "10%", "other"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+@pytest.mark.parametrize("date_value", ["2024-01-12", "2026.09.11", "2026/09/11", "Sep 11, 2026", "not stated"])
+def test_complete_date_field_with_non_cas_value_does_not_block_the_next_genuine_cas(date_value):
+    result = collect_section3_candidates(_input("3", (
+        ("작성일자", date_value),
+        ("64-17-5", "10%"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_complete_peer_cell_date_field_with_normal_date_does_not_block_next_aligned_cas():
+    result = collect_section3_candidates(_input("3", (
+        ("문서정보", "작성일자", "2024-01-12", "작성부서"),
+        ("other", "64-17-5", "10%", "other"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_completed_date_sibling_does_not_release_an_aligned_label_only_date_field():
+    result = collect_section3_candidates(_input("3", (
+        ("작성일자", "Revision Date: 2024-01-12"),
+        ("2000-01-3", "64-17-5"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_each_date_label_uses_its_own_same_row_completion_state():
+    result = collect_section3_candidates(_input("3", (
+        ("작성일자", "not stated", "개정일자"),
+        ("2000-01-3", "other", "2000-01-3"),
+    )))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["2000-01-3"]
+
+
+def test_explicit_cas_label_overrides_peer_date_metadata_context():
+    result = collect_section3_candidates(_input("3", (("작성일자", "CAS No.", "2000-01-3", "10%"),)))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["2000-01-3"]
+
+
+def test_later_date_field_overrides_an_earlier_cas_field_in_the_same_row():
+    result = collect_section3_candidates(_input("3", (("CAS No.", "64-17-5", "작성일자", "2000-01-3", "10%"),)))
+    assert [block.cas_candidates[0].raw for block in result.blocks] == ["64-17-5"]
+
+
+def test_explicit_named_cas_no_admits_an_otherwise_date_shaped_valid_cas():
+    result = resolve(
+        _input("1", (("Product: lexical CAS",),)),
+        _input("3", (("성분: test",), ("CAS No: 2000-01-3",), ("함유량: 10%",))),
+    )
+    assert [(pair.cas.cas_raw, pair.cas.cas_status, pair.status) for pair in result.components] == [
+        ("2000-01-3", ResultStatus.FOUND, PairStatus.PAIRED),
+    ]
 
 
 @pytest.mark.parametrize("source_token", ("64-17-5X", "X64-17-5", "64-17-5-99"))

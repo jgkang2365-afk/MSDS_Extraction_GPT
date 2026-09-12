@@ -24,19 +24,46 @@ from .models import (
 from .normalization import normalize_cas, normalize_content, normalize_product
 
 
-_PRODUCT_LABEL = re.compile(r"^\s*(?:product(?:\s+(?:name|identifier))?|제품명|제품\s*식별자)\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
+_PRODUCT_LABEL = re.compile(r"^\s*(?:product(?:\s+(?:name|identifier))?|(?:[가-하]\.\s*)?(?:제품명|제품\s*식별자|물질명))\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
 _FIELD_LABEL = re.compile(r"^\s*(?:[A-Za-z][A-Za-z /()_-]{0,40}|[가-힣][가-힣 /()_-]{0,40})\s*(?::|\|)")
-_NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체))\b", re.IGNORECASE)
+_NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체)|[가-하]\.\s*(?:제품(?:명|의|\s)|공급|회사|제조))", re.IGNORECASE)
+_PRODUCT_CONTINUATION_BOUNDARY = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)?|제조(?:자|업체)?|판매원|사용상의\s*제한|제품의\s*권고\s*용도|[가-하]\.\s*(?:제품|공급|회사|제조))", re.IGNORECASE)
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
 _CAS_TOKEN_PUNCTUATION = frozenset("_-\u2010\u2011\u2012\u2013\u2014\u2015\u2212")
 _EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
+# These terms have document meaning, unlike lexical CAS validation.  Keep
+# them at collection time where the preceding row/cell context is available.
+_DATE_METADATA_LABEL = re.compile(
+    r"\s*(?:\b(?:revision|issue|prepared|effective|release|publication|print)"
+    r"(?:\s+date)?\b|\bdate\b|(?:작성|개정|제조|발행|발급|검토|준비)\s*(?:일(?:자)?|날짜)|날짜)\s*[:|#-]?\s*$",
+    re.IGNORECASE,
+)
+_DATE_METADATA_INLINE_VALUE = re.compile(
+    r"^\s*(?:\b(?:revision|issue|prepared|effective|release|publication|print)"
+    r"(?:\s+date)?\b|\bdate\b|(?:작성|개정|제조|발행|발급|검토|준비)\s*(?:일(?:자)?|날짜)|날짜)\s*[:|#-]\s*\S.+?\s*$",
+    re.IGNORECASE,
+)
+_PEER_METADATA_LABEL = re.compile(
+    r"^\s*(?:[가-힣\s]*(?:부서|정보|구분|번호|작성자|검토자|승인자)|"
+    r"(?:document|department|prepared\s+by|reviewed\s+by|approved\s+by|information))\s*[:|]?\s*$",
+    re.IGNORECASE,
+)
+_CAS_CONTEXT = re.compile(r"\s*C\s*A\s*S\s*(?:(?:No\.?|Number)\s*)?[:|]?\s*$", re.IGNORECASE)
+_CAS_TABLE_HEADER = re.compile(
+    r"^\s*C\s*A\s*S\s*(?:(?:No\.?|Number)|(?:번호(?:\s*또는\s*식별번호)?)|식별번호)?\s*$",
+    re.IGNORECASE,
+)
+_DATE_METADATA_ADJACENCY_Y_TOLERANCE = 36.0
 _DIRECT_CONTENT = re.compile(
-    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*%|%|ppm)|Rem\.|Balance",
+    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*[%％]|[%％]|ppm)|Rem\.|Balance",
     re.IGNORECASE,
 )
 _BARE_CONTENT = re.compile(r"^(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*$")
-_UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*%|vol\s*%|%|ppm)(?![A-Za-z])", re.IGNORECASE)
+_UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*[%％]|vol\s*[%％]|[%％]|ppm)(?![A-Za-z])", re.IGNORECASE)
 _UNREADABLE_CONTENT = re.compile(r"^\s*\[?(?:unreadable|illegible|not\s+readable|판독\s*불가|식별\s*불가)\]?\s*$", re.IGNORECASE)
+_NAMED_COMPONENT = re.compile(r"^\s*(?:성\s*분|component|ingredient|chemical\s+name)\s*[:|]\s*.+$", re.IGNORECASE)
+_NAMED_CAS = re.compile(r"^\s*C\s*A\s*S\s*(?:(?:No\.?|Number)\s*)?[:|]\s*(?P<value>.+?)\s*$", re.IGNORECASE)
+_NAMED_CONTENT = re.compile(r"^\s*(?:함\s*유\s*량|content|concentration)\s*[:|]\s*(?P<value>.+?)\s*$", re.IGNORECASE)
 _HEADER_X_TOLERANCE = 12.0
 
 
@@ -142,16 +169,21 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
             row = row_for_line[line_key(line)]
             label_index = row.index(line)
             for cell in row[label_index + 1:]:
-                if _FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text):
+                if _FIELD_LABEL.match(cell.text) or _PRODUCT_CONTINUATION_BOUNDARY.match(cell.text):
                     break
                 values.append(cell)
         # Every supported label form can continue on later rows.  Inline
         # values deliberately do not consume a same-row right-hand cell.
         current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
         for candidate_row in rows[current_row_index + 1:]:
-            if any(_FIELD_LABEL.match(cell.text) or _NAMED_STRUCTURAL_FIELD.match(cell.text) for cell in candidate_row):
+            if any(_FIELD_LABEL.match(cell.text) or _PRODUCT_CONTINUATION_BOUNDARY.match(cell.text) for cell in candidate_row):
                 break
             values.extend(candidate_row)
+        # A visual continuation made only of whitespace is not a product
+        # value.  Exclude that source cell before raw joining so the product
+        # fact and its provenance identify the same meaningful source span.
+        # Do not trim non-empty cells: their raw source text remains lossless.
+        values = [value for value in values if value.text.strip()]
         if not values:
             continue
         raw = "\n".join(value.text for value in values)
@@ -164,10 +196,13 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
 
 
 def _rows(section_input: SectionInput) -> tuple[tuple[_Line, ...], ...]:
-    """Use shared visual baselines as source rows while retaining every cell."""
+    """Use overlapping visual row bands, retaining wrapped cells as one source row."""
     rows: list[list[_Line]] = []
     for line in _lines(section_input):
-        if rows and rows[-1][0].page == line.page and abs(rows[-1][0].bbox[1] - line.bbox[1]) <= 1.0:
+        if rows and rows[-1][0].page == line.page and any(
+            max(existing.bbox[1], line.bbox[1]) < min(existing.bbox[3], line.bbox[3])
+            for existing in rows[-1]
+        ):
             rows[-1].append(line)
         else:
             rows.append([line])
@@ -188,13 +223,53 @@ def _cas_token_span(text: str, match: re.Match[str]) -> tuple[int, int]:
     return start, end
 
 
-def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tuple[_Line, int, str]]:
+def _nearest_field_context(row: tuple[_Line, ...], line_index: int, line_prefix: str) -> str | None:
+    """Return only the field label local to this candidate, never a stale row label."""
+    if _DATE_METADATA_LABEL.search(line_prefix) is not None:
+        return "DATE"
+    if _CAS_CONTEXT.fullmatch(line_prefix) is not None:
+        return "CAS"
+    for line in reversed(row[:line_index]):
+        if _DATE_METADATA_LABEL.fullmatch(line.text) is not None:
+            return "DATE"
+        if _CAS_CONTEXT.fullmatch(line.text) is not None:
+            return "CAS"
+    return None
+
+
+def _date_label_has_same_row_value(row: tuple[_Line, ...], label_index: int) -> bool:
+    """Determine completion for one date field, never for the entire row."""
+    label = row[label_index]
+    if _DATE_METADATA_INLINE_VALUE.fullmatch(label.text) is not None:
+        return True
+    next_cell = row[label_index + 1] if label_index + 1 < len(row) else None
+    return bool(
+        _DATE_METADATA_LABEL.fullmatch(label.text) is not None
+        and next_cell is not None
+        and next_cell.text.strip()
+        and _PEER_METADATA_LABEL.fullmatch(next_cell.text) is None
+        and _DATE_METADATA_LABEL.fullmatch(next_cell.text) is None
+        and _DATE_METADATA_INLINE_VALUE.fullmatch(next_cell.text) is None
+        and _CAS_CONTEXT.fullmatch(next_cell.text) is None
+    )
+
+
+def _cas_matches(
+    row: tuple[_Line, ...], ec_headers: list[_EcHeader], headers: list[_UnitHeader],
+    previous_row: tuple[_Line, ...] | None = None,
+) -> list[tuple[_Line, int, str]]:
     matches: list[tuple[_Line, int, str]] = []
     for line_index, line in enumerate(row):
         seen_token_spans: set[tuple[int, int]] = set()
         for match in _CAS.finditer(line.text):
-            row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line.text[:match.start()]
+            line_prefix = line.text[:match.start()]
+            field_context = _nearest_field_context(row, line_index, line_prefix)
+            row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line_prefix
             if _EC_CONTEXT.search(row_prefix):
+                continue
+            if field_context == "DATE":
+                continue
+            if field_context != "CAS" and _is_immediately_related_date_value_line(previous_row, line):
                 continue
             if any(line.page == header.page and _is_ec_column(line, header) for header in ec_headers):
                 continue
@@ -204,15 +279,33 @@ def _cas_matches(row: tuple[_Line, ...], ec_headers: list[_EcHeader]) -> list[tu
             seen_token_spans.add((start, end))
             raw = line.text[start:end]
             result = normalize_cas(raw)
-            if result.validity.value == "NOT_CANDIDATE":
-                continue
             matches.append((line, start, raw))
     return matches
 
 
+def _is_immediately_related_date_value_line(
+    previous_row: tuple[_Line, ...] | None, line: _Line,
+) -> bool:
+    """Exclude only the next aligned CAS-shaped value cell of a date label.
+
+    This deliberately does not retain a cross-row state: a later genuine CAS
+    row is not affected by an earlier revision/date label.
+    """
+    if previous_row is None or _CAS.fullmatch(line.text.strip()) is None:
+        return False
+    return any(
+        _DATE_METADATA_LABEL.fullmatch(label.text) is not None
+        and not _date_label_has_same_row_value(previous_row, label_index)
+        and label.page == line.page
+        and 0.0 <= line.bbox[1] - label.bbox[3] <= _DATE_METADATA_ADJACENCY_Y_TOLERANCE
+        and abs(line.bbox[0] - label.bbox[0]) <= _HEADER_X_TOLERANCE
+        for label_index, label in enumerate(previous_row)
+    )
+
+
 def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput, row_number: int) -> list[_UnitHeader]:
     """Observe units only in an explicit CAS table header, never explanatory prose."""
-    cas_label = next((line for line in row if re.fullmatch(r"\s*CAS(?:\s+(?:No\.?|Number))?\s*", line.text, re.IGNORECASE)), None)
+    cas_label = next((line for line in row if _CAS_TABLE_HEADER.fullmatch(line.text)), None)
     if cas_label is None:
         return []
     return [
@@ -243,6 +336,18 @@ def _header_for(line: _Line, headers: list[_UnitHeader]) -> tuple[str, Evidence]
 def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_cas: bool, headers: list[_UnitHeader]) -> list[tuple[_Line, int, str, str | None, Evidence | None]]:
     matches: list[tuple[_Line, int, str, str | None, Evidence | None]] = []
     for line in row:
+        header = _header_for(line, headers) if has_cas and headers else None
+        if headers and has_cas:
+            # Within an explicit CAS/unit table, only the unit-aligned cell can
+            # establish the row concentration.  A percentage embedded in an
+            # ingredient or synonym cell is not a concentration observation.
+            if header is None:
+                continue
+            if _BARE_CONTENT.fullmatch(line.text):
+                matches.append((line, 0, line.text, *header))
+            elif _DIRECT_CONTENT.fullmatch(line.text):
+                matches.append((line, 0, line.text, None, None))
+            continue
         # Retain original offsets: deleting a preceding CAS would move content
         # left and corrupt page/y/x/subsequence source ordering.
         without_cas = _CAS.sub(lambda candidate: " " * len(candidate.group(0)), line.text)
@@ -267,6 +372,26 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
         for line in row
     )
     return has_aligned_cas
+
+
+def _same_table_content_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
+    """Keep a table header across aligned content cells with missing CAS."""
+    return bool(headers) and all(line.page == headers[0].page for line in row) and any(
+        _BARE_CONTENT.fullmatch(line.text) and abs(line.bbox[0] - headers[0].unit_x) <= _HEADER_X_TOLERANCE
+        for line in row
+    )
+
+
+def _unit_header_continuation_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
+    """Keep a split table header only through its immediately adjacent cells."""
+    if not headers or any(line.page != headers[0].page for line in row):
+        return False
+    header_bottom = max(header.evidence.bbox[3] if header.evidence.bbox else 0.0 for header in headers)
+    return (
+        not any(_CAS.search(line.text) for line in row)
+        and min(line.bbox[1] for line in row) <= header_bottom + 12.0
+        and any(re.sub(r"\s+", " ", line.text).strip().casefold().endswith(" id") for line in row)
+    )
 
 
 def _same_ec_table_row(row: tuple[_Line, ...], headers: list[_EcHeader]) -> bool:
@@ -304,6 +429,48 @@ def _content_field_observation(section_input: SectionInput, row: tuple[_Line, ..
     return ContentFieldState.ABSENT, None, ()
 
 
+def _named_component_blocks(section_input: SectionInput, rows: tuple[tuple[_Line, ...], ...]) -> tuple[Section3BlockCandidate, ...]:
+    """Collect explicit name/CAS/content field groups when no table exists."""
+    blocks: list[Section3BlockCandidate] = []
+    group: list[_Line] = []
+
+    def flush() -> None:
+        if not group:
+            return
+        cas_line = next((line for line in group if (match := _NAMED_CAS.fullmatch(line.text))), None)
+        content_line = next((line for line in group if _NAMED_CONTENT.fullmatch(line.text)), None)
+        if cas_line is None or content_line is None:
+            return
+        cas_match = _NAMED_CAS.fullmatch(cas_line.text)
+        content_match = _NAMED_CONTENT.fullmatch(content_line.text)
+        assert cas_match is not None and content_match is not None
+        cas_raw = cas_match.group("value")
+        cas_shape = _CAS.fullmatch(cas_raw)
+        content_raw = content_match.group("value")
+        content_shape = _DIRECT_CONTENT.fullmatch(content_raw)
+        if cas_shape is None or content_shape is None:
+            return
+        normalized_cas = normalize_cas(cas_raw)
+        first = group[0]
+        blocks.append(Section3BlockCandidate(
+            f"section3-page-{first.page}-block-{first.block}",
+            f"section3-named-row-{len(blocks)}", len(blocks),
+            tuple(_evidence(section_input, line) for line in group),
+            (CasCandidate(cas_raw, normalized_cas.normalized, CasCandidateValidity(normalized_cas.validity.value), len(blocks), (_evidence(section_input, cas_line),)),),
+            (ContentCandidate(content_raw, normalize_content(content_raw).content_normalized, len(blocks) + 1, (_evidence(section_input, content_line),)),),
+            ContentFieldState.UNKNOWN,
+        ))
+
+    for row in rows:
+        if any(_NAMED_COMPONENT.fullmatch(line.text) for line in row):
+            flush()
+            group = list(row)
+        elif group:
+            group.extend(row)
+    flush()
+    return tuple(blocks)
+
+
 def collect_section3_candidates(section_input: SectionInput) -> Section3Collection:
     """Collect ordered Section 3 source rows without creating ComponentPair values."""
     _require_confirmed_text_input(section_input, "3")
@@ -311,16 +478,27 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
     source_order = 0
     headers: list[_UnitHeader] = []
     ec_headers: list[_EcHeader] = []
-    for row_number, row in enumerate(_rows(section_input)):
+    rows = _rows(section_input)
+    # Explicit repeated name/CAS/content groups describe their own row
+    # relationship.  Do not first reinterpret their separate CAS line as a
+    # table row and lose the following declared content value.
+    if any(any(_NAMED_COMPONENT.fullmatch(line.text) for line in row) for row in rows):
+        return Section3Collection(_named_component_blocks(section_input, rows))
+    for row_number, row in enumerate(rows):
         if row_headers := _unit_headers(row, section_input, row_number):
             headers = row_headers
-        elif headers and not _same_table_row(row, headers):
+        elif headers and not (
+            _same_table_row(row, headers)
+            or _same_table_content_row(row, headers)
+            or _unit_header_continuation_row(row, headers)
+        ):
             headers = []
         if row_ec_headers := _ec_headers(row, row_number):
             ec_headers = row_ec_headers
         elif ec_headers and not _same_ec_table_row(row, ec_headers):
             ec_headers = []
-        cas_matches = _cas_matches(row, ec_headers)
+        previous_row = rows[row_number - 1] if row_number else None
+        cas_matches = _cas_matches(row, ec_headers, headers, previous_row)
         content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
         occurrences = [(line, start, "cas", raw) for line, start, raw in cas_matches]
         occurrences += [(line, start, "content", (raw, unit, unit_evidence)) for line, start, raw, unit, unit_evidence in content_matches]
@@ -354,4 +532,8 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
             tuple(cas_candidates), tuple(content_candidates), field_state,
             field_raw, field_evidence,
         ))
+    # Named fields are an alternative, not a supplement to an already-proven
+    # table.  This avoids cross-layout pairing or synthetic joins.
+    if not blocks:
+        blocks.extend(_named_component_blocks(section_input, rows))
     return Section3Collection(tuple(blocks))
