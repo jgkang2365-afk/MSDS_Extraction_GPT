@@ -29,6 +29,7 @@ _SECTION_ONE_NON_PRODUCT_LABEL = (
     r"(?:"
     r"(?:company|supplier|manufacturer|distributor|importer)(?:\s*(?:name|information|details?|address))?"
     r"|(?:product\s*(?:number|no\.?|identifier|id|code)|catalog(?:ue)?\s*(?:no\.?|number|code))"
+    r"|(?:reference\s*(?:number|no\.?|code)(?:\s*\([^)]*\))?|product\s*type)"
     r"|(?:synonyms?|trade\s*names?|other\s+means\s+of\s+identification)"
     r"|(?:emergency\s*(?:telephone|phone|contact|number)|contact\s*(?:information|details?|person))"
     r"|(?:recommended\s+use(?:\s+and\s+restrictions?\s+on\s+use)?|restrictions?\s+on\s+use)"
@@ -36,6 +37,7 @@ _SECTION_ONE_NON_PRODUCT_LABEL = (
     r"|유통(?:사|업체|회사|자)?|수입(?:자|업체|회사)?|판매(?:원|자|업체|회사)?"
     r"|제품\s*(?:번호|식별(?:자|번호)?|코드)|(?:긴급|응급)\s*(?:연락처|전화(?:번호)?)"
     r"|동의어(?:\s*/\s*상품명)?|상품명"
+    r"|(?:색상|colour|color|용도(?:분류)?)"
     r"|제품(?:의)?\s*(?:권고\s*용도(?:와\s*사용상(?:의)?\s*제[한핚])?|용도|사용상(?:의)?\s*제[한핚])|사용상(?:의)?\s*제[한핚]"
     r"|(?:제조(?:자)?|공급(?:자)?|유통(?:업자|사|업체|회사|자)?)(?:\s*/\s*(?:제조(?:자)?|공급(?:자)?|유통(?:업자|사|업체|회사|자)?)){1,2}\s*정보"
     r")"
@@ -87,6 +89,15 @@ _NAMED_CONTENT = re.compile(r"^\s*(?:함\s*유\s*량|content(?:\s*\([^)]*\))?|co
 _NAMED_BLOCK_BOUNDARY = re.compile(r"^\s*(?:note\b|remarks?\b|비고\s*:?|주\s*:)", re.IGNORECASE)
 _KOREAN_CONTENT_START = re.compile(r"^\s*\d+(?:[.,]\d+)?\s*(?:이상|초과)\s*[~∼～]\s*$")
 _KOREAN_CONTENT_END = re.compile(r"^\s*\d+(?:[.,]\d+)?\s*[%％]?\s*(?:미만|이하)\s*$")
+# A header-proven concentration cell can retain a source spelling that the
+# semantic comparator normalizer does not recognize.  This only proves that a
+# numeric range belongs to the explicit content column; it never searches
+# free text or an identifier cell for a number.
+_HEADER_PROVEN_CONTENT = re.compile(
+    r"^\s*(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?"
+    r"(?:\s*[-–—~∼～]\s*(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?)?"
+    r"(?:\s*[%％])?(?:\s*[가-힣]+)?\s*$"
+)
 _HEADER_X_TOLERANCE = 12.0
 
 
@@ -215,7 +226,10 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
             continue
         values: list[_Line] = []
         inline_source = match.group(1) or ""
-        inline = _product_value_before_next_field(inline_source)
+        # Inline labelled values have no separate visual cell whose edge is
+        # meaningful.  Trim only their terminal layout padding; multiline and
+        # separate-cell raw fragments remain lossless below.
+        inline = _product_value_before_next_field(inline_source).rstrip()
         if inline.strip():
             # The raw product value excludes only the explicit label delimiter.
             value_start = line.text.find(inline_source)
@@ -231,12 +245,16 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
                 if _starts_next_section_one_field((cell,), None):
                     break
                 values.append(cell)
+                # A discrete label/value cell is a complete same-row product
+                # relation.  Further columns belong to independent fields and
+                # must not be folded into the product merely by reading order.
+                break
         # Every supported label form can continue on later rows.  Inline
         # values deliberately do not consume a same-row right-hand cell.
         current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
         for row_index, candidate_row in enumerate(rows[current_row_index + 1:], start=current_row_index + 1):
             next_row = rows[row_index + 1] if row_index + 1 < len(rows) else None
-            if _starts_next_section_one_field(candidate_row, next_row):
+            if _starts_next_section_one_field(candidate_row, next_row) or any(_PRODUCT_LABEL.match(cell.text) for cell in candidate_row):
                 if values and _is_split_section_one_field(candidate_row, next_row):
                     for value_index in range(len(values) - 1, -1, -1):
                         last = values[value_index]
@@ -390,6 +408,32 @@ def _unit_headers(row: tuple[_Line, ...], section_input: SectionInput, row_numbe
     ]
 
 
+def _split_unit_headers(
+    row: tuple[_Line, ...], next_row: tuple[_Line, ...] | None,
+    section_input: SectionInput, row_number: int,
+) -> list[_UnitHeader]:
+    """Prove a vertically split Korean CAS/identifier header in one band.
+
+    This deliberately requires the first fragment, its immediately adjacent
+    second fragment, and a same-band concentration header.  It is not a page
+    text concatenation rule.
+    """
+    if next_row is None or any(line.page != row[0].page for line in (*row, *next_row)):
+        return []
+    cas_start = next((line for line in row if re.fullmatch(r"\s*CAS\s*번호\s*또는\s*", line.text, re.IGNORECASE)), None)
+    content = next((line for line in row if _UNIT_HEADER.search(line.text) and not _DIRECT_CONTENT.search(line.text)), None)
+    if cas_start is None or content is None or content.bbox[0] <= cas_start.bbox[0]:
+        return []
+    cas_end = next((line for line in next_row if re.fullmatch(r"\s*식별번호\s*", line.text)), None)
+    if cas_end is None or abs(cas_end.bbox[0] - cas_start.bbox[0]) > _HEADER_X_TOLERANCE:
+        return []
+    if not 0 <= cas_end.bbox[1] - cas_start.bbox[3] <= 18.0:
+        return []
+    unit = _UNIT_HEADER.search(content.text)
+    assert unit is not None
+    return [_UnitHeader(cas_start.page, row_number, cas_start.bbox[0], content.bbox[0], unit.group("unit"), _evidence(section_input, content))]
+
+
 def _ec_headers(row: tuple[_Line, ...], row_number: int) -> list[_EcHeader]:
     """Observe an explicit EC column only when it shares a header row with CAS."""
     ec_label = next((line for line in row if re.fullmatch(r"\s*EC\s+(?:No\.?|Number)\s*", line.text, re.IGNORECASE)), None)
@@ -422,6 +466,8 @@ def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_ca
                 matches.append((line, 0, line.text, *header))
             elif _DIRECT_CONTENT.fullmatch(line.text):
                 matches.append((line, 0, line.text, None, None))
+            elif _HEADER_PROVEN_CONTENT.fullmatch(line.text):
+                matches.append((line, 0, line.text, *header))
             continue
         # Retain original offsets: deleting a preceding CAS would move content
         # left and corrupt page/y/x/subsequence source ordering.
@@ -439,14 +485,33 @@ def _content_matches(section_input: SectionInput, row: tuple[_Line, ...], has_ca
 
 def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
     """Keep header context only for the next aligned rows of the same table."""
-    if not headers or any(line.page != headers[0].page for line in row):
+    if not headers or not row:
         return False
     cas_header = headers[0]
     has_aligned_cas = any(
         _CAS.search(line.text) and _is_cas_column(line, cas_header.cas_x)
         for line in row
     )
-    return has_aligned_cas
+    if not has_aligned_cas:
+        return False
+    if all(line.page == cas_header.page for line in row):
+        return True
+    # A continued table page is admitted only when the next physical page has
+    # both the original CAS and content bands populated on the same source
+    # row.  This preserves an established table relation without letting a
+    # header leak into a foreign page or column.
+    return (
+        all(line.page == cas_header.page + 1 for line in row)
+        and any(
+            _is_cas_column(line, cas_header.cas_x)
+            for line in row
+        )
+        and any(
+            abs(line.bbox[0] - cas_header.unit_x) <= _HEADER_X_TOLERANCE
+            and (_DIRECT_CONTENT.fullmatch(line.text) or _BARE_CONTENT.fullmatch(line.text) or _HEADER_PROVEN_CONTENT.fullmatch(line.text))
+            for line in row
+        )
+    )
 
 
 def _same_table_content_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
@@ -473,7 +538,11 @@ def _unit_header_continuation_row(row: tuple[_Line, ...], headers: list[_UnitHea
     return (
         not any(_CAS.search(line.text) for line in row)
         and min(line.bbox[1] for line in row) <= header_bottom + 12.0
-        and any(re.sub(r"\s+", " ", line.text).strip().casefold().endswith(" id") for line in row)
+        and any(
+            re.sub(r"\s+", " ", line.text).strip().casefold().endswith(" id")
+            or re.fullmatch(r"\s*식별번호\s*", line.text) is not None
+            for line in row
+        )
     )
 
 
@@ -614,6 +683,11 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
     for row_number, row in enumerate(rows):
         if row_headers := _unit_headers(row, section_input, row_number):
             headers = row_headers
+        elif split_headers := _split_unit_headers(
+            row, rows[row_number + 1] if row_number + 1 < len(rows) else None,
+            section_input, row_number,
+        ):
+            headers = split_headers
         elif headers and not (
             _same_table_row(row, headers)
             or _same_table_content_row(row, headers)

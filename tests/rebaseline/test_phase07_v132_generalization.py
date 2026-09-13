@@ -85,6 +85,29 @@ def test_split_cas_header_uses_true_content_and_never_promotes_ec_or_classificat
     assert [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components] == [("7647-01-0", ">= 35 - < 40 %")]
 
 
+def test_true_split_cas_identifier_header_requires_an_adjacent_same_band_fragment():
+    split = _input("3", (
+        ("CAS 번호 또는", "함유량(%)"),
+        ("식별번호", ""),
+        ("64-17-5 / OTHER-1", "10%"),
+    ))
+    resolved = resolve(_input("1", (("Product: split",),)), split)
+    assert [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components] == [("64-17-5", "10%")]
+    # A distant or other-column fragment cannot retroactively create a CAS
+    # header proof.
+    distant = _input("3", (("CAS 번호 또는", "함유량(%)"), ("note", ""), ("식별번호", ""), ("64-17-5", "10%")))
+    assert collect_section3_candidates(distant).blocks[0].content_candidates[0].unit_context_raw is None
+
+
+@pytest.mark.parametrize(("raw", "expected"), [
+    ("5 이상", ">=5"), ("5 미만", "<5"), ("5 초과", ">5"), ("5 이하", "<=5"),
+])
+def test_single_korean_comparators_preserve_raw_and_normalize_semantics(raw, expected):
+    result = normalize_content(raw)
+    assert result.content_raw == raw
+    assert result.content_normalized == expected
+
+
 def test_named_fields_allow_local_flexible_order_but_do_not_join_across_a_note_boundary():
     flexible = _input("3", (("Ingredient name:Glycine",), ("Content (%):98.5～101.5",), ("CAS No.:56-40-6",)))
     resolved = resolve(_input("1", (("Product: Glycine",),)), flexible)
@@ -103,25 +126,25 @@ def test_actual_phase07_v132_generalized_routes():
     root = Path(SOURCE_ROOT)
     segments = locate_sds_segments(read_pdf_layout(next(root.glob("007*.pdf"))))
     assert len(segments) == 3
-    products_and_cas = []
+    products_and_pairs = []
     for segment in segments:
         assert segment.section_1.description is not None and segment.section_3.description is not None
         result = resolve(
             build_section_input(read_pdf_layout(next(root.glob("007*.pdf"))), segment.section_1.description),
             build_section_input(read_pdf_layout(next(root.glob("007*.pdf"))), segment.section_3.description),
         )
-        products_and_cas.append((result.product.raw, [item.cas.cas_raw for item in result.components]))
-    # Each CAS sequence is source-local to one of the three Section 1/3
-    # fences.  Exact lists make an accidental first/last-document merge fail.
-    assert products_and_cas == [
-        ("- 프로스테인 네오-PC100(크리어)", ["616-38-6", "64742-82-1", "68333-70-0", "8001-26-1", "1330-20-7", "22464-99-9", "100-41-4", "41556-26-7", "96-29-7"]),
-        ("- 프로스테인 네오-PC420(페퍼)", ["616-38-6", "64742-82-1", "68333-70-0", "8001-26-1", "1330-20-7", "22464-99-9", "100-41-4", "64742-95-6", "1333-86-4", "41556-26-7", "96-29-7"]),
-        ("- 프로스테인 네오-PC220(오크)", ["616-38-6", "64742-82-1", "68333-70-0", "8001-26-1", "1330-20-7", "51274-00-1", "22464-99-9", "100-41-4", "64742-95-6", "41556-26-7", "96-29-7"]),
+        products_and_pairs.append((result.product.raw, [(item.cas.cas_raw, item.content.content_raw, item.status.value) for item in result.components]))
+    # Each CAS/content relation is source-local to one of the three Section
+    # 1/3 fences.  The other identifier text remains source text, never output.
+    assert products_and_pairs == [
+        ("- 프로스테인 네오-PC100(크리어)", [("616-38-6", "45~50", "PAIRED"), ("64742-82-1", "13 ~ 20", "PAIRED"), ("68333-70-0", "10 ~ 17", "PAIRED"), ("8001-26-1", "7 ~ 14", "PAIRED"), ("1330-20-7", "4 ~ 11", "PAIRED"), ("22464-99-9", "1 ~ 6", "PAIRED"), ("100-41-4", "1 ~ 6", "PAIRED"), ("41556-26-7", "0.1~1미맊", "PAIRED"), ("96-29-7", "0.1~1미맊", "PAIRED")]),
+        ("- 프로스테인 네오-PC420(페퍼)", [("616-38-6", "43~48", "PAIRED"), ("64742-82-1", "13 ~ 20", "PAIRED"), ("68333-70-0", "7 ~ 14", "PAIRED"), ("8001-26-1", "4 ~ 11", "PAIRED"), ("1330-20-7", "4 ~ 11", "PAIRED"), ("22464-99-9", "1 ~ 6", "PAIRED"), ("100-41-4", "1 ~ 6", "PAIRED"), ("64742-95-6", "0.1~1미맊", "PAIRED"), ("1333-86-4", "0.1~1미맊", "PAIRED"), ("41556-26-7", "0.1~1미맊", "PAIRED"), ("96-29-7", "0.1~1미맊", "PAIRED")]),
+        ("- 프로스테인 네오-PC220(오크)", [("616-38-6", "42~47", "PAIRED"), ("64742-82-1", "13 ~ 20", "PAIRED"), ("68333-70-0", "7 ~ 14", "PAIRED"), ("8001-26-1", "4 ~ 11", "PAIRED"), ("1330-20-7", "4 ~ 11", "PAIRED"), ("51274-00-1", "1 ~ 6", "PAIRED"), ("22464-99-9", "1 ~ 6", "PAIRED"), ("100-41-4", "1 ~ 6", "PAIRED"), ("64742-95-6", "0.1~1미맊", "PAIRED"), ("41556-26-7", "0.1~1미맊", "PAIRED"), ("96-29-7", "0.1~1미맊", "PAIRED")]),
     ]
     for prefix, expected_product, expected in (
         ("030", "Hydrochloric acid", [("7647-01-0", ">= 35 - < 40 %")]),
         ("032", "Nitric acid", [("7697-37-2", ">= 70 - < 75 %")]),
-        ("043", None, [("56-40-6", "98.5～101.5")]),
+        ("043", "Glycine", [("56-40-6", "98.5～101.5")]),
     ):
         layout = read_pdf_layout(next(root.glob(prefix + "*.pdf")))
         one, three = locate_sections(layout)
@@ -144,8 +167,10 @@ def test_actual_phase07_v132_generalized_routes():
     assert validate_resolved(result).status.value == "PASS"
     layout = read_pdf_layout(next(root.glob("036*.pdf")))
     one, three = locate_sections(layout)
-    assert one.description is None and three.description is not None
-    components = resolve_components(collect_section3_candidates(build_section_input(layout, three.description)))
+    assert one.description is not None and three.description is not None
+    resolved = resolve(build_section_input(layout, one.description), build_section_input(layout, three.description))
+    assert resolved.product.raw == "아이생각수성내부프로 (M-BASE)"
+    components = resolved.components
     assert [
         (item.cas.cas_raw, item.content.content_raw, item.content.content_normalized, item.status.value)
         for item in components

@@ -31,13 +31,13 @@ local review packet에만 기록했다. 이 결과는 Golden truth나 human revi
 | ID | Capability / route | Section 1 | Section 3 | 결과 |
 | --- | --- | --- | --- | --- |
 | 005 | `IMAGE_ONLY`, OCR deferred | NOT_FOUND | NOT_FOUND | `DEFERRED_OCR_REQUIRED` |
-| 007 | digital text, multi-SDS | CONFIRMED | PARTIAL | `MULTI_SDS_POLICY_REQUIRED` |
+| 007 | digital text, multi-SDS | CONFIRMED | CONFIRMED | 3 isolated SDS results; CAS/content pairs PASS |
 | 011 | TEXT core | CONFIRMED | CONFIRMED | 4 components, `PASS` |
 | 020 | TEXT core | CONFIRMED | CONFIRMED | 1 component, `PASS` |
 | 027 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading / `a.` label grammar |
 | 030 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading, split CAS header, concentration-limit context |
 | 032 | digital text | NOT_FOUND | NOT_FOUND | `GENERALIZATION_GAP`: `항 N:` heading, split CAS header, concentration-limit context |
-| 036 | digital text | PARTIAL | PARTIAL | fail-closed deferred |
+| 036 | digital text | CONFIRMED | CONFIRMED | product and 9 components, `PASS` |
 | 040 | digital text | CONFIRMED | PARTIAL | fail-closed deferred |
 | 043 | digital text | PARTIAL | PARTIAL | fail-closed deferred |
 
@@ -186,15 +186,15 @@ external calls were not used.
 | ID | Final local result |
 | --- | --- |
 | `005` | `IMAGE_ONLY`; Section 1/3 are both `FENCE_NOT_FOUND` (`SECTION_START_NOT_FOUND`); OCR remains deferred. |
-| `007` | `TEXT`; canonical Section 1/3 are confirmed. Three independent segment results are PC100(크리어), PC420(페퍼), and PC220(오크), each with its own exact CAS sequence; no CAS/content/product crosses a segment fence. Each segment retains source `/ KE-*` `PAIR_AMBIGUOUS` rows, so its intrinsic quality is `REVIEW_REQUIRED`, not PASS. |
+| `007` | `TEXT`; canonical Section 1/3 are confirmed. Three independent segment results are PC100(크리어), PC420(페퍼), and PC220(오크), each with exact source-local CAS/content pairs and `PASS` quality. A checksum-valid CAS substring inside the proven CAS/identifier cell is retained; adjacent `/ KE-*` text is neither interpreted nor output. |
 | `011` | `PASS`: `64742-47-8=40 ~ 50`, `64742-54-7=10 ~ 25`, `74-98-6=16 ~ 21`, `106-97-8=11 ~ 14`. |
 | `020` | `PASS`: `122-99-6=100.0`. |
 | `027` | confirmed fences; the CAS-only component is retained as `90-80-2` `FOUND` with empty `NOT_STATED` content. Its intrinsic `pair_status` is `NOT_STATED` and local quality is `PASS`; neither means the CAS was rejected or that content was invented. |
 | `030` | `PASS`: `7647-01-0` raw `>= 35 - < 40 %`, normalized `>=35~<40%`. |
 | `032` | `PASS`: `7697-37-2` raw `>= 70 - < 75 %`, normalized `>=70~<75%`; Section 3 has a decorative-logo reason. |
-| `036` | Section 1 is partial (`SECTION_END_NOT_FOUND`), Section 3 is confirmed. All nine Section 3 rows pair: `7732-18-5=40 이상 ~\\n50 % 미만`; `14807-96-6=20 이상 ~\\n30 % 미만`; `1317-65-3=10 이상 ~\\n20 % 미만`; `26636-08-8`, `92704-41-1`, `13463-67-7`, `471-34-1`, `57-55-6` each `=1 이상 ~\\n10 % 미만`; `108-01-0=0.1 이상 ~\\n1 % 미만`. No full resolve is asserted while Section 1 remains partial. |
+| `036` | Section 1/3 are confirmed. Product is `아이생각수성내부프로 (M-BASE)`; all nine Section 3 rows pair: `7732-18-5=40 이상 ~\\n50 % 미만`; `14807-96-6=20 이상 ~\\n30 % 미만`; `1317-65-3=10 이상 ~\\n20 % 미만`; `26636-08-8`, `92704-41-1`, `13463-67-7`, `471-34-1`, `57-55-6` each `=1 이상 ~\\n10 % 미만`; `108-01-0=0.1 이상 ~\\n1 % 미만`. |
 | `040` | `PASS`: `67-56-1`, `56-81-5` raw `>= 45 - < 50 %`; `660-68-4`, `17372-87-1` raw `< 1 %`; all paired. |
-| `043` | `PASS`: `56-40-6` raw `98.5～101.5`, normalized `98.5~101.5`. |
+| `043` | `PASS`: product `Glycine`; `56-40-6` raw `98.5～101.5`, normalized `98.5~101.5`. |
 
 Section 3의 다음 페이지가 표 header를 반복하지 않는 경우에도, 시작 페이지의 명시적
 CAS/content header와 column geometry로만 만든 locator-internal transient signature를
@@ -206,8 +206,8 @@ fence에 포함되지 않는다.
 - 040 Giemsa: 4개 source pair (`67-56-1`, `56-81-5`, `660-68-4`, `17372-87-1`)가
   continuation page에서 유지되며 validation PASS다.
 - 036 secondary probe: continuation page의 `108-01-0` 및 `0.1 이상 ~ 1 % 미만`
-  source tokens가 multi-rect SectionInput에 유지된다. Korean comparator normalization은
-  아직 v1.3.2 본 작업 범위다.
+  source tokens가 multi-rect SectionInput에 유지되며, raw line break를 보존한 comparator
+  normalization과 confirmed Section 1 product resolve가 PASS다.
 - synthetic regression은 (A) repeated English header/continued heading, (B) Korean
   headerless continuation, signature 밖 foreign independent table, signature 안의
   EC/exposure numeric source text를 분리한다. EC/exposure text가 `SectionInput`에

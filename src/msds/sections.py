@@ -19,7 +19,7 @@ _NUMBERED_HEADING = re.compile(r"^\s*(?:(?:section|항)\s*)?(?P<number>[1-9]|1[0
 _TABLE_CONTENT = re.compile(r"\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*[%％]?\s*$")
 _HEADING = {
     "1": re.compile(r"(?:화학제품.*회사|chemical\s+product.*company|identification)", re.IGNORECASE),
-    "2": re.compile(r"(?:유해성.*위험성|유해\s*위험성|위험.*유해성|hazard(?:s)?\s+identification)", re.IGNORECASE),
+    "2": re.compile(r"(?:유해성.*위험성|유해\s*[·.•]?\s*위험성|유해\s*위험성|위험.*유해성|hazard(?:s)?\s+identification)", re.IGNORECASE),
     "3": re.compile(r"(?:구성성분|성분.*정보|composition|information\s+on\s+ingredients)", re.IGNORECASE),
     "4": re.compile(r"(?:응급|first\s*[- ]?aid)", re.IGNORECASE),
 }
@@ -27,6 +27,12 @@ _HEADING = {
 _STRONG_SECTION_ONE_PRODUCT_LABELS = frozenset({
     "product", "product name", "product identifier", "제품명", "제품 식별자",
 })
+_SECTION_ONE_AUXILIARY_FIELD_LABEL = re.compile(
+    r"^(?:company|supplier|manufacturer|address|telephone|phone|emergency|email|"
+    r"reference\s+(?:number|no\.?|code)|product\s+type|recommended\s+use|"
+    r"colour|color|제품|회사|제조|공급|주소|전화|긴급|용도|색상)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -209,7 +215,7 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
                 and abs(title.bbox[1] - number_line.bbox[1]) <= 1.0
             ], key=lambda item: item.bbox[0])
             title_text = " ".join(_heading_search_key(title.text) for title in titles)
-            semantic_title_text = re.sub(r"[·•]", "", title_text)
+            semantic_title_text = re.sub(r"[·.•]", "", title_text)
             if not titles or not _HEADING[number].search(semantic_title_text):
                 continue
             title = titles[-1]
@@ -235,44 +241,45 @@ def _same_column_bands(first: list[LayoutLine], second: list[LayoutLine]) -> boo
 def _section_one_label_value_row(row: list[LayoutLine]) -> bool:
     """Keep two-cell Section 1 rows tied to recognizable field labels."""
     label = _heading_search_key(sorted(row, key=lambda item: item.bbox[0])[0].text).casefold()
+    compact_label = re.sub(r"\s+", "", label)
     return label.endswith(":") or bool(re.search(
         r"^(?:product|company|supplier|manufacturer|address|telephone|phone|emergency|email|"
         r"recommended\s+use|identifier|제품|회사|제조|공급|주소|전화|긴급|용도)",
         label,
-    ))
+    )) or compact_label.startswith(("제품", "회사", "제조", "공급", "주소", "전화", "긴급", "용도"))
 
 
 def _strong_section_one_product_label(line: LayoutLine) -> bool:
     """Match only an explicit Product field label, never a Product-like value."""
     label = re.sub(r"\s*[:|]\s*$", "", _heading_search_key(line.text)).casefold()
-    return label in _STRONG_SECTION_ONE_PRODUCT_LABELS
+    return label in _STRONG_SECTION_ONE_PRODUCT_LABELS or re.sub(r"\s+", "", label) in _STRONG_SECTION_ONE_PRODUCT_LABELS
 
 
 def _section_one_safe_single_product_segments(row: list[LayoutLine]) -> list[list[LayoutLine]]:
     """Prove a one-row Product label/value relation without widening columns."""
     cells = sorted(row, key=lambda item: item.bbox[0])
-    if len(cells) < 2 or len(cells) % 2:
+    if len(cells) < 2:
         return []
-    pairs = [cells[index:index + 2] for index in range(0, len(cells), 2)]
+    # A neighbouring field label can wrap below its value, leaving an odd
+    # terminal cell on this visual row.  Only complete local pairs are used.
+    pairs = [cells[index:index + 2] for index in range(0, len(cells) - 1, 2)]
     if not any(_strong_section_one_product_label(pair[0]) for pair in pairs):
         return []
-    # A multi-pair row needs a terminal separator or another exact strong
-    # Product label for every pair. This rejects a far-right bare value/foreign
-    # column instead of silently retaining the left label while dropping its
-    # uncertain value.
-    if len(pairs) > 1 and not all(
-        _strong_section_one_product_label(pair[0])
-        or _heading_search_key(pair[0].text).endswith((":", "|"))
-        for pair in pairs
-    ):
+    if any(not _section_one_label_value_row(pair) for pair in pairs):
         return []
-    if any(
-        not _section_one_label_value_row(pair)
-        or (_heading_search_key(pair[1].text).endswith(":") and not _strong_section_one_product_label(pair[1]))
-        for pair in pairs
-    ):
-        return []
-    return [pair for pair in pairs if _strong_section_one_product_label(pair[0])]
+    if len(cells) % 2:
+        trailing = _heading_search_key(cells[-1].text).casefold()
+        if not _SECTION_ONE_AUXILIARY_FIELD_LABEL.match(trailing):
+            return []
+    # A proven Product label and its immediate right-hand value are sufficient
+    # for that pair.  Other pairs on the same visual row are independent
+    # labelled fields, not product continuation text.
+    return [
+        pair for pair in pairs
+        if _strong_section_one_product_label(pair[0])
+        and _section_one_label_value_row(pair)
+        and not _heading_search_key(pair[1].text).endswith(":")
+    ]
 
 
 def _segment_key(segment: list[LayoutLine]) -> tuple[tuple[int, int, int], ...]:
@@ -290,6 +297,11 @@ def _section_one_has_unresolved_strong_product_relation(lines: list[LayoutLine])
         if has_right_hand_cell and not _section_one_safe_single_product_segments(row):
             return True
     return False
+
+
+def _section_one_has_proven_product_relation(lines: list[LayoutLine]) -> bool:
+    """Allow an otherwise multi-column Section 1 only with a local product pair."""
+    return any(_section_one_safe_single_product_segments(row) for row in _horizontal_rows(lines))
 
 
 def _section_three_cas_concentration_row(row: list[LayoutLine], *, allow_plain_content: bool) -> bool:
@@ -708,7 +720,16 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     # A header-proven Section 3 CAS/content signature is narrower and stronger
     # than the generic page-column heuristic, so it remains eligible.
     if signature is None and not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
-        return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
+        # Section 1 may use parallel labelled fields.  Retain the same-page
+        # fence only when an explicit Product label has an immediate, local
+        # value relation; this is not a general relaxation for multicolumn
+        # body text or Section 3 tables.
+        bounded = [
+            line for line in start_page.lines
+            if start.line.bbox[3] <= line.bbox[1] and line.bbox[3] <= end.line.bbox[1]
+        ]
+        if start.section_no != "1" or not _section_one_has_proven_product_relation(bounded):
+            return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
     if start.page_index == end.page_index:
         if not any(token.source_reading == "OCR" for token in start_page.tokens):
             x0, _, x1, _ = start_page.rect
