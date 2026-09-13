@@ -159,3 +159,25 @@ PRD/TRD보다 낮은 권위이고 3개 Korean digital PDF를 전 세계·다국�
 | `python -m compileall -q src/msds golden/v2 tests/rebaseline` / import + Draft 2020-12 schema + candidate JSON smoke / production literal scan / `git diff --check` | PASS |
 
 `golden/v2/schema.json`, `golden/v2/validation.py`, `golden/v1`, PRD는 변경하지 않았다.
+
+## v1.3.2a-R2 — multi-page Section 3 column-signature continuation
+
+Section 3의 다음 페이지가 표 header를 반복하지 않는 경우에도, 시작 페이지의 명시적
+CAS/content header와 column geometry로만 만든 locator-internal transient signature를
+carry-forward한다. `PageRegion.allowed_rects`의 기존 multi-rect 표현을 사용하여
+CAS/content source line 전체의 token-union rect만 포함한다. 따라서 page break는 section
+end가 아니지만, Section 4 heading은 계속 hard stop이고 exposure/independent columns는
+fence에 포함되지 않는다.
+
+- 040 Giemsa: 4개 source pair (`67-56-1`, `56-81-5`, `660-68-4`, `17372-87-1`)가
+  continuation page에서 유지되며 validation PASS다.
+- 036 secondary probe: continuation page의 `108-01-0` 및 `0.1 이상 ~ 1 % 미만`
+  source tokens가 multi-rect SectionInput에 유지된다. Korean comparator normalization은
+  아직 v1.3.2 본 작업 범위다.
+- synthetic regression은 (A) repeated English header/continued heading, (B) Korean
+  headerless continuation, signature 밖 foreign independent table, signature 안의
+  EC/exposure numeric source text를 분리한다. EC/exposure text가 `SectionInput`에
+  남더라도 CAS/component promotion은 0이며, geometry가 다른 duplicate Section 3
+  heading은 `SECTION_START_AMBIGUOUS`로 fail-closed한다.
+- 모델, PageRegion, SectionInput, Golden schema/validator 및 human lifecycle은 변경하지
+  않았다. 이 결과는 machine structural verification이며 human Golden promotion이 아니다.

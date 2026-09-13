@@ -168,3 +168,43 @@ def test_phase07_extension_tables_use_explicit_korean_cas_identifier_and_concent
             ("FOUND", "PAIRED"),
         ] * len(expected_components)
         assert report.status.value == "PASS"
+
+
+@pytest.mark.skipif(not SOURCE_ROOT, reason="PHASE7_TEST_FILE_ROOT is required for the local-only Phase 07 PDF pilot")
+def test_phase07_multirect_section3_continuation_retains_only_proven_columns():
+    """A header-proven Section 3 column signature must survive a page break."""
+    source_root = Path(SOURCE_ROOT)
+    layout = read_pdf_layout(source_root / "040_★Giemsa SDS.pdf")
+    section_1, section_3 = locate_sections(layout)
+    assert section_1.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_3.description is not None
+    assert len(section_3.description.regions) > 1
+    assert all(len(region.allowed_rects) > 1 for region in section_3.description.regions)
+    resolved = resolve(
+        build_section_input(layout, section_1.description),
+        build_section_input(layout, section_3.description),
+    )
+    assert [(component.cas.cas_raw, component.content.content_raw) for component in resolved.components] == [
+        ("67-56-1", ">= 45 - < 50 %"),
+        ("56-81-5", ">= 45 - < 50 %"),
+        ("660-68-4", "< 1 %"),
+        ("17372-87-1", "< 1 %"),
+    ]
+    assert validate_resolved(resolved).status.value == "PASS"
+
+
+@pytest.mark.skipif(not SOURCE_ROOT, reason="PHASE7_TEST_FILE_ROOT is required for the local-only Phase 07 PDF pilot")
+def test_phase07_036_signature_continuation_preserves_raw_korean_comparator_tokens():
+    """036 remains a structural fence probe; comparator normalization is out of scope."""
+    source_root = Path(SOURCE_ROOT)
+    source = next(source_root.glob("036*.pdf"))
+    layout = read_pdf_layout(source)
+    section_3 = locate_sections(layout)[1]
+    assert section_3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_3.description is not None
+    section_input = build_section_input(layout, section_3.description)
+    source_text = "".join(token.text for token in section_input.tokens)
+    assert "108-01-0" in source_text
+    assert "0.1 이상 ~" in source_text
+    assert "1 % 미만" in source_text

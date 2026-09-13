@@ -24,10 +24,10 @@ from .models import (
 from .normalization import normalize_cas, normalize_content, normalize_product
 
 
-_PRODUCT_LABEL = re.compile(r"^\s*(?:product(?:\s+(?:name|identifier))?|(?:[가-하]\.\s*)?(?:제품명|제품\s*식별자|물질명))\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
+_PRODUCT_LABEL = re.compile(r"^\s*(?:[A-Za-z가-하]\.\s*)?(?:product(?:\s+(?:name|identifier))?|제품명|제품\s*식별자|물질명)\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
 _FIELD_LABEL = re.compile(r"^\s*(?:[A-Za-z][A-Za-z /()_-]{0,40}|[가-힣][가-힣 /()_-]{0,40})\s*(?::|\|)")
 _NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체)|[가-하]\.\s*(?:제품(?:명|의|\s)|공급|회사|제조))", re.IGNORECASE)
-_PRODUCT_CONTINUATION_BOUNDARY = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)?|제조(?:자|업체)?|판매원|사용상의\s*제한|제품의\s*권고\s*용도|[가-하]\.\s*(?:제품|공급|회사|제조))", re.IGNORECASE)
+_PRODUCT_CONTINUATION_BOUNDARY = re.compile(r"^\s*(?:company|supplier|manufacturer|product\s*(?:number|identifier)|catalogue\s*(?:no\.?|number)|회사명|공급(?:자|업체)?|제조(?:자|업체)?|판매원|사용상의\s*제한|제품의\s*권고\s*용도|[A-Za-z가-하]\.\s*(?:제품|공급|회사|제조))", re.IGNORECASE)
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
 _CAS_TOKEN_PUNCTUATION = frozenset("_-\u2010\u2011\u2012\u2013\u2014\u2015\u2212")
 _EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
@@ -55,10 +55,10 @@ _CAS_TABLE_HEADER = re.compile(
 )
 _DATE_METADATA_ADJACENCY_Y_TOLERANCE = 36.0
 _DIRECT_CONTENT = re.compile(
-    r"(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*[%％]|[%％]|ppm)|Rem\.|Balance",
+    r"(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?)?\s*(?:(?:wt|vol)\s*[%％]|[%％]|ppm)|Rem\.|Balance",
     re.IGNORECASE,
 )
-_BARE_CONTENT = re.compile(r"^(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*$")
+_BARE_CONTENT = re.compile(r"^(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?)?\s*$")
 _UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*[%％]|vol\s*[%％]|[%％]|ppm)(?![A-Za-z])", re.IGNORECASE)
 _UNREADABLE_CONTENT = re.compile(r"^\s*\[?(?:unreadable|illegible|not\s+readable|판독\s*불가|식별\s*불가)\]?\s*$", re.IGNORECASE)
 _NAMED_COMPONENT = re.compile(r"^\s*(?:성\s*분|component|ingredient|chemical\s+name)\s*[:|]\s*.+$", re.IGNORECASE)
@@ -184,6 +184,9 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
         # fact and its provenance identify the same meaningful source span.
         # Do not trim non-empty cells: their raw source text remains lossless.
         values = [value for value in values if value.text.strip()]
+        if values and (delimiter := re.match(r"^\s*[:|]\s*(?P<value>.+)$", values[0].text)):
+            first = values[0]
+            values[0] = _Line(first.page, first.block, first.line, delimiter.group("value"), first.bbox, first.source_type)
         if not values:
             continue
         raw = "\n".join(value.text for value in values)

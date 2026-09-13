@@ -46,6 +46,85 @@ class _Header:
     line: LayoutLine
 
 
+@dataclass(frozen=True)
+class _Section3ColumnSignature:
+    """Ephemeral, header-proven CAS/content columns for one open Section 3."""
+    cas_x: float
+    content_x: float
+
+
+_SECTION3_CAS_HEADER = re.compile(r"\s*(?:CAS(?:[-\s]*(?:No\.?|Number))?|CAS\s*번호|등록번호)\s*", re.IGNORECASE)
+_SECTION3_CONTENT_HEADER = re.compile(r"(?:content|concentration|함유량|함량|농도)", re.IGNORECASE)
+
+
+def _section3_signature(lines: list[LayoutLine]) -> _Section3ColumnSignature | None:
+    rows = _horizontal_rows(lines)
+    content_headers = [line for line in lines if _SECTION3_CONTENT_HEADER.search(line.text)]
+    cas_labels = [line for line in lines if _SECTION3_CAS_HEADER.fullmatch(line.text)]
+    for row in rows:
+        cas = next((line for line in row if _SECTION3_CAS_HEADER.fullmatch(line.text)), None)
+        content = next((line for line in row if _SECTION3_CONTENT_HEADER.search(line.text)), None)
+        if cas is not None and content is not None and content.bbox[0] > cas.bbox[0]:
+            return _Section3ColumnSignature(cas.bbox[0], content.bbox[0])
+    for content in content_headers:
+        for label in cas_labels:
+            for row in rows:
+                if label not in row:
+                    continue
+                # The adjacent value cell establishes the *column geometry*, not
+                # a CAS value.  Do not use value shape here: the collector owns
+                # value recognition and this signature must remain reusable on a
+                # headerless continuation page.
+                value_cells = sorted(
+                    (line for line in row if line.bbox[0] > label.bbox[0]),
+                    key=lambda line: line.bbox[0],
+                )
+                if value_cells and content.bbox[0] > value_cells[0].bbox[0]:
+                    return _Section3ColumnSignature(value_cells[0].bbox[0], content.bbox[0])
+    return None
+
+
+def _signature_rects(page: PdfPage, lines: list[LayoutLine], signature: _Section3ColumnSignature) -> tuple[tuple[float, float, float, float], ...]:
+    """Keep only the two header-proven columns on a Section 3 continuation.
+
+    A page must visibly carry both columns on at least one horizontal row.  The
+    values themselves are intentionally not interpreted here: this is a fence,
+    while the collector remains the sole CAS/content recognizer.  This admits
+    headerless Korean continuations and keeps an EC-labelled source cell
+    available for the collector to reject, without widening into a foreign
+    table or an exposure column.
+    """
+    column_lines = [
+        line for line in lines
+        if abs(line.bbox[0] - signature.cas_x) <= 12
+        or abs(line.bbox[0] - signature.content_x) <= 12
+    ]
+    if not any(
+        any(abs(line.bbox[0] - signature.cas_x) <= 12 for line in row)
+        and any(abs(line.bbox[0] - signature.content_x) <= 12 for line in row)
+        for row in _horizontal_rows(column_lines)
+    ):
+        return ()
+    rects=[]
+    for line in column_lines:
+        tokens = [token for token in page.tokens if token.block_id == line.block_id and token.line_id == line.line_id]
+        rects.append((min(token.bbox[0] for token in tokens), min(token.bbox[1] for token in tokens), max(token.bbox[2] for token in tokens), max(token.bbox[3] for token in tokens)) if tokens else line.bbox)
+    return tuple(rects)
+
+
+def _signature_column_lines(lines: list[LayoutLine], signature: _Section3ColumnSignature) -> list[LayoutLine]:
+    """Return every visible line in either column of an open signature."""
+    return [
+        line for line in lines
+        if abs(line.bbox[0] - signature.cas_x) <= 12
+        or abs(line.bbox[0] - signature.content_x) <= 12
+    ]
+
+
+def _same_section3_signature(left: _Section3ColumnSignature, right: _Section3ColumnSignature) -> bool:
+    return abs(left.cas_x - right.cas_x) <= 12 and abs(left.content_x - right.content_x) <= 12
+
+
 def _heading_search_key(text: str) -> str:
     return re.sub(r"\s+", " ", normalize("NFKC", text)).strip()
 
@@ -609,6 +688,30 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if region is None:
             return None, "SECTION_BODY_UNAVAILABLE"
         return (region,), None
+    signature = None
+    if start.section_no == "3":
+        signature = _section3_signature([
+            line for line in start_page.lines if start.line.bbox[3] <= line.bbox[1]
+        ])
+    if signature is not None:
+        regions=[]
+        for page_index in range(start.page_index, end.page_index + 1):
+            page=pages[page_index]
+            top=start.line.bbox[3] if page_index == start.page_index else page.rect[1]
+            bottom=end.line.bbox[1] if page_index == end.page_index else page.rect[3]
+            bounded_lines = [line for line in page.lines if top <= line.bbox[1] and line.bbox[3] <= bottom]
+            rects = _signature_rects(page, bounded_lines, signature)
+            if not rects:
+                # Section 4 can begin alone on its page.  There is no Section
+                # 3 token to retain there, so do not manufacture a full-width
+                # region merely to represent the terminal boundary.  A lone
+                # CAS/content-column line is different: silently skipping it
+                # could discard a split continuation row, so fail closed.
+                if page_index == end.page_index and not _signature_column_lines(bounded_lines, signature):
+                    continue
+                return None, "CONTINUATION_COLUMN_SIGNATURE_UNPROVEN"
+            regions.append(PageRegion(page_index, rects))
+        return tuple(regions), None
     repeated, retained_headers = _margin_repetitions(layout, retain_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
@@ -746,10 +849,24 @@ def _section_capability(
                     for candidate_page in layout.pages
                 )
             )
+            repeated_bottom_right_logo = (
+                image_width > 0 and image_height > 0
+                and image[3] >= py1 - height * 0.12
+                and image_width <= width * 0.25 and image_height <= height * 0.12
+                and image_width * image_height <= width * height * 0.03
+                and right_margin <= width * 0.10
+                and image_xref is not None
+                and all(any(
+                    same_geometry(candidate)
+                    and candidate_index < len(candidate_page.image_xrefs)
+                    and candidate_page.image_xrefs[candidate_index] == image_xref
+                    for candidate_index, candidate in enumerate(candidate_page.image_rects)
+                ) for candidate_page in layout.pages)
+            )
             # A compact, one-off margin logo remains safe. Once the same
             # placement repeats document-wide, however, even this small-logo
             # shortcut requires the identical embedded image.
-            return (compact_right_logo and not repeated_header_geometry) or repeated_top_right_logo
+            return (compact_right_logo and not repeated_header_geometry) or repeated_top_right_logo or repeated_bottom_right_logo
         images_are_decorative = all(
             decorative_logo(page, image, image_xref)
             and not any(
@@ -808,7 +925,43 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
     start_evidence = Evidence(section_no, start.page_index, source_type, start.line.text, layout.document_sha256, start.line.bbox)
     if end is None:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, None, (start_evidence,)), None, ("SECTION_END_NOT_FOUND",), metric())
-    if any((candidate.page_index, candidate.line.bbox[1]) < (end.page_index, end.line.bbox[1]) for candidate in starts[1:]):
+    competing = starts[1:]
+    start_signature = _section3_signature(list(layout.pages[start.page_index].lines)) if section_no == "3" else None
+    if start_signature is not None:
+        candidates_by_page: dict[int, list[_Header]] = {}
+        for candidate in competing:
+            candidates_by_page.setdefault(candidate.page_index, []).append(candidate)
+
+        def is_proven_continuation(candidate: _Header) -> bool:
+            if candidate.page_index <= start.page_index:
+                return False
+            page = layout.pages[candidate.page_index]
+            if candidate.line.bbox[1] > page.rect[1] + 0.20 * (page.rect[3] - page.rect[1]):
+                return False
+            marker = re.search(r"\b(?:continued|continuation|cont\.)\b|계속(?:됨)?", candidate.line.text, re.I)
+            repeated_signature = _section3_signature(list(page.lines))
+            # A page that exposes a CAS/content header must match the original
+            # geometry, even if its title says "continued".  A marker can
+            # admit a headerless page only when the original paired columns
+            # are visibly present.  This keeps a foreign/new table from being
+            # promoted by title text alone.
+            if repeated_signature is not None:
+                page_is_continuation = _same_section3_signature(repeated_signature, start_signature)
+            else:
+                page_is_continuation = bool(marker) and bool(_signature_rects(page, list(page.lines), start_signature))
+            if not page_is_continuation:
+                return False
+            if candidate.page_index == start.page_index + 1:
+                return True
+            # Repeated-heading tables can span three or more pages.  Every
+            # link must be a consecutive, independently proven continuation;
+            # a later matching title cannot jump over another section.
+            return any(is_proven_continuation(previous) for previous in candidates_by_page.get(candidate.page_index - 1, []))
+        competing = [
+            candidate for candidate in competing
+            if not is_proven_continuation(candidate)
+        ]
+    if any((candidate.page_index, candidate.line.bbox[1]) < (end.page_index, end.line.bbox[1]) for candidate in competing):
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence,)), None, ("SECTION_START_AMBIGUOUS",), metric())
     end_evidence = Evidence(section_no, end.page_index, source_type, end.line.text, layout.document_sha256, end.line.bbox)
     regions, failure = _regions(layout, start, end)
