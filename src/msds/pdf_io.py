@@ -195,10 +195,16 @@ def _validated_locator_fence(layout: PdfReadResult, fence: FenceDescription) -> 
     every identity and region field with fresh locator output for this exact
     layout before accepting it.
     """
-    from .sections import locate_section
+    from .sections import locate_sds_segments, locate_section
 
-    located = locate_section(layout, fence.section_no)
-    expected = located.description
+    canonical = locate_section(layout, fence.section_no).description
+    segment_match = next((
+        candidate
+        for segment in locate_sds_segments(layout)
+        for candidate in (segment.section_1.description, segment.section_3.description)
+        if candidate == fence
+    ), None)
+    expected = canonical if canonical == fence else segment_match
     if expected is None or fence != expected:
         raise ValueError("SECTION_INPUT_FENCE_DOES_NOT_MATCH_LOCATOR")
     return expected

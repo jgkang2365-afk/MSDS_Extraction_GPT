@@ -15,7 +15,7 @@ from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult
 
 StopCheck = Callable[[], bool] | None
 
-_NUMBERED_HEADING = re.compile(r"^\s*(?:section\s+)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
+_NUMBERED_HEADING = re.compile(r"^\s*(?:(?:section|항)\s*)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
 _TABLE_CONTENT = re.compile(r"\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*[%％]?\s*$")
 _HEADING = {
     "1": re.compile(r"(?:화학제품.*회사|chemical\s+product.*company|identification)", re.IGNORECASE),
@@ -47,14 +47,28 @@ class _Header:
 
 
 @dataclass(frozen=True)
+class SdsSegment:
+    """One independently bounded SDS sequence in a concatenated TEXT PDF.
+
+    This is intentionally a parallel locator result.  It does not alter the
+    canonical single Section 1/3 API or any Golden serialization contract.
+    """
+
+    index: int
+    section_1: LocatedFence
+    section_3: LocatedFence
+
+
+@dataclass(frozen=True)
 class _Section3ColumnSignature:
     """Ephemeral, header-proven CAS/content columns for one open Section 3."""
     cas_x: float
     content_x: float
 
 
-_SECTION3_CAS_HEADER = re.compile(r"\s*(?:CAS(?:[-\s]*(?:No\.?|Number))?|CAS\s*번호|등록번호)\s*", re.IGNORECASE)
+_SECTION3_CAS_HEADER = re.compile(r"\s*(?:CAS(?:[-\s]*(?:No\.?|Number))?|CAS\s*번호(?:\s*또는(?:\s*식별번호)?)?|등록번호)\s*", re.IGNORECASE)
 _SECTION3_CONTENT_HEADER = re.compile(r"(?:content|concentration|함유량|함량|농도)", re.IGNORECASE)
+_SECTION3_NON_CAS_IDENTIFIER = re.compile(r"\s*(?:E\s*C\s*(?:No\.?|번호)?|EINECS(?:\s*(?:No\.?|number))?|색인\s*번호|index\s+number)\s*[:|#-]?\s*$", re.IGNORECASE)
 
 
 def _section3_signature(lines: list[LayoutLine]) -> _Section3ColumnSignature | None:
@@ -105,6 +119,16 @@ def _signature_rects(page: PdfPage, lines: list[LayoutLine], signature: _Section
         for row in _horizontal_rows(column_lines)
     ):
         return ()
+    # Retain only an explicitly labelled, same-row EC/index field beside the
+    # CAS column.  The collector needs that local label to reject the adjacent
+    # identifier value; this does not widen to a foreign table column.
+    cas_row_lines = [line for line in column_lines if abs(line.bbox[0] - signature.cas_x) <= 12]
+    column_lines.extend(
+        line for line in lines
+        if _SECTION3_NON_CAS_IDENTIFIER.fullmatch(line.text)
+        and line.bbox[0] < signature.cas_x
+        and any(max(line.bbox[1], cas.bbox[1]) < min(line.bbox[3], cas.bbox[3]) for cas in cas_row_lines)
+    )
     rects=[]
     for line in column_lines:
         tokens = [token for token in page.tokens if token.block_id == line.block_id and token.line_id == line.line_id]
@@ -449,7 +473,10 @@ def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
     """Reject independent page columns, while allowing structured Section 1/3 tables."""
     if start.page_index != end.page_index:
         return False
-    lines = [line for line in page.lines if start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]]
+    lines = [
+        line for line in page.lines
+        if line.text.strip() and start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]
+    ]
     starts = sorted({round(line.bbox[0], 1) for line in lines})
     return (
         len(starts) >= 2
@@ -671,9 +698,16 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
     end_page = pages[end.page_index]
+    signature = None
+    if start.section_no == "3":
+        signature = _section3_signature([
+            line for line in start_page.lines if start.line.bbox[3] <= line.bbox[1]
+        ])
     # Digital text-flow columns remain unsafe. OCR geometry uses the same
     # structure/column proof below, rather than admitting a full-width region.
-    if not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
+    # A header-proven Section 3 CAS/content signature is narrower and stronger
+    # than the generic page-column heuristic, so it remains eligible.
+    if signature is None and not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
         return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
     if start.page_index == end.page_index:
         if not any(token.source_reading == "OCR" for token in start_page.tokens):
@@ -688,11 +722,6 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if region is None:
             return None, "SECTION_BODY_UNAVAILABLE"
         return (region,), None
-    signature = None
-    if start.section_no == "3":
-        signature = _section3_signature([
-            line for line in start_page.lines if start.line.bbox[3] <= line.bbox[1]
-        ])
     if signature is not None:
         regions=[]
         for page_index in range(start.page_index, end.page_index + 1):
@@ -978,3 +1007,73 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
 def locate_sections(layout: PdfReadResult, *, cancelled: StopCheck = None, deadline: float | None = None) -> tuple[LocatedFence, LocatedFence]:
     """Return independent Section 1 then Section 3 results without value extraction."""
     return (locate_section(layout, "1", cancelled=cancelled, deadline=deadline), locate_section(layout, "3", cancelled=cancelled, deadline=deadline))
+
+
+def _position(header: _Header) -> tuple[int, float]:
+    return header.page_index, header.line.bbox[1]
+
+
+def _segment_located(
+    layout: PdfReadResult, section_no: str, start: _Header, end: _Header,
+) -> LocatedFence:
+    """Build one already-bounded sequence fence using the normal safe region path."""
+    source_type = EvidenceSourceType.OCR if any(
+        token.source_reading == "OCR" for token in layout.pages[start.page_index].tokens
+    ) else EvidenceSourceType.TEXT
+    start_evidence = Evidence(section_no, start.page_index, source_type, start.line.text, layout.document_sha256, start.line.bbox)
+    end_evidence = Evidence(section_no, end.page_index, source_type, end.line.text, layout.document_sha256, end.line.bbox)
+    regions, failure = _regions(layout, start, end)
+    metric = (("locator_ms", 0.0), ("headers_seen", 0), ("external_calls", 0))
+    if failure:
+        return LocatedFence(
+            SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+            None, (failure,), metric,
+        )
+    capability, reasons = _section_capability(layout, regions, start, end)
+    if capability is not DocumentCapability.TEXT:
+        return LocatedFence(
+            SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+            None, reasons, metric,
+        )
+    fence_id = sha256(
+        f"{layout.document_sha256}:segment:{section_no}:{start.page_index}:{start.line.bbox}:{end.page_index}:{end.line.bbox}".encode("utf-8")
+    ).hexdigest()
+    description = FenceDescription(FenceStatus.FENCE_CONFIRMED, section_no, fence_id, layout.document_sha256, regions, capability, reasons)
+    return LocatedFence(
+        SectionFence(FenceStatus.FENCE_CONFIRMED, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+        description, reasons, metric,
+    )
+
+
+def locate_sds_segments(
+    layout: PdfReadResult, *, cancelled: StopCheck = None, deadline: float | None = None,
+) -> tuple[SdsSegment, ...]:
+    """Locate concatenated SDS sequences without permitting inter-segment joins.
+
+    Each output is bounded by one Section 1 start and the *next* Section 1
+    start.  Both Section 1->2 and Section 3->4 fences must be wholly inside
+    that interval; incomplete sequences are omitted rather than repaired.
+    """
+    if layout.terminal_reason:
+        return ()
+    headers, stop = _find_headers(layout, cancelled=cancelled, deadline=deadline)
+    if stop:
+        return ()
+    section_ones = sorted((item for item in headers if item.section_no == "1"), key=_position)
+    segments: list[SdsSegment] = []
+    for index, start_one in enumerate(section_ones):
+        upper = _position(section_ones[index + 1]) if index + 1 < len(section_ones) else None
+        inside = lambda item: _position(item) > _position(start_one) and (upper is None or _position(item) < upper)
+        end_one = next((item for item in headers if item.section_no == "2" and inside(item)), None)
+        start_three = next((item for item in headers if item.section_no == "3" and inside(item)), None)
+        end_three = next((item for item in headers if item.section_no == "4" and inside(item)), None)
+        if end_one is None or start_three is None or end_three is None or _position(end_one) >= _position(start_three):
+            continue
+        section_1 = _segment_located(layout, "1", start_one, end_one)
+        section_3 = _segment_located(layout, "3", start_three, end_three)
+        if (
+            section_1.fence.status is FenceStatus.FENCE_CONFIRMED
+            and section_3.fence.status is FenceStatus.FENCE_CONFIRMED
+        ):
+            segments.append(SdsSegment(len(segments), section_1, section_3))
+    return tuple(segments)

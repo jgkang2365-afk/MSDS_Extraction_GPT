@@ -88,6 +88,15 @@ def normalize_content(value: object | None) -> ContentResult:
         return ContentResult(content_raw=raw, content_normalized="", content_status=ContentStatus.NOT_STATED)
     normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", raw)).strip()
     normalized = normalized.replace("∼", "~").replace("～", "~")
+    # Korean SDS tables commonly split one range over two physical lines,
+    # e.g. ``0.1 이상 ~\n1 % 미만``.  These substitutions are lexical only:
+    # they make the comparator explicit in the comparison value while the raw
+    # field above retains every source character and line break.
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*이상\b", r">=\1", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*초과\b", r">\1", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)(\s*[%％])?\s*이하\b", lambda item: f"<={item.group(1)}{'%' if item.group(2) else ''}", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)(\s*[%％])?\s*미만\b", lambda item: f"<{item.group(1)}{'%' if item.group(2) else ''}", normalized)
+    normalized = re.sub(r"([<>]=?)\s+(?=\d)", r"\1", normalized)
     normalized = re.sub(r"(?<=\d)\s*[-–—]\s*(?=[<>=≤≥]?\s*\d)", "~", normalized)
     normalized = re.sub(r"\s*([~<>≤≥%])\s*", r"\1", normalized)
     normalized = _normalize_decimal_commas(normalized)

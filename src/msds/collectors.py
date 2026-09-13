@@ -24,13 +24,33 @@ from .models import (
 from .normalization import normalize_cas, normalize_content, normalize_product
 
 
-_PRODUCT_LABEL = re.compile(r"^\s*(?:[A-Za-z가-하]\.\s*)?(?:product(?:\s+(?:name|identifier))?|제품명|제품\s*식별자|물질명)\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
-_FIELD_LABEL = re.compile(r"^\s*(?:[A-Za-z][A-Za-z /()_-]{0,40}|[가-힣][가-힣 /()_-]{0,40})\s*(?::|\|)")
-_NAMED_STRUCTURAL_FIELD = re.compile(r"^\s*(?:company|supplier|manufacturer|회사명|공급(?:자|업체)|제조(?:자|업체)|[가-하]\.\s*(?:제품(?:명|의|\s)|공급|회사|제조))", re.IGNORECASE)
-_PRODUCT_CONTINUATION_BOUNDARY = re.compile(r"^\s*(?:company|supplier|manufacturer|product\s*(?:number|identifier)|catalogue\s*(?:no\.?|number)|회사명|공급(?:자|업체)?|제조(?:자|업체)?|판매원|사용상의\s*제한|제품의\s*권고\s*용도|[A-Za-z가-하]\.\s*(?:제품|공급|회사|제조))", re.IGNORECASE)
+_PRODUCT_LABEL = re.compile(r"^\s*(?:[A-Za-z가-하]\.\s*)?(?:product(?:\s+(?:name|identifier))?|제\s*품\s*명|제품\s*식별자|물질명)\s*(?:(?::|\|)\s*(.*))?\s*$", re.IGNORECASE)
+_SECTION_ONE_NON_PRODUCT_LABEL = (
+    r"(?:"
+    r"(?:company|supplier|manufacturer|distributor|importer)(?:\s*(?:name|information|details?|address))?"
+    r"|(?:product\s*(?:number|no\.?|identifier|id|code)|catalog(?:ue)?\s*(?:no\.?|number|code))"
+    r"|(?:synonyms?|trade\s*names?|other\s+means\s+of\s+identification)"
+    r"|(?:emergency\s*(?:telephone|phone|contact|number)|contact\s*(?:information|details?|person))"
+    r"|(?:recommended\s+use(?:\s+and\s+restrictions?\s+on\s+use)?|restrictions?\s+on\s+use)"
+    r"|회사(?:명|정보|주소)?|공급(?:자|업체|회사|자명|자\s*정보)?|제조(?:자|업체|회사|자명|자\s*정보)?"
+    r"|유통(?:사|업체|회사|자)?|수입(?:자|업체|회사)?|판매(?:원|자|업체|회사)?"
+    r"|제품\s*(?:번호|식별(?:자|번호)?|코드)|(?:긴급|응급)\s*(?:연락처|전화(?:번호)?)"
+    r"|동의어(?:\s*/\s*상품명)?|상품명"
+    r"|제품(?:의)?\s*(?:권고\s*용도(?:와\s*사용상(?:의)?\s*제[한핚])?|용도|사용상(?:의)?\s*제[한핚])|사용상(?:의)?\s*제[한핚]"
+    r"|(?:제조(?:자)?|공급(?:자)?|유통(?:업자|사|업체|회사|자)?)(?:\s*/\s*(?:제조(?:자)?|공급(?:자)?|유통(?:업자|사|업체|회사|자)?)){1,2}\s*정보"
+    r")"
+)
+_SECTION_ONE_FIELD_PREFIX = rf"(?:[A-Za-z가-하]\.\s*)?{_SECTION_ONE_NON_PRODUCT_LABEL}"
+_FIELD_LABEL = re.compile(rf"^\s*{_SECTION_ONE_FIELD_PREFIX}\s*(?::|\|)", re.IGNORECASE)
+_FIELD_LABEL_NAME = re.compile(rf"^\s*{_SECTION_ONE_FIELD_PREFIX}\s*$", re.IGNORECASE)
+_FIELD_VALUE_DELIMITER = re.compile(r"^\s*(?::|\|)\s*\S")
 _CAS = re.compile(r"(?<!\d)(\d{2,7}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d{2}\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*\d)(?!\d)")
 _CAS_TOKEN_PUNCTUATION = frozenset("_-\u2010\u2011\u2012\u2013\u2014\u2015\u2212")
-_EC_CONTEXT = re.compile(r"\bEC(?:\s*(?:No\.?|number))?\s*[:|#-]?\s*$", re.IGNORECASE)
+_EC_CONTEXT = re.compile(r"(?:\bEC(?:\s*(?:No\.?|number))?|E\s*C\s*번호)\s*[:|#-]?\s*$", re.IGNORECASE)
+_NON_CAS_IDENTIFIER_LABEL = re.compile(
+    r"\s*(?:E\s*C\s*번호|EINECS(?:\s*(?:No\.?|number))?|색인\s*번호|index\s+number)\s*[:|#-]?\s*$",
+    re.IGNORECASE,
+)
 # These terms have document meaning, unlike lexical CAS validation.  Keep
 # them at collection time where the preceding row/cell context is available.
 _DATE_METADATA_LABEL = re.compile(
@@ -61,9 +81,12 @@ _DIRECT_CONTENT = re.compile(
 _BARE_CONTENT = re.compile(r"^(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:(?:>=|<=|[<>≤≥])\s*)?\d+(?:[.,]\d+)?)?\s*$")
 _UNIT_HEADER = re.compile(r"(?<![A-Za-z])(?P<unit>wt\s*[%％]|vol\s*[%％]|[%％]|ppm)(?![A-Za-z])", re.IGNORECASE)
 _UNREADABLE_CONTENT = re.compile(r"^\s*\[?(?:unreadable|illegible|not\s+readable|판독\s*불가|식별\s*불가)\]?\s*$", re.IGNORECASE)
-_NAMED_COMPONENT = re.compile(r"^\s*(?:성\s*분|component|ingredient|chemical\s+name)\s*[:|]\s*.+$", re.IGNORECASE)
+_NAMED_COMPONENT = re.compile(r"^\s*(?:성\s*분|component|ingredient(?:\s+name)?|chemical\s+name)\s*[:|]\s*.+$", re.IGNORECASE)
 _NAMED_CAS = re.compile(r"^\s*C\s*A\s*S\s*(?:(?:No\.?|Number)\s*)?[:|]\s*(?P<value>.+?)\s*$", re.IGNORECASE)
-_NAMED_CONTENT = re.compile(r"^\s*(?:함\s*유\s*량|content|concentration)\s*[:|]\s*(?P<value>.+?)\s*$", re.IGNORECASE)
+_NAMED_CONTENT = re.compile(r"^\s*(?:함\s*유\s*량|content(?:\s*\([^)]*\))?|concentration(?:\s*\([^)]*\))?)\s*[:|]\s*(?P<value>.+?)\s*$", re.IGNORECASE)
+_NAMED_BLOCK_BOUNDARY = re.compile(r"^\s*(?:note\b|remarks?\b|비고\s*:?|주\s*:)", re.IGNORECASE)
+_KOREAN_CONTENT_START = re.compile(r"^\s*\d+(?:[.,]\d+)?\s*(?:이상|초과)\s*[~∼～]\s*$")
+_KOREAN_CONTENT_END = re.compile(r"^\s*\d+(?:[.,]\d+)?\s*[%％]?\s*(?:미만|이하)\s*$")
 _HEADER_X_TOLERANCE = 12.0
 
 
@@ -145,6 +168,37 @@ def _evidence(section_input: SectionInput, line: _Line) -> Evidence:
     return Evidence(section_input.section_no, line.page, line.source_type, line.text, section_input.document_sha256, line.bbox)
 
 
+def _product_value_before_next_field(value: str) -> str:
+    """Keep an inline value before the next semantic Section 1 field label."""
+    for index in range(1, len(value)):
+        previous, current = value[index - 1], value[index]
+        crosses_script = (previous.isascii() and previous.isalnum() and "가" <= current <= "힣") or (
+            "가" <= previous <= "힣" and current.isascii() and current.isalnum()
+        )
+        if not (previous.isspace() or crosses_script):
+            continue
+        if _FIELD_LABEL.match(value[index:]):
+            return value[:index].rstrip()
+    return value
+
+
+def _is_split_section_one_field(row: tuple[_Line, ...], next_row: tuple[_Line, ...] | None) -> bool:
+    """Recognize an explicit field label whose delimiter/value is on the next row."""
+    return (
+        next_row is not None
+        and any(_FIELD_LABEL_NAME.match(cell.text) for cell in row)
+        and any(_FIELD_VALUE_DELIMITER.match(cell.text) for cell in next_row)
+    )
+
+
+def _starts_next_section_one_field(row: tuple[_Line, ...], next_row: tuple[_Line, ...] | None) -> bool:
+    """Recognize both inline and split explicit Section 1 label/value fields."""
+    return (
+        any(_FIELD_LABEL.match(cell.text) or _FIELD_LABEL_NAME.match(cell.text) for cell in row)
+        or _is_split_section_one_field(row, next_row)
+    )
+
+
 def collect_product_candidates(section_input: SectionInput) -> ProductCollection:
     """Collect only explicit Section 1 product labels and their source values."""
     _require_confirmed_text_input(section_input, "1")
@@ -160,23 +214,38 @@ def collect_product_candidates(section_input: SectionInput) -> ProductCollection
         if not match:
             continue
         values: list[_Line] = []
-        inline = match.group(1) or ""
+        inline_source = match.group(1) or ""
+        inline = _product_value_before_next_field(inline_source)
         if inline.strip():
             # The raw product value excludes only the explicit label delimiter.
-            value_start = line.text.find(inline)
-            values.append(_Line(line.page, line.block, line.line, line.text[value_start:], line.bbox, line.source_type))
+            value_start = line.text.find(inline_source)
+            values.append(_Line(
+                line.page, line.block, line.line,
+                line.text[value_start:value_start + len(inline)], line.bbox,
+                line.source_type,
+            ))
         else:
             row = row_for_line[line_key(line)]
             label_index = row.index(line)
             for cell in row[label_index + 1:]:
-                if _FIELD_LABEL.match(cell.text) or _PRODUCT_CONTINUATION_BOUNDARY.match(cell.text):
+                if _starts_next_section_one_field((cell,), None):
                     break
                 values.append(cell)
         # Every supported label form can continue on later rows.  Inline
         # values deliberately do not consume a same-row right-hand cell.
         current_row_index = next(i for i, candidate_row in enumerate(rows) if any(line_key(cell) == line_key(line) for cell in candidate_row))
-        for candidate_row in rows[current_row_index + 1:]:
-            if any(_FIELD_LABEL.match(cell.text) or _PRODUCT_CONTINUATION_BOUNDARY.match(cell.text) for cell in candidate_row):
+        for row_index, candidate_row in enumerate(rows[current_row_index + 1:], start=current_row_index + 1):
+            next_row = rows[row_index + 1] if row_index + 1 < len(rows) else None
+            if _starts_next_section_one_field(candidate_row, next_row):
+                if values and _is_split_section_one_field(candidate_row, next_row):
+                    for value_index in range(len(values) - 1, -1, -1):
+                        last = values[value_index]
+                        if last.text.strip():
+                            values[value_index] = _Line(
+                                last.page, last.block, last.line, last.text.rstrip(),
+                                last.bbox, last.source_type,
+                            )
+                            break
                 break
             values.extend(candidate_row)
         # A visual continuation made only of whitespace is not a product
@@ -268,7 +337,10 @@ def _cas_matches(
             line_prefix = line.text[:match.start()]
             field_context = _nearest_field_context(row, line_index, line_prefix)
             row_prefix = " ".join(item.text for item in row[:line_index]) + " " + line_prefix
-            if _EC_CONTEXT.search(row_prefix):
+            if _EC_CONTEXT.search(row_prefix) or any(
+                _NON_CAS_IDENTIFIER_LABEL.fullmatch(item.text)
+                for item in row[:line_index]
+            ):
                 continue
             if field_context == "DATE":
                 continue
@@ -378,9 +450,17 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
 
 
 def _same_table_content_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
-    """Keep a table header across aligned content cells with missing CAS."""
+    """Keep a table header across an aligned content continuation cell.
+
+    A Korean upper-bound fragment is not independently a bare concentration,
+    but it is the only admissible next row for an immediately preceding
+    header-aligned lower-bound fragment.  Retaining the header through that
+    one physical row lets the next CAS row use the same proven table relation;
+    it never turns the continuation row into its own component.
+    """
     return bool(headers) and all(line.page == headers[0].page for line in row) and any(
-        _BARE_CONTENT.fullmatch(line.text) and abs(line.bbox[0] - headers[0].unit_x) <= _HEADER_X_TOLERANCE
+        (_BARE_CONTENT.fullmatch(line.text) or _KOREAN_CONTENT_END.fullmatch(line.text))
+        and abs(line.bbox[0] - headers[0].unit_x) <= _HEADER_X_TOLERANCE
         for line in row
     )
 
@@ -412,7 +492,10 @@ def _content_field_observation(section_input: SectionInput, row: tuple[_Line, ..
     """Retain explicit blank, unreadable, unknown, and absent field states."""
     if has_content:
         return ContentFieldState.UNKNOWN, None, ()
-    residuals = tuple((line, _CAS.sub("", line.text).strip()) for line in row)
+    residuals = tuple(
+        (line, "" if _CAS_TABLE_HEADER.fullmatch(line.text) else _CAS.sub("", line.text).strip(" :|"))
+        for line in row
+    )
     unreadable = next(((line, text) for line, text in residuals if _UNREADABLE_CONTENT.fullmatch(text)), None)
     if unreadable is not None:
         line, raw = unreadable
@@ -425,11 +508,43 @@ def _content_field_observation(section_input: SectionInput, row: tuple[_Line, ..
         if section_input.capability is DocumentCapability.OCR:
             return ContentFieldState.UNKNOWN, None, tuple(header.evidence for header in headers)
         return ContentFieldState.EXPLICIT_BLANK, None, tuple(header.evidence for header in headers)
+    # A labelled standalone CAS field is an explicit source observation that
+    # the component has no accompanying concentration field.  This is unlike
+    # an unlabelled bare CAS token, whose absent context must remain ambiguous.
+    if any(_CAS_TABLE_HEADER.fullmatch(line.text) for line in row) and not any(text for _line, text in residuals):
+        return ContentFieldState.EXPLICIT_BLANK, None, ()
     unknown = next(((line, text) for line, text in residuals if text), None)
     if unknown is not None:
         line, raw = unknown
         return ContentFieldState.UNKNOWN, raw, (_evidence(section_input, line),)
     return ContentFieldState.ABSENT, None, ()
+
+
+def _multiline_korean_content(
+    section_input: SectionInput,
+    row: tuple[_Line, ...],
+    next_row: tuple[_Line, ...] | None,
+    has_cas: bool,
+    headers: list[_UnitHeader],
+) -> tuple[str, str, tuple[Evidence, ...]] | None:
+    """Join only an adjacent, header-aligned Korean range split across lines.
+
+    The source raw stays lossless (including the line break).  This is a
+    structural table operation: it requires an explicit CAS/unit header, a
+    CAS in the first row, and both fragments in that header's content column.
+    It deliberately cannot join values from a classification or distant block.
+    """
+    if not has_cas or next_row is None or not headers:
+        return None
+    header = headers[0]
+    first = next((line for line in row if abs(line.bbox[0] - header.unit_x) <= _HEADER_X_TOLERANCE and _KOREAN_CONTENT_START.fullmatch(line.text)), None)
+    second = next((line for line in next_row if line.page == first.page and abs(line.bbox[0] - header.unit_x) <= _HEADER_X_TOLERANCE and _KOREAN_CONTENT_END.fullmatch(line.text)), None) if first else None
+    if first is None or second is None:
+        return None
+    if not (0 <= second.bbox[1] - first.bbox[3] <= 18.0):
+        return None
+    raw = f"{first.text}\n{second.text}"
+    return raw, header.unit, (_evidence(section_input, first), _evidence(section_input, second), header.evidence)
 
 
 def _named_component_blocks(section_input: SectionInput, rows: tuple[tuple[_Line, ...], ...]) -> tuple[Section3BlockCandidate, ...]:
@@ -451,7 +566,8 @@ def _named_component_blocks(section_input: SectionInput, rows: tuple[tuple[_Line
         cas_shape = _CAS.fullmatch(cas_raw)
         content_raw = content_match.group("value")
         content_shape = _DIRECT_CONTENT.fullmatch(content_raw)
-        if cas_shape is None or content_shape is None:
+        content_header_has_percent = "%" in content_line.text or "％" in content_line.text
+        if cas_shape is None or (content_shape is None and not (content_header_has_percent and _BARE_CONTENT.fullmatch(content_raw))):
             return
         normalized_cas = normalize_cas(cas_raw)
         first = group[0]
@@ -460,11 +576,19 @@ def _named_component_blocks(section_input: SectionInput, rows: tuple[tuple[_Line
             f"section3-named-row-{len(blocks)}", len(blocks),
             tuple(_evidence(section_input, line) for line in group),
             (CasCandidate(cas_raw, normalized_cas.normalized, CasCandidateValidity(normalized_cas.validity.value), len(blocks), (_evidence(section_input, cas_line),)),),
-            (ContentCandidate(content_raw, normalize_content(content_raw).content_normalized, len(blocks) + 1, (_evidence(section_input, content_line),)),),
+            (ContentCandidate(
+                content_raw, normalize_content(content_raw).content_normalized, len(blocks) + 1,
+                (_evidence(section_input, content_line),),
+                "%" if content_shape is None and content_header_has_percent else None,
+                (_evidence(section_input, content_line),) if content_shape is None and content_header_has_percent else (),
+            ),),
             ContentFieldState.UNKNOWN,
         ))
 
     for row in rows:
+        if group and any(_NAMED_BLOCK_BOUNDARY.match(line.text) for line in row):
+            flush()
+            group = []
         if any(_NAMED_COMPONENT.fullmatch(line.text) for line in row):
             flush()
             group = list(row)
@@ -503,6 +627,10 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
         previous_row = rows[row_number - 1] if row_number else None
         cas_matches = _cas_matches(row, ec_headers, headers, previous_row)
         content_matches = _content_matches(section_input, row, bool(cas_matches), headers)
+        multiline_content = _multiline_korean_content(
+            section_input, row, rows[row_number + 1] if row_number + 1 < len(rows) else None,
+            bool(cas_matches), headers,
+        )
         occurrences = [(line, start, "cas", raw) for line, start, raw in cas_matches]
         occurrences += [(line, start, "content", (raw, unit, unit_evidence)) for line, start, raw, unit, unit_evidence in content_matches]
         occurrences.sort(key=lambda item: (item[0].page, item[0].bbox[1], item[0].bbox[0], item[1]))
@@ -516,6 +644,13 @@ def collect_section3_candidates(section_input: SectionInput) -> Section3Collecti
             else:
                 raw, unit, unit_evidence = payload
                 content_candidates.append(ContentCandidate(raw, normalize_content(raw).content_normalized, source_order, (_evidence(section_input, line),), unit, (unit_evidence,) if unit_evidence else ()))
+            source_order += 1
+        if multiline_content is not None:
+            raw, unit, evidence = multiline_content
+            content_candidates.append(ContentCandidate(
+                raw, normalize_content(raw).content_normalized, source_order,
+                evidence[:2], unit, (evidence[2],),
+            ))
             source_order += 1
         # A content-only row has no component/block candidate in this stage.
         if not cas_candidates:

@@ -162,6 +162,40 @@ PRD/TRD보다 낮은 권위이고 3개 Korean digital PDF를 전 세계·다국�
 
 ## v1.3.2a-R2 — multi-page Section 3 column-signature continuation
 
+### v1.3.2 R2 final implementation record
+
+The former implementation-start statement (`COLUMN_SIGNATURE_CONTINUATION_READY`,
+rebaseline **462**, Fresh Verifier **PASS**, blocking findings **0**, commit `2a5f45b`)
+was not final-run evidence and is removed. This final record is limited to local
+machine structural verification: no Golden promotion, human approval, merge, OCR, AI,
+or external call occurred.
+
+| Concern | Final generic change | Boundary retained |
+| --- | --- | --- |
+| Multi-SDS `007` | `locate_sds_segments` returns three independently bounded sequences while canonical `locate_sections` remains a single-result API | no cross-segment join or Golden schema change |
+| Heading grammar | semantic locator accepts `항 N:` and `SECTION N:` | semantic fences remain mandatory; ambiguous starts fail closed |
+| Table / named-field values | Korean CAS headers, header-aligned multiline comparator values, local flexible named fields, and Korean/English note boundaries are recognized | EC/index/classification/foreign values and note-separated values do not promote |
+| R2 continuation | transient CAS/content geometry carries only across the current Section 3 table | `040` has four paired rows and EC/exposure promotion is zero |
+
+### v1.3.2 final actual local PDF results
+
+These final results supersede the earlier extension-pilot diagnostic table for the same
+IDs. All sources were read from authorized local `TEST_File`; OCR, AI, network, and
+external calls were not used.
+
+| ID | Final local result |
+| --- | --- |
+| `005` | `IMAGE_ONLY`; Section 1/3 are both `FENCE_NOT_FOUND` (`SECTION_START_NOT_FOUND`); OCR remains deferred. |
+| `007` | `TEXT`; canonical Section 1/3 are confirmed. Three independent segment results are PC100(크리어), PC420(페퍼), and PC220(오크), each with its own exact CAS sequence; no CAS/content/product crosses a segment fence. Each segment retains source `/ KE-*` `PAIR_AMBIGUOUS` rows, so its intrinsic quality is `REVIEW_REQUIRED`, not PASS. |
+| `011` | `PASS`: `64742-47-8=40 ~ 50`, `64742-54-7=10 ~ 25`, `74-98-6=16 ~ 21`, `106-97-8=11 ~ 14`. |
+| `020` | `PASS`: `122-99-6=100.0`. |
+| `027` | confirmed fences; the CAS-only component is retained as `90-80-2` `FOUND` with empty `NOT_STATED` content. Its intrinsic `pair_status` is `NOT_STATED` and local quality is `PASS`; neither means the CAS was rejected or that content was invented. |
+| `030` | `PASS`: `7647-01-0` raw `>= 35 - < 40 %`, normalized `>=35~<40%`. |
+| `032` | `PASS`: `7697-37-2` raw `>= 70 - < 75 %`, normalized `>=70~<75%`; Section 3 has a decorative-logo reason. |
+| `036` | Section 1 is partial (`SECTION_END_NOT_FOUND`), Section 3 is confirmed. All nine Section 3 rows pair: `7732-18-5=40 이상 ~\\n50 % 미만`; `14807-96-6=20 이상 ~\\n30 % 미만`; `1317-65-3=10 이상 ~\\n20 % 미만`; `26636-08-8`, `92704-41-1`, `13463-67-7`, `471-34-1`, `57-55-6` each `=1 이상 ~\\n10 % 미만`; `108-01-0=0.1 이상 ~\\n1 % 미만`. No full resolve is asserted while Section 1 remains partial. |
+| `040` | `PASS`: `67-56-1`, `56-81-5` raw `>= 45 - < 50 %`; `660-68-4`, `17372-87-1` raw `< 1 %`; all paired. |
+| `043` | `PASS`: `56-40-6` raw `98.5～101.5`, normalized `98.5~101.5`. |
+
 Section 3의 다음 페이지가 표 header를 반복하지 않는 경우에도, 시작 페이지의 명시적
 CAS/content header와 column geometry로만 만든 locator-internal transient signature를
 carry-forward한다. `PageRegion.allowed_rects`의 기존 multi-rect 표현을 사용하여

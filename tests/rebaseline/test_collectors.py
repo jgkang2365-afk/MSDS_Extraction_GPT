@@ -92,6 +92,28 @@ def test_p3_fix_01_inline_product_name_continues_until_structural_field():
     assert [item.raw_fragment for item in candidate.evidence] == ["ABC-100", "Grade A 75%"]
 
 
+@pytest.mark.parametrize(("source", "expected"), [
+    ("Product name: Example acid Product number: G4750", "Example acid"),
+    ("제품명: 예시 산 제품 번호: G4750", "예시 산"),
+    ("Product name: Example acid Company: Acme", "Example acid"),
+    ("제품명: 예시 산 회사명: 애크미", "예시 산"),
+])
+def test_inline_product_name_stops_before_the_next_explicit_labelled_field(source, expected):
+    candidate = collect_product_candidates(_input("1", ((source,),))).candidates[0]
+    assert candidate.raw == expected
+    assert [item.raw_fragment for item in candidate.evidence] == [expected]
+
+
+@pytest.mark.parametrize(("rows", "expected"), [
+    ((("Product name: Example acid ",), ("Product number",), (": G4750",)), "Example acid"),
+    ((("제품명: 예시 산 ",), ("제품 번호",), (": G4750",)), "예시 산"),
+])
+def test_product_name_stops_before_a_split_explicit_label_value_field(rows, expected):
+    candidate = collect_product_candidates(_input("1", rows)).candidates[0]
+    assert candidate.raw == expected
+    assert [item.raw_fragment for item in candidate.evidence] == [expected]
+
+
 def test_p3_fix_02_korean_label_value():
     assert collect_product_candidates(_input("1", (("제품명 | 가나다 (Model-A)",),))).candidates[0].raw == "가나다 (Model-A)"
 
@@ -195,6 +217,17 @@ def test_p5_fix_12_text_header_derived_blank_remains_explicit_blank():
     assert (resolved.components[0].content.content_status, resolved.components[0].status) == (
         ContentStatus.NOT_STATED, PairStatus.NOT_STATED,
     )
+
+
+def test_labeled_standalone_cas_field_is_retained_with_not_stated_content():
+    section3 = _input("3", (("CAS 번호 또는 식별번호", ": 64-17-5"),))
+    resolved = resolve(_input("1", (("Product: CAS only",),)), section3)
+    assert [
+        (pair.cas.cas_raw, pair.cas.cas_status, pair.content.content_raw, pair.content.content_status, pair.status)
+        for pair in resolved.components
+    ] == [
+        ("64-17-5", ResultStatus.FOUND, "", ContentStatus.NOT_STATED, PairStatus.NOT_STATED),
+    ]
 
 
 def test_p5_fix_03_ocr_explicit_unreadable_content_is_preserved():
