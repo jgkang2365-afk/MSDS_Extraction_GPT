@@ -5,9 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from src.msds.models import FenceStatus
+from src.msds.models import FenceStatus, ResultStatus
+from src.msds.collectors import collect_section3_candidates
 from src.msds.pdf_io import build_section_input, read_pdf_layout
 from src.msds.sections import locate_sections
+from src.msds.resolver import resolve_components
 from tests.rebaseline.pdf_helpers import make_pdf
 
 
@@ -41,6 +43,21 @@ def test_p2_01_korean_digital_headings_are_located_with_real_pdf_text(pdf_tmp):
         (72, 130, "2. 유해성·위험성"),
         (72, 160, "3. 구성성분의 명칭 및 함유량"), (72, 190, "INSIDE_THREE"),
         (72, 220, "4. 응급조치 요령"),
+    ]], fontfile=fontfile)
+    one, three, input1, input3 = _inputs(path)
+    assert one.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert "INSIDE_ONE" in "".join(token.text for token in input1.tokens)
+    assert "INSIDE_THREE" in "".join(token.text for token in input3.tokens)
+
+
+def test_split_number_korean_headings_and_reverse_hazard_words_remain_confirmed(pdf_tmp):
+    fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
+    path = make_pdf(pdf_tmp / "split-korean-headings.pdf", [[
+        (72, 72, "1."), (94, 72, "화학제품과 회사에 관한 정보"), (72, 100, "INSIDE_ONE"),
+        (72, 130, "2."), (94, 130, "위험 유해성"),
+        (72, 160, "3."), (94, 160, "구성성분의 명칭 및 함유량"), (72, 190, "INSIDE_THREE"),
+        (72, 220, "4."), (94, 220, "응급조치 요령"),
     ]], fontfile=fontfile)
     one, three, input1, input3 = _inputs(path)
     assert one.fence.status is FenceStatus.FENCE_CONFIRMED
@@ -200,6 +217,174 @@ def test_p2_03_wide_three_column_section_table_is_not_page_multicolumn(pdf_tmp):
     _, continuation_three, _, continuation_input = _inputs(continuation)
     assert continuation_three.fence.status is FenceStatus.FENCE_CONFIRMED
     assert "Ingredient B" in "".join(token.text for token in continuation_input.tokens)
+
+
+def test_p2_03_digital_left_content_table_excludes_foreign_independent_cas_column(pdf_tmp):
+    path = make_pdf(pdf_tmp / "left-content-table-with-foreign-cas.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 110, "FIRST")],
+        [
+            (72, 110, "Content (%)"), (220, 110, "CAS No."),
+            (72, 140, "10"), (220, 140, "64-17-5"),
+            (72, 170, "20"), (220, 170, "71-43-2"), (430, 170, "67-64-1"),
+        ],
+        [(72, 110, "LAST"), (72, 220, "4. First-aid measures")],
+    ])
+    _, three, _, input3 = _inputs(path)
+    assert three.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert input3 is not None
+    assert "67-64-1" not in "".join(token.text for token in input3.tokens)
+    assert [block.cas_candidates[0].raw for block in collect_section3_candidates(input3).blocks] == ["64-17-5", "71-43-2"]
+
+
+def test_section3_pattern_a_repeated_english_header_continues_only_signature_columns(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-pattern-a.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [
+            (72, 72, "3. Composition/information on ingredients (continued)"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "67-56-1"), (330, 140, "20%"),
+        ],
+        [(72, 150, "4. First-aid measures")],
+    ])
+    _, section3, _, section_input = _inputs(path)
+    assert section3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_input is not None
+    assert [(pair.cas.cas_raw, pair.content.content_raw) for pair in resolve_components(collect_section3_candidates(section_input))] == [
+        ("64-17-5", "10%"), ("67-56-1", "20%"),
+    ]
+
+
+def test_section3_pattern_b_korean_headerless_continuation_keeps_only_source_columns(pdf_tmp):
+    fontfile = Path(r"C:\Windows\Fonts\malgun.ttf")
+    path = make_pdf(pdf_tmp / "section3-pattern-b.pdf", [
+        [
+            (72, 72, "3. 구성성분의 명칭 및 함유량"),
+            (160, 110, "CAS 번호"), (330, 110, "함유량"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [(160, 110, "67-56-1"), (330, 110, "20%")],
+        [(72, 150, "4. 응급조치 요령")],
+    ], fontfile=fontfile)
+    _, section3, _, section_input = _inputs(path)
+    assert section3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_input is not None
+    assert [(pair.cas.cas_raw, pair.content.content_raw) for pair in resolve_components(collect_section3_candidates(section_input))] == [
+        ("64-17-5", "10%"), ("67-56-1", "20%"),
+    ]
+
+
+def test_section3_signature_continuation_does_not_promote_ec_exposure_or_foreign_table_values(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-signature-foreign-values.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [
+            (160, 110, "67-56-1"), (330, 110, "20%"),
+            (160, 140, "EC No. 200-578-6"), (330, 140, "99%"),
+            (330, 170, "100 ppm exposure limit"),
+            (430, 110, "67-64-1"), (520, 110, "77%"),
+        ],
+        [(72, 220, "4. First-aid measures")],
+    ])
+    _, section3, _, section_input = _inputs(path)
+    assert section3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_input is not None
+    section_text = "".join(token.text for token in section_input.tokens)
+    assert "EC No. 200-578-6" in section_text
+    assert "67-64-1" not in section_text and "77%" not in section_text
+    pairs = resolve_components(collect_section3_candidates(section_input))
+    assert [(pair.cas.cas_raw, pair.content.content_raw) for pair in pairs] == [
+        ("64-17-5", "10%"), ("67-56-1", "20%"),
+    ]
+    assert not [pair for pair in pairs if pair.cas.cas_status is not ResultStatus.FOUND]
+
+
+def test_section3_duplicate_heading_without_continuation_marker_remains_fail_closed(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-duplicate-heading.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (200, 110, "CAS No."), (390, 110, "Content (%)"),
+            (200, 140, "67-56-1"), (390, 140, "20%"),
+        ],
+        [(72, 220, "4. First-aid measures")],
+    ])
+    _, section3 = locate_sections(read_pdf_layout(path))
+    assert section3.fence.status is FenceStatus.FENCE_PARTIAL
+    assert section3.description is None
+    assert section3.reasons == ("SECTION_START_AMBIGUOUS",)
+
+
+def test_section3_duplicate_continued_heading_with_different_geometry_remains_fail_closed(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-continued-duplicate-heading.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [
+            (72, 72, "3. Composition/information on ingredients (continued)"),
+            (200, 110, "CAS No."), (390, 110, "Content (%)"),
+            (200, 140, "67-56-1"), (390, 140, "20%"),
+        ],
+        [(72, 220, "4. First-aid measures")],
+    ])
+    _, section3 = locate_sections(read_pdf_layout(path))
+    assert section3.fence.status is FenceStatus.FENCE_PARTIAL
+    assert section3.description is None
+    assert section3.reasons == ("SECTION_START_AMBIGUOUS",)
+
+
+def test_section3_three_page_repeated_matching_headings_form_a_continuation_chain(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-three-page-repeated-heading.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [
+            (72, 72, "3. Composition/information on ingredients (continued)"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "67-56-1"), (330, 140, "20%"),
+        ],
+        [
+            (72, 72, "3. Composition/information on ingredients (continued)"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "75-07-0"), (330, 140, "30%"),
+        ],
+        [(72, 220, "4. First-aid measures")],
+    ])
+    _, section3, _, section_input = _inputs(path)
+    assert section3.fence.status is FenceStatus.FENCE_CONFIRMED
+    assert section_input is not None
+    assert [(pair.cas.cas_raw, pair.content.content_raw) for pair in resolve_components(collect_section3_candidates(section_input))] == [
+        ("64-17-5", "10%"), ("67-56-1", "20%"), ("75-07-0", "30%"),
+    ]
+
+
+def test_section3_final_page_cas_only_continuation_row_fails_closed(pdf_tmp):
+    path = make_pdf(pdf_tmp / "section3-final-page-cas-only.pdf", [
+        [
+            (72, 72, "3. Composition/information on ingredients"),
+            (160, 110, "CAS No."), (330, 110, "Content (%)"),
+            (160, 140, "64-17-5"), (330, 140, "10%"),
+        ],
+        [(160, 110, "67-56-1"), (72, 150, "4. First-aid measures")],
+    ])
+    _, section3 = locate_sections(read_pdf_layout(path))
+    assert section3.fence.status is FenceStatus.FENCE_PARTIAL
+    assert section3.description is None
+    assert section3.reasons == ("CONTINUATION_COLUMN_SIGNATURE_UNPROVEN",)
 
 
 def test_p2_03_structured_two_column_tables_are_not_page_columns(pdf_tmp):
@@ -409,6 +594,18 @@ def test_p2_06_small_right_margin_logo_with_normal_digital_body_is_confirmed(pdf
     assert three.description is not None
     assert three.reasons == ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
     assert "DIGITAL" in "".join(token.text for token in build_section_input(layout, three.description).tokens)
+
+
+def test_p2_06_repeated_top_right_raster_requires_the_same_embedded_image(pdf_tmp):
+    path = make_pdf(pdf_tmp / "distinct-repeated-top-right-rasters.pdf", [
+        [(72, 72, "3. Composition/information on ingredients"), (72, 120, "DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE")],
+        [(72, 72, "MORE DIGITAL BODY HAS ENOUGH TEXT FOR SAFE TEXT FENCE"), (72, 180, "4. First-aid measures")],
+    ], images={0, 1}, image_rects={0: (540, 10, 570, 40), 1: (540, 10, 570, 40)}, image_colors={0: (255, 0, 0), 1: (0, 0, 255)})
+    layout = read_pdf_layout(path)
+    assert layout.pages[0].image_xrefs != layout.pages[1].image_xrefs
+    _, three = locate_sections(layout)
+    assert three.fence.status is FenceStatus.FENCE_PARTIAL
+    assert three.reasons == ("SECTION_MIXED_TEXT_AND_IMAGE_REQUIRED",)
 
 
 @pytest.mark.parametrize("image_rect", [(300, 80, 330, 100), (500, 100, 590, 220), (72, 100, 92, 120)])

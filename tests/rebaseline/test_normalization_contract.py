@@ -4,17 +4,19 @@ from src.msds.models import ContentStatus, ResultStatus
 from src.msds.normalization import CasValidity, is_valid_cas, normalize_cas, normalize_cas_result, normalize_content, normalize_product
 
 
-@pytest.mark.parametrize("raw", ["64-17-5", "64−17−5", "64 – 17 – 5"])
+@pytest.mark.parametrize("raw", ["64-17-5", "64−17−5", "64 – 17 – 5", "1310-73-2", "7732-18-5", "6920-22-5"])
 def test_cas_normalization_is_limited_to_dashes_and_separator_whitespace(raw):
     result = normalize_cas(raw)
-    assert result.normalized == "64-17-5"
+    assert result.normalized == raw.translate(str.maketrans({"−": "-", "–": "-"})).replace(" ", "")
     assert result.validity is CasValidity.VALID
     assert result.raw == raw
 
 
-@pytest.mark.parametrize("raw", ["2024-01-1", "2024-01-12", "EC 205-399-7", "205-399-7"])
-def test_dates_and_ec_numbers_are_not_promoted_to_cas(raw):
-    assert not is_valid_cas(raw)
+def test_cas_normalization_has_no_date_or_ec_context_semantics():
+    assert is_valid_cas("2000-01-3")
+    assert normalize_cas("2024-01-1").validity is CasValidity.CHECK_DIGIT_INVALID
+    assert normalize_cas("EC 205-399-7").validity is CasValidity.FORMAT_INVALID
+    assert normalize_cas("205-399-7").validity is CasValidity.FORMAT_INVALID
 
 
 def test_check_digit_failure_is_reported_without_auto_correction():

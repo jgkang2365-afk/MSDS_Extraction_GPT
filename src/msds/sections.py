@@ -15,10 +15,11 @@ from .pdf_io import FenceDescription, LayoutLine, PdfPage, PdfReadResult
 
 StopCheck = Callable[[], bool] | None
 
-_NUMBERED_HEADING = re.compile(r"^\s*(?:section\s+)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
+_NUMBERED_HEADING = re.compile(r"^\s*(?:(?:section|항)\s*)?(?P<number>[1-9]|1[0-6])(?:(?:\s*(?:[.)]|[-:])\s*)|\s+)(?!\d)(?P<heading>.+?)\s*$", re.IGNORECASE)
+_TABLE_CONTENT = re.compile(r"\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?(?:\s*[-–—~∼～]\s*(?:[<>≤≥]\s*)?\d+(?:[.,]\d+)?)?\s*[%％]?\s*$")
 _HEADING = {
     "1": re.compile(r"(?:화학제품.*회사|chemical\s+product.*company|identification)", re.IGNORECASE),
-    "2": re.compile(r"(?:유해성.*위험성|hazard(?:s)?\s+identification)", re.IGNORECASE),
+    "2": re.compile(r"(?:유해성.*위험성|유해\s*[·.•]?\s*위험성|유해\s*위험성|위험.*유해성|hazard(?:s)?\s+identification)", re.IGNORECASE),
     "3": re.compile(r"(?:구성성분|성분.*정보|composition|information\s+on\s+ingredients)", re.IGNORECASE),
     "4": re.compile(r"(?:응급|first\s*[- ]?aid)", re.IGNORECASE),
 }
@@ -26,6 +27,12 @@ _HEADING = {
 _STRONG_SECTION_ONE_PRODUCT_LABELS = frozenset({
     "product", "product name", "product identifier", "제품명", "제품 식별자",
 })
+_SECTION_ONE_AUXILIARY_FIELD_LABEL = re.compile(
+    r"^(?:company|supplier|manufacturer|address|telephone|phone|emergency|email|"
+    r"reference\s+(?:number|no\.?|code)|product\s+type|recommended\s+use|"
+    r"colour|color|제품|회사|제조|공급|주소|전화|긴급|용도|색상)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,109 @@ class _Header:
     section_no: str
     page_index: int
     line: LayoutLine
+
+
+@dataclass(frozen=True)
+class SdsSegment:
+    """One independently bounded SDS sequence in a concatenated TEXT PDF.
+
+    This is intentionally a parallel locator result.  It does not alter the
+    canonical single Section 1/3 API or any Golden serialization contract.
+    """
+
+    index: int
+    section_1: LocatedFence
+    section_3: LocatedFence
+
+
+@dataclass(frozen=True)
+class _Section3ColumnSignature:
+    """Ephemeral, header-proven CAS/content columns for one open Section 3."""
+    cas_x: float
+    content_x: float
+
+
+_SECTION3_CAS_HEADER = re.compile(r"\s*(?:CAS(?:[-\s]*(?:No\.?|Number))?|CAS\s*번호(?:\s*또는(?:\s*식별번호)?)?|등록번호)\s*", re.IGNORECASE)
+_SECTION3_CONTENT_HEADER = re.compile(r"(?:content|concentration|함유량|함량|농도)", re.IGNORECASE)
+_SECTION3_NON_CAS_IDENTIFIER = re.compile(r"\s*(?:E\s*C\s*(?:No\.?|번호)?|EINECS(?:\s*(?:No\.?|number))?|색인\s*번호|index\s+number)\s*[:|#-]?\s*$", re.IGNORECASE)
+
+
+def _section3_signature(lines: list[LayoutLine]) -> _Section3ColumnSignature | None:
+    rows = _horizontal_rows(lines)
+    content_headers = [line for line in lines if _SECTION3_CONTENT_HEADER.search(line.text)]
+    cas_labels = [line for line in lines if _SECTION3_CAS_HEADER.fullmatch(line.text)]
+    for row in rows:
+        cas = next((line for line in row if _SECTION3_CAS_HEADER.fullmatch(line.text)), None)
+        content = next((line for line in row if _SECTION3_CONTENT_HEADER.search(line.text)), None)
+        if cas is not None and content is not None and content.bbox[0] > cas.bbox[0]:
+            return _Section3ColumnSignature(cas.bbox[0], content.bbox[0])
+    for content in content_headers:
+        for label in cas_labels:
+            for row in rows:
+                if label not in row:
+                    continue
+                # The adjacent value cell establishes the *column geometry*, not
+                # a CAS value.  Do not use value shape here: the collector owns
+                # value recognition and this signature must remain reusable on a
+                # headerless continuation page.
+                value_cells = sorted(
+                    (line for line in row if line.bbox[0] > label.bbox[0]),
+                    key=lambda line: line.bbox[0],
+                )
+                if value_cells and content.bbox[0] > value_cells[0].bbox[0]:
+                    return _Section3ColumnSignature(value_cells[0].bbox[0], content.bbox[0])
+    return None
+
+
+def _signature_rects(page: PdfPage, lines: list[LayoutLine], signature: _Section3ColumnSignature) -> tuple[tuple[float, float, float, float], ...]:
+    """Keep only the two header-proven columns on a Section 3 continuation.
+
+    A page must visibly carry both columns on at least one horizontal row.  The
+    values themselves are intentionally not interpreted here: this is a fence,
+    while the collector remains the sole CAS/content recognizer.  This admits
+    headerless Korean continuations and keeps an EC-labelled source cell
+    available for the collector to reject, without widening into a foreign
+    table or an exposure column.
+    """
+    column_lines = [
+        line for line in lines
+        if abs(line.bbox[0] - signature.cas_x) <= 12
+        or abs(line.bbox[0] - signature.content_x) <= 12
+    ]
+    if not any(
+        any(abs(line.bbox[0] - signature.cas_x) <= 12 for line in row)
+        and any(abs(line.bbox[0] - signature.content_x) <= 12 for line in row)
+        for row in _horizontal_rows(column_lines)
+    ):
+        return ()
+    # Retain only an explicitly labelled, same-row EC/index field beside the
+    # CAS column.  The collector needs that local label to reject the adjacent
+    # identifier value; this does not widen to a foreign table column.
+    cas_row_lines = [line for line in column_lines if abs(line.bbox[0] - signature.cas_x) <= 12]
+    column_lines.extend(
+        line for line in lines
+        if _SECTION3_NON_CAS_IDENTIFIER.fullmatch(line.text)
+        and line.bbox[0] < signature.cas_x
+        and any(max(line.bbox[1], cas.bbox[1]) < min(line.bbox[3], cas.bbox[3]) for cas in cas_row_lines)
+    )
+    rects=[]
+    for line in column_lines:
+        tokens = [token for token in page.tokens if token.block_id == line.block_id and token.line_id == line.line_id]
+        rects.append((min(token.bbox[0] for token in tokens), min(token.bbox[1] for token in tokens), max(token.bbox[2] for token in tokens), max(token.bbox[3] for token in tokens)) if tokens else line.bbox)
+    return tuple(rects)
+
+
+def _signature_column_lines(lines: list[LayoutLine], signature: _Section3ColumnSignature) -> list[LayoutLine]:
+    """Return every visible line in either column of an open signature."""
+    return [
+        line for line in lines
+        if abs(line.bbox[0] - signature.cas_x) <= 12
+        or abs(line.bbox[0] - signature.content_x) <= 12
+    ]
+
+
+def _same_section3_signature(left: _Section3ColumnSignature, right: _Section3ColumnSignature) -> bool:
+    return abs(left.cas_x - right.cas_x) <= 12 and abs(left.content_x - right.content_x) <= 12
 
 
 def _heading_search_key(text: str) -> str:
@@ -89,6 +199,33 @@ def _find_headers(layout: PdfReadResult, *, cancelled: StopCheck, deadline: floa
             number = match.group("number")
             if number in _HEADING and _HEADING[number].search(match.group("heading")):
                 headers.append(_Header(number, page.page_index, line))
+        # Some PDFs emit the section number and its semantic title as distinct
+        # lines on one visual baseline.  Admit only an immediately right-hand
+        # title whose heading semantics independently prove the numbered pair.
+        for number_line in page.lines:
+            number_match = re.fullmatch(r"\s*(?P<number>[1-9]|1[0-6])\s*[.)]\s*", _heading_search_key(number_line.text))
+            if number_match is None:
+                continue
+            number = number_match.group("number")
+            if number not in _HEADING:
+                continue
+            titles = sorted([
+                title for title in page.lines
+                if title.bbox[0] >= number_line.bbox[2]
+                and abs(title.bbox[1] - number_line.bbox[1]) <= 1.0
+            ], key=lambda item: item.bbox[0])
+            title_text = " ".join(_heading_search_key(title.text) for title in titles)
+            semantic_title_text = re.sub(r"[·.•]", "", title_text)
+            if not titles or not _HEADING[number].search(semantic_title_text):
+                continue
+            title = titles[-1]
+            combined = LayoutLine(
+                number_line.page_index, number_line.block_id, number_line.line_id,
+                f"{number_line.text} {title_text}",
+                (number_line.bbox[0], min(number_line.bbox[1], title.bbox[1]), title.bbox[2], max(number_line.bbox[3], title.bbox[3])),
+                max(number_line.font_size, title.font_size),
+            )
+            headers.append(_Header(number, page.page_index, combined))
     return headers, None
 
 
@@ -104,44 +241,45 @@ def _same_column_bands(first: list[LayoutLine], second: list[LayoutLine]) -> boo
 def _section_one_label_value_row(row: list[LayoutLine]) -> bool:
     """Keep two-cell Section 1 rows tied to recognizable field labels."""
     label = _heading_search_key(sorted(row, key=lambda item: item.bbox[0])[0].text).casefold()
+    compact_label = re.sub(r"\s+", "", label)
     return label.endswith(":") or bool(re.search(
         r"^(?:product|company|supplier|manufacturer|address|telephone|phone|emergency|email|"
         r"recommended\s+use|identifier|제품|회사|제조|공급|주소|전화|긴급|용도)",
         label,
-    ))
+    )) or compact_label.startswith(("제품", "회사", "제조", "공급", "주소", "전화", "긴급", "용도"))
 
 
 def _strong_section_one_product_label(line: LayoutLine) -> bool:
     """Match only an explicit Product field label, never a Product-like value."""
     label = re.sub(r"\s*[:|]\s*$", "", _heading_search_key(line.text)).casefold()
-    return label in _STRONG_SECTION_ONE_PRODUCT_LABELS
+    return label in _STRONG_SECTION_ONE_PRODUCT_LABELS or re.sub(r"\s+", "", label) in _STRONG_SECTION_ONE_PRODUCT_LABELS
 
 
 def _section_one_safe_single_product_segments(row: list[LayoutLine]) -> list[list[LayoutLine]]:
     """Prove a one-row Product label/value relation without widening columns."""
     cells = sorted(row, key=lambda item: item.bbox[0])
-    if len(cells) < 2 or len(cells) % 2:
+    if len(cells) < 2:
         return []
-    pairs = [cells[index:index + 2] for index in range(0, len(cells), 2)]
+    # A neighbouring field label can wrap below its value, leaving an odd
+    # terminal cell on this visual row.  Only complete local pairs are used.
+    pairs = [cells[index:index + 2] for index in range(0, len(cells) - 1, 2)]
     if not any(_strong_section_one_product_label(pair[0]) for pair in pairs):
         return []
-    # A multi-pair row needs a terminal separator or another exact strong
-    # Product label for every pair. This rejects a far-right bare value/foreign
-    # column instead of silently retaining the left label while dropping its
-    # uncertain value.
-    if len(pairs) > 1 and not all(
-        _strong_section_one_product_label(pair[0])
-        or _heading_search_key(pair[0].text).endswith((":", "|"))
-        for pair in pairs
-    ):
+    if any(not _section_one_label_value_row(pair) for pair in pairs):
         return []
-    if any(
-        not _section_one_label_value_row(pair)
-        or (_heading_search_key(pair[1].text).endswith(":") and not _strong_section_one_product_label(pair[1]))
-        for pair in pairs
-    ):
-        return []
-    return [pair for pair in pairs if _strong_section_one_product_label(pair[0])]
+    if len(cells) % 2:
+        trailing = _heading_search_key(cells[-1].text).casefold()
+        if not _SECTION_ONE_AUXILIARY_FIELD_LABEL.match(trailing):
+            return []
+    # A proven Product label and its immediate right-hand value are sufficient
+    # for that pair.  Other pairs on the same visual row are independent
+    # labelled fields, not product continuation text.
+    return [
+        pair for pair in pairs
+        if _strong_section_one_product_label(pair[0])
+        and _section_one_label_value_row(pair)
+        and not _heading_search_key(pair[1].text).endswith(":")
+    ]
 
 
 def _segment_key(segment: list[LayoutLine]) -> tuple[tuple[int, int, int], ...]:
@@ -161,18 +299,24 @@ def _section_one_has_unresolved_strong_product_relation(lines: list[LayoutLine])
     return False
 
 
+def _section_one_has_proven_product_relation(lines: list[LayoutLine]) -> bool:
+    """Allow an otherwise multi-column Section 1 only with a local product pair."""
+    return any(_section_one_safe_single_product_segments(row) for row in _horizontal_rows(lines))
+
+
 def _section_three_cas_concentration_row(row: list[LayoutLine], *, allow_plain_content: bool) -> bool:
     """Recognize the compact CAS | concentration rows used by Section 3 tables."""
     if len(row) not in {2, 3}:
         return False
     values = [line.text for line in sorted(row, key=lambda item: item.bbox[0])]
     cas_count = sum(bool(re.search(r"\b\d{2,7}-\d{2}-\d\b", value)) for value in values)
-    content_count = sum(bool(re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", value)) for value in values)
-    return cas_count == 1 and content_count == 1 and (allow_plain_content or any("%" in value for value in values))
+    content_count = sum(bool(_TABLE_CONTENT.fullmatch(value)) for value in values)
+    return cas_count == 1 and content_count == 1 and (allow_plain_content or any("%" in value or "％" in value for value in values))
 
 
 def _structured_row_segments(
     row: list[LayoutLine], section_no: str, *, allow_plain_content: bool,
+    left_content_columns: tuple[tuple[float, float], ...] = (),
 ) -> list[list[LayoutLine]]:
     """Split side-by-side structured rows into their individual table bands."""
     cells = sorted(row, key=lambda item: item.bbox[0])
@@ -187,17 +331,43 @@ def _structured_row_segments(
     for index, cell in enumerate(cells):
         if not re.search(r"\b\d{2,7}-\d{2}-\d\b", cell.text):
             continue
-        content = next(
-            (
-                candidate for candidate in cells[index + 1:]
-                if re.fullmatch(r"\s*\d+(?:\.\d+)?\s*%?\s*", candidate.text)
-                and (allow_plain_content or "%" in candidate.text)
-            ),
-            None,
+        candidates = [
+            candidate for candidate in cells[index + 1:]
+            if candidate is not cell and _TABLE_CONTENT.fullmatch(candidate.text)
+            and (allow_plain_content or "%" in candidate.text or "％" in candidate.text)
+        ]
+        candidates.extend(
+            candidate for candidate in cells[:index]
+            if _TABLE_CONTENT.fullmatch(candidate.text)
+            and any(
+                abs(candidate.bbox[0] - content_x) <= 12 and abs(cell.bbox[0] - cas_x) <= 12
+                for content_x, cas_x in left_content_columns
+            )
+        )
+        content = min(
+            candidates,
+            key=lambda candidate: abs(candidate.bbox[0] - cell.bbox[0]),
+            default=None,
         )
         if content is not None:
             segments.append([cell, content])
     return segments
+
+
+def _left_content_columns(lines: list[LayoutLine], section_no: str) -> tuple[tuple[float, float], ...]:
+    """Prove a reversed content/CAS order from explicit table headers only."""
+    if section_no != "3":
+        return ()
+    cas_headers = [line for line in lines if re.search(r"\bcas(?:\s*(?:no\.?|number))?\b", line.text, re.IGNORECASE)]
+    content_headers = [
+        line for line in lines
+        if re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
+    ]
+    return tuple(
+        (content.bbox[0], cas.bbox[0])
+        for content in content_headers for cas in cas_headers
+        if content.bbox[0] < cas.bbox[0] and cas.bbox[0] - content.bbox[0] <= 160
+    )
 
 
 def _structured_table_bands(
@@ -208,10 +378,11 @@ def _structured_table_bands(
         re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
         for line in lines
     )
+    left_content_columns = _left_content_columns(lines, section_no)
     bands: list[list[list[LayoutLine]]] = []
     safe_single_product_segments: set[tuple[tuple[int, int, int], ...]] = set()
     for row in _horizontal_rows(lines):
-        segments = _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)
+        segments = _structured_row_segments(row, section_no, allow_plain_content=allow_plain_content, left_content_columns=left_content_columns)
         if section_no == "1":
             safe_segments = _section_one_safe_single_product_segments(row)
             safe_single_product_segments.update(_segment_key(segment) for segment in safe_segments)
@@ -247,13 +418,21 @@ def _aligned_wide_table(lines: list[LayoutLine], page: PdfPage, section_no: str)
     bands = _structured_table_bands(lines, section_no)
     if len(bands) != 1:
         return False
+    if section_no == "1":
+        # The sole Section 1 band can only be a repeated label/value table or
+        # the separately proven exact Product-label pair.
+        return True
     allow_plain_content = any(
         re.search(r"(?:content|concentration|함량|농도|%)", line.text, re.IGNORECASE)
         for line in lines
     )
+    left_content_columns = _left_content_columns(lines, section_no)
     return any(
         row[-1].bbox[0] - row[0].bbox[0] > (page.rect[2] - page.rect[0]) * 0.35
-        and len(_structured_row_segments(row, section_no, allow_plain_content=allow_plain_content)) == 1
+        and len(_structured_row_segments(
+            row, section_no, allow_plain_content=allow_plain_content,
+            left_content_columns=left_content_columns,
+        )) == 1
         for row in _horizontal_rows(lines)
         if len(row) >= 2
     )
@@ -306,7 +485,10 @@ def _has_ambiguous_columns(page: PdfPage, start: _Header, end: _Header) -> bool:
     """Reject independent page columns, while allowing structured Section 1/3 tables."""
     if start.page_index != end.page_index:
         return False
-    lines = [line for line in page.lines if start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]]
+    lines = [
+        line for line in page.lines
+        if line.text.strip() and start.line.bbox[1] <= line.bbox[1] <= end.line.bbox[1]
+    ]
     starts = sorted({round(line.bbox[0], 1) for line in lines})
     return (
         len(starts) >= 2
@@ -528,10 +710,26 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
     pages = {page.page_index: page for page in layout.pages}
     start_page = pages[start.page_index]
     end_page = pages[end.page_index]
+    signature = None
+    if start.section_no == "3":
+        signature = _section3_signature([
+            line for line in start_page.lines if start.line.bbox[3] <= line.bbox[1]
+        ])
     # Digital text-flow columns remain unsafe. OCR geometry uses the same
     # structure/column proof below, rather than admitting a full-width region.
-    if not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
-        return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
+    # A header-proven Section 3 CAS/content signature is narrower and stronger
+    # than the generic page-column heuristic, so it remains eligible.
+    if signature is None and not any(token.source_reading == "OCR" for token in start_page.tokens) and _has_ambiguous_columns(start_page, start, end):
+        # Section 1 may use parallel labelled fields.  Retain the same-page
+        # fence only when an explicit Product label has an immediate, local
+        # value relation; this is not a general relaxation for multicolumn
+        # body text or Section 3 tables.
+        bounded = [
+            line for line in start_page.lines
+            if start.line.bbox[3] <= line.bbox[1] and line.bbox[3] <= end.line.bbox[1]
+        ]
+        if start.section_no != "1" or not _section_one_has_proven_product_relation(bounded):
+            return None, "MULTI_COLUMN_BOUNDARY_AMBIGUOUS"
     if start.page_index == end.page_index:
         if not any(token.source_reading == "OCR" for token in start_page.tokens):
             x0, _, x1, _ = start_page.rect
@@ -545,6 +743,25 @@ def _regions(layout: PdfReadResult, start: _Header, end: _Header) -> tuple[tuple
         if region is None:
             return None, "SECTION_BODY_UNAVAILABLE"
         return (region,), None
+    if signature is not None:
+        regions=[]
+        for page_index in range(start.page_index, end.page_index + 1):
+            page=pages[page_index]
+            top=start.line.bbox[3] if page_index == start.page_index else page.rect[1]
+            bottom=end.line.bbox[1] if page_index == end.page_index else page.rect[3]
+            bounded_lines = [line for line in page.lines if top <= line.bbox[1] and line.bbox[3] <= bottom]
+            rects = _signature_rects(page, bounded_lines, signature)
+            if not rects:
+                # Section 4 can begin alone on its page.  There is no Section
+                # 3 token to retain there, so do not manufacture a full-width
+                # region merely to represent the terminal boundary.  A lone
+                # CAS/content-column line is different: silently skipping it
+                # could discard a split continuation row, so fail closed.
+                if page_index == end.page_index and not _signature_column_lines(bounded_lines, signature):
+                    continue
+                return None, "CONTINUATION_COLUMN_SIGNATURE_UNPROVEN"
+            regions.append(PageRegion(page_index, rects))
+        return tuple(regions), None
     repeated, retained_headers = _margin_repetitions(layout, retain_table_headers=start.section_no == "3")
     _, py0, _, py1 = start_page.rect
     start_region, failure = _safe_boundary_region(
@@ -607,9 +824,9 @@ def _section_capability(
     section_pages = [pages[index] for index in range(start.page_index, end.page_index + 1)]
     image_coverage_unknown = any(page.image_count > 0 and not page.image_rects for page in section_pages)
     images_in_region = [
-        (page, image)
+        (page, image, page.image_xrefs[index] if index < len(page.image_xrefs) else None)
         for page in section_pages
-        for image in page.image_rects
+        for index, image in enumerate(page.image_rects)
         if _intersects(image, image_span(page))
     ]
     if image_coverage_unknown:
@@ -630,36 +847,95 @@ def _section_capability(
                 and image[2] <= max(token.bbox[2] for token in observed_tokens)
             )
 
-        def decorative_logo(page: PdfPage, image: tuple[float, float, float, float]) -> bool:
+        def decorative_logo(
+            page: PdfPage, image: tuple[float, float, float, float], image_xref: int | None,
+        ) -> bool:
             px0, py0, px1, py1 = page.rect
             width, height = px1 - px0, py1 - py0
             image_width, image_height = image[2] - image[0], image[3] - image[1]
             right_margin = px1 - image[2]
-            return (
+            compact_right_logo = (
                 image_width > 0 and image_height > 0
                 and image_width <= width * 0.15 and image_height <= height * 0.15
                 and image_width * image_height <= width * height * 0.02
                 and right_margin <= width * 0.10
             )
+            def same_geometry(candidate: tuple[float, float, float, float]) -> bool:
+                return (
+                    abs(candidate[0] - image[0]) <= 2 and abs(candidate[1] - image[1]) <= 2
+                    and abs(candidate[2] - image[2]) <= 2 and abs(candidate[3] - image[3]) <= 2
+                )
+
+            repeated_header_geometry = (
+                len(layout.pages) >= 2
+                and all(
+                    any(same_geometry(candidate) for candidate in candidate_page.image_rects)
+                    # PDF text and image boxes may differ by sub-point
+                    # rounding at a shared header boundary.
+                    and (not candidate_page.lines or image[3] <= min(line.bbox[1] for line in candidate_page.lines) + 1.0)
+                    for candidate_page in layout.pages
+                )
+            )
+            repeated_top_right_logo = (
+                image_width > 0 and image_height > 0
+                and image[1] <= py0 + height * 0.12
+                and image_width <= width * 0.25 and image_height <= height * 0.12
+                and image_width * image_height <= width * height * 0.03
+                and right_margin <= width * 0.10
+                # A repeated top-right raster is decorative only when it is
+                # a document-wide header, wholly above each page's observed
+                # text, and is the same embedded image on every page.
+                # Repetition within the section alone, or matching geometry
+                # with a different raster, is not proof.
+                and repeated_header_geometry
+                and image_xref is not None
+                and all(
+                    any(
+                        same_geometry(candidate)
+                        and candidate_index < len(candidate_page.image_xrefs)
+                        and candidate_page.image_xrefs[candidate_index] == image_xref
+                        for candidate_index, candidate in enumerate(candidate_page.image_rects)
+                    )
+                    for candidate_page in layout.pages
+                )
+            )
+            repeated_bottom_right_logo = (
+                image_width > 0 and image_height > 0
+                and image[3] >= py1 - height * 0.12
+                and image_width <= width * 0.25 and image_height <= height * 0.12
+                and image_width * image_height <= width * height * 0.03
+                and right_margin <= width * 0.10
+                and image_xref is not None
+                and all(any(
+                    same_geometry(candidate)
+                    and candidate_index < len(candidate_page.image_xrefs)
+                    and candidate_page.image_xrefs[candidate_index] == image_xref
+                    for candidate_index, candidate in enumerate(candidate_page.image_rects)
+                ) for candidate_page in layout.pages)
+            )
+            # A compact, one-off margin logo remains safe. Once the same
+            # placement repeats document-wide, however, even this small-logo
+            # shortcut requires the identical embedded image.
+            return (compact_right_logo and not repeated_header_geometry) or repeated_top_right_logo or repeated_bottom_right_logo
         images_are_decorative = all(
-            decorative_logo(page, image)
+            decorative_logo(page, image, image_xref)
             and not any(
                 _intersects(image, token.bbox)
                 for token in page.tokens
                 if any(_inside_token(token, rect) for rect in regions_by_page[page.page_index].allowed_rects)
             )
-            for page, image in images_in_region
+            for page, image, image_xref in images_in_region
         )
         if images_are_decorative and digital_text >= 12:
             return DocumentCapability.TEXT, ("SECTION_DIGITAL_TEXT_WITH_DECORATIVE_LOGO",)
         header_only_boundary_image = any(
             page.page_index in {start.page_index, end.page_index}
             and not has_text_in_region(page, regions_by_page[page.page_index])
-            for page, _ in images_in_region
+            for page, _, _ in images_in_region
         )
         image_outside_observed_text_x_span = any(
             not image_is_within_observed_text_x_span(page, image)
-            for page, image in images_in_region
+            for page, image, _ in images_in_region
         )
         if header_only_boundary_image or image_outside_observed_text_x_span:
             if any(has_text_in_region(page, region) for page, region in zip(region_pages, regions)):
@@ -699,7 +975,43 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
     start_evidence = Evidence(section_no, start.page_index, source_type, start.line.text, layout.document_sha256, start.line.bbox)
     if end is None:
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, None, (start_evidence,)), None, ("SECTION_END_NOT_FOUND",), metric())
-    if any((candidate.page_index, candidate.line.bbox[1]) < (end.page_index, end.line.bbox[1]) for candidate in starts[1:]):
+    competing = starts[1:]
+    start_signature = _section3_signature(list(layout.pages[start.page_index].lines)) if section_no == "3" else None
+    if start_signature is not None:
+        candidates_by_page: dict[int, list[_Header]] = {}
+        for candidate in competing:
+            candidates_by_page.setdefault(candidate.page_index, []).append(candidate)
+
+        def is_proven_continuation(candidate: _Header) -> bool:
+            if candidate.page_index <= start.page_index:
+                return False
+            page = layout.pages[candidate.page_index]
+            if candidate.line.bbox[1] > page.rect[1] + 0.20 * (page.rect[3] - page.rect[1]):
+                return False
+            marker = re.search(r"\b(?:continued|continuation|cont\.)\b|계속(?:됨)?", candidate.line.text, re.I)
+            repeated_signature = _section3_signature(list(page.lines))
+            # A page that exposes a CAS/content header must match the original
+            # geometry, even if its title says "continued".  A marker can
+            # admit a headerless page only when the original paired columns
+            # are visibly present.  This keeps a foreign/new table from being
+            # promoted by title text alone.
+            if repeated_signature is not None:
+                page_is_continuation = _same_section3_signature(repeated_signature, start_signature)
+            else:
+                page_is_continuation = bool(marker) and bool(_signature_rects(page, list(page.lines), start_signature))
+            if not page_is_continuation:
+                return False
+            if candidate.page_index == start.page_index + 1:
+                return True
+            # Repeated-heading tables can span three or more pages.  Every
+            # link must be a consecutive, independently proven continuation;
+            # a later matching title cannot jump over another section.
+            return any(is_proven_continuation(previous) for previous in candidates_by_page.get(candidate.page_index - 1, []))
+        competing = [
+            candidate for candidate in competing
+            if not is_proven_continuation(candidate)
+        ]
+    if any((candidate.page_index, candidate.line.bbox[1]) < (end.page_index, end.line.bbox[1]) for candidate in competing):
         return LocatedFence(SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence,)), None, ("SECTION_START_AMBIGUOUS",), metric())
     end_evidence = Evidence(section_no, end.page_index, source_type, end.line.text, layout.document_sha256, end.line.bbox)
     regions, failure = _regions(layout, start, end)
@@ -716,3 +1028,73 @@ def locate_section(layout: PdfReadResult, section_no: str, *, cancelled: StopChe
 def locate_sections(layout: PdfReadResult, *, cancelled: StopCheck = None, deadline: float | None = None) -> tuple[LocatedFence, LocatedFence]:
     """Return independent Section 1 then Section 3 results without value extraction."""
     return (locate_section(layout, "1", cancelled=cancelled, deadline=deadline), locate_section(layout, "3", cancelled=cancelled, deadline=deadline))
+
+
+def _position(header: _Header) -> tuple[int, float]:
+    return header.page_index, header.line.bbox[1]
+
+
+def _segment_located(
+    layout: PdfReadResult, section_no: str, start: _Header, end: _Header,
+) -> LocatedFence:
+    """Build one already-bounded sequence fence using the normal safe region path."""
+    source_type = EvidenceSourceType.OCR if any(
+        token.source_reading == "OCR" for token in layout.pages[start.page_index].tokens
+    ) else EvidenceSourceType.TEXT
+    start_evidence = Evidence(section_no, start.page_index, source_type, start.line.text, layout.document_sha256, start.line.bbox)
+    end_evidence = Evidence(section_no, end.page_index, source_type, end.line.text, layout.document_sha256, end.line.bbox)
+    regions, failure = _regions(layout, start, end)
+    metric = (("locator_ms", 0.0), ("headers_seen", 0), ("external_calls", 0))
+    if failure:
+        return LocatedFence(
+            SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+            None, (failure,), metric,
+        )
+    capability, reasons = _section_capability(layout, regions, start, end)
+    if capability is not DocumentCapability.TEXT:
+        return LocatedFence(
+            SectionFence(FenceStatus.FENCE_PARTIAL, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+            None, reasons, metric,
+        )
+    fence_id = sha256(
+        f"{layout.document_sha256}:segment:{section_no}:{start.page_index}:{start.line.bbox}:{end.page_index}:{end.line.bbox}".encode("utf-8")
+    ).hexdigest()
+    description = FenceDescription(FenceStatus.FENCE_CONFIRMED, section_no, fence_id, layout.document_sha256, regions, capability, reasons)
+    return LocatedFence(
+        SectionFence(FenceStatus.FENCE_CONFIRMED, section_no, start.page_index, end.page_index, (start_evidence, end_evidence)),
+        description, reasons, metric,
+    )
+
+
+def locate_sds_segments(
+    layout: PdfReadResult, *, cancelled: StopCheck = None, deadline: float | None = None,
+) -> tuple[SdsSegment, ...]:
+    """Locate concatenated SDS sequences without permitting inter-segment joins.
+
+    Each output is bounded by one Section 1 start and the *next* Section 1
+    start.  Both Section 1->2 and Section 3->4 fences must be wholly inside
+    that interval; incomplete sequences are omitted rather than repaired.
+    """
+    if layout.terminal_reason:
+        return ()
+    headers, stop = _find_headers(layout, cancelled=cancelled, deadline=deadline)
+    if stop:
+        return ()
+    section_ones = sorted((item for item in headers if item.section_no == "1"), key=_position)
+    segments: list[SdsSegment] = []
+    for index, start_one in enumerate(section_ones):
+        upper = _position(section_ones[index + 1]) if index + 1 < len(section_ones) else None
+        inside = lambda item: _position(item) > _position(start_one) and (upper is None or _position(item) < upper)
+        end_one = next((item for item in headers if item.section_no == "2" and inside(item)), None)
+        start_three = next((item for item in headers if item.section_no == "3" and inside(item)), None)
+        end_three = next((item for item in headers if item.section_no == "4" and inside(item)), None)
+        if end_one is None or start_three is None or end_three is None or _position(end_one) >= _position(start_three):
+            continue
+        section_1 = _segment_located(layout, "1", start_one, end_one)
+        section_3 = _segment_located(layout, "3", start_three, end_three)
+        if (
+            section_1.fence.status is FenceStatus.FENCE_CONFIRMED
+            and section_3.fence.status is FenceStatus.FENCE_CONFIRMED
+        ):
+            segments.append(SdsSegment(len(segments), section_1, section_3))
+    return tuple(segments)

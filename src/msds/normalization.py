@@ -13,7 +13,6 @@ from .models import CASResult, ContentResult, ContentStatus, ProductResult, Resu
 _DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015\u2212"
 _DASH_TRANSLATION = str.maketrans({dash: "-" for dash in _DASHES})
 _CAS_SHAPE = re.compile(r"^\d{2,7}-\d{2}-\d$")
-_ISO_DATE = re.compile(r"^\d{4}-\d{1,2}-\d{1,2}$")
 _DECIMAL_COMMA = re.compile(r"(?<!\d)(\d+),(\d{1,2})(?!\d)")
 
 
@@ -46,13 +45,15 @@ def normalize_cas_value(value: object | None) -> str:
 
 
 def normalize_cas(value: object | None) -> CasNormalization:
-    """Return a CAS result without fuzzy or catalogue-driven correction."""
+    """Apply only lexical CAS normalization, shape, and checksum validation.
+
+    Whether a lexical CAS occurs in a date, EC, or other metadata context is
+    a collector responsibility.  This pure function intentionally has no
+    document-layout or vocabulary semantics.
+    """
     raw = "" if value is None else str(value)
     normalized = normalize_cas_value(raw)
     if not normalized:
-        return CasNormalization(raw, normalized, CasValidity.NOT_CANDIDATE)
-    # Dates can satisfy the syntactic CAS shape by chance (for example 2024-01-1).
-    if _ISO_DATE.fullmatch(normalized):
         return CasNormalization(raw, normalized, CasValidity.NOT_CANDIDATE)
     if not _CAS_SHAPE.fullmatch(normalized):
         return CasNormalization(raw, normalized, CasValidity.FORMAT_INVALID)
@@ -87,6 +88,15 @@ def normalize_content(value: object | None) -> ContentResult:
         return ContentResult(content_raw=raw, content_normalized="", content_status=ContentStatus.NOT_STATED)
     normalized = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", raw)).strip()
     normalized = normalized.replace("∼", "~").replace("～", "~")
+    # Korean SDS tables commonly split one range over two physical lines,
+    # e.g. ``0.1 이상 ~\n1 % 미만``.  These substitutions are lexical only:
+    # they make the comparator explicit in the comparison value while the raw
+    # field above retains every source character and line break.
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*이상\b", r">=\1", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*초과\b", r">\1", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)(\s*[%％])?\s*이하\b", lambda item: f"<={item.group(1)}{'%' if item.group(2) else ''}", normalized)
+    normalized = re.sub(r"(?<![\d.])(\d+(?:[.,]\d+)?)(\s*[%％])?\s*미만\b", lambda item: f"<{item.group(1)}{'%' if item.group(2) else ''}", normalized)
+    normalized = re.sub(r"([<>]=?)\s+(?=\d)", r"\1", normalized)
     normalized = re.sub(r"(?<=\d)\s*[-–—]\s*(?=[<>=≤≥]?\s*\d)", "~", normalized)
     normalized = re.sub(r"\s*([~<>≤≥%])\s*", r"\1", normalized)
     normalized = _normalize_decimal_commas(normalized)
