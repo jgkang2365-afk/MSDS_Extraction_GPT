@@ -71,6 +71,7 @@ _PEER_METADATA_LABEL = re.compile(
     re.IGNORECASE,
 )
 _CAS_CONTEXT = re.compile(r"\s*C\s*A\s*S\s*(?:(?:No\.?|Number)\s*)?[:|]?\s*$", re.IGNORECASE)
+_STRUCTURED_IDENTIFIER_VALUE = re.compile(r"\s*[A-Za-z][A-Za-z0-9]*(?:[-_/][A-Za-z0-9]+)+\s*\Z")
 _CAS_TABLE_HEADER = re.compile(
     r"^\s*C\s*A\s*S\s*(?:(?:No\.?|Number)|(?:번호(?:\s*또는\s*식별번호)?)|식별번호)?\s*$",
     re.IGNORECASE,
@@ -140,8 +141,12 @@ def _is_ec_column(line: _Line, header: _EcHeader) -> bool:
 
 
 def _is_cas_column(line: _Line, cas_x: float) -> bool:
-    """Allow only small start-coordinate drift from an explicit CAS header."""
-    return abs(line.bbox[0] - cas_x) <= _HEADER_X_TOLERANCE
+    """Allow only small PDF start-coordinate drift from an explicit CAS header."""
+    # Individual CAS cells in a visually single PDF column can drift slightly
+    # beyond the general header tolerance because of glyph metrics.  This
+    # remains far narrower than an adjacent table column while preserving the
+    # established TECA multi-CAS source row.
+    return abs(line.bbox[0] - cas_x) <= _HEADER_X_TOLERANCE + 2.0
 
 
 def _require_confirmed_text_input(section_input: SectionInput, section_no: str) -> None:
@@ -350,6 +355,13 @@ def _cas_matches(
 ) -> list[tuple[_Line, int, str]]:
     matches: list[tuple[_Line, int, str]] = []
     for line_index, line in enumerate(row):
+        # A proven CAS/content table is also a proof boundary for candidate
+        # admission.  Do not promote a CAS-shaped substring from an ingredient,
+        # reference, exposure, or note column merely because its row belongs to
+        # that table.  Headerless named-field and free-form paths retain their
+        # existing local-context behavior below.
+        if headers and not any(_is_cas_column(line, header.cas_x) for header in headers):
+            continue
         seen_token_spans: set[tuple[int, int]] = set()
         for match in _CAS.finditer(line.text):
             line_prefix = line.text[:match.start()]
@@ -492,7 +504,33 @@ def _same_table_row(row: tuple[_Line, ...], headers: list[_UnitHeader]) -> bool:
         _CAS.search(line.text) and _is_cas_column(line, cas_header.cas_x)
         for line in row
     )
-    if not has_aligned_cas:
+    has_proven_table_band = any(
+        line.text.strip()
+        and (
+            # A prose cell must not keep a table header alive.  Actual CAS
+            # values already satisfy has_aligned_cas; this branch is only for
+            # a non-CAS, structured source identifier such as KE-11278.
+            (_is_cas_column(line, cas_header.cas_x) and _STRUCTURED_IDENTIFIER_VALUE.fullmatch(line.text))
+            or (
+                abs(line.bbox[0] - cas_header.unit_x) <= _HEADER_X_TOLERANCE
+                and (
+                    _DIRECT_CONTENT.fullmatch(line.text)
+                    or _BARE_CONTENT.fullmatch(line.text)
+                    or _HEADER_PROVEN_CONTENT.fullmatch(line.text)
+                    or _UNREADABLE_CONTENT.fullmatch(line.text)
+                    or _KOREAN_CONTENT_START.fullmatch(line.text)
+                    or _KOREAN_CONTENT_END.fullmatch(line.text)
+                )
+            )
+        )
+        for line in row
+    )
+    # A CAS/identifier or content cell can be blank, unreadable, or contain
+    # only a non-CAS identifier such as KE-11278.  Retain the already-proven
+    # row geometry whenever either table band is visibly present so
+    # _cas_matches can reject CAS-shaped text from every other column; never
+    # treat the identifier itself as a CAS candidate.
+    if not has_aligned_cas and not has_proven_table_band:
         return False
     if all(line.page == cas_header.page for line in row):
         return True

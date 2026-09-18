@@ -215,3 +215,43 @@ fence에 포함되지 않는다.
   heading은 `SECTION_START_AMBIGUOUS`로 fail-closed한다.
 - 모델, PageRegion, SectionInput, Golden schema/validator 및 human lifecycle은 변경하지
   않았다. 이 결과는 machine structural verification이며 human Golden promotion이 아니다.
+
+## v1.3.3 — CAS-column proof closure
+
+검증 기준 HEAD는 `2ecbb61aea3e7d4baa5af233754a7fe79913b5ef`이며, 이 closure는
+header-proven CAS/content table에서 **CAS candidate admission 자체**가 proven CAS
+column을 따르도록 보완한다. 즉 ingredient, reference, exposure, note 열의
+checksum-valid CAS-shaped text는 CAS candidate가 아니다. CAS/identifier 열 안에서는
+유효 CAS만 후보가 되며 `KE-*`나 임의 identifier는 해석하거나 출력하지 않는다.
+
+- CAS column 외 valid CAS promotion: `0`
+- mixed identifier cell: valid CAS만 유지, KE/generic identifier output `0`
+- checksum-invalid CAS: valid CAS로 자동 승격하지 않음
+- CAS/identifier 또는 content cell이 blank/unreadable/identifier-only인 row도 이미
+  증명된 표 geometry를 잃지 않아 다른 열의 CAS를 승격하지 않음
+- CAS/content band의 설명문은 header continuation 근거가 아니므로 bare numeric value를
+  함유량으로 승격하지 않음
+
+split CAS header는 adjacent same-band fragment와 content header가 있어야 하며, distant,
+wrong-column, unrelated-intervening fragment는 proof를 만들지 않는다. Multi-SDS
+adversarial regression은 TOC/body reference false positive, empty page, page-number reset,
+same-page 다음 SDS를 product와 source-local CAS/content pair까지 검증한다.
+
+실제 local TEXT 결과는 유지됐다: `007`은 3 independent segment와 exact PAIRED CAS/content,
+`036`은 `아이생각수성내부프로 (M-BASE)` 및 9 components, `043`은 `Glycine` /
+`56-40-6` / raw `98.5～101.5` / normalized `98.5~101.5`이다. `008`, `015`, `024`,
+`011`, `020`, `027`, `030`, `032`, `040`의 canonical 보호 회귀도 통과했다.
+
+| Validation | Final local result |
+| --- | --- |
+| focused + actual Phase 7 Golden | `198 passed` (최종 full suite에 포함) |
+| `python -m pytest tests/rebaseline -q` | `497 passed`, required skips `0` |
+| `python -m pytest tests/test_common_normalization.py -q` | `6 passed` |
+| compileall / import / Golden schema + candidate smoke / `git diff --check` | PASS |
+| Fresh Verifier | READ_ONLY, PASS, blocking findings `0` |
+
+Golden promotion, `source_transcription`, `HUMAN_REVIEWED`, `APPROVED`, approved selector,
+Golden schema/validator, PRD, TRD public contract는 모두 변경하지 않았다. OCR, AI/API,
+ODL, KOSHA, MES, DB, Vercel, internet PDF download는 모두 `0`이다. CI는 실행하거나
+조회하지 않았으므로 `CI 없음`으로 기록한다. PR은 Draft/Open 및 human Golden approval
+전 상태를 유지하며 `merge-ready`로 표현하지 않는다.

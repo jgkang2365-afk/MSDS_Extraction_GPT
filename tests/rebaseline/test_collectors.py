@@ -194,6 +194,73 @@ def test_korean_cas_identifier_table_header_selects_only_the_aligned_concentrati
     ]
 
 
+def test_header_proven_cas_column_rejects_valid_cas_shaped_text_in_other_columns():
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Blend contains 64-17-5", "67-64-1 / OTHER-123", "10%"),
+    ))
+    resolved = resolve(_input("1", (("Product: structural CAS",),)), section3)
+    assert [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components] == [
+        ("67-64-1", "10%"),
+    ]
+    assert all(item.cas.cas_raw != "64-17-5" for item in resolved.components)
+
+
+def test_identifier_only_cas_column_keeps_header_boundary_and_rejects_other_column_cas():
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Blend contains 64-17-5", "KE-11278", "10%"),
+    ))
+    resolved = resolve(_input("1", (("Product: identifier-only CAS column",),)), section3)
+    assert resolved.components == ()
+
+
+@pytest.mark.parametrize(("cas_cell", "content_cell"), [
+    ("", "10%"),
+    ("KE-11278", "[unreadable]"),
+    ("KE-11278", ""),
+])
+def test_incomplete_proven_table_row_still_rejects_other_column_cas(cas_cell, content_cell):
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Blend contains 64-17-5", cas_cell, content_cell),
+    ))
+    resolved = resolve(_input("1", (("Product: incomplete CAS column",),)), section3)
+    assert resolved.components == ()
+
+
+def test_header_proven_cas_column_keeps_only_valid_cas_from_mixed_identifier_cell():
+    section3 = _input("3", (
+        ("Chemical name", "CAS 번호 또는 식별번호", "함유량(%)"),
+        ("Ethanol", "64-17-5 / OTHER-123", "10%"),
+    ))
+    resolved = resolve(_input("1", (("Product: mixed identifier",),)), section3)
+    assert [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components] == [
+        ("64-17-5", "10%"),
+    ]
+
+
+def test_header_proven_cas_column_rejects_adjacent_reference_identifier_values():
+    section3 = _input("3", (
+        ("CAS", "Reference number", "Content (%)"),
+        ("64-17-5", "67-64-1", "10%"),
+    ))
+    resolved = resolve(_input("1", (("Product: reference boundary",),)), section3)
+    assert [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components] == [
+        ("64-17-5", "10%"),
+    ]
+
+
+def test_header_proven_checksum_invalid_cas_never_becomes_valid_candidate():
+    section3 = _input("3", (
+        ("CAS", "Content (%)"),
+        ("64-17-4", "10%"),
+    ))
+    candidate = collect_section3_candidates(section3).blocks[0].cas_candidates[0]
+    assert candidate.raw == "64-17-4"
+    assert candidate.validity is CasCandidateValidity.CHECK_DIGIT_INVALID
+
+
 def test_p3_fix_header_context_survives_blank_unit_cell_without_creating_bare_content():
     result = collect_section3_candidates(_input("3", (
         ("CAS", "Concentration (%)"),
@@ -287,6 +354,24 @@ def test_p3_fix_09_prior_or_explanatory_unit_text_does_not_upgrade_unrelated_bar
     result = collect_section3_candidates(_input("3", (
         ("CAS", "Content (%)"),
         ("Explanation: values may be reported in %",),
+        ("64-17-5", "50"),
+    )))
+    assert result.blocks[0].content_candidates == ()
+
+
+def test_colonless_explanatory_text_in_cas_band_does_not_keep_header_context():
+    result = collect_section3_candidates(_input("3", (
+        ("CAS", "Content (%)"),
+        ("Explanation values may be reported in %",),
+        ("64-17-5", "50"),
+    )))
+    assert result.blocks[0].content_candidates == ()
+
+
+def test_explanatory_text_in_content_band_does_not_keep_header_context():
+    result = collect_section3_candidates(_input("3", (
+        ("CAS", "Content (%)"),
+        ("", "Explanation values may be reported in %"),
         ("64-17-5", "50"),
     )))
     assert result.blocks[0].content_candidates == ()

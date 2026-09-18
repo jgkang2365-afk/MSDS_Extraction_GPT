@@ -97,6 +97,79 @@ def test_true_split_cas_identifier_header_requires_an_adjacent_same_band_fragmen
     # header proof.
     distant = _input("3", (("CAS 번호 또는", "함유량(%)"), ("note", ""), ("식별번호", ""), ("64-17-5", "10%")))
     assert collect_section3_candidates(distant).blocks[0].content_candidates[0].unit_context_raw is None
+    wrong_column = _input("3", (("CAS 번호 또는", "함유량(%)"), ("", "식별번호"), ("64-17-5", "10%")))
+    assert collect_section3_candidates(wrong_column).blocks[0].content_candidates[0].unit_context_raw is None
+    interrupted = _input("3", (("CAS 번호 또는", "함유량(%)"), ("Other table", "Other field"), ("식별번호", ""), ("64-17-5", "10%")))
+    assert collect_section3_candidates(interrupted).blocks[0].content_candidates[0].unit_context_raw is None
+
+
+def test_multi_sds_locator_ignores_toc_and_body_section_references(pdf_tmp):
+    path = make_pdf(pdf_tmp / "multi-sds-toc-reference.pdf", [[
+        (72, 72, "1. Chemical product and company identification"),
+        (72, 90, "2. Hazards identification"),
+        (72, 108, "3. Composition/information on ingredients"),
+        (72, 126, "4. First-aid measures"),
+        (72, 200, "1. Chemical product and company identification"), (72, 220, "Product: Alpha"),
+        (72, 240, "Company: Example"), (72, 250, "see Section 1 Identification"), (72, 270, "2. Hazards identification"),
+        (72, 320, "3. Composition/information on ingredients"), (72, 340, "64-17-5"),
+        (300, 340, "10%"), (72, 380, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    segments = locate_sds_segments(layout)
+    assert len(segments) == 1
+    resolved = resolve(build_section_input(layout, segments[0].section_1.description), build_section_input(layout, segments[0].section_3.description))
+    assert (resolved.product.raw, [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components]) == (
+        "Alpha", [("64-17-5", "10%")],
+    )
+
+
+def test_multi_sds_locator_keeps_empty_page_and_page_number_reset_out_of_segment_proof(pdf_tmp):
+    pages = [
+        [
+            (72, 72, "1. Chemical product and company identification"), (72, 92, "Product: Alpha"),
+            (72, 120, "2. Hazards identification"), (72, 160, "3. Composition/information on ingredients"),
+            (72, 180, "64-17-5"), (300, 180, "10%"), (72, 220, "4. First-aid measures"),
+        ],
+        [],
+        [
+            (72, 60, "1"), (72, 90, "1. Chemical product and company identification"), (72, 110, "Product: Beta"),
+            (72, 140, "2. Hazards identification"), (72, 180, "3. Composition/information on ingredients"),
+            (72, 200, "67-64-1"), (300, 200, "20%"), (72, 240, "4. First-aid measures"),
+        ],
+    ]
+    layout = read_pdf_layout(make_pdf(pdf_tmp / "multi-sds-empty-page.pdf", pages))
+    segments = locate_sds_segments(layout)
+    assert len(segments) == 2
+    actual = [
+        (resolved.product.raw, [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components])
+        for resolved in (
+            resolve(build_section_input(layout, segment.section_1.description), build_section_input(layout, segment.section_3.description))
+            for segment in segments
+        )
+    ]
+    assert actual == [("Alpha", [("64-17-5", "10%")]), ("Beta", [("67-64-1", "20%")])]
+
+
+def test_multi_sds_locator_splits_a_second_sds_on_the_same_physical_page(pdf_tmp):
+    path = make_pdf(pdf_tmp / "multi-sds-same-page.pdf", [[
+        (72, 72, "1. Chemical product and company identification"), (72, 92, "Product: Alpha"),
+        (72, 120, "2. Hazards identification"), (72, 160, "3. Composition/information on ingredients"),
+        (72, 180, "64-17-5"), (300, 180, "10%"), (72, 220, "4. First-aid measures"),
+        (72, 300, "1. Chemical product and company identification"), (72, 320, "Product: Beta"),
+        (72, 350, "2. Hazards identification"), (72, 390, "3. Composition/information on ingredients"),
+        (72, 410, "67-64-1"), (300, 410, "20%"), (72, 450, "4. First-aid measures"),
+    ]])
+    layout = read_pdf_layout(path)
+    segments = locate_sds_segments(layout)
+    assert len(segments) == 2
+    actual = [
+        (resolved.product.raw, [(item.cas.cas_raw, item.content.content_raw) for item in resolved.components])
+        for resolved in (
+            resolve(build_section_input(layout, segment.section_1.description), build_section_input(layout, segment.section_3.description))
+            for segment in segments
+        )
+    ]
+    assert actual == [("Alpha", [("64-17-5", "10%")]), ("Beta", [("67-64-1", "20%")])]
 
 
 @pytest.mark.parametrize(("raw", "expected"), [
