@@ -257,3 +257,34 @@ Golden schema/validator, PRD, TRD public contract는 모두 변경하지 않았�
 ODL, KOSHA, MES, DB, Vercel, internet PDF download는 모두 `0`이다. CI는 실행하거나
 조회하지 않았으므로 `CI 없음`으로 기록한다. PR은 Draft/Open 및 human Golden approval
 전 상태를 유지하며 `merge-ready`로 표현하지 않는다.
+
+## Golden v2 human review / approval closure
+
+이 절은 위의 CANDIDATE 및 승격 0 기록을 당시의 history로 보존한 뒤 추가한 human
+approval closure다. `reviewer-01`은 2026-09-18T17:41:36.2590024+09:00에 세 source
+PDF의 Section 1 및 Section 3와 아래 제시값을 직접 확인했다. 세 case는 모두
+`VALUE_TRUTH` / `APPROVED`이며, lifecycle은 `CANDIDATE` → `HUMAN_REVIEWED` →
+`APPROVED` 순서다.
+
+| Case | Direct-source transcription / approved runtime truth |
+| --- | --- |
+| `008-sarapong` | product `사라퐁`; `7732-18-5=60 ~ 70`, `1310-73-2=< 1` |
+| `015-teca-biome` | product `TECA-BIOME™`; source-order 12 components; `92128-87-5`와 `308068-11-3`은 shared `section3-row-9` / shared content `1.00` 관계를 보존 |
+| `024-sodium-hydroxide` | product `수산화나트륨[수산화나트륨[Sodium Hydroxide]]`; `1310-73-2=92-100％`, `7732-18-5=8-0％` |
+
+각 case는 source SHA-256, Draft 2020-12 schema, `validate_case`,
+`validate_dataset`, semantic runtime validation을 통과하며 approved selector는 정확히
+3건을 반환한다. authorized local PDF로 재실행한 runtime 결과는 product, CAS,
+source-order, raw content 및 shared relation과 일치한다.
+
+| Closure validation | Result |
+| --- | --- |
+| focused Golden suite (authorized `PHASE7_TEST_FILE_ROOT`) | `147 passed` |
+| actual PDF regression 008 / 015 / 024 | 3 cases `PASS` |
+| `python -m pytest tests/rebaseline -q` | `497 passed`, required skips `0` |
+| `python -m pytest tests/test_common_normalization.py -q` | `6 passed` |
+| compileall / import smoke / Golden schema + candidate JSON smoke / `git diff --check` | PASS |
+
+이 closure는 human approval과 local verification 기록만 다룬다. 이 commit 이후의
+독립 Fresh Verifier 결과는 여기에는 선기록하지 않으며, 별도 상위 검토 및 PR 보고에서
+다룬다.

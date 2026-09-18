@@ -3,10 +3,10 @@
 Golden v2 is an independent, review-governed corpus. It is not an import,
 copy, or automatic migration path for Golden v1. This directory contains the
 contract and its tests, plus three Phase 07 regression-pilot
-`CANDIDATE`/`VALUE_TRUTH` cases under `cases/regression-pilot/`. Those cases
-record only current local-core proposals and remain unreviewed: they contain
-no human-review provenance or source transcription. There is no
-`HUMAN_REVIEWED` or `APPROVED` source-PDF case data.
+`VALUE_TRUTH` cases under `cases/regression-pilot/`. The three Phase 07 pilot
+cases have direct-source human review provenance, source transcription, and
+`APPROVED` lifecycle records; historical candidate-state descriptions remain
+as history in the Phase 07 result record.
 
 ## Case lifecycle and kinds
 

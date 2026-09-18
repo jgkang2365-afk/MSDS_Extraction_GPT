@@ -76,7 +76,7 @@ def _case_component_projection(component: dict):
 
 
 @pytest.mark.skipif(not SOURCE_ROOT, reason="PHASE7_TEST_FILE_ROOT is required for the local-only Phase 07 PDF pilot")
-def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
+def test_phase07_approved_value_truth_matches_local_text_core():
     cases = [json.loads((PILOT_DIRECTORY / filename).read_text(encoding="utf-8")) for filename in MANIFEST["case_files"]]
     source_root = Path(SOURCE_ROOT)
     schema = json.loads((REPOSITORY_ROOT / "golden" / "v2" / "schema.json").read_text(encoding="utf-8"))
@@ -88,24 +88,32 @@ def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
     assert all(case["source"]["source_root"] == MANIFEST["source_root"] for case in cases)
     assert all("/" not in case["source"]["relative_path"] and "\\" not in case["source"]["relative_path"] for case in cases)
     assert all(sha256((source_root / case["source"]["relative_path"]).read_bytes()).hexdigest() == case["source_sha256"] for case in cases)
-    assert all(case["case_kind"] == "VALUE_TRUTH" and case["lifecycle"] == "CANDIDATE" for case in cases)
-    assert all("expected" not in case for case in cases)
-    assert all("source_transcription" not in case for case in cases)
-    assert all(len(case["review_history"]) == 1 for case in cases)
-    assert all(case["review_history"][0]["action"] == case["review_history"][0]["status"] == "CANDIDATE" for case in cases)
-    assert all("timestamp" not in case["review_history"][0] for case in cases)
-    assert sum(event["status"] in {"HUMAN_REVIEWED", "APPROVED"} for case in cases for event in case["review_history"]) == 0
+    assert all(case["case_kind"] == "VALUE_TRUTH" and case["lifecycle"] == "APPROVED" for case in cases)
+    assert all(len(case["review_history"]) == 3 for case in cases)
+    assert all([event["status"] for event in case["review_history"]] == ["CANDIDATE", "HUMAN_REVIEWED", "APPROVED"] for case in cases)
+    approval_timestamp = "2026-09-18T17:41:36.2590024+09:00"
+    for case in cases:
+        human_review, approval = case["review_history"][1:]
+        for event, status in ((human_review, "HUMAN_REVIEWED"), (approval, "APPROVED")):
+            assert event == {
+                "action": status,
+                "status": status,
+                "reviewer_ref": "reviewer-01",
+                "timestamp": approval_timestamp,
+                "review_method": "DIRECT_SOURCE_PDF_REVIEW",
+                "source_pdf_directly_confirmed": True,
+                "section_1_confirmed": True,
+                "section_3_confirmed": True,
+            }
+    assert all(case["source_transcription"]["product_raw"] == case["product"]["raw"] for case in cases)
     assert all(case["blockers"] == [] for case in cases)
 
     actual = {}
     for case in cases:
         layout, section_3, resolved, report = _actual_core(source_root / case["source"]["relative_path"])
         actual[case["case_id"]] = (layout, section_3, resolved, report)
-        assert case["product"] == {
-            "raw": resolved.product.raw,
-            "normalized": resolved.product.normalized,
-            "status": resolved.product.status.value,
-            "provenance": [],
+        assert {key: case["product"][key] for key in ("raw", "normalized", "status")} == {
+            "raw": resolved.product.raw, "normalized": resolved.product.normalized, "status": resolved.product.status.value,
         }
         assert [_case_component_projection(component) for component in case["components"]] == [
             _component_projection(component) for component in resolved.components
@@ -144,7 +152,7 @@ def test_phase07_value_candidates_match_local_text_core_and_remain_unreviewed():
     result = validate_dataset(cases, source_roots={MANIFEST["source_root"]: source_root})
     assert result.errors == ()
     assert result.findings == ()
-    assert select_approved_cases(cases, source_roots={MANIFEST["source_root"]: source_root}) == ()
+    assert len(select_approved_cases(cases, source_roots={MANIFEST["source_root"]: source_root})) == 3
 
 
 @pytest.mark.skipif(not SOURCE_ROOT, reason="PHASE7_TEST_FILE_ROOT is required for the local-only Phase 07 PDF pilot")
