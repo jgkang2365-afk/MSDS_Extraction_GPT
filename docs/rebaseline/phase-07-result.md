@@ -218,7 +218,9 @@ fence에 포함되지 않는다.
 
 ## v1.3.3 — CAS-column proof closure
 
-검증 기준 HEAD는 `2ecbb61aea3e7d4baa5af233754a7fe79913b5ef`이며, 이 closure는
+Final implementation HEAD는 `7761cc31691f3e6251be4dcec126f74431796525`이다. 이는
+CAS-column proof 구현과 모든 기능 변경이 끝난 최종 구현 commit이다. 이전 검증 기준
+HEAD `2ecbb61aea3e7d4baa5af233754a7fe79913b5ef`에서 이 closure는
 header-proven CAS/content table에서 **CAS candidate admission 자체**가 proven CAS
 column을 따르도록 보완한다. 즉 ingredient, reference, exposure, note 열의
 checksum-valid CAS-shaped text는 CAS candidate가 아니다. CAS/identifier 열 안에서는
